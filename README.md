@@ -1,29 +1,55 @@
 # OmniVideo
 
-OmniVideo là hệ thống cá nhân để quản lý nguồn nội dung, ingest video, xử lý pipeline video và chuẩn bị hướng mở rộng thành workspace node-based.
+OmniVideo là hệ thống nội bộ (single-user) để thu thập nguồn nội dung, xử lý pipeline video và quản lý tài nguyên vận hành theo hướng `MVP-first`.
 
-## Trạng thái hiện tại
-- `v0 setup`: docs-first, UI-second.
-- Stack kỹ thuật: `Next.js (App Router) + MongoDB Atlas`.
-- Chưa bật auth ở v0 (internal prototype).
+Stack định hướng hiện tại:
 
-## Mục tiêu MVP hiện tại
-- Luồng tối giản: paste link video -> ingest job -> lưu metadata + storage reference -> trả link truy xuất.
-- Quản lý task/rules/changelog rõ ràng để phát triển ổn định.
+- Next.js (App Router) + TypeScript
+- MongoDB (metadata-first)
 
-## Cấu trúc tài liệu
-- Kế hoạch tổng: `docs/plan.md`
-- Kiến trúc: `docs/architecture/*`
-- Domain: `docs/domains/*`
-- Dữ liệu + API: `docs/data/*`, `docs/api/*`
-- Vận hành: `docs/ops/*`
-- Chính sách: `docs/policy/*`
-- Quản lý dự án: `docs/project/*`
+## Project Status
 
-## Thiết lập môi trường (v0)
-- Biến môi trường bắt buộc:
-  - `MONGODB_URI`
-  - `MONGODB_DB_NAME`
+Repo đang ở **Phase Setup**: ưu tiên hoàn thiện tài liệu, rules, task governance và kiến trúc nền trước khi triển khai business logic lớn.
 
-Chi tiết xem `docs/ops/env-setup.md`.
-# OmniVideo
+## Getting Started
+
+1. Tạo `.env.local` từ `.env.example`.
+2. Điền biến môi trường:
+   - `MONGODB_URI`
+   - `MONGODB_DB_NAME`
+3. Khi có source code app hoàn chỉnh, chạy:
+
+```bash
+npm install
+npm run dev
+```
+
+## Documentation
+
+Bắt đầu tại: `docs/README.md`
+
+Cụm tài liệu chính:
+
+- Product: `docs/product/*`
+- Architecture: `docs/architecture/*`
+- Domains: `docs/domains/*`
+- Operations: `docs/operations/*`
+- Governance: `docs/governance/*`
+
+## Task Management
+
+- Board: `tasks/board.md`
+- Backlog setup: `tasks/backlog-phase-setup.md`
+- Template task: `tasks/templates/task-template.md`
+- Quy trình task: `tasks/README.md`
+
+## Changelog
+
+- Chính thức: `changelog/changelog.md`
+
+## Working Rules (Mandatory)
+
+1. Mọi thay đổi phải gắn Task ID.
+2. Mọi task phải có acceptance criteria và test plan.
+3. Mọi task hoàn tất phải cập nhật changelog.
+4. Không merge thay đổi lớn nếu chưa cập nhật docs liên quan.

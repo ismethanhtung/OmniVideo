@@ -1,0 +1,153 @@
+# Data Model (MongoDB)
+
+## 1. Modeling Principle
+
+1. Metadata-first: binary lưu ở storage, MongoDB giữ metadata và trace.
+2. Event-aware: mọi run/step có event log để điều tra lỗi.
+3. Query-driven: tối ưu truy vấn theo run history, source, channel, status.
+
+## 2. Core Collections
+
+## 2.1 `sources`
+
+Dùng để quản lý nguồn nội dung.
+
+Trường chính:
+
+- `_id`
+- `sourceType` (`url`, `channel`, `trend_list`, `text_idea`, `file`)
+- `url` (nullable)
+- `originPlatform` (`douyin`, `youtube`, `bilibili`, `other`)
+- `title`
+- `tags`: string[]
+- `languageHint`
+- `ownershipStatus` (`unknown`, `owned`, `licensed`, `public_domain`, `restricted`)
+- `createdAt`, `updatedAt`
+
+## 2.2 `assets`
+
+Dùng để quản lý input/output artifacts.
+
+Trường chính:
+
+- `_id`
+- `assetType` (`video`, `audio`, `subtitle`, `thumbnail`, `script`)
+- `storageProvider` (`local`, `s3`, `telegram`, `drive`, `other`)
+- `storagePointer` (path/url/id)
+- `checksumSha256`
+- `mimeType`
+- `durationMs`
+- `sizeBytes`
+- `metadata` (codec, width, height, fps)
+- `createdFrom` (run/step refs)
+- `createdAt`
+
+## 2.3 `pipeline_definitions`
+
+- `_id`
+- `name`
+- `version`
+- `graph` (nodes + edges)
+- `status` (`draft`, `active`, `archived`)
+- `createdAt`, `updatedAt`
+
+## 2.4 `job_runs`
+
+- `_id`
+- `pipelineId`
+- `triggerType` (`manual`, `api`, `schedule`)
+- `status` (`queued`, `running`, `failed`, `success`, `canceled`)
+- `sourceRefs`
+- `inputSnapshot`
+- `outputSummary`
+- `startedAt`, `endedAt`
+- `durationMs`
+
+## 2.5 `step_runs`
+
+- `_id`
+- `jobRunId`
+- `nodeId`
+- `nodeType`
+- `attempt`
+- `status`
+- `errorCode` (nullable)
+- `errorDetail` (nullable)
+- `metrics` (latencyMs, providerCalls, tokensUsed)
+- `startedAt`, `endedAt`
+
+## 2.6 `run_events`
+
+- `_id`
+- `jobRunId`
+- `stepRunId` (nullable)
+- `eventType` (`created`, `started`, `retry`, `failed`, `completed`, `warning`)
+- `level` (`info`, `warn`, `error`)
+- `payload`
+- `timestamp`
+
+## 2.7 `ai_provider_accounts`
+
+- `_id`
+- `providerName`
+- `accountLabel`
+- `modelPolicies`
+- `secretRef`
+- `quotaDaily`, `quotaMonthly`
+- `spendDaily`, `spendMonthly`
+- `priorityWeight`
+- `status` (`active`, `paused`, `depleted`, `error`)
+- `lastHealthCheckAt`
+
+## 2.8 `social_accounts`
+
+- `_id`
+- `platform` (`tiktok`, `youtube`, `facebook`, `shopee`, `other`)
+- `accountId`
+- `displayName`
+- `permissionScopes`
+- `connectionStatus`
+- `channelTags`
+- `lastHealthCheckAt`
+
+## 2.9 `publish_records`
+
+- `_id`
+- `assetId`
+- `socialAccountId`
+- `platformPostId`
+- `status` (`queued`, `published`, `failed`, `retrying`)
+- `publishedAt`
+- `errorCode`
+- `errorDetail`
+
+## 2.10 `connection_checks`
+
+- `_id`
+- `serviceType` (`mongodb`, `provider`, `storage`, `social_api`, `queue`)
+- `serviceKey`
+- `status` (`ok`, `degraded`, `down`)
+- `latencyMs`
+- `errorCode`
+- `checkedAt`
+
+## 3. Indexing Strategy (Minimum)
+
+1. `job_runs`: `{ status: 1, createdAt: -1 }`, `{ pipelineId: 1, createdAt: -1 }`.
+2. `step_runs`: `{ jobRunId: 1, nodeId: 1, attempt: -1 }`.
+3. `assets`: `{ checksumSha256: 1 }`, `{ createdAt: -1 }`.
+4. `sources`: `{ sourceType: 1, originPlatform: 1, createdAt: -1 }`.
+5. `publish_records`: `{ socialAccountId: 1, publishedAt: -1 }`.
+
+## 4. Data Integrity Rules
+
+1. `job_runs.status` phải phản ánh aggregate của `step_runs`.
+2. Không xóa `run_events` trong thời gian retention active.
+3. `errorCode` phải nằm trong taxonomy định nghĩa trước.
+4. `assets.storagePointer` luôn đi kèm `storageProvider`.
+
+## 5. Retention and Archival (Initial)
+
+1. Giữ `job_runs/step_runs/run_events` tối thiểu 90 ngày.
+2. Sau 90 ngày có thể archive sang collection lạnh hoặc external store.
+3. Không archive metadata đang tham chiếu bởi publish records active.
