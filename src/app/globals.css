@@ -1,0 +1,119 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: var(--font-app-plus-jakarta), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-mono), ui-monospace, SFMono-Regular, monospace;
+  --color-accent: #007aff;
+  --color-secondary: var(--bg-secondary);
+  --color-muted: var(--text-muted);
+}
+
+html[data-app-font="inter"] {
+  --font-sans: var(--font-app-inter), ui-sans-serif, system-ui, sans-serif;
+}
+
+html[data-app-font="outfit"] {
+  --font-sans: var(--font-app-outfit), ui-sans-serif, system-ui, sans-serif;
+}
+
+html[data-app-font="plus-jakarta-sans"] {
+  --font-sans: var(--font-app-plus-jakarta), ui-sans-serif, system-ui, sans-serif;
+}
+
+html[data-app-font="ibm-plex-sans"] {
+  --font-sans: var(--font-app-ibm-plex), ui-sans-serif, system-ui, sans-serif;
+}
+
+html[data-app-font="space-grotesk"] {
+  --font-sans: var(--font-app-space-grotesk), ui-sans-serif, system-ui, sans-serif;
+}
+
+:root {
+  --bg-main: #ffffff;
+  --bg-secondary: #f5f7f9;
+  --border-color: #ededed;
+  --text-main: #171717;
+  --text-muted: #737373;
+}
+
+[data-theme="dark1"] {
+  --bg-main: #1c1c1f;
+  --bg-secondary: #252528;
+  --border-color: #3a3a3f;
+  --text-main: #f0efec;
+  --text-muted: #9a9a9a;
+}
+
+[data-theme="dark2"] {
+  --bg-main: #0e1520;
+  --bg-secondary: #16202e;
+  --border-color: #243045;
+  --text-main: #cdd6e8;
+  --text-muted: #6b7d97;
+}
+
+[data-theme="dark3"] {
+  --bg-main: #13111c;
+  --bg-secondary: #1c1928;
+  --border-color: #2e2a40;
+  --text-main: #e8e4f5;
+  --text-muted: #8b7fab;
+}
+
+[data-theme="dark4"] {
+  --bg-main: #0d1714;
+  --bg-secondary: #142119;
+  --border-color: #1e3328;
+  --text-main: #d4ede1;
+  --text-muted: #5e8a72;
+}
+
+[data-theme="dark5"] {
+  --bg-main: #090909;
+  --bg-secondary: #131313;
+  --border-color: #222222;
+  --text-main: #e8e8e8;
+  --text-muted: #666666;
+}
+
+@layer base {
+  body {
+    @apply font-sans antialiased transition-colors duration-200;
+    background-color: var(--bg-main);
+    color: var(--text-main);
+  }
+}
+
+.bg-main {
+  background-color: var(--bg-main);
+}
+
+.bg-secondary {
+  background-color: var(--bg-secondary);
+}
+
+.border-main {
+  border-color: var(--border-color);
+}
+
+.text-main {
+  color: var(--text-main);
+}
+
+.text-muted {
+  color: var(--text-muted);
+}
+
+.thin-scrollbar::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+.thin-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.thin-scrollbar::-webkit-scrollbar-thumb {
+  background-color: var(--border-color);
+  border-radius: 9999px;
+}
