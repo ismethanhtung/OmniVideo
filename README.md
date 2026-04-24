@@ -15,8 +15,8 @@ Repo đang ở **Phase Setup**: ưu tiên hoàn thiện tài liệu, rules, task
 
 1. Tạo `.env.local` từ `.env.example`.
 2. Điền biến môi trường:
-   - `MONGODB_URI`
-   - `MONGODB_DB_NAME`
+    - `MONGODB_URI`
+    - `MONGODB_DB_NAME`
 3. Khi có source code app hoàn chỉnh, chạy:
 
 ```bash
@@ -26,7 +26,8 @@ npm run dev
 
 ## Documentation
 
-Bắt đầu tại: `docs/README.md`
+- Master summary: `docs/SYSTEM-SUMMARY.md`
+- Docs index: `docs/README.md`
 
 Cụm tài liệu chính:
 
@@ -51,5 +52,6 @@ Cụm tài liệu chính:
 
 1. Mọi thay đổi phải gắn Task ID.
 2. Mọi task phải có acceptance criteria và test plan.
-3. Mọi task hoàn tất phải cập nhật changelog.
-4. Không merge thay đổi lớn nếu chưa cập nhật docs liên quan.
+3. Code change phải có test mới hoặc cập nhật test tương ứng.
+4. Mọi task hoàn tất phải cập nhật changelog.
+5. Không merge thay đổi lớn nếu chưa cập nhật docs liên quan.

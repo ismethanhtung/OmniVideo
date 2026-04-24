@@ -25,17 +25,20 @@
 2. Retry có giới hạn và backoff.
 3. Phân biệt retryable và non-retryable errors.
 
-## 5. Testing Baseline
+## 5. Testing Baseline (Mandatory)
 
-1. Feature backend mới phải có test plan tối thiểu trong task.
-2. Case thất bại chính (timeout, quota, network, invalid input) phải được nêu.
-3. Không đánh dấu Done khi chưa có bằng chứng verify.
+1. Mọi thay đổi code logic phải có test tương ứng.
+2. Bugfix phải có regression test.
+3. Feature backend mới phải có test plan tối thiểu trong task.
+4. Case thất bại chính (timeout, quota, network, invalid input) phải được nêu.
+5. Không đánh dấu Done khi chưa có test evidence.
 
 ## 6. Review Rules
 
 1. Review ưu tiên correctness trước style.
 2. Kiểm tra edge cases, data races, rollback path.
-3. Kiểm tra tác động lên observability và docs.
+3. Kiểm tra test relevance, không chỉ đếm số lượng test.
+4. Kiểm tra tác động lên observability và docs.
 
 ## 7. Documentation Rules
 

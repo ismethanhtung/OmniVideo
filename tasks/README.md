@@ -9,7 +9,9 @@ Thư mục `tasks/` là nguồn sự thật cho kế hoạch và trạng thái t
 1. Mọi hoạt động của AI agent phải gắn với một `Task ID`.
 2. Không có task file -> không được bắt đầu implement.
 3. Mọi task phải tuân theo template `tasks/templates/task-template.md`.
-4. Hoàn tất task phải cập nhật `tasks/board.md` và `changelog/changelog.md`.
+4. Task phải dùng `Progress Stamp` dạng `[ ]/[x]` để theo dõi tiến độ.
+5. Hoàn tất task phải cập nhật `tasks/board.md` và `changelog/changelog.md`.
+6. Nếu task có đổi code thì bắt buộc có test evidence trong task.
 
 ## 3. Tổ chức file
 
@@ -32,5 +34,7 @@ Thư mục `tasks/` là nguồn sự thật cho kế hoạch và trạng thái t
 
 1. Tạo task file từ template.
 2. Thêm task vào `board.md`.
-3. Khi làm, chuyển status theo đúng rules trong governance.
-4. Khi xong, cập nhật changelog và chốt task.
+3. Đánh dấu progress stamp `[x]` theo trạng thái thực tế.
+4. Khi làm, chuyển status theo đúng rules trong governance.
+5. Nếu có code change, cập nhật Test Evidence trước khi Review.
+6. Khi xong, cập nhật changelog và chốt task.

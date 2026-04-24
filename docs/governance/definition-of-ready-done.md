@@ -18,10 +18,12 @@ Task chỉ được chuyển `Done` khi đáp ứng đủ:
 
 1. Đạt toàn bộ acceptance criteria.
 2. Thực hiện verify/test theo plan và ghi kết quả.
-3. Cập nhật docs liên quan (nếu có tác động).
-4. Cập nhật `changelog/changelog.md`.
-5. Cập nhật trạng thái trong `tasks/board.md`.
-6. Nêu rõ residual risks (nếu còn).
+3. Nếu task có đổi code logic/API/DB thì bắt buộc có test mới hoặc test cập nhật.
+4. Nếu task là bugfix thì bắt buộc có regression test.
+5. Cập nhật docs liên quan (nếu có tác động).
+6. Cập nhật `changelog/changelog.md`.
+7. Cập nhật trạng thái trong `tasks/board.md`.
+8. Nêu rõ residual risks (nếu còn).
 
 ## Fail-Fast Rule
 

@@ -6,9 +6,11 @@
 - `task-standard.md`: chuẩn cấu trúc task.
 - `definition-of-ready-done.md`: điều kiện bắt đầu/kết thúc task.
 - `changelog-policy.md`: chuẩn ghi lịch sử thay đổi.
+- `testing-rules.md`: quy tắc testing bắt buộc cho mọi thay đổi code.
 
-Mọi agent phải đọc ít nhất 3 file trước khi bắt đầu làm việc:
+Mọi agent phải đọc ít nhất 4 file trước khi bắt đầu làm việc:
 
 1. `ai-agent-rules.md`
 2. `task-standard.md`
 3. `definition-of-ready-done.md`
+4. `testing-rules.md`

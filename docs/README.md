@@ -8,7 +8,18 @@ Tài liệu chính thức cho repo OmniVideo (single-user system), định hư�
 - Ép kỷ luật kỹ thuật qua rules rõ ràng, đặc biệt khi phát triển bằng AI agent.
 - Đảm bảo mọi thay đổi đều có truy vết (task -> code -> changelog -> vận hành).
 
+## Bắt đầu đọc từ đâu
+
+1. `docs/SYSTEM-SUMMARY.md` để nắm toàn cảnh.
+2. `docs/product/product-charter.md` để nắm mục tiêu/scope.
+3. `docs/governance/ai-agent-rules.md` để nắm quy tắc thực thi bắt buộc.
+
 ## Cấu trúc tài liệu
+
+### Master Summary
+
+- `docs/SYSTEM-SUMMARY.md`: bản tổng hợp đầy đủ toàn hệ thống.
+- `docs/AGENTS.md`: hướng dẫn vào việc nhanh cho AI agents.
 
 ### Product
 
@@ -23,6 +34,7 @@ Tài liệu chính thức cho repo OmniVideo (single-user system), định hư�
 - `docs/architecture/data-model.md`: thiết kế dữ liệu MongoDB metadata-first.
 - `docs/architecture/integration-boundaries.md`: chuẩn adapter và biên giới tích hợp.
 - `docs/architecture/nextjs-mongodb-conventions.md`: quy ước triển khai kỹ thuật cho stack Next.js + MongoDB.
+- `docs/architecture/testing-strategy.md`: chiến lược test chuẩn cho codebase.
 
 ### Domains
 
@@ -39,6 +51,7 @@ Tài liệu chính thức cho repo OmniVideo (single-user system), định hư�
 - `docs/operations/observability.md`: metrics/logs/traces và dashboard vận hành.
 - `docs/operations/connection-management.md`: Connection Center cho tất cả tích hợp.
 - `docs/operations/incident-playbook.md`: playbook xử lý sự cố.
+- `docs/operations/test-execution-playbook.md`: playbook chạy test và xử lý lỗi test.
 
 ### Governance
 
@@ -48,6 +61,7 @@ Tài liệu chính thức cho repo OmniVideo (single-user system), định hư�
 - `docs/governance/task-standard.md`
 - `docs/governance/definition-of-ready-done.md`
 - `docs/governance/changelog-policy.md`
+- `docs/governance/testing-rules.md`
 
 ### Board và thay đổi
 
@@ -59,6 +73,6 @@ Tài liệu chính thức cho repo OmniVideo (single-user system), định hư�
 
 ## Quy tắc đọc tài liệu
 
-1. Bắt đầu từ `product-charter` trước khi đọc chi tiết kỹ thuật.
+1. Bắt đầu từ `SYSTEM-SUMMARY` trước khi đi vào chi tiết.
 2. Task nào cũng phải link ít nhất 1 tài liệu domain hoặc architecture liên quan.
 3. Không coi docs là tham khảo tùy chọn, docs là một phần của định nghĩa hoàn thành.
