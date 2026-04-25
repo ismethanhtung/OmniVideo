@@ -17,6 +17,7 @@ Repo đang ở **Phase Setup**: ưu tiên hoàn thiện tài liệu, rules, task
 2. Điền biến môi trường:
     - `MONGODB_URI`
     - `MONGODB_DB_NAME`
+    - (khuyến nghị cho TikTok/Douyin) `VIDEO_RESOLVER_COOKIES_FILE` hoặc `VIDEO_RESOLVER_COOKIES_FROM_BROWSER`
 3. Khi có source code app hoàn chỉnh, chạy:
 
 ```bash

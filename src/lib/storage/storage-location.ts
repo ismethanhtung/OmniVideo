@@ -5,11 +5,27 @@ type StorageAssetLike = {
 };
 
 function toStringValue(value: unknown) {
-  return typeof value === "string" ? value : null;
+  if (typeof value === "string") {
+    return value;
+  }
+
+  if (typeof value === "number") {
+    return String(value);
+  }
+
+  return null;
 }
 
 function toNumberValue(value: unknown) {
-  return typeof value === "number" ? value : null;
+  if (typeof value === "number") {
+    return value;
+  }
+
+  if (typeof value === "string" && /^\d+$/.test(value)) {
+    return Number(value);
+  }
+
+  return null;
 }
 
 function telegramMessageUrl(pointer?: Record<string, unknown> | null) {

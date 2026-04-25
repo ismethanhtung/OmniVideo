@@ -3,10 +3,10 @@ import type { ElementType } from "react";
 export type AppSectionId =
   | "profile"
   | "ai"
-  | "ui"
-  | "appearance"
+  | "display"
   | "notif"
   | "videoIntake"
+  | "localUploadIntake"
   | "storageProviders"
   | "storageLibrary"
   | "integrations"

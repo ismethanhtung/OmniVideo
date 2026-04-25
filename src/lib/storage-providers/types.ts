@@ -6,6 +6,7 @@ export type StorageProviderSecretMap = {
   botToken?: string;
   chatId?: string;
   accessToken?: string;
+  driveServiceAccountJson?: string;
   folderId?: string;
   endpoint?: string;
   bucket?: string;
@@ -48,6 +49,10 @@ export type StorageProviderDocument = ValidatedStorageProviderInput & {
 export type SanitizedStorageProvider = Omit<StorageProviderDocument, "secrets"> & {
   _id: string;
   secretSummary: Record<string, { configured: boolean; preview: string | null }>;
+};
+
+export type EditableStorageProvider = Omit<StorageProviderDocument, "usage"> & {
+  _id: string;
 };
 
 export class StorageProviderError extends Error {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ChangeEvent } from "react";
 import {
   Archive,
   CheckCircle2,
@@ -35,6 +35,10 @@ type StorageProviderAccount = {
   updatedAt: string;
 };
 
+type EditableStorageProviderAccount = Omit<StorageProviderAccount, "secretSummary"> & {
+  secrets: Partial<SecretFormState>;
+};
+
 type ApiResponse<T> = {
   ok: boolean;
   data?: T;
@@ -46,6 +50,7 @@ type SecretFormState = {
   botToken: string;
   chatId: string;
   accessToken: string;
+  driveServiceAccountJson: string;
   folderId: string;
   endpoint: string;
   bucket: string;
@@ -78,7 +83,7 @@ const PROVIDER_OPTIONS: Array<{
     value: "drive",
     label: "Google Drive",
     icon: HardDrive,
-    help: "Access token + optional folder.",
+    help: "Service account JSON key + optional folder.",
   },
   {
     value: "s3",
@@ -104,6 +109,7 @@ const EMPTY_SECRETS: SecretFormState = {
   botToken: "",
   chatId: "",
   accessToken: "",
+  driveServiceAccountJson: "",
   folderId: "",
   endpoint: "",
   bucket: "",
@@ -181,6 +187,7 @@ export function StorageProvidersPanel({ section }: StorageProvidersPanelProps) {
   const [tags, setTags] = useState("raw, primary");
   const [secrets, setSecrets] = useState<SecretFormState>(EMPTY_SECRETS);
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [editingProviderId, setEditingProviderId] = useState<string | null>(null);
   const [state, setState] = useState<SubmitState>({
     status: "idle",
     message: "Ready.",
@@ -193,6 +200,56 @@ export function StorageProvidersPanel({ section }: StorageProvidersPanelProps) {
 
   const updateSecret = (key: keyof SecretFormState, value: string) => {
     setSecrets((previous) => ({ ...previous, [key]: value }));
+  };
+
+  const resetForm = () => {
+    setProviderType("telegram");
+    setLabel("");
+    setDescription("");
+    setPriority(50);
+    setTags("raw, primary");
+    setSecrets(EMPTY_SECRETS);
+    setEditingProviderId(null);
+  };
+
+  const onDriveJsonFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+
+    if (!file) {
+      return;
+    }
+
+    try {
+      const rawJson = (await file.text()).trim();
+      const parsed = JSON.parse(rawJson) as Record<string, unknown>;
+      const clientEmail =
+        typeof parsed.client_email === "string" ? parsed.client_email.trim() : "";
+      const privateKey =
+        typeof parsed.private_key === "string" ? parsed.private_key.trim() : "";
+
+      if (!clientEmail || !privateKey) {
+        setState({
+          status: "failed",
+          message:
+            "Service Account JSON missing client_email/private_key. Check file key.",
+          errorCode: "VAL_DRIVE_SERVICE_ACCOUNT_JSON_INVALID",
+        });
+        return;
+      }
+
+      updateSecret("driveServiceAccountJson", rawJson);
+      setState({
+        status: "success",
+        message: `Loaded Drive Service Account key from ${file.name}.`,
+      });
+    } catch {
+      setState({
+        status: "failed",
+        message: "Could not read Service Account JSON file.",
+        errorCode: "VAL_DRIVE_SERVICE_ACCOUNT_JSON_PARSE_FAILED",
+      });
+    }
   };
 
   const loadProviders = async () => {
@@ -230,48 +287,67 @@ export function StorageProvidersPanel({ section }: StorageProvidersPanelProps) {
     }
   };
 
-  const createProvider = async () => {
-    setState({ status: "loading", message: "Creating storage provider..." });
+  const saveProvider = async () => {
+    const isEditing = Boolean(editingProviderId);
+    setState({
+      status: "loading",
+      message: isEditing
+        ? "Updating storage provider..."
+        : "Creating storage provider...",
+    });
 
     try {
-      const response = await fetch("/api/storage/providers", {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
+      const response = await fetch(
+        isEditing
+          ? `/api/storage/providers/${editingProviderId}`
+          : "/api/storage/providers",
+        {
+          method: isEditing ? "PATCH" : "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            providerType,
+            label,
+            description,
+            priority,
+            tags: tags
+              .split(",")
+              .map((tag) => tag.trim())
+              .filter(Boolean),
+            secrets: compactSecretPayload(secrets),
+          }),
         },
-        body: JSON.stringify({
-          providerType,
-          label,
-          description,
-          priority,
-          tags: tags
-            .split(",")
-            .map((tag) => tag.trim())
-            .filter(Boolean),
-          secrets: compactSecretPayload(secrets),
-        }),
-      });
+      );
       const payload = (await response.json()) as ApiResponse<StorageProviderAccount>;
 
       if (!response.ok || !payload.ok || !payload.data) {
         setState({
           status: "failed",
-          message: payload.error ?? "Could not create storage provider.",
+          message: payload.error ?? "Could not save storage provider.",
           errorCode: payload.errorCode,
         });
         return;
       }
 
-      setProviders((previous) => [payload.data as StorageProviderAccount, ...previous]);
-      setLabel("");
-      setDescription("");
-      setPriority(50);
-      setTags("raw, primary");
-      setSecrets(EMPTY_SECRETS);
+      setProviders((previous) => {
+        if (!isEditing) {
+          return [payload.data as StorageProviderAccount, ...previous];
+        }
+
+        return previous.map((provider) =>
+          provider._id === editingProviderId
+            ? (payload.data as StorageProviderAccount)
+            : provider,
+        );
+      });
+      resetForm();
       setShowCreateForm(false);
       setState({
         status: "success",
-        message: "Storage provider saved with masked secrets.",
+        message: isEditing
+          ? "Storage provider updated."
+          : "Storage provider saved with masked secrets.",
       });
     } catch (error) {
       setState({
@@ -279,7 +355,43 @@ export function StorageProvidersPanel({ section }: StorageProvidersPanelProps) {
         message:
           error instanceof Error
             ? error.message
-            : "Could not create storage provider.",
+            : "Could not save storage provider.",
+      });
+    }
+  };
+
+  const deleteProvider = async (providerId: string) => {
+    setState({ status: "loading", message: "Deleting storage provider..." });
+
+    try {
+      const response = await fetch(`/api/storage/providers/${providerId}`, {
+        method: "DELETE",
+      });
+      const payload = (await response.json()) as ApiResponse<StorageProviderAccount>;
+
+      if (!response.ok || !payload.ok) {
+        setState({
+          status: "failed",
+          message: payload.error ?? "Could not delete storage provider.",
+          errorCode: payload.errorCode,
+        });
+        return;
+      }
+
+      setProviders((previous) =>
+        previous.filter((provider) => provider._id !== providerId),
+      );
+      setState({
+        status: "success",
+        message: "Storage provider deleted.",
+      });
+    } catch (error) {
+      setState({
+        status: "failed",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Could not delete storage provider.",
       });
     }
   };
@@ -327,6 +439,60 @@ export function StorageProvidersPanel({ section }: StorageProvidersPanelProps) {
     void loadProviders();
   }, []);
 
+  const openCreateForm = () => {
+    resetForm();
+    setShowCreateForm(true);
+  };
+
+  const openEditForm = async (provider: StorageProviderAccount) => {
+    setState({
+      status: "loading",
+      message: `Loading config for ${provider.label}...`,
+    });
+
+    try {
+      const response = await fetch(`/api/storage/providers/${provider._id}`, {
+        method: "GET",
+        cache: "no-store",
+      });
+      const payload = (await response.json()) as ApiResponse<EditableStorageProviderAccount>;
+
+      if (!response.ok || !payload.ok || !payload.data) {
+        setState({
+          status: "failed",
+          message: payload.error ?? "Could not load storage provider config.",
+          errorCode: payload.errorCode,
+        });
+        return;
+      }
+
+      const editableProvider = payload.data;
+      setEditingProviderId(editableProvider._id);
+      setProviderType(editableProvider.providerType);
+      setLabel(editableProvider.label);
+      setDescription(editableProvider.description ?? "");
+      setPriority(editableProvider.priority);
+      setTags(editableProvider.tags.join(", "));
+      setSecrets({
+        ...EMPTY_SECRETS,
+        ...editableProvider.secrets,
+      });
+      setShowCreateForm(true);
+      setState({
+        status: "success",
+        message: `Loaded config for ${editableProvider.label}.`,
+      });
+    } catch (error) {
+      setState({
+        status: "failed",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Could not load storage provider config.",
+      });
+    }
+  };
+
   return (
     <section className="overflow-hidden border border-main bg-main">
       <header className="flex flex-wrap items-start justify-between gap-3 border-b border-main bg-secondary/45 px-5 py-4">
@@ -342,7 +508,7 @@ export function StorageProvidersPanel({ section }: StorageProvidersPanelProps) {
         <div className="flex gap-2">
           <button
             type="button"
-            onClick={() => setShowCreateForm(true)}
+            onClick={openCreateForm}
             className="inline-flex items-center gap-2 border border-main bg-secondary px-3 py-1.5 text-[12px] font-semibold text-main transition-colors hover:bg-secondary/75"
           >
             <Plus className="h-3.5 w-3.5" />
@@ -421,6 +587,15 @@ export function StorageProvidersPanel({ section }: StorageProvidersPanelProps) {
                       </div>
 
                       <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void openEditForm(provider);
+                          }}
+                          className="inline-flex items-center gap-1.5 border border-main bg-secondary px-2.5 py-1.5 text-[11px] font-semibold text-main transition-colors hover:bg-secondary/75"
+                        >
+                          Edit
+                        </button>
                         {provider.status === "active" ? (
                           <button
                             type="button"
@@ -438,12 +613,24 @@ export function StorageProvidersPanel({ section }: StorageProvidersPanelProps) {
                             onClick={() => {
                               void updateStatus(provider._id, "active");
                             }}
-                            className="inline-flex items-center gap-1.5 border border-main bg-secondary px-2.5 py-1.5 text-[11px] font-semibold text-main transition-colors hover:bg-secondary/75"
+                            className="btn-success inline-flex items-center gap-1.5 border px-2.5 py-1.5 text-[11px] font-semibold transition-colors"
                           >
                             <CheckCircle2 className="h-3.5 w-3.5" />
                             Activate
                           </button>
                         )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!confirm(`Delete storage provider "${provider.label}"?`)) {
+                              return;
+                            }
+                            void deleteProvider(provider._id);
+                          }}
+                          className="btn-danger inline-flex items-center gap-1.5 border px-2.5 py-1.5 text-[11px] font-semibold transition-colors"
+                        >
+                          Delete
+                        </button>
                       </div>
                     </div>
 
@@ -490,19 +677,24 @@ export function StorageProvidersPanel({ section }: StorageProvidersPanelProps) {
             className="max-h-[90vh] w-full max-w-2xl overflow-y-auto border border-main bg-main shadow-xl"
             onSubmit={(event) => {
               event.preventDefault();
-              void createProvider();
+              void saveProvider();
             }}
           >
             <div className="flex items-center justify-between border-b border-main bg-secondary/35 px-4 py-3">
               <div>
-                <p className="text-[12px] font-semibold text-main">New Storage Account</p>
+                <p className="text-[12px] font-semibold text-main">
+                  {editingProviderId ? "Edit Storage Account" : "New Storage Account"}
+                </p>
                 <p className="mt-1 text-[11px] text-muted">
                   Secret values are write-only from the browser view.
                 </p>
               </div>
               <button
                 type="button"
-                onClick={() => setShowCreateForm(false)}
+                onClick={() => {
+                  setShowCreateForm(false);
+                  resetForm();
+                }}
                 className="border border-main bg-main px-2.5 py-1 text-[11px] font-semibold text-main transition-colors hover:bg-secondary"
               >
                 Close
@@ -515,6 +707,7 @@ export function StorageProvidersPanel({ section }: StorageProvidersPanelProps) {
                 <select
                   value={providerType}
                   onChange={(event) => setProviderType(event.target.value as ProviderType)}
+                  disabled={Boolean(editingProviderId)}
                   className="mt-1 w-full border border-main bg-main px-3 py-2 text-[12px] text-main outline-none transition-colors focus:border-accent"
                 >
                   {PROVIDER_OPTIONS.map((option) => (
@@ -587,8 +780,35 @@ export function StorageProvidersPanel({ section }: StorageProvidersPanelProps) {
                   ) : null}
                   {providerType === "drive" ? (
                     <>
+                      <label className="block">
+                        <span className="text-[12px] font-medium text-main">
+                          Service Account JSON key
+                        </span>
+                        <div className="mt-1 space-y-2 border border-main bg-main p-2">
+                          <input
+                            type="file"
+                            accept=".json,application/json"
+                            onChange={(event) => {
+                              void onDriveJsonFileChange(event);
+                            }}
+                            className="w-full text-[12px] text-main file:mr-2 file:border file:border-main file:bg-secondary file:px-2 file:py-1 file:text-[11px] file:font-semibold file:text-main"
+                          />
+                          <textarea
+                            value={secrets.driveServiceAccountJson}
+                            onChange={(event) =>
+                              updateSecret(
+                                "driveServiceAccountJson",
+                                event.target.value,
+                              )
+                            }
+                            rows={7}
+                            placeholder='{"type":"service_account","client_email":"...","private_key":"..."}'
+                            className="w-full resize-y border border-main bg-main px-3 py-2 font-mono text-[12px] text-main outline-none transition-colors placeholder:text-muted/60 focus:border-accent"
+                          />
+                        </div>
+                      </label>
                       <SecretInput
-                        label="Access Token"
+                        label="Access Token (legacy optional)"
                         value={secrets.accessToken}
                         onChange={(value) => updateSecret("accessToken", value)}
                       />
@@ -661,7 +881,7 @@ export function StorageProvidersPanel({ section }: StorageProvidersPanelProps) {
                 className="inline-flex items-center gap-2 border border-main bg-secondary px-3 py-2 text-[12px] font-semibold text-main transition-colors hover:bg-secondary/75 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <Plus className="h-3.5 w-3.5" />
-                Save Provider
+                {editingProviderId ? "Update Provider" : "Save Provider"}
               </button>
             </div>
           </form>

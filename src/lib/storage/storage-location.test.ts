@@ -47,6 +47,18 @@ describe("buildStorageLocationUrl", () => {
     ).toBe("https://t.me/c/9876543210/999");
   });
 
+  it("accepts numeric-like telegram pointer values", () => {
+    expect(
+      buildStorageLocationUrl({
+        storageProvider: "telegram",
+        storagePointer: {
+          chatId: "-1009876543210",
+          messageId: "999",
+        },
+      }),
+    ).toBe("https://t.me/c/9876543210/999");
+  });
+
   it("returns null when URL cannot be inferred", () => {
     expect(
       buildStorageLocationUrl({

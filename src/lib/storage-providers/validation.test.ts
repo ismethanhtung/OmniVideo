@@ -1,8 +1,14 @@
 import { describe, expect, it } from "vitest";
 
 import { assertStorageProviderCanUploadForIntake } from "./intake-eligibility";
-import { sanitizeStorageProviderDocument } from "./sanitize";
-import { validateStorageProviderCreateInput } from "./validation";
+import {
+  mapStorageProviderToEditableDocument,
+  sanitizeStorageProviderDocument,
+} from "./sanitize";
+import {
+  validateStorageProviderCreateInput,
+  validateStorageProviderUpdateInput,
+} from "./validation";
 
 describe("storage provider validation", () => {
   it("accepts a telegram provider with required secrets", () => {
@@ -29,7 +35,23 @@ describe("storage provider validation", () => {
         label: "Drive vault",
         secrets: {},
       }),
-    ).toThrow("Missing required secret fields: accessToken.");
+    ).toThrow(
+      "Missing required secret fields: driveServiceAccountJson or accessToken.",
+    );
+  });
+
+  it("accepts drive provider with service account json secret", () => {
+    const result = validateStorageProviderCreateInput({
+      providerType: "drive",
+      label: "Drive service account",
+      secrets: {
+        driveServiceAccountJson:
+          '{"client_email":"omni@project.iam.gserviceaccount.com","private_key":"-----BEGIN PRIVATE KEY-----\\nkey\\n-----END PRIVATE KEY-----\\n"}',
+      },
+    });
+
+    expect(result.providerType).toBe("drive");
+    expect(result.secrets.driveServiceAccountJson).toContain("client_email");
   });
 
   it("does not expose raw secrets in sanitized documents", () => {
@@ -67,6 +89,35 @@ describe("storage provider validation", () => {
     });
   });
 
+  it("maps editable provider payload with raw secrets for edit form hydration", () => {
+    const now = new Date("2026-04-26T00:00:00.000Z");
+    const result = mapStorageProviderToEditableDocument({
+      _id: {
+        toHexString: () => "507f1f77bcf86cd799439012",
+      } as never,
+      providerType: "drive",
+      label: "Drive1",
+      description: "Primary Drive",
+      status: "active",
+      priority: 50,
+      tags: ["raw", "primary"],
+      secrets: {
+        driveServiceAccountJson: "{\"client_email\":\"drive@service\"}",
+        folderId: "folder-123",
+      },
+      usage: {
+        assetCountApprox: 0,
+        lastUsedAt: null,
+      },
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    expect(result._id).toBe("507f1f77bcf86cd799439012");
+    expect(result.secrets.driveServiceAccountJson).toContain("client_email");
+    expect(result.secrets.folderId).toBe("folder-123");
+  });
+
   it("rejects inactive storage accounts for intake upload", async () => {
     expect(() =>
       assertStorageProviderCanUploadForIntake({
@@ -74,5 +125,27 @@ describe("storage provider validation", () => {
         status: "paused",
       }),
     ).toThrow("must be active");
+  });
+
+  it("accepts provider update patch with label/priority/tags/secrets", () => {
+    const patch = validateStorageProviderUpdateInput({
+      label: "Drive main",
+      priority: 88.7,
+      tags: ["raw", "backup"],
+      secrets: {
+        folderId: "folder-1",
+      },
+    });
+
+    expect(patch.label).toBe("Drive main");
+    expect(patch.priority).toBe(89);
+    expect(patch.tags).toEqual(["raw", "backup"]);
+    expect(patch.secrets?.folderId).toBe("folder-1");
+  });
+
+  it("rejects empty provider update patch", () => {
+    expect(() => validateStorageProviderUpdateInput({})).toThrow(
+      "At least one field is required for update",
+    );
   });
 });

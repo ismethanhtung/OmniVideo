@@ -1,10 +1,11 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useState } from "react";
-import { ExternalLink, RefreshCw } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Download, ExternalLink, Plus, RefreshCw, Trash2 } from "lucide-react";
 
 import type { LeftbarNavItem } from "@/components/layout/types";
 import { buildStorageLocationUrl } from "@/lib/storage/storage-location";
+import { getTelegramDownloadBlockedReason } from "@/lib/storage/telegram-download";
 
 type StoredVideoAsset = {
     _id: string;
@@ -22,6 +23,15 @@ type StoredVideoAsset = {
         title?: string | null;
         resolver?: string;
         requestedQuality?: string;
+        actualQuality?: string | null;
+        formatId?: string | null;
+        formatNote?: string | null;
+        resolution?: string | null;
+        height?: number | null;
+        width?: number | null;
+        ext?: string | null;
+        vcodec?: string | null;
+        acodec?: string | null;
     };
     createdFrom?: {
         sourceId?: string;
@@ -35,7 +45,20 @@ type StoredVideoAsset = {
 type AssetsApiResponse = {
     ok: boolean;
     data?: StoredVideoAsset[];
+    errorCode?: string;
     error?: string;
+};
+
+type CreateAssetPayload = {
+    title: string;
+    storageProvider: "telegram" | "drive";
+    storageProviderLabel?: string;
+    sourceUrl?: string;
+    providerAssetId?: string;
+    publicUrl?: string;
+    mimeType?: string;
+    sizeBytes?: number;
+    durationMs?: number;
 };
 
 type StorageLibraryPanelProps = {
@@ -95,11 +118,23 @@ function formatDuration(durationMs?: number | null) {
 export function StorageLibraryPanel({ section }: StorageLibraryPanelProps) {
     const Icon = section.icon;
     const [assets, setAssets] = useState<StoredVideoAsset[]>([]);
-    const [expandedAssetId, setExpandedAssetId] = useState<string | null>(null);
+    const [selectedAsset, setSelectedAsset] = useState<StoredVideoAsset | null>(
+        null,
+    );
     const [status, setStatus] = useState<
         "idle" | "loading" | "failed" | "ready"
     >("idle");
     const [message, setMessage] = useState("Ready.");
+    const [showAddForm, setShowAddForm] = useState(false);
+    const [newAsset, setNewAsset] = useState<CreateAssetPayload>({
+        title: "",
+        storageProvider: "drive",
+        storageProviderLabel: "",
+        sourceUrl: "",
+        providerAssetId: "",
+        publicUrl: "",
+        mimeType: "video/mp4",
+    });
 
     const loadAssets = async () => {
         setStatus("loading");
@@ -135,6 +170,87 @@ export function StorageLibraryPanel({ section }: StorageLibraryPanelProps) {
         void loadAssets();
     }, []);
 
+    const createAsset = async () => {
+        setStatus("loading");
+        setMessage("Creating manual asset...");
+
+        try {
+            const response = await fetch("/api/storage/assets", {
+                method: "POST",
+                headers: {
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify(newAsset),
+            });
+            const payload = (await response.json()) as {
+                ok: boolean;
+                data?: StoredVideoAsset;
+                error?: string;
+            };
+
+            if (!response.ok || !payload.ok || !payload.data) {
+                setStatus("failed");
+                setMessage(payload.error ?? "Could not create asset.");
+                return;
+            }
+
+            setShowAddForm(false);
+            setNewAsset({
+                title: "",
+                storageProvider: "drive",
+                storageProviderLabel: "",
+                sourceUrl: "",
+                providerAssetId: "",
+                publicUrl: "",
+                mimeType: "video/mp4",
+            });
+            await loadAssets();
+            setStatus("ready");
+            setMessage("Manual asset created.");
+        } catch (error) {
+            setStatus("failed");
+            setMessage(
+                error instanceof Error
+                    ? error.message
+                    : "Could not create asset.",
+            );
+        }
+    };
+
+    const deleteAsset = async (assetId: string) => {
+        setStatus("loading");
+        setMessage("Deleting asset...");
+
+        try {
+            const response = await fetch(`/api/storage/assets/${assetId}`, {
+                method: "DELETE",
+            });
+            const payload = (await response.json()) as AssetsApiResponse;
+
+            if (!response.ok || !payload.ok) {
+                setStatus("failed");
+                setMessage(payload.error ?? "Could not delete asset.");
+                return;
+            }
+
+            setAssets((previous) =>
+                previous.filter((asset) => asset._id !== assetId),
+            );
+            if (selectedAsset?._id === assetId) {
+                setSelectedAsset(null);
+            }
+            setStatus("ready");
+            setMessage("Asset deleted.");
+        } catch (error) {
+            setStatus("failed");
+            setMessage(
+                error instanceof Error
+                    ? error.message
+                    : "Could not delete asset.",
+            );
+        }
+    };
+
     const stats = useMemo(() => {
         const readyCount = assets.filter(
             (asset) => asset.status === "ready",
@@ -165,19 +281,29 @@ export function StorageLibraryPanel({ section }: StorageLibraryPanelProps) {
                     </p>
                 </div>
 
-                <button
-                    type="button"
-                    onClick={() => {
-                        void loadAssets();
-                    }}
-                    disabled={status === "loading"}
-                    className="inline-flex items-center gap-2 border border-main bg-main px-3 py-1.5 text-[12px] font-semibold text-main transition-colors hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                    <RefreshCw
-                        className={`h-3.5 w-3.5 ${status === "loading" ? "animate-spin" : ""}`}
-                    />
-                    {status === "loading" ? "Loading..." : "Refresh"}
-                </button>
+                <div className="flex gap-2">
+                    <button
+                        type="button"
+                        onClick={() => setShowAddForm(true)}
+                        className="inline-flex items-center gap-2 border border-main bg-secondary px-3 py-1.5 text-[12px] font-semibold text-main transition-colors hover:bg-secondary/75"
+                    >
+                        <Plus className="h-3.5 w-3.5" />
+                        Add Asset
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => {
+                            void loadAssets();
+                        }}
+                        disabled={status === "loading"}
+                        className="inline-flex items-center gap-2 border border-main bg-main px-3 py-1.5 text-[12px] font-semibold text-main transition-colors hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                        <RefreshCw
+                            className={`h-3.5 w-3.5 ${status === "loading" ? "animate-spin" : ""}`}
+                        />
+                        {status === "loading" ? "Loading..." : "Refresh"}
+                    </button>
+                </div>
             </header>
 
             <div className="border-b border-main bg-secondary/25 px-5 py-3">
@@ -195,6 +321,7 @@ export function StorageLibraryPanel({ section }: StorageLibraryPanelProps) {
                 <table className="w-full border-collapse text-left text-[12px]">
                     <thead className="border-b border-main bg-secondary/45 text-muted">
                         <tr>
+                            <th className="px-4 py-2 font-semibold">Video</th>
                             <th className="px-4 py-2 font-semibold">Asset</th>
                             <th className="px-4 py-2 font-semibold">
                                 Provider
@@ -204,11 +331,11 @@ export function StorageLibraryPanel({ section }: StorageLibraryPanelProps) {
                                 Platform
                             </th>
                             {/* <th className="px-4 py-2 font-semibold">Mime</th> */}
+                            <th className="px-4 py-2 font-semibold">Quality</th>
                             <th className="px-4 py-2 font-semibold">Size</th>
                             <th className="px-4 py-2 font-semibold">
                                 Duration
                             </th>
-                            <th className="px-4 py-2 font-semibold">Created</th>
                             <th className="px-4 py-2 font-semibold">Storage</th>
                             <th className="px-4 py-2 font-semibold">Detail</th>
                         </tr>
@@ -227,68 +354,93 @@ export function StorageLibraryPanel({ section }: StorageLibraryPanelProps) {
                             assets.map((asset) => {
                                 const storageUrl =
                                     buildStorageLocationUrl(asset);
-                                const isExpanded =
-                                    expandedAssetId === asset._id;
+                                const downloadUrl = `/api/storage/assets/${asset._id}/download`;
+                                const downloadBlockedReason =
+                                    getTelegramDownloadBlockedReason({
+                                        storageProvider: asset.storageProvider,
+                                        sizeBytes: asset.sizeBytes,
+                                    });
 
                                 return (
-                                    <Fragment key={asset._id}>
-                                        <tr className="border-b border-main last:border-b-0">
-                                            <td className="max-w-[320px] px-4 py-3">
-                                                {storageUrl ? (
-                                                    <a
-                                                        href={storageUrl}
-                                                        target="_blank"
-                                                        rel="noreferrer"
-                                                        className="block truncate font-medium text-main underline-offset-2 hover:underline"
-                                                    >
-                                                        {asset.metadata
-                                                            ?.title ??
-                                                            asset._id}
-                                                    </a>
-                                                ) : (
-                                                    <p className="truncate font-medium text-main">
-                                                        {asset.metadata
-                                                            ?.title ??
-                                                            asset._id}
-                                                    </p>
-                                                )}
-                                                <p className="mt-1 truncate font-mono text-[11px] text-muted">
-                                                    {asset.metadata
-                                                        ?.sourceUrl ?? "-"}
+                                    <tr
+                                        key={asset._id}
+                                        className="border-b border-main last:border-b-0"
+                                    >
+                                        <td className="w-[150px] p-0">
+                                            {!downloadBlockedReason ? (
+                                                <video
+                                                    preload="metadata"
+                                                    muted
+                                                    className="h-20 w-full bg-black object-cover"
+                                                    src={`/api/storage/assets/${asset._id}/download?disposition=inline`}
+                                                />
+                                            ) : (
+                                                <div className="flex h-20 w-full items-center justify-center bg-secondary text-[10px] text-muted">
+                                                    Preview blocked
+                                                </div>
+                                            )}
+                                        </td>
+                                        <td className="max-w-[320px] px-4 py-3">
+                                            {storageUrl ? (
+                                                <a
+                                                    href={storageUrl}
+                                                    target="_blank"
+                                                    rel="noreferrer"
+                                                    className="block truncate font-medium text-main underline-offset-2 hover:underline"
+                                                >
+                                                    {asset.metadata?.title ??
+                                                        asset._id}
+                                                </a>
+                                            ) : (
+                                                <p className="truncate font-medium text-main">
+                                                    {asset.metadata?.title ??
+                                                        asset._id}
                                                 </p>
-                                            </td>
-                                            <td className="px-4 py-3 text-main">
-                                                <p className="font-mono text-[11px]">
-                                                    {asset.storageProvider}
-                                                </p>
-                                                <p className="mt-1 text-[11px] text-muted">
-                                                    {asset.createdFrom
-                                                        ?.storageProviderLabel ??
-                                                        "-"}
-                                                </p>
-                                            </td>
-                                            <td className="px-4 py-3 font-mono text-[11px] text-main">
-                                                {asset.status ?? "-"}
-                                            </td>
-                                            <td className="px-4 py-3 text-muted">
-                                                {asset.metadata
-                                                    ?.originPlatform ?? "-"}
-                                            </td>
-                                            {/* <td className="px-4 py-3 text-muted">
+                                            )}
+                                            <p className="mt-1 truncate font-mono text-[11px] text-muted">
+                                                {asset.metadata?.sourceUrl ??
+                                                    "-"}
+                                            </p>
+                                        </td>
+                                        <td className="px-4 py-3 text-main">
+                                            <p className="font-mono text-[11px]">
+                                                {asset.storageProvider}
+                                            </p>
+                                            <p className="mt-1 text-[11px] text-muted">
+                                                {asset.createdFrom
+                                                    ?.storageProviderLabel ??
+                                                    "-"}
+                                            </p>
+                                        </td>
+                                        <td className="px-4 py-3 font-mono text-[11px] text-main">
+                                            {asset.status ?? "-"}
+                                        </td>
+                                        <td className="px-4 py-3 text-muted">
+                                            {asset.metadata?.originPlatform ??
+                                                "-"}
+                                        </td>
+                                        {/* <td className="px-4 py-3 text-muted">
                                                 {asset.mimeType ?? "-"}
                                             </td> */}
-                                            <td className="px-4 py-3 text-muted">
-                                                {formatBytes(asset.sizeBytes)}
-                                            </td>
-                                            <td className="px-4 py-3 text-muted">
-                                                {formatDuration(
-                                                    asset.durationMs,
-                                                )}
-                                            </td>
-                                            <td className="whitespace-nowrap px-4 py-3 text-muted">
-                                                {formatDate(asset.createdAt)}
-                                            </td>
-                                            <td className="px-4 py-3">
+                                        <td className="px-4 py-3 text-muted">
+                                            <p className="text-main">
+                                                {asset.metadata
+                                                    ?.actualQuality ?? ""}
+                                            </p>
+                                            <p className="mt-1 text-[11px] text-muted">
+                                                {" "}
+                                                {asset.metadata
+                                                    ?.requestedQuality ?? ""}
+                                            </p>
+                                        </td>
+                                        <td className="px-4 py-3 text-muted">
+                                            {formatBytes(asset.sizeBytes)}
+                                        </td>
+                                        <td className="px-4 py-3 text-muted">
+                                            {formatDuration(asset.durationMs)}
+                                        </td>
+                                        <td className="px-4 py-3">
+                                            <div className="flex flex-wrap gap-2">
                                                 {storageUrl ? (
                                                     <a
                                                         href={storageUrl}
@@ -299,127 +451,382 @@ export function StorageLibraryPanel({ section }: StorageLibraryPanelProps) {
                                                         <ExternalLink className="h-3.5 w-3.5" />
                                                         Open
                                                     </a>
+                                                ) : null}
+                                                {downloadBlockedReason ? (
+                                                    <button
+                                                        type="button"
+                                                        disabled
+                                                        title={
+                                                            downloadBlockedReason
+                                                        }
+                                                        className="inline-flex items-center gap-1.5 border border-main bg-secondary px-2 py-1 text-[11px] font-semibold text-muted opacity-70"
+                                                    >
+                                                        <Download className="h-3.5 w-3.5" />
+                                                        Blocked
+                                                    </button>
                                                 ) : (
-                                                    <span className="text-[11px] text-muted">
-                                                        No link
-                                                    </span>
+                                                    <a
+                                                        href={downloadUrl}
+                                                        className="inline-flex items-center gap-1.5 border border-main bg-secondary px-2 py-1 text-[11px] font-semibold text-main transition-colors hover:bg-secondary/75"
+                                                    >
+                                                        <Download className="h-3.5 w-3.5" />
+                                                        Download
+                                                    </a>
                                                 )}
-                                            </td>
-                                            <td className="px-4 py-3">
+                                            </div>
+                                        </td>
+                                        <td className="px-4 py-3">
+                                            <div className="flex gap-2">
                                                 <button
                                                     type="button"
                                                     onClick={() =>
-                                                        setExpandedAssetId(
-                                                            (current) =>
-                                                                current ===
-                                                                asset._id
-                                                                    ? null
-                                                                    : asset._id,
-                                                        )
+                                                        setSelectedAsset(asset)
                                                     }
                                                     className="border border-main bg-secondary px-2 py-1 text-[11px] font-semibold text-main transition-colors hover:bg-secondary/75"
                                                 >
-                                                    {isExpanded
-                                                        ? "Hide"
-                                                        : "Detail"}
+                                                    Detail
                                                 </button>
-                                            </td>
-                                        </tr>
-                                        {isExpanded ? (
-                                            <tr className="border-b border-main bg-secondary/15">
-                                                <td
-                                                    className="px-4 py-3"
-                                                    colSpan={10}
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        if (
+                                                            !confirm(
+                                                                `Delete asset "${asset.metadata?.title ?? asset._id}"?`,
+                                                            )
+                                                        ) {
+                                                            return;
+                                                        }
+                                                        void deleteAsset(
+                                                            asset._id,
+                                                        );
+                                                    }}
+                                                    className="btn-danger inline-flex items-center gap-1 border px-2 py-1 text-[11px] font-semibold transition-colors"
                                                 >
-                                                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                                                        <div className="border border-main bg-main px-3 py-2">
-                                                            <p className="text-[10px] font-bold uppercase tracking-wide text-muted">
-                                                                Resolver
-                                                            </p>
-                                                            <p className="mt-1 text-[12px] text-main">
-                                                                {asset.metadata
-                                                                    ?.resolver ??
-                                                                    "-"}
-                                                            </p>
-                                                        </div>
-                                                        <div className="border border-main bg-main px-3 py-2">
-                                                            <p className="text-[10px] font-bold uppercase tracking-wide text-muted">
-                                                                Requested
-                                                                Quality
-                                                            </p>
-                                                            <p className="mt-1 text-[12px] text-main">
-                                                                {asset.metadata
-                                                                    ?.requestedQuality ??
-                                                                    "-"}
-                                                            </p>
-                                                        </div>
-                                                        <div className="border border-main bg-main px-3 py-2">
-                                                            <p className="text-[10px] font-bold uppercase tracking-wide text-muted">
-                                                                Provider Asset
-                                                                ID
-                                                            </p>
-                                                            <p className="mt-1 truncate font-mono text-[11px] text-main">
-                                                                {asset.providerAssetId ??
-                                                                    "-"}
-                                                            </p>
-                                                        </div>
-                                                        <div className="border border-main bg-main px-3 py-2">
-                                                            <p className="text-[10px] font-bold uppercase tracking-wide text-muted">
-                                                                Job Run ID
-                                                            </p>
-                                                            <p className="mt-1 truncate font-mono text-[11px] text-main">
-                                                                {asset
-                                                                    .createdFrom
-                                                                    ?.jobRunId ??
-                                                                    "-"}
-                                                            </p>
-                                                        </div>
-                                                        <div className="border border-main bg-main px-3 py-2">
-                                                            <p className="text-[10px] font-bold uppercase tracking-wide text-muted">
-                                                                Source ID
-                                                            </p>
-                                                            <p className="mt-1 truncate font-mono text-[11px] text-main">
-                                                                {asset
-                                                                    .createdFrom
-                                                                    ?.sourceId ??
-                                                                    "-"}
-                                                            </p>
-                                                        </div>
-                                                        <div className="border border-main bg-main px-3 py-2">
-                                                            <p className="text-[10px] font-bold uppercase tracking-wide text-muted">
-                                                                Account ID
-                                                            </p>
-                                                            <p className="mt-1 truncate font-mono text-[11px] text-main">
-                                                                {asset
-                                                                    .createdFrom
-                                                                    ?.storageProviderAccountId ??
-                                                                    "-"}
-                                                            </p>
-                                                        </div>
-                                                    </div>
-                                                    <div className="mt-3 border border-main bg-main px-3 py-2">
-                                                        <p className="text-[10px] font-bold uppercase tracking-wide text-muted">
-                                                            Storage Pointer
-                                                        </p>
-                                                        <pre className="mt-1 overflow-x-auto whitespace-pre-wrap font-mono text-[11px] leading-5 text-main">
-                                                            {JSON.stringify(
-                                                                asset.storagePointer ??
-                                                                    {},
-                                                                null,
-                                                                2,
-                                                            )}
-                                                        </pre>
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        ) : null}
-                                    </Fragment>
+                                                    <Trash2 className="h-3 w-3" />
+                                                    Delete
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
                                 );
                             })
                         )}
                     </tbody>
                 </table>
             </div>
+
+            {showAddForm ? (
+                <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/35 px-4 py-6">
+                    <form
+                        className="w-full max-w-2xl border border-main bg-main shadow-xl"
+                        onSubmit={(event) => {
+                            event.preventDefault();
+                            void createAsset();
+                        }}
+                    >
+                        <div className="flex items-center justify-between border-b border-main bg-secondary/35 px-4 py-3">
+                            <div>
+                                <p className="text-[12px] font-semibold text-main">
+                                    Add Manual Asset
+                                </p>
+                                <p className="mt-1 text-[11px] text-muted">
+                                    Tạo metadata asset thủ công cho Storage
+                                    Library.
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setShowAddForm(false)}
+                                className="border border-main bg-main px-2.5 py-1 text-[11px] font-semibold text-main transition-colors hover:bg-secondary"
+                            >
+                                Close
+                            </button>
+                        </div>
+                        <div className="grid gap-3 px-4 py-4 md:grid-cols-2">
+                            <label className="block md:col-span-2">
+                                <span className="text-[12px] font-medium text-main">
+                                    Title
+                                </span>
+                                <input
+                                    value={newAsset.title}
+                                    onChange={(event) =>
+                                        setNewAsset((previous) => ({
+                                            ...previous,
+                                            title: event.target.value,
+                                        }))
+                                    }
+                                    className="mt-1 w-full border border-main bg-main px-3 py-2 text-[12px] text-main outline-none transition-colors focus:border-accent"
+                                />
+                            </label>
+                            <label className="block">
+                                <span className="text-[12px] font-medium text-main">
+                                    Storage Provider
+                                </span>
+                                <select
+                                    value={newAsset.storageProvider}
+                                    onChange={(event) =>
+                                        setNewAsset((previous) => ({
+                                            ...previous,
+                                            storageProvider: event.target
+                                                .value as "telegram" | "drive",
+                                        }))
+                                    }
+                                    className="mt-1 w-full border border-main bg-main px-3 py-2 text-[12px] text-main outline-none transition-colors focus:border-accent"
+                                >
+                                    <option value="drive">drive</option>
+                                    <option value="telegram">telegram</option>
+                                </select>
+                            </label>
+                            <label className="block">
+                                <span className="text-[12px] font-medium text-main">
+                                    Provider Label
+                                </span>
+                                <input
+                                    value={newAsset.storageProviderLabel ?? ""}
+                                    onChange={(event) =>
+                                        setNewAsset((previous) => ({
+                                            ...previous,
+                                            storageProviderLabel:
+                                                event.target.value,
+                                        }))
+                                    }
+                                    className="mt-1 w-full border border-main bg-main px-3 py-2 text-[12px] text-main outline-none transition-colors focus:border-accent"
+                                />
+                            </label>
+                            <label className="block md:col-span-2">
+                                <span className="text-[12px] font-medium text-main">
+                                    Source URL
+                                </span>
+                                <input
+                                    value={newAsset.sourceUrl ?? ""}
+                                    onChange={(event) =>
+                                        setNewAsset((previous) => ({
+                                            ...previous,
+                                            sourceUrl: event.target.value,
+                                        }))
+                                    }
+                                    className="mt-1 w-full border border-main bg-main px-3 py-2 text-[12px] text-main outline-none transition-colors focus:border-accent"
+                                />
+                            </label>
+                            <label className="block">
+                                <span className="text-[12px] font-medium text-main">
+                                    Provider Asset ID
+                                </span>
+                                <input
+                                    value={newAsset.providerAssetId ?? ""}
+                                    onChange={(event) =>
+                                        setNewAsset((previous) => ({
+                                            ...previous,
+                                            providerAssetId: event.target.value,
+                                        }))
+                                    }
+                                    className="mt-1 w-full border border-main bg-main px-3 py-2 text-[12px] text-main outline-none transition-colors focus:border-accent"
+                                />
+                            </label>
+                            <label className="block">
+                                <span className="text-[12px] font-medium text-main">
+                                    Public URL
+                                </span>
+                                <input
+                                    value={newAsset.publicUrl ?? ""}
+                                    onChange={(event) =>
+                                        setNewAsset((previous) => ({
+                                            ...previous,
+                                            publicUrl: event.target.value,
+                                        }))
+                                    }
+                                    className="mt-1 w-full border border-main bg-main px-3 py-2 text-[12px] text-main outline-none transition-colors focus:border-accent"
+                                />
+                            </label>
+                            <div className="md:col-span-2">
+                                <button
+                                    type="submit"
+                                    className="inline-flex items-center gap-2 border border-main bg-secondary px-3 py-2 text-[12px] font-semibold text-main transition-colors hover:bg-secondary/75"
+                                >
+                                    <Plus className="h-3.5 w-3.5" />
+                                    Save Asset
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            ) : null}
+
+            {selectedAsset ? (
+                <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/35 px-4 py-6">
+                    <div className="max-h-[90vh] w-full max-w-4xl overflow-y-auto border border-main bg-main shadow-xl">
+                        <div className="flex items-start justify-between gap-4 border-b border-main bg-secondary/35 px-4 py-3">
+                            <div className="min-w-0">
+                                <p className="truncate text-[13px] font-semibold text-main">
+                                    {selectedAsset.metadata?.title ??
+                                        selectedAsset._id}
+                                </p>
+                                <p className="mt-1 truncate font-mono text-[11px] text-muted">
+                                    {selectedAsset.metadata?.sourceUrl ?? "-"}
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setSelectedAsset(null)}
+                                className="border border-main bg-main px-2.5 py-1 text-[11px] font-semibold text-main transition-colors hover:bg-secondary"
+                            >
+                                Close
+                            </button>
+                        </div>
+
+                        <div className="space-y-3 px-4 py-4">
+                            <div className="flex flex-wrap gap-2">
+                                {buildStorageLocationUrl(selectedAsset) ? (
+                                    <a
+                                        href={
+                                            buildStorageLocationUrl(
+                                                selectedAsset,
+                                            ) as string
+                                        }
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="inline-flex items-center gap-1.5 border border-main bg-secondary px-3 py-1.5 text-[12px] font-semibold text-main transition-colors hover:bg-secondary/75"
+                                    >
+                                        <ExternalLink className="h-3.5 w-3.5" />
+                                        Open Storage
+                                    </a>
+                                ) : null}
+                            </div>
+
+                            {!getTelegramDownloadBlockedReason({
+                                storageProvider: selectedAsset.storageProvider,
+                                sizeBytes: selectedAsset.sizeBytes,
+                            }) ? (
+                                <div className="border border-main bg-secondary/20 p-3">
+                                    <p className="text-[10px] font-bold uppercase tracking-wide text-muted">
+                                        Inline Video Preview
+                                    </p>
+                                    <video
+                                        controls
+                                        preload="metadata"
+                                        className="mt-2 w-full border border-main bg-black"
+                                        src={`/api/storage/assets/${selectedAsset._id}/download?disposition=inline`}
+                                    />
+                                </div>
+                            ) : (
+                                <div className="border border-main bg-secondary/20 p-3">
+                                    <p className="text-[10px] font-bold uppercase tracking-wide text-muted">
+                                        Inline Video Preview
+                                    </p>
+                                    <p className="mt-2 text-[11px] text-muted">
+                                        Preview bị chặn do giới hạn Telegram Bot
+                                        API với file lớn hơn 20MB.
+                                    </p>
+                                </div>
+                            )}
+
+                            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                                <DetailCell
+                                    label="Provider"
+                                    value={selectedAsset.storageProvider}
+                                />
+                                <DetailCell
+                                    label="Account"
+                                    value={
+                                        selectedAsset.createdFrom
+                                            ?.storageProviderLabel
+                                    }
+                                />
+                                <DetailCell
+                                    label="Status"
+                                    value={selectedAsset.status}
+                                />
+                                <DetailCell
+                                    label="Requested Quality"
+                                    value={
+                                        selectedAsset.metadata?.requestedQuality
+                                    }
+                                />
+                                <DetailCell
+                                    label="Actual Quality"
+                                    value={
+                                        selectedAsset.metadata?.actualQuality
+                                    }
+                                />
+                                <DetailCell
+                                    label="Resolution"
+                                    value={selectedAsset.metadata?.resolution}
+                                />
+                                <DetailCell
+                                    label="Format ID"
+                                    value={selectedAsset.metadata?.formatId}
+                                    mono
+                                />
+                                <DetailCell
+                                    label="Format Note"
+                                    value={selectedAsset.metadata?.formatNote}
+                                />
+                                <DetailCell
+                                    label="Codec"
+                                    value={`${selectedAsset.metadata?.vcodec ?? "-"} / ${selectedAsset.metadata?.acodec ?? "-"}`}
+                                />
+                                <DetailCell
+                                    label="Provider Asset ID"
+                                    value={selectedAsset.providerAssetId}
+                                    mono
+                                />
+                                <DetailCell
+                                    label="Job Run ID"
+                                    value={selectedAsset.createdFrom?.jobRunId}
+                                    mono
+                                />
+                                <DetailCell
+                                    label="Source ID"
+                                    value={selectedAsset.createdFrom?.sourceId}
+                                    mono
+                                />
+                                <DetailCell
+                                    label="Created"
+                                    value={formatDate(selectedAsset.createdAt)}
+                                />
+                            </div>
+
+                            <div className="border border-main bg-main px-3 py-2">
+                                <p className="text-[10px] font-bold uppercase tracking-wide text-muted">
+                                    Storage Pointer
+                                </p>
+                                <pre className="mt-1 overflow-x-auto whitespace-pre-wrap font-mono text-[11px] leading-5 text-main">
+                                    {JSON.stringify(
+                                        selectedAsset.storagePointer ?? {},
+                                        null,
+                                        2,
+                                    )}
+                                </pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            ) : null}
         </section>
+    );
+}
+
+function DetailCell({
+    label,
+    value,
+    mono = false,
+}: {
+    label: string;
+    value?: string | number | null;
+    mono?: boolean;
+}) {
+    return (
+        <div className="border border-main bg-secondary/20 px-3 py-2">
+            <p className="text-[10px] font-bold uppercase tracking-wide text-muted">
+                {label}
+            </p>
+            <p
+                className={`mt-1 truncate text-[12px] text-main ${
+                    mono ? "font-mono text-[11px]" : ""
+                }`}
+            >
+                {value ?? "-"}
+            </p>
+        </div>
     );
 }

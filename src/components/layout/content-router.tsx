@@ -5,49 +5,82 @@ import type { AppSectionId, LeftbarNavItem } from "@/components/layout/types";
 import { ConnectionTestPanel } from "@/features/connections/connection-test-panel";
 import { StorageLibraryPanel } from "@/features/storage/storage-library-panel";
 import { StorageProvidersPanel } from "@/features/storage/storage-providers-panel";
+import { LocalUploadIntakePanel } from "@/features/video-intake/local-upload-intake-panel";
 import { VideoIntakePanel } from "@/features/video-intake/video-intake-panel";
+import { DisplayPreferencesPanel } from "@/features/workspace/display-preferences-panel";
 import { PlaceholderPanel } from "@/features/workspace/placeholder-panel";
+import type { AppFontKey, AppThemeKey } from "@/lib/ui/preferences";
 
 type SectionComponentProps = {
-  section: LeftbarNavItem;
+    section: LeftbarNavItem;
 };
 
 const SECTION_COMPONENTS: Partial<
-  Record<AppSectionId, ComponentType<SectionComponentProps>>
+    Record<AppSectionId, ComponentType<SectionComponentProps>>
 > = {
-  connectionTest: ConnectionTestPanel,
-  storageLibrary: StorageLibraryPanel,
-  storageProviders: StorageProvidersPanel,
-  videoIntake: VideoIntakePanel,
+    connectionTest: ConnectionTestPanel,
+    storageLibrary: StorageLibraryPanel,
+    localUploadIntake: LocalUploadIntakePanel,
+    storageProviders: StorageProvidersPanel,
+    videoIntake: VideoIntakePanel,
 };
 
 type ContentRouterProps = {
-  activeSection: AppSectionId;
+    activeSection: AppSectionId;
+    appTheme: AppThemeKey;
+    appFont: AppFontKey;
+    onAppThemeChange: (theme: AppThemeKey) => void;
+    onAppFontChange: (font: AppFontKey) => void;
 };
 
-export function ContentRouter({ activeSection }: ContentRouterProps) {
-  const section = getNavItem(activeSection);
+export function ContentRouter({
+    activeSection,
+    appTheme,
+    appFont,
+    onAppThemeChange,
+    onAppFontChange,
+}: ContentRouterProps) {
+    const section = getNavItem(activeSection);
 
-  if (!section) {
+    if (!section) {
+        return (
+            <main className="min-w-0 flex-1 overflow-auto bg-secondary/35 p-5">
+                <div className="border border-main bg-main px-5 py-4">
+                    <p className="text-sm font-medium text-main">
+                        Unknown section
+                    </p>
+                    <p className="mt-1 text-xs text-muted">
+                        Section này chưa được đăng ký trong navigation registry.
+                    </p>
+                </div>
+            </main>
+        );
+    }
+
+    const SectionComponent =
+        SECTION_COMPONENTS[activeSection] ?? PlaceholderPanel;
+
+    if (activeSection === "display") {
+        return (
+            <main className="min-w-0 flex-1 overflow-auto bg-secondary/35">
+                <div className="mx-auto w-full max-w-7xl px-5 py-5">
+                    <DisplayPreferencesPanel
+                        section={section}
+                        appTheme={appTheme}
+                        appFont={appFont}
+                        onAppThemeChange={onAppThemeChange}
+                        onAppFontChange={onAppFontChange}
+                    />
+                </div>
+            </main>
+        );
+    }
+
     return (
-      <main className="min-w-0 flex-1 overflow-auto bg-secondary/35 p-5">
-        <div className="border border-main bg-main px-5 py-4">
-          <p className="text-sm font-medium text-main">Unknown section</p>
-          <p className="mt-1 text-xs text-muted">
-            Section này chưa được đăng ký trong navigation registry.
-          </p>
-        </div>
-      </main>
+        <main className="min-w-0 flex-1 overflow-auto bg-secondary/35">
+            <div className="mx-auto w-full max-w-7xl px-5 py-5">
+                <SectionComponent section={section} />
+            </div>
+        </main>
     );
-  }
-
-  const SectionComponent = SECTION_COMPONENTS[activeSection] ?? PlaceholderPanel;
-
-  return (
-    <main className="min-w-0 flex-1 overflow-auto bg-secondary/35">
-      <div className="mx-auto w-full max-w-6xl px-5 py-5">
-        <SectionComponent section={section} />
-      </div>
-    </main>
-  );
 }

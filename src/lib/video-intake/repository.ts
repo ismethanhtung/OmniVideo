@@ -8,6 +8,7 @@ import type {
   IntakeRunStatus,
   ResolvedMedia,
   StorageUploadResult,
+  ValidatedLocalIntakeInput,
   ValidatedIntakeInput,
 } from "./types";
 
@@ -41,17 +42,52 @@ export async function createSource({
   return result.insertedId;
 }
 
+export async function createFileSource({
+  db,
+  input,
+}: {
+  db: Db;
+  input: ValidatedLocalIntakeInput;
+}): Promise<ObjectId> {
+  const now = new Date();
+  const result = await db.collection("sources").insertOne({
+    sourceType: "file",
+    url: null,
+    canonicalLink: null,
+    originPlatform: "other",
+    title: input.title ?? input.fileName,
+    tags: input.tags,
+    languageHint: input.languageHint ?? null,
+    contentIntent: input.contentIntent,
+    ownershipStatus: input.ownershipStatus,
+    fileMetadata: {
+      fileName: input.fileName,
+      mimeType: input.mimeType ?? null,
+      sizeBytes: input.fileSizeBytes,
+    },
+    ingestedAt: now,
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  return result.insertedId;
+}
+
 export async function createJobRun({
   db,
   inputSnapshot,
+  pipelineId = "mvp-url-intake-to-storage",
+  pipelineSnapshot = URL_INTAKE_PIPELINE_DEFINITION,
 }: {
   db: Db;
   inputSnapshot: Record<string, unknown>;
+  pipelineId?: string;
+  pipelineSnapshot?: Record<string, unknown>;
 }): Promise<ObjectId> {
   const now = new Date();
   const result = await db.collection("job_runs").insertOne({
-    pipelineId: "mvp-url-intake-to-storage",
-    pipelineSnapshot: URL_INTAKE_PIPELINE_DEFINITION,
+    pipelineId,
+    pipelineSnapshot,
     triggerType: "manual",
     status: "running" satisfies IntakeRunStatus,
     sourceRefs: [],
@@ -69,7 +105,12 @@ export async function createJobRun({
     jobRunId: result.insertedId,
     eventType: "started",
     level: "info",
-    payload: { pipeline: URL_INTAKE_PIPELINE_DEFINITION.name },
+    payload: {
+      pipeline:
+        typeof pipelineSnapshot["name"] === "string"
+          ? (pipelineSnapshot["name"] as string)
+          : pipelineId,
+    },
   });
 
   return result.insertedId;
@@ -209,12 +250,14 @@ export async function createAsset({
   sourceId,
   media,
   upload,
+  pipelineId,
 }: {
   db: Db;
   jobRunId: ObjectId;
   sourceId: ObjectId;
   media: ResolvedMedia;
   upload: StorageUploadResult;
+  pipelineId?: string;
 }): Promise<ObjectId> {
   const now = new Date();
   const result = await db.collection("assets").insertOne(
@@ -224,6 +267,7 @@ export async function createAsset({
       media,
       upload,
       now,
+      pipelineId,
     }),
   );
 
@@ -369,16 +413,152 @@ export async function listVideoAssets(db: Db, limit = 25) {
     .toArray();
 }
 
+export type ManualVideoAssetInput = {
+  title: string;
+  sourceUrl?: string;
+  storageProvider: "telegram" | "drive";
+  providerAssetId?: string;
+  publicUrl?: string;
+  mimeType?: string;
+  sizeBytes?: number;
+  durationMs?: number;
+  storageProviderLabel?: string;
+};
+
+export async function createManualVideoAsset({
+  db,
+  input,
+}: {
+  db: Db;
+  input: ManualVideoAssetInput;
+}) {
+  const now = new Date();
+  const storagePointer: Record<string, unknown> = {};
+
+  if (input.providerAssetId?.trim()) {
+    storagePointer.fileId = input.providerAssetId.trim();
+  }
+
+  if (input.publicUrl?.trim()) {
+    storagePointer.webViewLink = input.publicUrl.trim();
+  }
+
+  const document = {
+    assetType: "video",
+    status: "ready",
+    storageProvider: input.storageProvider,
+    storagePointer,
+    publicUrl: input.publicUrl?.trim() || null,
+    providerAssetId: input.providerAssetId?.trim() || null,
+    mimeType: input.mimeType?.trim() || "video/mp4",
+    durationMs:
+      typeof input.durationMs === "number" && Number.isFinite(input.durationMs)
+        ? Math.max(0, Math.round(input.durationMs))
+        : null,
+    sizeBytes:
+      typeof input.sizeBytes === "number" && Number.isFinite(input.sizeBytes)
+        ? Math.max(0, Math.round(input.sizeBytes))
+        : null,
+    metadata: {
+      sourceUrl: input.sourceUrl?.trim() || "manual://storage-library",
+      originPlatform: "other",
+      title: input.title.trim(),
+      resolver: "manual-entry",
+      requestedQuality: "best",
+      actualQuality: null,
+      formatId: null,
+      formatNote: null,
+      resolution: null,
+      height: null,
+      width: null,
+      ext: null,
+      vcodec: null,
+      acodec: null,
+    },
+    createdFrom: {
+      sourceId: null,
+      jobRunId: null,
+      pipelineId: "manual-storage-library-entry",
+      storageProviderAccountId: null,
+      storageProviderLabel: input.storageProviderLabel?.trim() || null,
+    },
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  const result = await db.collection("assets").insertOne(document);
+
+  return {
+    ...document,
+    _id: result.insertedId,
+  };
+}
+
+export async function getVideoAssetById({
+  db,
+  assetId,
+}: {
+  db: Db;
+  assetId: string;
+}) {
+  if (!ObjectId.isValid(assetId)) {
+    return null;
+  }
+
+  return db.collection("assets").findOne({
+    _id: new ObjectId(assetId),
+    assetType: "video",
+  });
+}
+
+export async function deleteVideoAssetById({
+  db,
+  assetId,
+}: {
+  db: Db;
+  assetId: string;
+}) {
+  if (!ObjectId.isValid(assetId)) {
+    return null;
+  }
+
+  return db.collection("assets").findOneAndDelete({
+    _id: new ObjectId(assetId),
+    assetType: "video",
+  });
+}
+
 export async function listIntakeJobRuns({
   db,
   page,
   pageSize,
+  pipeline,
 }: {
   db: Db;
   page: number;
   pageSize: number;
+  pipeline?: "url" | "local" | "all";
 }) {
-  const query = { pipelineId: "mvp-url-intake-to-storage" };
+  let query:
+    | { pipelineId: string }
+    | {
+        pipelineId: {
+          $in: string[];
+        };
+      };
+  const pipelineFilter = pipeline ?? "url";
+
+  if (pipelineFilter === "local") {
+    query = { pipelineId: "mvp-local-intake-to-storage" };
+  } else if (pipelineFilter === "all") {
+    query = {
+      pipelineId: {
+        $in: ["mvp-url-intake-to-storage", "mvp-local-intake-to-storage"],
+      },
+    };
+  } else {
+    query = { pipelineId: "mvp-url-intake-to-storage" };
+  }
   const skip = (page - 1) * pageSize;
 
   const [items, total] = await Promise.all([

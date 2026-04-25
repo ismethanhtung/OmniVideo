@@ -16,6 +16,7 @@ import {
   type StorageProviderType,
   type ValidatedStorageProviderInput,
 } from "./types";
+import type { ValidatedStorageProviderUpdateInput } from "./validation";
 import { sanitizeStorageProviderDocument } from "./sanitize";
 
 const COLLECTION_NAME = "storage_provider_accounts";
@@ -95,6 +96,18 @@ export async function listStorageProviderAccounts(
   });
 }
 
+export async function listStorageProviderAccountsForConnectionChecks(
+  db: Db,
+): Promise<WithId<StorageProviderDocument>[]> {
+  return db
+    .collection<StorageProviderDocument>(COLLECTION_NAME)
+    .find({
+      providerType: { $in: ["telegram", "drive"] },
+    })
+    .sort({ status: 1, priority: -1, label: 1 })
+    .toArray();
+}
+
 export async function updateStorageProviderStatus({
   db,
   providerId,
@@ -118,6 +131,77 @@ export async function updateStorageProviderStatus({
       { $set: { status, updatedAt: new Date() } },
       { returnDocument: "after" },
     );
+
+  if (!result) {
+    throw new StorageProviderError({
+      errorCode: "VAL_STORAGE_PROVIDER_NOT_FOUND",
+      message: "Storage provider account was not found.",
+      statusCode: 404,
+    });
+  }
+
+  return sanitizeStorageProviderDocument(result);
+}
+
+export async function updateStorageProviderAccount({
+  db,
+  providerId,
+  patch,
+}: {
+  db: Db;
+  providerId: string;
+  patch: ValidatedStorageProviderUpdateInput;
+}): Promise<SanitizedStorageProvider> {
+  if (!ObjectId.isValid(providerId)) {
+    throw new StorageProviderError({
+      errorCode: "VAL_STORAGE_PROVIDER_ID_INVALID",
+      message: "providerId must be a valid Mongo ObjectId.",
+    });
+  }
+
+  const result = await db
+    .collection<StorageProviderDocument>(COLLECTION_NAME)
+    .findOneAndUpdate(
+      { _id: new ObjectId(providerId) },
+      {
+        $set: {
+          ...patch,
+          updatedAt: new Date(),
+        },
+      },
+      { returnDocument: "after" },
+    );
+
+  if (!result) {
+    throw new StorageProviderError({
+      errorCode: "VAL_STORAGE_PROVIDER_NOT_FOUND",
+      message: "Storage provider account was not found.",
+      statusCode: 404,
+    });
+  }
+
+  return sanitizeStorageProviderDocument(result);
+}
+
+export async function deleteStorageProviderAccount({
+  db,
+  providerId,
+}: {
+  db: Db;
+  providerId: string;
+}) {
+  if (!ObjectId.isValid(providerId)) {
+    throw new StorageProviderError({
+      errorCode: "VAL_STORAGE_PROVIDER_ID_INVALID",
+      message: "providerId must be a valid Mongo ObjectId.",
+    });
+  }
+
+  const result = await db
+    .collection<StorageProviderDocument>(COLLECTION_NAME)
+    .findOneAndDelete({
+      _id: new ObjectId(providerId),
+    });
 
   if (!result) {
     throw new StorageProviderError({
@@ -157,6 +241,35 @@ export async function getActiveStorageProviderAccountForUpload({
   }
 
   assertStorageProviderCanUploadForIntake(provider);
+
+  return provider;
+}
+
+export async function getStorageProviderAccountById({
+  db,
+  providerId,
+}: {
+  db: Db;
+  providerId: string;
+}): Promise<WithId<StorageProviderDocument>> {
+  if (!ObjectId.isValid(providerId)) {
+    throw new StorageProviderError({
+      errorCode: "VAL_STORAGE_PROVIDER_ACCOUNT_ID_INVALID",
+      message: "storageProviderAccountId must be a valid Mongo ObjectId.",
+    });
+  }
+
+  const provider = await db
+    .collection<StorageProviderDocument>(COLLECTION_NAME)
+    .findOne({ _id: new ObjectId(providerId) });
+
+  if (!provider) {
+    throw new StorageProviderError({
+      errorCode: "VAL_STORAGE_PROVIDER_ACCOUNT_NOT_FOUND",
+      message: "Storage provider account was not found.",
+      statusCode: 404,
+    });
+  }
 
   return provider;
 }

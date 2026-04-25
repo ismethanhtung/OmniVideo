@@ -46,8 +46,48 @@ export type ResolvedMedia = {
   sizeBytes?: number;
   durationMs?: number;
   requestedQuality?: IntakeQualityPreference;
+  formatId?: string;
+  formatNote?: string;
+  height?: number;
+  width?: number;
+  resolution?: string;
+  ext?: string;
+  vcodec?: string;
+  acodec?: string;
   requestHeaders?: Record<string, string>;
-  resolver: "direct-url" | "external-resolver" | "internal-resolver";
+  resolver:
+    | "direct-url"
+    | "external-resolver"
+    | "internal-resolver"
+    | "local-file";
+};
+
+export type LocalIntakeInput = {
+  storageProvider: StorageProvider;
+  storageProviderAccountId: string;
+  tags: string[];
+  title?: string;
+  languageHint?: string;
+  contentIntent?: string;
+  ownershipStatus?: string;
+  fileName: string;
+  mimeType?: string;
+  fileSizeBytes: number;
+  fileBytes: Uint8Array;
+};
+
+export type ValidatedLocalIntakeInput = {
+  storageProvider: StorageProvider;
+  storageProviderAccountId: string;
+  tags: string[];
+  title?: string;
+  languageHint?: string;
+  contentIntent: string;
+  ownershipStatus: string;
+  fileName: string;
+  mimeType?: string;
+  fileSizeBytes: number;
+  fileBytes: Uint8Array;
 };
 
 export type StorageUploadResult = {

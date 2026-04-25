@@ -1,6 +1,7 @@
 import type { WithId } from "mongodb";
 
 import type {
+  EditableStorageProvider,
   SanitizedStorageProvider,
   StorageProviderDocument,
   StorageProviderSecretMap,
@@ -37,5 +38,16 @@ export function sanitizeStorageProviderDocument(
     ...safeDocument,
     _id: _id.toHexString(),
     secretSummary,
+  };
+}
+
+export function mapStorageProviderToEditableDocument(
+  document: WithId<StorageProviderDocument>,
+): EditableStorageProvider {
+  const { _id, ...payload } = document;
+
+  return {
+    ...payload,
+    _id: _id.toHexString(),
   };
 }

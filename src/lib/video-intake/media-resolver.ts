@@ -14,6 +14,14 @@ type ResolverResponse = {
   mimeType?: string;
   sizeBytes?: number;
   durationMs?: number;
+  formatId?: string;
+  formatNote?: string;
+  height?: number;
+  width?: number;
+  resolution?: string;
+  ext?: string;
+  vcodec?: string;
+  acodec?: string;
   requestHeaders?: Record<string, string>;
 };
 
@@ -39,6 +47,14 @@ function mapResolvedMedia({
     sizeBytes: payload.sizeBytes,
     durationMs: payload.durationMs,
     requestedQuality: normalizeResolverQuality(input.qualityPreference ?? "best"),
+    formatId: payload.formatId,
+    formatNote: payload.formatNote,
+    height: payload.height,
+    width: payload.width,
+    resolution: payload.resolution,
+    ext: payload.ext,
+    vcodec: payload.vcodec,
+    acodec: payload.acodec,
     requestHeaders: payload.requestHeaders,
     resolver,
   };

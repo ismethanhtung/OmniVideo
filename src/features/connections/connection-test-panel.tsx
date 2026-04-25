@@ -4,21 +4,43 @@ import { useEffect, useState } from "react";
 
 import type { LeftbarNavItem } from "@/components/layout/types";
 
-type DbHealthState = {
+type ConnectionStatus = "idle" | "checking" | "ok" | "down" | "skipped";
+
+type ConnectionCheck = {
+  serviceType: "mongodb" | "storage";
+  serviceKey: string;
+  label: string;
+  status: "ok" | "down" | "skipped";
+  message: string;
+  latencyMs: number;
+  checkedAt: string;
+  providerId?: string;
+  providerType?: "telegram" | "drive";
+};
+
+type ConnectionSummary = {
+  total: number;
+  okCount: number;
+  downCount: number;
+  skippedCount: number;
+};
+
+type ConnectionState = {
   status: "idle" | "checking" | "ok" | "down";
   message: string;
-  latencyMs?: number;
-  database?: string;
   lastCheckedAt?: string;
+  checks: ConnectionCheck[];
+  summary?: ConnectionSummary;
 };
 
 type ConnectionTestPanelProps = {
   section: LeftbarNavItem;
 };
 
-const INITIAL_STATE: DbHealthState = {
+const INITIAL_STATE: ConnectionState = {
   status: "idle",
-  message: "MongoDB status not checked yet.",
+  message: "Connection status not checked yet.",
+  checks: [],
 };
 
 function formatCheckedAt(value?: string) {
@@ -32,7 +54,7 @@ function formatCheckedAt(value?: string) {
   }).format(new Date(value));
 }
 
-function getStatusClasses(status: DbHealthState["status"]) {
+function getStatusClasses(status: ConnectionStatus) {
   if (status === "ok") {
     return "border-emerald-200 bg-emerald-50 text-emerald-700";
   }
@@ -45,39 +67,47 @@ function getStatusClasses(status: DbHealthState["status"]) {
     return "border-amber-200 bg-amber-50 text-amber-700";
   }
 
+  if (status === "skipped") {
+    return "border-slate-200 bg-slate-50 text-slate-700";
+  }
+
   return "border-main bg-secondary text-muted";
 }
 
 export function ConnectionTestPanel({ section }: ConnectionTestPanelProps) {
-  const [state, setState] = useState<DbHealthState>(INITIAL_STATE);
+  const [state, setState] = useState<ConnectionState>(INITIAL_STATE);
   const Icon = section.icon;
 
   const runConnectionTest = async () => {
     setState({
       status: "checking",
-      message: "Checking MongoDB connection...",
+      message: "Checking MongoDB and storage connections...",
+      checks: [],
     });
 
     try {
-      const response = await fetch("/api/health/db", {
+      const response = await fetch("/api/health/connections", {
         method: "GET",
         cache: "no-store",
       });
 
       const payload = (await response.json()) as {
-        ok?: boolean;
-        database?: string;
+        ok: boolean;
+        checks?: ConnectionCheck[];
+        summary?: ConnectionSummary;
         error?: string;
-        latencyMs?: number;
         timestamp?: string;
       };
 
-      if (response.ok && payload.ok) {
+      const checks = payload.checks ?? [];
+      const summary = payload.summary;
+
+      if (payload.ok) {
         setState({
           status: "ok",
-          message: "MongoDB connection is healthy.",
-          latencyMs: payload.latencyMs,
-          database: payload.database,
+          message: "All configured connections are healthy.",
+          checks,
+          summary,
           lastCheckedAt: payload.timestamp,
         });
         return;
@@ -85,15 +115,16 @@ export function ConnectionTestPanel({ section }: ConnectionTestPanelProps) {
 
       setState({
         status: "down",
-        message: payload.error ?? "MongoDB connection failed.",
-        latencyMs: payload.latencyMs,
-        database: payload.database,
+        message: payload.error ?? "Some connections are not healthy.",
+        checks,
+        summary,
         lastCheckedAt: payload.timestamp,
       });
     } catch {
       setState({
         status: "down",
-        message: "MongoDB connection failed.",
+        message: "Connection test failed.",
+        checks: [],
       });
     }
   };
@@ -133,30 +164,40 @@ export function ConnectionTestPanel({ section }: ConnectionTestPanelProps) {
         <div className="overflow-hidden border border-main">
           <div className="grid grid-cols-[160px_minmax(0,1fr)] border-b border-main text-[12px]">
             <div className="bg-secondary/45 px-3 py-2 font-medium text-muted">
-              Service
-            </div>
-            <div className="px-3 py-2 font-medium text-main">MongoDB</div>
-          </div>
-          <div className="grid grid-cols-[160px_minmax(0,1fr)] border-b border-main text-[12px]">
-            <div className="bg-secondary/45 px-3 py-2 font-medium text-muted">
-              Endpoint
+              Test Endpoint
             </div>
             <div className="px-3 py-2 font-mono text-[11px] text-main">
-              /api/health/db
+              /api/health/connections
             </div>
           </div>
           <div className="grid grid-cols-[160px_minmax(0,1fr)] border-b border-main text-[12px]">
             <div className="bg-secondary/45 px-3 py-2 font-medium text-muted">
-              Database
-            </div>
-            <div className="px-3 py-2 text-main">{state.database ?? "-"}</div>
-          </div>
-          <div className="grid grid-cols-[160px_minmax(0,1fr)] border-b border-main text-[12px]">
-            <div className="bg-secondary/45 px-3 py-2 font-medium text-muted">
-              Latency
+              Total checks
             </div>
             <div className="px-3 py-2 text-main">
-              {typeof state.latencyMs === "number" ? `${state.latencyMs} ms` : "-"}
+              {state.summary?.total ?? state.checks.length}
+            </div>
+          </div>
+          <div className="grid grid-cols-[160px_minmax(0,1fr)] border-b border-main text-[12px]">
+            <div className="bg-secondary/45 px-3 py-2 font-medium text-muted">
+              Healthy
+            </div>
+            <div className="px-3 py-2 text-main">{state.summary?.okCount ?? 0}</div>
+          </div>
+          <div className="grid grid-cols-[160px_minmax(0,1fr)] border-b border-main text-[12px]">
+            <div className="bg-secondary/45 px-3 py-2 font-medium text-muted">
+              Down
+            </div>
+            <div className="px-3 py-2 text-main">
+              {state.summary?.downCount ?? 0}
+            </div>
+          </div>
+          <div className="grid grid-cols-[160px_minmax(0,1fr)] border-b border-main text-[12px]">
+            <div className="bg-secondary/45 px-3 py-2 font-medium text-muted">
+              Skipped
+            </div>
+            <div className="px-3 py-2 text-main">
+              {state.summary?.skippedCount ?? 0}
             </div>
           </div>
           <div className="grid grid-cols-[160px_minmax(0,1fr)] text-[12px]">
@@ -179,10 +220,69 @@ export function ConnectionTestPanel({ section }: ConnectionTestPanelProps) {
           </div>
           <p className="mt-3 text-[12px] leading-5 text-main">{state.message}</p>
           <p className="mt-3 text-[11px] leading-5 text-muted">
-            Connection page chỉ kiểm tra trạng thái kết nối. Logging, retry và
-            history sẽ nằm trong Observability module sau.
+            Connection page hiện kiểm tra MongoDB + các storage account Telegram/Drive
+            đã cấu hình. Không hiển thị secrets.
           </p>
         </aside>
+      </div>
+
+      <div className="border-t border-main px-5 py-5">
+        <p className="text-[12px] font-semibold text-main">Checks Detail</p>
+        <p className="mt-1 text-[11px] text-muted">
+          Từng provider account được kiểm tra độc lập với status và latency riêng.
+        </p>
+
+        <div className="mt-3 overflow-x-auto border border-main">
+          <table className="w-full border-collapse text-left text-[12px]">
+            <thead className="border-b border-main bg-secondary/45 text-muted">
+              <tr>
+                <th className="px-4 py-2 font-semibold">Service</th>
+                <th className="px-4 py-2 font-semibold">Status</th>
+                <th className="px-4 py-2 font-semibold">Latency</th>
+                <th className="px-4 py-2 font-semibold">Message</th>
+              </tr>
+            </thead>
+            <tbody>
+              {state.checks.length === 0 ? (
+                <tr>
+                  <td className="px-4 py-5 text-muted" colSpan={4}>
+                    Chưa có dữ liệu kiểm tra.
+                  </td>
+                </tr>
+              ) : (
+                state.checks.map((check) => (
+                  <tr
+                    key={check.serviceKey}
+                    className="border-b border-main last:border-b-0"
+                  >
+                    <td className="px-4 py-3">
+                      <p className="text-main">{check.label}</p>
+                      <p className="mt-1 font-mono text-[11px] text-muted">
+                        {check.serviceType}
+                        {check.providerType ? ` · ${check.providerType}` : ""}
+                      </p>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={`inline-flex border px-2 py-1 text-[10px] font-bold uppercase tracking-wide ${getStatusClasses(
+                          check.status,
+                        )}`}
+                      >
+                        {check.status}
+                      </span>
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-main">
+                      {check.latencyMs} ms
+                    </td>
+                    <td className="max-w-[520px] px-4 py-3 text-muted">
+                      {check.message}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </section>
   );

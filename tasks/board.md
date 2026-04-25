@@ -10,7 +10,7 @@
 
 ## In Progress
 
-- (none)
+- `P1-INTAKE-011` - Support raw cookie/header env for TikTok/Douyin resolver.
 
 ## Blocked
 
@@ -43,6 +43,17 @@
 - `P1-INTAKE-007` - YouTube resolver fallback to Android client.
 - `P1-INTAKE-008` - Resolver fetchability probe before profile selection.
 - `P1-INTAKE-009` - Intake quality selector, storage detail view, and provider create modal.
+- `P1-INTAKE-010` - Fix TikTok/Douyin resolver cookie fallback for intake pipeline.
+- `P1-STORAGE-002` - Storage asset controls, resolver quality metadata, and Douyin URL support.
+- `P1-INTAKE-012` - Local video upload intake page with Mongo metadata persistence and top bar.
+- `P1-STABILITY-001` - Fix Telegram large-file download error messaging and Next dev chunk cache instability.
+- `P1-CONN-001` - Extend Connection Test to include Telegram and Google Drive storage checks.
+- `P1-STORAGE-003` - Support Google Drive Service Account JSON key upload for storage provider.
+- `P1-STORAGE-004` - Local upload auto-switch Drive for >20MB, Drive 403 diagnostics, and Storage Library video preview.
+- `P1-STORAGE-005` - Add edit/delete for Storage Providers and add/delete plus true inline preview UX for Storage Library.
+- `P1-STORAGE-006` - Fix Storage Provider edit hydration and add upload-anyway option for Telegram fallback.
+- `P1-UX-003` - Storage Library layout refinements, dark delete button fix, and merged Typography+Appearance settings.
+- `P1-UX-004` - Add pastel light theme, restore Display logo style, and semantic dark-compatible action buttons.
 
 ## Canceled
 

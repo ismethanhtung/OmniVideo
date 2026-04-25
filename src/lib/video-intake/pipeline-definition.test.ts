@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { URL_INTAKE_PIPELINE_DEFINITION } from "./pipeline-definition";
+import {
+  LOCAL_INTAKE_PIPELINE_DEFINITION,
+  URL_INTAKE_PIPELINE_DEFINITION,
+} from "./pipeline-definition";
 
 describe("URL intake pipeline definition", () => {
   it("keeps the MVP node order explicit and dependency-safe", () => {
@@ -30,5 +33,21 @@ describe("URL intake pipeline definition", () => {
       expect(node.retryPolicy.maxAttempts).toBeGreaterThan(0);
       expect(node.version).toMatch(/^\d+\.\d+\.\d+$/);
     }
+  });
+});
+
+describe("local intake pipeline definition", () => {
+  it("defines local-file workflow without resolver step", () => {
+    expect(
+      LOCAL_INTAKE_PIPELINE_DEFINITION.nodes.map((node) => node.nodeType),
+    ).toEqual([
+      "source.file.validate",
+      "storage.upload",
+      "asset.metadata.persist",
+    ]);
+
+    expect(LOCAL_INTAKE_PIPELINE_DEFINITION.nodes[1].dependsOn).toEqual([
+      "validate-local-file",
+    ]);
   });
 });

@@ -8,12 +8,14 @@ export function buildVideoAssetDocument({
   media,
   upload,
   now,
+  pipelineId = "mvp-url-intake-to-storage",
 }: {
   jobRunId: ObjectId;
   sourceId: ObjectId;
   media: ResolvedMedia;
   upload: StorageUploadResult;
   now: Date;
+  pipelineId?: string;
 }) {
   return {
     assetType: "video",
@@ -28,16 +30,25 @@ export function buildVideoAssetDocument({
     sizeBytes: upload.sizeBytes ?? media.sizeBytes ?? null,
     metadata: {
       sourceUrl: media.originalUrl,
-      directMediaUrlResolved: true,
+      directMediaUrlResolved: media.resolver !== "local-file",
       resolver: media.resolver,
       originPlatform: media.originPlatform,
       title: media.title ?? null,
       requestedQuality: media.requestedQuality ?? "best",
+      actualQuality: media.height ? `${media.height}p` : null,
+      formatId: media.formatId ?? null,
+      formatNote: media.formatNote ?? null,
+      resolution: media.resolution ?? null,
+      width: media.width ?? null,
+      height: media.height ?? null,
+      ext: media.ext ?? null,
+      vcodec: media.vcodec ?? null,
+      acodec: media.acodec ?? null,
     },
     createdFrom: {
       sourceId,
       jobRunId,
-      pipelineId: "mvp-url-intake-to-storage",
+      pipelineId,
       storageProviderAccountId: upload.storageProviderAccountId ?? null,
       storageProviderLabel: upload.storageProviderLabel ?? null,
     },

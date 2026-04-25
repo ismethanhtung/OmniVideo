@@ -44,6 +44,9 @@ describe("resolveMediaUrl", () => {
         "User-Agent": "yt-dlp-test",
         Referer: "https://www.youtube.com/watch?v=demo",
       },
+      formatId: "18",
+      height: 360,
+      resolution: "640x360",
       title: "Demo",
     });
 
@@ -59,6 +62,8 @@ describe("resolveMediaUrl", () => {
       "User-Agent": "yt-dlp-test",
       Referer: "https://www.youtube.com/watch?v=demo",
     });
+    expect(result.height).toBe(360);
+    expect(result.resolution).toBe("640x360");
     expect(result.resolver).toBe("internal-resolver");
     expect(resolveMediaUrlInternalMock).toHaveBeenCalledWith(
       "https://www.youtube.com/watch?v=demo",
