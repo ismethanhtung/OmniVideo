@@ -1,6 +1,6 @@
 export type SocialPlatform = "facebook" | "tiktok" | "shopee" | "youtube";
 
-export type SocialAccountStatus = "active" | "paused" | "error";
+export type SocialAccountStatus = "needs_auth" | "connected" | "paused" | "error";
 
 export type SocialAuthMode =
   | "oauth"
@@ -24,6 +24,10 @@ export type PublishRecordStatus =
   | "failed"
   | "retrying"
   | "canceled";
+
+export type PublishMode = "schedule" | "publish_now";
+
+export type YouTubePrivacyStatus = "private" | "unlisted" | "public";
 
 export type SocialSecretMap = {
   accessToken?: string;
@@ -111,7 +115,7 @@ export type SocialPlatformCapability = {
     };
   }>;
   supportedTaskTypes: string[];
-  realPublishStatus: "deferred";
+  realPublishStatus: "enabled" | "deferred";
   complianceNotes: string[];
 };
 
@@ -119,6 +123,8 @@ export type PublishRecordCreateInput = {
   assetId: string;
   socialAccountId: string;
   publishType: SocialPublishType;
+  publishNow?: boolean;
+  privacyStatus?: YouTubePrivacyStatus;
   title?: string;
   caption?: string;
   hashtags?: string[];
@@ -129,6 +135,8 @@ export type ValidatedPublishRecordInput = {
   assetId: string;
   socialAccountId: string;
   publishType: SocialPublishType;
+  publishMode: PublishMode;
+  privacyStatus: YouTubePrivacyStatus;
   title: string | null;
   caption: string | null;
   hashtags: string[];
@@ -140,6 +148,8 @@ export type PublishRecordDocument = {
   socialAccountId: import("mongodb").ObjectId;
   platform: SocialPlatform;
   publishType: SocialPublishType;
+  publishMode: PublishMode;
+  privacyStatus: YouTubePrivacyStatus;
   status: PublishRecordStatus;
   title: string | null;
   caption: string | null;

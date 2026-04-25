@@ -9,8 +9,10 @@ import {
   formatPlatform,
   formatPublishType,
   type ApiResponse,
+  type PublishMode,
   type SocialAccount,
   type SocialPublishType,
+  type YouTubePrivacyStatus,
 } from "./social-types";
 
 type PublishRecordsPanelProps = {
@@ -19,7 +21,8 @@ type PublishRecordsPanelProps = {
 
 type StoredVideoAsset = {
   _id: string;
-  metadata?: { title?: string | null };
+  durationMs?: number | null;
+  metadata?: { title?: string | null; width?: number | null; height?: number | null };
   storageProvider: string;
 };
 
@@ -29,13 +32,17 @@ type PublishRecord = {
   socialAccountId: string;
   platform: SocialAccount["platform"];
   publishType: SocialPublishType;
+  publishMode?: PublishMode;
+  privacyStatus?: YouTubePrivacyStatus;
   status: string;
   title: string | null;
   caption: string | null;
   hashtags: string[];
   scheduledAt: string | null;
   retryCount: number;
+  platformPostId?: string | null;
   errorCode: string | null;
+  errorDetail?: string | null;
   socialAccount?: { label?: string; displayName?: string | null };
   asset?: { title?: string | null; storageProvider?: string };
 };
@@ -44,6 +51,8 @@ type FormState = {
   assetId: string;
   socialAccountId: string;
   publishType: SocialPublishType | "";
+  publishMode: PublishMode;
+  privacyStatus: YouTubePrivacyStatus;
   title: string;
   caption: string;
   hashtags: string;
@@ -54,6 +63,8 @@ const EMPTY_FORM: FormState = {
   assetId: "",
   socialAccountId: "",
   publishType: "",
+  publishMode: "publish_now",
+  privacyStatus: "private",
   title: "",
   caption: "",
   hashtags: "",
@@ -76,6 +87,8 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
     "idle",
   );
   const [message, setMessage] = useState("Ready.");
+  const [formMessage, setFormMessage] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
 
@@ -83,6 +96,45 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
     () => accounts.find((account) => account._id === form.socialAccountId),
     [accounts, form.socialAccountId],
   );
+  const selectedAsset = useMemo(
+    () => assets.find((asset) => asset._id === form.assetId),
+    [assets, form.assetId],
+  );
+  const isYouTubeShort = form.publishType === "youtube_short";
+  const canSubmit =
+    Boolean(form.assetId && form.socialAccountId && form.publishType) &&
+    !isSubmitting;
+
+  const selectedAssetShortHint = useMemo(() => {
+    if (!selectedAsset || !isYouTubeShort) {
+      return null;
+    }
+
+    const durationMs =
+      typeof selectedAsset.durationMs === "number" ? selectedAsset.durationMs : null;
+    const width =
+      typeof selectedAsset.metadata?.width === "number"
+        ? selectedAsset.metadata.width
+        : null;
+    const height =
+      typeof selectedAsset.metadata?.height === "number"
+        ? selectedAsset.metadata.height
+        : null;
+
+    if (!durationMs || !width || !height) {
+      return "Shorts cần metadata duration/width/height. Asset này thiếu metadata nên server sẽ chặn upload để tránh vào video thường.";
+    }
+
+    if (durationMs > 180_000) {
+      return "Video dài hơn 3 phút nên không đủ điều kiện YouTube Shorts.";
+    }
+
+    if (width > height) {
+      return "Video đang là ngang. YouTube Shorts cần video vuông hoặc dọc.";
+    }
+
+    return `Đủ điều kiện Shorts: ${width}x${height}, ${Math.round(durationMs / 1000)}s.`;
+  }, [isYouTubeShort, selectedAsset]);
 
   const loadAll = async () => {
     setStatus("loading");
@@ -127,8 +179,20 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
   }, []);
 
   const createRecord = async () => {
+    if (isSubmitting) {
+      return;
+    }
+
+    setIsSubmitting(true);
     setStatus("loading");
-    setMessage("Creating planned publish record...");
+    const submitMessage =
+      form.publishMode === "publish_now"
+        ? selectedAccount?.platform === "youtube"
+          ? "Uploading to YouTube. Keep this modal open..."
+          : "Creating publish-now record..."
+        : "Creating planned publish record...";
+    setMessage(submitMessage);
+    setFormMessage(submitMessage);
 
     try {
       const response = await fetch("/api/social/publish-records", {
@@ -138,6 +202,8 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
           assetId: form.assetId,
           socialAccountId: form.socialAccountId,
           publishType: form.publishType,
+          publishNow: form.publishMode === "publish_now",
+          privacyStatus: form.privacyStatus,
           title: form.title,
           caption: form.caption,
           hashtags: splitCsv(form.hashtags),
@@ -148,19 +214,31 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
 
       if (!response.ok || !payload.ok || !payload.data) {
         setStatus("failed");
-        setMessage(payload.error ?? "Could not create publish record.");
+        const errorMessage = payload.error ?? "Could not create publish record.";
+        setMessage(errorMessage);
+        setFormMessage(errorMessage);
         return;
       }
 
       setShowForm(false);
       setForm(EMPTY_FORM);
+      setFormMessage("");
       await loadAll();
-      setMessage("Publish record planned.");
+      setMessage(
+        payload.data.status === "published"
+          ? `Published to YouTube. Platform post id: ${payload.data.platformPostId ?? "-"}`
+          : payload.data.status === "failed"
+            ? `${payload.data.errorCode ?? "Publish failed"}: ${payload.data.errorDetail ?? ""}`
+            : "Publish record planned.",
+      );
     } catch (error) {
       setStatus("failed");
-      setMessage(
-        error instanceof Error ? error.message : "Could not create publish record.",
-      );
+      const errorMessage =
+        error instanceof Error ? error.message : "Could not create publish record.";
+      setMessage(errorMessage);
+      setFormMessage(errorMessage);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -182,7 +260,11 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
         <div className="flex gap-2">
           <button
             type="button"
-            onClick={() => setShowForm(true)}
+            onClick={() => {
+              setForm(EMPTY_FORM);
+              setFormMessage("");
+              setShowForm(true);
+            }}
             className="inline-flex items-center gap-2 border border-main bg-secondary px-3 py-1.5 text-[12px] font-semibold text-main hover:bg-secondary/75"
           >
             <Plus className="h-3.5 w-3.5" />
@@ -217,6 +299,8 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
               <th className="px-4 py-2 font-semibold">Account</th>
               <th className="px-4 py-2 font-semibold">Platform</th>
               <th className="px-4 py-2 font-semibold">Type</th>
+              <th className="px-4 py-2 font-semibold">Mode</th>
+              <th className="px-4 py-2 font-semibold">Privacy</th>
               <th className="px-4 py-2 font-semibold">Status</th>
               <th className="px-4 py-2 font-semibold">Schedule</th>
               <th className="px-4 py-2 font-semibold">Hashtags</th>
@@ -225,7 +309,7 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
           <tbody>
             {records.length === 0 ? (
               <tr>
-                <td className="px-4 py-6 text-muted" colSpan={7}>
+                <td className="px-4 py-6 text-muted" colSpan={9}>
                   Chưa có publish record nào.
                 </td>
               </tr>
@@ -244,11 +328,19 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
                   <td className="px-4 py-3 text-muted">
                     {formatPublishType(record.publishType)}
                   </td>
-                  <td className="px-4 py-3 text-muted">{record.status}</td>
                   <td className="px-4 py-3 text-muted">
-                    {record.scheduledAt
-                      ? new Date(record.scheduledAt).toLocaleString("vi-VN")
-                      : "-"}
+                    {record.publishMode === "publish_now" ? "Publish now" : "Schedule"}
+                  </td>
+                  <td className="px-4 py-3 text-muted">
+                    {record.privacyStatus ?? "private"}
+                  </td>
+                  <td className="px-4 py-3 text-muted">{record.status}</td>
+                  <td className="max-w-[260px] px-4 py-3 text-muted">
+                    {record.errorCode
+                      ? `${record.errorCode}: ${record.errorDetail ?? ""}`
+                      : record.scheduledAt
+                        ? new Date(record.scheduledAt).toLocaleString("vi-VN")
+                        : "-"}
                   </td>
                   <td className="max-w-[240px] px-4 py-3 text-muted">
                     {record.hashtags.join(", ") || "-"}
@@ -261,8 +353,38 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
       </div>
 
       {showForm ? (
-        <div className="border-t border-main bg-secondary/30 px-5 py-5">
-          <div className="grid gap-3 md:grid-cols-2">
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/35 px-4 py-6">
+          <form
+            className="max-h-[90vh] w-full max-w-3xl overflow-y-auto border border-main bg-main shadow-xl"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void createRecord();
+            }}
+          >
+            <div className="flex items-start justify-between gap-3 border-b border-main bg-secondary/35 px-4 py-3">
+              <div>
+                <p className="text-[12px] font-semibold text-main">
+                  New Publish Record
+                </p>
+                <p className="mt-1 text-[11px] leading-5 text-muted">
+                  YouTube publish now uploads immediately when the account is connected and the asset can be downloaded. Other platforms will fail with an adapter-not-implemented error until their upload adapters exist.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowForm(false);
+                  setForm(EMPTY_FORM);
+                  setFormMessage("");
+                }}
+                disabled={isSubmitting}
+                className="border border-main bg-main px-2.5 py-1 text-[11px] font-semibold text-main hover:bg-secondary"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="grid gap-3 px-4 py-4 md:grid-cols-2">
             <label className="text-[12px] font-medium text-main">
               Video Asset
               <select
@@ -270,6 +392,7 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
                 onChange={(event) =>
                   setForm((previous) => ({ ...previous, assetId: event.target.value }))
                 }
+                disabled={isSubmitting}
                 className="mt-1 w-full border border-main bg-main px-3 py-2 text-[12px]"
               >
                 <option value="">Select asset</option>
@@ -294,6 +417,7 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
                     publishType: account?.supportedFormats[0] ?? "",
                   }));
                 }}
+                disabled={isSubmitting}
                 className="mt-1 w-full border border-main bg-main px-3 py-2 text-[12px]"
               >
                 <option value="">Select account</option>
@@ -314,6 +438,7 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
                     publishType: event.target.value as SocialPublishType,
                   }))
                 }
+                disabled={isSubmitting}
                 className="mt-1 w-full border border-main bg-main px-3 py-2 text-[12px]"
               >
                 <option value="">Select type</option>
@@ -324,20 +449,97 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
                 ))}
               </select>
             </label>
-            <label className="text-[12px] font-medium text-main">
-              Scheduled At
-              <input
-                type="datetime-local"
-                value={form.scheduledAt}
-                onChange={(event) =>
-                  setForm((previous) => ({
-                    ...previous,
-                    scheduledAt: event.target.value,
-                  }))
-                }
-                className="mt-1 w-full border border-main bg-main px-3 py-2 text-[12px]"
-              />
-            </label>
+            <fieldset className="border border-main bg-secondary/20 p-3">
+              <legend className="px-1 text-[12px] font-medium text-main">
+                Publish mode
+              </legend>
+              <div className="mt-2 grid gap-2">
+                <label className="flex items-start gap-2 text-[12px] text-main">
+                  <input
+                    type="radio"
+                    checked={form.publishMode === "publish_now"}
+                    disabled={isSubmitting}
+                    onChange={() =>
+                      setForm((previous) => ({
+                        ...previous,
+                        publishMode: "publish_now",
+                        scheduledAt: "",
+                      }))
+                    }
+                  />
+                  <span>
+                    Publish now
+                    <span className="block text-[11px] text-muted">
+                      Upload immediately for YouTube. Other platforms will show an adapter-not-implemented error until their upload adapters exist.
+                    </span>
+                  </span>
+                </label>
+                <label className="flex items-start gap-2 text-[12px] text-main">
+                  <input
+                    type="radio"
+                    checked={form.publishMode === "schedule"}
+                    disabled={isSubmitting}
+                    onChange={() =>
+                      setForm((previous) => ({
+                        ...previous,
+                        publishMode: "schedule",
+                      }))
+                    }
+                  />
+                  <span>
+                    Schedule / plan
+                    <span className="block text-[11px] text-muted">
+                      Keep this as a planned record for a selected time or later review.
+                    </span>
+                  </span>
+                </label>
+              </div>
+            </fieldset>
+            {form.publishMode === "schedule" ? (
+              <label className="text-[12px] font-medium text-main">
+                Scheduled At
+                <input
+                  type="datetime-local"
+                  value={form.scheduledAt}
+                  disabled={isSubmitting}
+                  onChange={(event) =>
+                    setForm((previous) => ({
+                      ...previous,
+                      scheduledAt: event.target.value,
+                    }))
+                  }
+                  className="mt-1 w-full border border-main bg-main px-3 py-2 text-[12px]"
+                />
+              </label>
+            ) : null}
+            {selectedAccount?.platform === "youtube" ? (
+              <label className="text-[12px] font-medium text-main">
+                YouTube Privacy
+                <select
+                  value={form.privacyStatus}
+                  disabled={isSubmitting}
+                  onChange={(event) =>
+                    setForm((previous) => ({
+                      ...previous,
+                      privacyStatus: event.target.value as YouTubePrivacyStatus,
+                    }))
+                  }
+                  className="mt-1 w-full border border-main bg-main px-3 py-2 text-[12px]"
+                >
+                  <option value="private">Private</option>
+                  <option value="unlisted">Unlisted</option>
+                  <option value="public">Public</option>
+                </select>
+                <span className="mt-1 block text-[11px] leading-5 text-muted">
+                  Google may still force API uploads from unverified projects to private.
+                </span>
+              </label>
+            ) : null}
+            {selectedAssetShortHint ? (
+              <div className="border border-main bg-secondary/25 px-3 py-2 text-[11px] leading-5 text-muted md:col-span-2">
+                {selectedAssetShortHint}
+              </div>
+            ) : null}
             <label className="text-[12px] font-medium text-main">
               Title
               <input
@@ -345,6 +547,7 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
                 onChange={(event) =>
                   setForm((previous) => ({ ...previous, title: event.target.value }))
                 }
+                disabled={isSubmitting}
                 className="mt-1 w-full border border-main bg-main px-3 py-2 text-[12px]"
               />
             </label>
@@ -358,6 +561,7 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
                     hashtags: event.target.value,
                   }))
                 }
+                disabled={isSubmitting}
                 className="mt-1 w-full border border-main bg-main px-3 py-2 text-[12px]"
               />
             </label>
@@ -371,26 +575,47 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
                     caption: event.target.value,
                   }))
                 }
+                disabled={isSubmitting}
                 className="mt-1 h-24 w-full border border-main bg-main px-3 py-2 text-[12px]"
               />
             </label>
-          </div>
-          <div className="mt-4 flex gap-2">
+            </div>
+            {formMessage ? (
+              <div className="border-t border-main bg-secondary/20 px-4 py-3 text-[12px] leading-5 text-muted">
+                {isSubmitting ? (
+                  <RefreshCw className="mr-2 inline h-3.5 w-3.5 animate-spin" />
+                ) : null}
+                {formMessage}
+              </div>
+            ) : null}
+            <div className="flex gap-2 border-t border-main bg-secondary/25 px-4 py-3">
             <button
-              type="button"
-              onClick={() => void createRecord()}
+              type="submit"
+              disabled={!canSubmit}
               className="btn-success border px-3 py-1.5 text-[12px] font-semibold"
             >
-              Create Plan
+              {isSubmitting
+                ? form.publishMode === "publish_now"
+                  ? "Publishing..."
+                  : "Creating..."
+                : form.publishMode === "publish_now"
+                  ? "Publish Now"
+                  : "Create Plan"}
             </button>
             <button
               type="button"
-              onClick={() => setShowForm(false)}
+              onClick={() => {
+                setShowForm(false);
+                setForm(EMPTY_FORM);
+                setFormMessage("");
+              }}
+              disabled={isSubmitting}
               className="border border-main bg-main px-3 py-1.5 text-[12px] font-semibold text-main"
             >
               Cancel
             </button>
-          </div>
+            </div>
+          </form>
         </div>
       ) : null}
     </section>

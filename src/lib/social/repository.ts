@@ -26,6 +26,7 @@ import {
   type ValidatedSocialAccountInput,
 } from "./types";
 import type { ValidatedSocialAccountUpdateInput } from "./validation";
+import { uploadVideoToYouTube } from "./youtube-upload";
 
 const SOCIAL_ACCOUNTS_COLLECTION = "social_accounts";
 const PUBLISH_RECORDS_COLLECTION = "publish_records";
@@ -202,6 +203,36 @@ export async function updateSocialAccount({
   return sanitizeSocialAccountDocument(result);
 }
 
+export async function markSocialAccountConnected({
+  db,
+  accountId,
+  patch,
+}: {
+  db: Db;
+  accountId: string;
+  patch: {
+    displayName?: string | null;
+    handle?: string | null;
+    accountId?: string | null;
+    permissionScopes: string[];
+    secrets: SocialAccountDocument["secrets"];
+  };
+}): Promise<SanitizedSocialAccount> {
+  return updateSocialAccount({
+    db,
+    accountId,
+    patch: {
+      displayName: patch.displayName,
+      handle: patch.handle,
+      accountId: patch.accountId,
+      authMode: "oauth",
+      permissionScopes: patch.permissionScopes,
+      secrets: patch.secrets,
+      status: "connected",
+    },
+  });
+}
+
 export async function deleteSocialAccount({
   db,
   accountId,
@@ -294,6 +325,8 @@ export async function createPublishRecord({
     socialAccountId: account._id,
     platform,
     publishType: input.publishType,
+    publishMode: input.publishMode,
+    privacyStatus: input.privacyStatus,
     status: "planned",
     title: input.title,
     caption: input.caption,
@@ -316,6 +349,116 @@ export async function createPublishRecord({
     ...document,
     _id: result.insertedId,
   };
+}
+
+export async function executePublishNow({
+  db,
+  publishRecordId,
+}: {
+  db: Db;
+  publishRecordId: ObjectId;
+}) {
+  const record = await db
+    .collection<PublishRecordDocument>(PUBLISH_RECORDS_COLLECTION)
+    .findOne({ _id: publishRecordId });
+
+  if (!record) {
+    throw new SocialError({
+      errorCode: "VAL_PUBLISH_RECORD_NOT_FOUND",
+      message: "Publish record was not found.",
+      statusCode: 404,
+    });
+  }
+
+  await db.collection<PublishRecordDocument>(PUBLISH_RECORDS_COLLECTION).updateOne(
+    { _id: publishRecordId },
+    {
+      $set: {
+        status: "queued",
+        updatedAt: new Date(),
+      },
+    },
+  );
+
+  try {
+    const [account, asset] = await Promise.all([
+      db
+        .collection<SocialAccountDocument>(SOCIAL_ACCOUNTS_COLLECTION)
+        .findOne({ _id: record.socialAccountId }),
+      db.collection("assets").findOne({ _id: record.assetId, assetType: "video" }),
+    ]);
+
+    if (!account) {
+      throw new Error("VAL_SOCIAL_ACCOUNT_NOT_FOUND");
+    }
+
+    if (!asset) {
+      throw new Error("VAL_PUBLISH_ASSET_NOT_FOUND");
+    }
+
+    if (record.platform !== "youtube") {
+      throw new Error("PRV_SOCIAL_PUBLISH_ADAPTER_NOT_IMPLEMENTED");
+    }
+
+    if (account.status !== "connected") {
+      throw new Error("AUTH_SOCIAL_NOT_CONNECTED");
+    }
+
+    const upload = await uploadVideoToYouTube({
+      db,
+      account,
+      asset,
+      record,
+    });
+    const now = new Date();
+
+    const updated = await db
+      .collection<PublishRecordDocument>(PUBLISH_RECORDS_COLLECTION)
+      .findOneAndUpdate(
+        { _id: publishRecordId },
+        {
+          $set: {
+            status: "published",
+            platformPostId: upload.platformPostId,
+            publishedAt: now,
+            errorCode: null,
+            errorDetail: null,
+            updatedAt: now,
+          },
+        },
+        { returnDocument: "after" },
+      );
+
+    return updated;
+  } catch (error) {
+    const now = new Date();
+    const message =
+      error instanceof Error ? error.message : "Social publish failed.";
+    const errorCode = message.includes(":")
+      ? message.split(":")[0]
+      : message.startsWith("AUTH_") ||
+          message.startsWith("VAL_") ||
+          message.startsWith("PRV_")
+        ? message
+        : "PRV_YOUTUBE_UPLOAD_FAILED";
+
+    const updated = await db
+      .collection<PublishRecordDocument>(PUBLISH_RECORDS_COLLECTION)
+      .findOneAndUpdate(
+        { _id: publishRecordId },
+        {
+          $set: {
+            status: "failed",
+            errorCode,
+            errorDetail: message,
+            updatedAt: now,
+          },
+        },
+        { returnDocument: "after" },
+      );
+
+    return updated;
+  }
 }
 
 export async function listPublishRecords({ db, limit = 50 }: { db: Db; limit?: number }) {
@@ -346,6 +489,8 @@ export async function listPublishRecords({ db, limit = 50 }: { db: Db; limit?: n
           socialAccountId: 1,
           platform: 1,
           publishType: 1,
+          publishMode: 1,
+          privacyStatus: 1,
           status: 1,
           title: 1,
           caption: 1,
@@ -414,7 +559,7 @@ export async function getSocialDashboard(db: Db) {
     recentPublishRecords: records,
     summary: {
       accountCount: accounts.length,
-      activeAccountCount: accounts.filter((account) => account.status === "active")
+      connectedAccountCount: accounts.filter((account) => account.status === "connected")
         .length,
       publishRecordCount: records.length,
       assetCount,

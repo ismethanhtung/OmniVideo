@@ -124,8 +124,13 @@ export const SOCIAL_PLATFORM_CAPABILITIES: SocialPlatformCapability[] = [
         },
       },
     ],
-    supportedTaskTypes: ["plan_publish", "permission_review", "connection_check"],
-    realPublishStatus: "deferred",
+    supportedTaskTypes: [
+      "plan_publish",
+      "publish_now",
+      "permission_review",
+      "connection_check",
+    ],
+    realPublishStatus: "enabled",
     complianceNotes: [
       "Uploads require channel authorization.",
       "Content must respect YouTube policies and rights metadata.",

@@ -22,6 +22,13 @@
 
 ## Done
 
+- `P2-SOCIAL-013` - Fix Publish Records UX, YouTube privacy, and Shorts guardrails.
+- `P2-SOCIAL-012` - Enable YouTube publish-now upload adapter.
+- `P2-SOCIAL-011` - Align YouTube connection check with upload scope.
+- `P2-SOCIAL-010` - Add YouTube OAuth test-user guidance and real connection check.
+- `P2-SOCIAL-009` - Keep OAuth setup errors inside social account modal.
+- `P2-SOCIAL-008` - Enforce real social connection semantics and OAuth foundation.
+- `P2-SOCIAL-007` - Social account modal guidance and publish-now planning.
 - `P2-SOCIAL-001` - Social docs and data model readiness.
 - `P2-SOCIAL-002` - Social account CRUD and masked secrets.
 - `P2-SOCIAL-003` - Social capability registry and platform task dashboard.

@@ -53,7 +53,7 @@ describe("social validation", () => {
       displayName: null,
       handle: "@omni",
       accountId: null,
-      status: "active",
+      status: "connected",
       authMode: "access_token",
       channelTags: [],
       permissionScopes: [],
@@ -97,7 +97,33 @@ describe("social validation", () => {
     });
 
     expect(result.publishType).toBe("tiktok_video");
+    expect(result.publishMode).toBe("schedule");
     expect(result.scheduledAt?.toISOString()).toBe("2026-04-26T12:00:00.000Z");
+  });
+
+  it("marks publish-now records with immediate schedule intent", () => {
+    const result = validatePublishRecordCreateInput({
+      assetId: "507f1f77bcf86cd799439011",
+      socialAccountId: "507f1f77bcf86cd799439012",
+      publishType: "youtube_short",
+      publishNow: true,
+    });
+
+    expect(result.publishMode).toBe("publish_now");
+    expect(result.privacyStatus).toBe("private");
+    expect(result.scheduledAt).toBeInstanceOf(Date);
+  });
+
+  it("accepts publish record privacy status", () => {
+    const result = validatePublishRecordCreateInput({
+      assetId: "507f1f77bcf86cd799439011",
+      socialAccountId: "507f1f77bcf86cd799439012",
+      publishType: "youtube_video",
+      publishNow: true,
+      privacyStatus: "unlisted",
+    });
+
+    expect(result.privacyStatus).toBe("unlisted");
   });
 
   it("rejects invalid publish record asset id", () => {

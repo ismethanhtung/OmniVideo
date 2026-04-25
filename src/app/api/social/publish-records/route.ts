@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import {
   createPublishRecord,
+  executePublishNow,
   getSocialDb,
   listPublishRecords,
 } from "@/lib/social/repository";
@@ -53,11 +54,15 @@ export async function POST(request: Request) {
     const input = validatePublishRecordCreateInput(payload);
     const db = await getSocialDb();
     const record = await createPublishRecord({ db, input });
+    const finalRecord =
+      input.publishMode === "publish_now"
+        ? await executePublishNow({ db, publishRecordId: record._id })
+        : record;
 
     return NextResponse.json(
       {
         ok: true,
-        data: serializeRecord(record),
+        data: serializeRecord(finalRecord ?? record),
       },
       { status: 201 },
     );

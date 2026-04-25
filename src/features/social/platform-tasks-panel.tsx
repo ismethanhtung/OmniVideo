@@ -22,7 +22,7 @@ type DashboardPayload = {
   accounts: SocialAccount[];
   summary: {
     accountCount: number;
-    activeAccountCount: number;
+    connectedAccountCount: number;
     assetCount: number;
     accountsByPlatform: Record<string, number>;
   };
@@ -105,7 +105,7 @@ export function PlatformTasksPanel({ section }: PlatformTasksPanelProps) {
       <div className="grid border-b border-main bg-secondary/25 px-5 py-3 text-[12px] text-muted md:grid-cols-4">
         <span>Status: {status}</span>
         <span>Accounts: {dashboard?.summary.accountCount ?? 0}</span>
-        <span>Active: {dashboard?.summary.activeAccountCount ?? 0}</span>
+        <span>Connected: {dashboard?.summary.connectedAccountCount ?? 0}</span>
         <span>Video assets: {dashboard?.summary.assetCount ?? 0}</span>
       </div>
 
@@ -169,8 +169,8 @@ export function PlatformTasksPanel({ section }: PlatformTasksPanelProps) {
                   </p>
                   <ul className="mt-2 space-y-1 text-[11px] text-muted">
                     {!account ? <li>Add account for this platform.</li> : null}
-                    {account && account.status !== "active" ? (
-                      <li>Activate or repair account status.</li>
+                    {account && account.status !== "connected" ? (
+                      <li>Connect OAuth or repair account status.</li>
                     ) : null}
                     {account && missingScopes.length > 0 ? (
                       <li>Review missing scopes: {Array.from(new Set(missingScopes)).join(", ")}</li>

@@ -1,5 +1,5 @@
 export type SocialPlatform = "facebook" | "tiktok" | "shopee" | "youtube";
-export type SocialAccountStatus = "active" | "paused" | "error";
+export type SocialAccountStatus = "needs_auth" | "connected" | "paused" | "error";
 export type SocialAuthMode =
   | "oauth"
   | "access_token"
@@ -13,6 +13,9 @@ export type SocialPublishType =
   | "shopee_video"
   | "youtube_short"
   | "youtube_video";
+
+export type PublishMode = "schedule" | "publish_now";
+export type YouTubePrivacyStatus = "private" | "unlisted" | "public";
 
 export type SocialAccount = {
   _id: string;
@@ -49,7 +52,7 @@ export type SocialCapability = {
     };
   }>;
   supportedTaskTypes: string[];
-  realPublishStatus: "deferred";
+  realPublishStatus: "enabled" | "deferred";
   complianceNotes: string[];
 };
 

@@ -10,10 +10,28 @@
 - Thêm `social` checks vào `GET /api/health/connections` và Connection Test panel.
 - Thêm Vitest config alias `@ -> src` để API route contract tests import App Router routes ổn định.
 - Thêm tests cho social validation, capability registry, secret masking, retry eligibility, connection checks và social API validation contracts.
+- Thêm modal hướng dẫn cấu hình social account theo từng platform và `Publish now` intent cho publish records.
+- Thêm OAuth foundation cho social accounts: `GET /api/social/oauth/start` và `GET /api/social/oauth/callback/[platform]` cho Facebook/TikTok/YouTube authorization-code flow.
+- Thêm trạng thái lỗi riêng trong modal New/Edit Social Account và hướng dẫn YouTube OAuth kèm redirect URI cần cấu hình.
+- Thêm hướng dẫn Google OAuth test users cho lỗi `403: access_denied` khi app còn ở testing.
+- Thêm YouTube social connection check thật qua YouTube Data API `channels?mine=true`.
+- Thêm kiểm tra YouTube tokeninfo để xác nhận access token có scope `https://www.googleapis.com/auth/youtube.upload`.
+- Thêm YouTube `Publish now` adapter dùng resumable upload để đăng video thật từ storage asset.
+- Thêm unit tests cho YouTube upload adapter, bao gồm refresh-token flow.
+- Thêm chọn YouTube privacy trong New Publish Record và lưu `privacyStatus` vào publish records.
+- Thêm guardrails cho YouTube Shorts: chặn video thiếu metadata, video ngang hoặc dài hơn 3 phút trước khi upload.
 
 ### Changed
 
-- Cập nhật social docs/data model/roadmap/connection docs theo hướng Control Center trước, real publish adapter deferred.
+- Cập nhật social docs/data model/roadmap/connection docs theo hướng Control Center trước; YouTube đã bật adapter upload thật, Facebook/TikTok/Shopee vẫn deferred.
+- Cập nhật Publish Records để lưu `publishMode` (`schedule` hoặc `publish_now`); YouTube `publish_now` gọi upload thật, platform chưa có adapter sẽ fail rõ ràng thay vì giả vờ đã đăng.
+- Cập nhật Publish Records modal: mặc định `Publish now`, chỉ hiển thị `Scheduled At` khi schedule, hiển thị trạng thái đang upload và khóa submit để tránh double publish.
+- Cập nhật social docs với khuyến nghị OAuth/refresh-token flow là hướng dài hạn, manual access token chỉ là fallback/debug.
+- Cập nhật social account status semantics: account mới là `needs_auth`, chỉ OAuth callback/token exchange thành công mới set `connected`; Connection Test báo `AUTH_SOCIAL_NOT_CONNECTED` khi chưa kết nối thật.
+- Cập nhật Social Accounts UI để lỗi OAuth/config trong modal không còn ghi đè status bar của toàn trang.
+- Cập nhật Connection Test để YouTube account `connected` không còn bị skipped nếu có access token.
+- Cập nhật YouTube Connection Test không dùng endpoint đọc channel nữa, tránh yêu cầu scope đọc không cần thiết; nếu thiếu upload scope sẽ báo `AUTH_YOUTUBE_SCOPE_MISSING`.
+- Cập nhật hướng dẫn YouTube: sau khi thêm scope trong Google Cloud phải OAuth connect lại vì token cũ không tự nhận scope mới.
 - Cập nhật API `GET /api/storage/providers/[providerId]` để trả editable payload (bao gồm secrets) phục vụ hydrate form edit.
 - Cập nhật Storage Providers UI: khi bấm `Edit` sẽ fetch chi tiết provider và nạp lại toàn bộ cấu hình đã lưu trước đó vào modal.
 - Cập nhật confirm modal Drive fallback trong Local Upload Intake để có thêm lựa chọn `Upload anyway`.
@@ -33,9 +51,9 @@
 
 ### Notes
 
-- Task IDs: P2-SOCIAL-001, P2-SOCIAL-002, P2-SOCIAL-003, P2-SOCIAL-004, P2-SOCIAL-005, P2-SOCIAL-006, P1-STORAGE-006, P1-UX-003, P1-UX-004
-- Verification: `npm run test` pass (84 tests / 21 files); `npm run build` pass. Build còn warning cũ: `src/features/workspace/display-preferences-panel.tsx` import `Image` không dùng.
-- Risks: Social Control Center hiện chỉ tạo publish record trạng thái `planned`; real publish/OAuth adapters vẫn deferred.
+- Task IDs: P2-SOCIAL-001, P2-SOCIAL-002, P2-SOCIAL-003, P2-SOCIAL-004, P2-SOCIAL-005, P2-SOCIAL-006, P2-SOCIAL-007, P2-SOCIAL-008, P2-SOCIAL-009, P2-SOCIAL-010, P2-SOCIAL-011, P2-SOCIAL-012, P2-SOCIAL-013, P1-STORAGE-006, P1-UX-003, P1-UX-004
+- Verification: `npm run test` pass (93 tests / 22 files); `npm run build` pass. Build còn warning cũ: `src/features/workspace/display-preferences-panel.tsx` import `Image` không dùng.
+- Risks: YouTube `Publish now` đã upload thật nhưng đang đọc video vào memory trước khi gửi; Shorts phụ thuộc metadata duration/width/height trong asset; Facebook/TikTok/Shopee real publish adapters vẫn deferred.
 
 ## 2026-04-25
 

@@ -13,6 +13,7 @@ import {
   type SocialPlatform,
   type SocialPublishType,
   type SocialSecretMap,
+  type YouTubePrivacyStatus,
   type ValidatedPublishRecordInput,
   type ValidatedSocialAccountInput,
 } from "./types";
@@ -25,7 +26,8 @@ const SOCIAL_PLATFORMS = new Set<SocialPlatform>([
 ]);
 
 const ACCOUNT_STATUSES = new Set<SocialAccountStatus>([
-  "active",
+  "needs_auth",
+  "connected",
   "paused",
   "error",
 ]);
@@ -45,6 +47,12 @@ const PUBLISH_TYPES = new Set<SocialPublishType>([
   "shopee_video",
   "youtube_short",
   "youtube_video",
+]);
+
+const YOUTUBE_PRIVACY_STATUSES = new Set<YouTubePrivacyStatus>([
+  "private",
+  "unlisted",
+  "public",
 ]);
 
 const SECRET_KEYS: Array<keyof SocialSecretMap> = [
@@ -140,10 +148,7 @@ export function validateSocialAccountCreateInput(
     });
   }
 
-  const status =
-    typeof payload.status === "string" && ACCOUNT_STATUSES.has(payload.status)
-      ? payload.status
-      : "active";
+  const status: SocialAccountStatus = "needs_auth";
 
   const authMode =
     typeof payload.authMode === "string" && AUTH_MODES.has(payload.authMode)
@@ -214,7 +219,7 @@ export function validateSocialAccountUpdateInput(
     if (!ACCOUNT_STATUSES.has(payload.status)) {
       throw new SocialError({
         errorCode: "VAL_SOCIAL_ACCOUNT_STATUS_INVALID",
-        message: "status must be active, paused, or error.",
+        message: "status must be needs_auth, connected, paused, or error.",
       });
     }
 
@@ -314,7 +319,21 @@ export function validatePublishRecordCreateInput(
   }
 
   const scheduledAtRaw = readString(payload.scheduledAt);
-  const scheduledAt = scheduledAtRaw ? new Date(scheduledAtRaw) : null;
+  const publishNow = payload.publishNow === true;
+  const privacyStatus = readString(payload.privacyStatus) ?? "private";
+
+  if (!YOUTUBE_PRIVACY_STATUSES.has(privacyStatus as YouTubePrivacyStatus)) {
+    throw new SocialError({
+      errorCode: "VAL_YOUTUBE_PRIVACY_STATUS_INVALID",
+      message: "privacyStatus must be private, unlisted, or public.",
+    });
+  }
+
+  const scheduledAt = publishNow
+    ? new Date()
+    : scheduledAtRaw
+      ? new Date(scheduledAtRaw)
+      : null;
 
   if (scheduledAtRaw && Number.isNaN(scheduledAt?.getTime())) {
     throw new SocialError({
@@ -327,6 +346,8 @@ export function validatePublishRecordCreateInput(
     assetId,
     socialAccountId,
     publishType: payload.publishType,
+    publishMode: publishNow ? "publish_now" : "schedule",
+    privacyStatus: privacyStatus as YouTubePrivacyStatus,
     title: readString(payload.title) ?? null,
     caption: readString(payload.caption) ?? null,
     hashtags: readStringArray(payload.hashtags).slice(0, 30),

@@ -1,8 +1,12 @@
 import { ObjectId } from "mongodb";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { SocialAccountDocument } from "./types";
 import { checkSocialAccountConnections } from "./connection-checks";
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 function buildAccount(overrides: Partial<SocialAccountDocument>) {
   const now = new Date("2026-04-26T00:00:00.000Z");
@@ -14,7 +18,7 @@ function buildAccount(overrides: Partial<SocialAccountDocument>) {
     displayName: overrides.displayName ?? null,
     handle: overrides.handle ?? null,
     accountId: overrides.accountId ?? null,
-    status: overrides.status ?? "active",
+    status: overrides.status ?? "needs_auth",
     authMode: overrides.authMode ?? "manual",
     channelTags: overrides.channelTags ?? [],
     permissionScopes: overrides.permissionScopes ?? [],
@@ -32,7 +36,7 @@ function buildAccount(overrides: Partial<SocialAccountDocument>) {
 }
 
 describe("checkSocialAccountConnections", () => {
-  it("skips manual social accounts because real publish is deferred", async () => {
+  it("returns down for accounts that have not completed OAuth", async () => {
     const checks = await checkSocialAccountConnections([
       buildAccount({
         authMode: "manual",
@@ -40,14 +44,15 @@ describe("checkSocialAccountConnections", () => {
       }),
     ]);
 
-    expect(checks[0].status).toBe("skipped");
-    expect(checks[0].message).toContain("tracked manually");
+    expect(checks[0].status).toBe("down");
+    expect(checks[0].message).toContain("AUTH_SOCIAL_NOT_CONNECTED");
   });
 
   it("returns down for credential-based account without secrets", async () => {
     const checks = await checkSocialAccountConnections([
       buildAccount({
         authMode: "oauth",
+        status: "connected",
         secrets: {},
       }),
     ]);
@@ -56,10 +61,25 @@ describe("checkSocialAccountConnections", () => {
     expect(checks[0].message).toContain("AUTH_SOCIAL_SECRET_MISSING");
   });
 
-  it("returns ok when credential metadata exists", async () => {
+  it("checks a connected YouTube account against the channel endpoint", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          scope: "https://www.googleapis.com/auth/youtube.upload",
+          expires_in: 3000,
+        }),
+        {
+        status: 200,
+        },
+      ),
+    );
+
     const checks = await checkSocialAccountConnections([
       buildAccount({
-        authMode: "access_token",
+        platform: "youtube",
+        authMode: "oauth",
+        status: "connected",
+        supportedFormats: ["youtube_short", "youtube_video"],
         secrets: {
           accessToken: "token",
         },
@@ -67,6 +87,53 @@ describe("checkSocialAccountConnections", () => {
     ]);
 
     expect(checks[0].status).toBe("ok");
-    expect(checks[0].message).toContain("Real API health check is deferred");
+    expect(checks[0].message).toContain("youtube.upload scope");
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "https://www.googleapis.com/oauth2/v1/tokeninfo?access_token=token",
+      { cache: "no-store" },
+    );
+  });
+
+  it("returns down when connected YouTube token is missing upload scope", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          scope: "https://www.googleapis.com/auth/youtube.readonly",
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const checks = await checkSocialAccountConnections([
+      buildAccount({
+        platform: "youtube",
+        authMode: "oauth",
+        status: "connected",
+        supportedFormats: ["youtube_short", "youtube_video"],
+        secrets: {
+          accessToken: "token",
+        },
+      }),
+    ]);
+
+    expect(checks[0].status).toBe("down");
+    expect(checks[0].message).toContain("AUTH_YOUTUBE_SCOPE_MISSING");
+  });
+
+  it("returns skipped for connected platforms without a concrete checker yet", async () => {
+    const checks = await checkSocialAccountConnections([
+      buildAccount({
+        platform: "facebook",
+        authMode: "oauth",
+        status: "connected",
+        supportedFormats: ["facebook_reel"],
+        secrets: {
+          accessToken: "token",
+        },
+      }),
+    ]);
+
+    expect(checks[0].status).toBe("skipped");
+    expect(checks[0].message).toContain("deferred");
   });
 });

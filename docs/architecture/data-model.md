@@ -125,7 +125,7 @@ Trường chính:
 - `displayName`
 - `handle`
 - `authMode` (`oauth`, `access_token`, `api_key`, `manual`, `not_configured`)
-- `status` (`active`, `paused`, `error`)
+- `status` (`needs_auth`, `connected`, `paused`, `error`)
 - `permissionScopes`
 - `supportedFormats`
 - `channelTags`
@@ -142,7 +142,7 @@ Capability registry cho UI và validation social.
 - `platform` (`facebook`, `tiktok`, `shopee`, `youtube`)
 - `formats` (`publishType`, required scopes, metadata limits)
 - `supportedTaskTypes`
-- `realPublishStatus`
+- `realPublishStatus` (`enabled`, `deferred`)
 - `complianceNotes`
 
 ## 2.10 `publish_records`
@@ -152,6 +152,8 @@ Capability registry cho UI và validation social.
 - `socialAccountId`
 - `platform`
 - `publishType`
+- `publishMode` (`schedule`, `publish_now`)
+- `privacyStatus` (`private`, `unlisted`, `public`)
 - `platformPostId`
 - `status` (`planned`, `queued`, `published`, `failed`, `retrying`, `canceled`)
 - `title`, `caption`, `hashtags`

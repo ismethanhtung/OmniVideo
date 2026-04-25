@@ -24,7 +24,6 @@ type AccountFormState = {
   displayName: string;
   handle: string;
   accountId: string;
-  status: "active" | "paused" | "error";
   authMode: SocialAuthMode;
   channelTags: string;
   permissionScopes: string;
@@ -44,7 +43,6 @@ const EMPTY_FORM: AccountFormState = {
   displayName: "",
   handle: "",
   accountId: "",
-  status: "active",
   authMode: "manual",
   channelTags: "shorts, primary",
   permissionScopes: "",
@@ -64,6 +62,64 @@ const PLATFORM_OPTIONS: SocialPlatform[] = [
   "shopee",
   "youtube",
 ];
+
+const PLATFORM_GUIDES: Record<
+  SocialPlatform,
+  {
+    title: string;
+    recommended: string;
+    notes: string[];
+    scopes: string;
+    setupSteps?: string[];
+  }
+> = {
+  facebook: {
+    title: "Facebook Reels / Video",
+    recommended: "Prefer OAuth later; use Manual for planning-only accounts now.",
+    scopes: "pages_manage_posts, pages_read_engagement",
+    notes: [
+      "Use Page ID when publishing to a page.",
+      "Long-lived Page tokens still need lifecycle handling; raw token entry is only a fallback.",
+    ],
+  },
+  tiktok: {
+    title: "TikTok Video",
+    recommended: "Prefer OAuth later; use Manual until publish adapter is enabled.",
+    scopes: "video.upload, video.publish",
+    notes: [
+      "TikTok publish APIs require app review/eligibility.",
+      "Manual tokens are inconvenient and should not be the primary long-term workflow.",
+    ],
+  },
+  shopee: {
+    title: "Shopee Product Video",
+    recommended: "Use Manual or API Key metadata first; real shop authorization comes later.",
+    scopes: "shop_authorization, product_write",
+    notes: [
+      "Shop ID is useful for planning product/video mapping.",
+      "Real publish must verify shop/product permissions before posting.",
+    ],
+  },
+  youtube: {
+    title: "YouTube Shorts / Video",
+    recommended: "Prefer OAuth later with offline refresh token storage.",
+    scopes: "youtube.upload",
+    setupSteps: [
+      "Open Google Cloud Console.",
+      "Search for and enable YouTube Data API v3.",
+      "Configure OAuth consent screen, then create OAuth Client ID with type Web Application.",
+      "Copy Client ID and Client Secret into .env as YOUTUBE_CLIENT_ID and YOUTUBE_CLIENT_SECRET.",
+      "Set SOCIAL_OAUTH_BASE_URL to the running app base URL, for example http://localhost:3001 or your real domain.",
+      "Add the redirect URI shown below to Authorized redirect URIs in the OAuth Client.",
+      "If Google shows Error 403 access_denied because omni is still in testing, add your email in APIs & Services > OAuth consent screen > Audience > Test users.",
+      "If Connection Test still says insufficient scopes after adding youtube.upload, reconnect OAuth. Tokens issued before the scope change do not receive the new scope.",
+    ],
+    notes: [
+      "Channel ID helps identify the target channel before OAuth is wired.",
+      "Raw access tokens expire quickly; OAuth refresh flow is the maintainable option.",
+    ],
+  },
+};
 
 function splitCsv(value: string) {
   return value
@@ -89,7 +145,8 @@ function compactSecrets(form: AccountFormState) {
 
 function StatusBadge({ status }: { status: SocialAccount["status"] }) {
   const classes = {
-    active: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    connected: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    needs_auth: "border-amber-200 bg-amber-50 text-amber-700",
     paused: "border-amber-200 bg-amber-50 text-amber-700",
     error: "border-rose-200 bg-rose-50 text-rose-700",
   };
@@ -98,7 +155,7 @@ function StatusBadge({ status }: { status: SocialAccount["status"] }) {
     <span
       className={`inline-flex border px-2 py-1 text-[10px] font-bold uppercase tracking-wide ${classes[status]}`}
     >
-      {status}
+      {status.replace("_", " ")}
     </span>
   );
 }
@@ -110,14 +167,30 @@ export function SocialAccountsPanel({ section }: SocialAccountsPanelProps) {
     "idle",
   );
   const [message, setMessage] = useState("Ready.");
+  const [modalStatus, setModalStatus] = useState<
+    "idle" | "loading" | "success" | "failed"
+  >("idle");
+  const [modalMessage, setModalMessage] = useState("Ready.");
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<AccountFormState>(EMPTY_FORM);
 
   const activeCount = useMemo(
-    () => accounts.filter((account) => account.status === "active").length,
+    () => accounts.filter((account) => account.status === "connected").length,
     [accounts],
   );
+  const platformGuide = PLATFORM_GUIDES[form.platform];
+  const oauthBaseUrl =
+    typeof window === "undefined" ? "" : window.location.origin;
+  const redirectUri = `${oauthBaseUrl}/api/social/oauth/callback/${form.platform}`;
+
+  const openCreateForm = () => {
+    setForm(EMPTY_FORM);
+    setEditingId(null);
+    setModalStatus("idle");
+    setModalMessage("Create the account, then use Connect OAuth from edit mode.");
+    setShowForm(true);
+  };
 
   const loadAccounts = async () => {
     setStatus("loading");
@@ -152,8 +225,10 @@ export function SocialAccountsPanel({ section }: SocialAccountsPanelProps) {
   }, []);
 
   const saveAccount = async () => {
-    setStatus("loading");
-    setMessage(editingId ? "Updating social account..." : "Creating account...");
+    setModalStatus("loading");
+    setModalMessage(
+      editingId ? "Updating social account..." : "Creating account...",
+    );
 
     try {
       const response = await fetch(
@@ -167,7 +242,6 @@ export function SocialAccountsPanel({ section }: SocialAccountsPanelProps) {
             displayName: form.displayName,
             handle: form.handle,
             accountId: form.accountId,
-            status: form.status,
             authMode: form.authMode,
             channelTags: splitCsv(form.channelTags),
             permissionScopes: splitCsv(form.permissionScopes),
@@ -178,19 +252,21 @@ export function SocialAccountsPanel({ section }: SocialAccountsPanelProps) {
       const payload = (await response.json()) as ApiResponse<SocialAccount>;
 
       if (!response.ok || !payload.ok || !payload.data) {
-        setStatus("failed");
-        setMessage(payload.error ?? "Could not save social account.");
+        setModalStatus("failed");
+        setModalMessage(payload.error ?? "Could not save social account.");
         return;
       }
 
       setShowForm(false);
       setEditingId(null);
       setForm(EMPTY_FORM);
+      setModalStatus("idle");
+      setModalMessage("Ready.");
       await loadAccounts();
       setMessage(editingId ? "Social account updated." : "Social account created.");
     } catch (error) {
-      setStatus("failed");
-      setMessage(
+      setModalStatus("failed");
+      setModalMessage(
         error instanceof Error ? error.message : "Could not save social account.",
       );
     }
@@ -224,7 +300,6 @@ export function SocialAccountsPanel({ section }: SocialAccountsPanelProps) {
         displayName: account.displayName ?? "",
         handle: account.handle ?? "",
         accountId: account.accountId ?? "",
-        status: account.status,
         authMode: account.authMode,
         channelTags: account.channelTags.join(", "),
         permissionScopes: account.permissionScopes.join(", "),
@@ -237,6 +312,8 @@ export function SocialAccountsPanel({ section }: SocialAccountsPanelProps) {
         channelId: account.secrets?.channelId ?? "",
         connectionJson: account.secrets?.connectionJson ?? "",
       });
+      setModalStatus("idle");
+      setModalMessage("Use Connect OAuth to verify the account with the platform.");
       setShowForm(true);
       setStatus("ready");
       setMessage("Editable account loaded.");
@@ -245,6 +322,44 @@ export function SocialAccountsPanel({ section }: SocialAccountsPanelProps) {
       setMessage(
         error instanceof Error ? error.message : "Could not load social account.",
       );
+    }
+  };
+
+  const connectOAuth = async () => {
+    if (!editingId) {
+      setModalStatus("failed");
+      setModalMessage("Save the social account before starting OAuth.");
+      return;
+    }
+
+    setModalStatus("loading");
+    setModalMessage("Preparing OAuth redirect...");
+
+    try {
+      const response = await fetch(
+        `/api/social/oauth/start?platform=${form.platform}&accountId=${editingId}`,
+        { method: "GET", cache: "no-store" },
+      );
+      const payload = (await response.json()) as {
+        ok: boolean;
+        url?: string;
+        error?: string;
+        missing?: string[];
+      };
+
+      if (!response.ok || !payload.ok || !payload.url) {
+        setModalStatus("failed");
+        setModalMessage(
+          payload.error ??
+            `Missing OAuth config: ${(payload.missing ?? []).join(", ")}`,
+        );
+        return;
+      }
+
+      window.location.href = payload.url;
+    } catch (error) {
+      setModalStatus("failed");
+      setModalMessage(error instanceof Error ? error.message : "OAuth start failed.");
     }
   };
 
@@ -296,9 +411,7 @@ export function SocialAccountsPanel({ section }: SocialAccountsPanelProps) {
           <button
             type="button"
             onClick={() => {
-              setForm(EMPTY_FORM);
-              setEditingId(null);
-              setShowForm(true);
+              openCreateForm();
             }}
             className="inline-flex items-center gap-2 border border-main bg-secondary px-3 py-1.5 text-[12px] font-semibold text-main hover:bg-secondary/75"
           >
@@ -324,7 +437,7 @@ export function SocialAccountsPanel({ section }: SocialAccountsPanelProps) {
           {status}
         </span>
         <span className="ml-3">{message}</span>
-        <span className="ml-3">Active: {activeCount}</span>
+        <span className="ml-3">Connected: {activeCount}</span>
       </div>
 
       <div className="overflow-x-auto">
@@ -402,8 +515,53 @@ export function SocialAccountsPanel({ section }: SocialAccountsPanelProps) {
       </div>
 
       {showForm ? (
-        <div className="border-t border-main bg-secondary/30 px-5 py-5">
-          <div className="grid gap-3 md:grid-cols-3">
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/35 px-4 py-6">
+          <form
+            className="max-h-[90vh] w-full max-w-4xl overflow-y-auto border border-main bg-main shadow-xl"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void saveAccount();
+            }}
+          >
+            <div className="flex items-start justify-between gap-3 border-b border-main bg-secondary/35 px-4 py-3">
+              <div>
+                <p className="text-[12px] font-semibold text-main">
+                  {editingId ? "Edit Social Account" : "New Social Account"}
+                </p>
+                <p className="mt-1 text-[11px] leading-5 text-muted">
+                  OAuth should be the long-term default. Manual token entry is only a fallback for planning, diagnostics, or temporary adapter testing.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowForm(false);
+                  setEditingId(null);
+                  setForm(EMPTY_FORM);
+                  setModalStatus("idle");
+                  setModalMessage("Ready.");
+                }}
+                className="border border-main bg-main px-2.5 py-1 text-[11px] font-semibold text-main hover:bg-secondary"
+              >
+                Close
+              </button>
+            </div>
+
+            <div
+              className={`border-b border-main px-4 py-3 text-[12px] ${
+                modalStatus === "failed"
+                  ? "bg-rose-50 text-rose-700"
+                  : modalStatus === "success"
+                    ? "bg-emerald-50 text-emerald-700"
+                    : "bg-secondary/20 text-muted"
+              }`}
+            >
+              <span className="font-bold uppercase">{modalStatus}</span>
+              <span className="ml-2">{modalMessage}</span>
+            </div>
+
+            <div className="grid gap-4 px-4 py-4 lg:grid-cols-[minmax(0,1fr)_280px]">
+              <div className="grid gap-3 md:grid-cols-3">
             <label className="text-[12px] font-medium text-main">
               Platform
               <select
@@ -514,23 +672,14 @@ export function SocialAccountsPanel({ section }: SocialAccountsPanelProps) {
                 className="mt-1 w-full border border-main bg-main px-3 py-2 text-[12px]"
               />
             </label>
-            <label className="text-[12px] font-medium text-main">
-              Status
-              <select
-                value={form.status}
-                onChange={(event) =>
-                  setForm((previous) => ({
-                    ...previous,
-                    status: event.target.value as AccountFormState["status"],
-                  }))
-                }
-                className="mt-1 w-full border border-main bg-main px-3 py-2 text-[12px]"
-              >
-                <option value="active">Active</option>
-                <option value="paused">Paused</option>
-                <option value="error">Error</option>
-              </select>
-            </label>
+            <div className="border border-main bg-secondary/20 px-3 py-2">
+              <p className="text-[12px] font-medium text-main">
+                Connection Status
+              </p>
+              <p className="mt-1 text-[11px] leading-5 text-muted">
+                Status is system-controlled. It becomes connected only after OAuth callback succeeds.
+              </p>
+            </div>
             {[
               "accessToken",
               "refreshToken",
@@ -556,26 +705,82 @@ export function SocialAccountsPanel({ section }: SocialAccountsPanelProps) {
                 />
               </label>
             ))}
-          </div>
-          <div className="mt-4 flex gap-2">
-            <button
-              type="button"
-              onClick={() => void saveAccount()}
-              className="btn-success border px-3 py-1.5 text-[12px] font-semibold"
-            >
-              {editingId ? "Update Account" : "Create Account"}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setShowForm(false);
-                setEditingId(null);
-              }}
-              className="border border-main bg-main px-3 py-1.5 text-[12px] font-semibold text-main"
-            >
-              Cancel
-            </button>
-          </div>
+              </div>
+
+              <aside className="border border-main bg-secondary/25 p-3">
+                <p className="text-[12px] font-semibold text-main">
+                  {platformGuide.title}
+                </p>
+                <p className="mt-2 text-[11px] leading-5 text-muted">
+                  {platformGuide.recommended}
+                </p>
+                <div className="mt-3 border border-main bg-main p-2">
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-muted">
+                    Common scopes
+                  </p>
+                  <p className="mt-1 text-[11px] text-main">
+                    {platformGuide.scopes}
+                  </p>
+                </div>
+                {platformGuide.setupSteps ? (
+                  <div className="mt-3 border border-main bg-main p-2">
+                    <p className="text-[10px] font-bold uppercase tracking-wide text-muted">
+                      OAuth setup
+                    </p>
+                    <ol className="mt-2 list-decimal space-y-1 pl-4 text-[11px] leading-5 text-muted">
+                      {platformGuide.setupSteps.map((step) => (
+                        <li key={step}>{step}</li>
+                      ))}
+                    </ol>
+                  </div>
+                ) : null}
+                <div className="mt-3 border border-main bg-main p-2">
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-muted">
+                    Redirect URI
+                  </p>
+                  <p className="mt-1 break-all font-mono text-[11px] text-main">
+                    {redirectUri}
+                  </p>
+                </div>
+                <ul className="mt-3 space-y-1 text-[11px] leading-5 text-muted">
+                  {platformGuide.notes.map((note) => (
+                    <li key={note}>{note}</li>
+                  ))}
+                </ul>
+              </aside>
+            </div>
+
+            <div className="flex gap-2 border-t border-main bg-secondary/25 px-4 py-3">
+              {editingId ? (
+                <button
+                  type="button"
+                  onClick={() => void connectOAuth()}
+                  className="border border-main bg-main px-3 py-1.5 text-[12px] font-semibold text-main hover:bg-secondary"
+                >
+                  Connect OAuth
+                </button>
+              ) : null}
+              <button
+                type="submit"
+                className="btn-success border px-3 py-1.5 text-[12px] font-semibold"
+              >
+                {editingId ? "Update Account" : "Create Account"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowForm(false);
+                  setEditingId(null);
+                  setForm(EMPTY_FORM);
+                  setModalStatus("idle");
+                  setModalMessage("Ready.");
+                }}
+                className="border border-main bg-main px-3 py-1.5 text-[12px] font-semibold text-main"
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
         </div>
       ) : null}
     </section>
