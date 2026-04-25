@@ -20,6 +20,18 @@ Xây pipeline video module hóa theo node graph để hỗ trợ nhiều style v
 5. Packaging: export output + thumbnail + metadata.
 6. Output: storage + publish prep.
 
+## 3.1 MVP URL Intake Runtime
+
+Luồng URL intake hiện tại dùng storage account thật từ `storage_provider_accounts`.
+
+1. UI chỉ cho chọn storage account active thuộc provider type `telegram` hoặc `drive`.
+2. API nhận `storageProviderAccountId` và kiểm tra account còn active trước khi upload.
+3. Upload adapter dùng secret của account được chọn, không dùng hard-code option trên UI.
+4. `job_runs.inputSnapshot` lưu source URL, storage provider và storage account id.
+5. `job_runs.outputSummary` lưu lỗi hoặc storage output để hiển thị history.
+
+Page URL như YouTube/TikTok/Facebook không phải direct media URL. OmniVideo ưu tiên built-in resolver nội bộ để đổi page URL thành direct media URL; nếu có `VIDEO_RESOLVER_ENDPOINT` thì có thể dùng như nguồn fallback/override ngoài. Khi cả hai đường đều không resolve được, pipeline fail với lỗi resolver tương ứng.
+
 ## 4. Edit Capabilities (MVP -> Extend)
 
 1. Trim theo timeline.

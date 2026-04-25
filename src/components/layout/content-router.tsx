@@ -3,6 +3,9 @@ import type { ComponentType } from "react";
 import { getNavItem } from "@/components/layout/navigation";
 import type { AppSectionId, LeftbarNavItem } from "@/components/layout/types";
 import { ConnectionTestPanel } from "@/features/connections/connection-test-panel";
+import { StorageLibraryPanel } from "@/features/storage/storage-library-panel";
+import { StorageProvidersPanel } from "@/features/storage/storage-providers-panel";
+import { VideoIntakePanel } from "@/features/video-intake/video-intake-panel";
 import { PlaceholderPanel } from "@/features/workspace/placeholder-panel";
 
 type SectionComponentProps = {
@@ -13,6 +16,9 @@ const SECTION_COMPONENTS: Partial<
   Record<AppSectionId, ComponentType<SectionComponentProps>>
 > = {
   connectionTest: ConnectionTestPanel,
+  storageLibrary: StorageLibraryPanel,
+  storageProviders: StorageProvidersPanel,
+  videoIntake: VideoIntakePanel,
 };
 
 type ContentRouterProps = {

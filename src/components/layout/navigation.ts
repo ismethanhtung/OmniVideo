@@ -3,6 +3,8 @@ import {
   Box,
   Cable,
   Database,
+  DownloadCloud,
+  HardDrive,
   LayoutGrid,
   Layers,
   LifeBuoy,
@@ -12,6 +14,7 @@ import {
   Server,
   Shield,
   Sparkles,
+  Vault,
   Type,
   User,
 } from "lucide-react";
@@ -55,6 +58,31 @@ export const LEFTBAR_NAV: LeftbarNavGroup[] = [
         icon: Bell,
         label: "Notifications",
         description: "Thông báo job, lỗi và tác vụ cần chú ý.",
+      },
+    ],
+  },
+  {
+    sectionId: "pipeline",
+    sectionIcon: DownloadCloud,
+    groupLabel: "Video Pipeline",
+    items: [
+      {
+        id: "videoIntake",
+        icon: DownloadCloud,
+        label: "Video Intake",
+        description: "Nhập video URL, chạy node pipeline và upload sang storage.",
+      },
+      {
+        id: "storageProviders",
+        icon: HardDrive,
+        label: "Storage Providers",
+        description: "Quản lý nhiều Telegram/Drive/S3/local storage accounts.",
+      },
+      {
+        id: "storageLibrary",
+        icon: Vault,
+        label: "Storage Library",
+        description: "Quản lý metadata video đã lưu ở Telegram/Drive.",
       },
     ],
   },

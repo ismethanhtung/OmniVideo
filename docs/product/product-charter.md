@@ -28,7 +28,7 @@ OmniVideo là hệ thống nội bộ phục vụ một người vận hành cá
 
 1. Intake đa nguồn: URL, text/script, file, feed.
 2. Pipeline xử lý: scene breakdown, visual/audio generation, edit/transforms.
-3. Quản trị tài nguyên: AI provider account, social account, storage assets.
+3. Quản trị tài nguyên: AI provider account, social account, storage provider account và storage assets.
 4. Quan sát vận hành: trạng thái run/step, lỗi, latency, retry.
 5. Chuẩn hóa phát triển: docs/rules/tasks/changelog bắt buộc.
 

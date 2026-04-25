@@ -10,7 +10,7 @@
 
 ## In Progress
 
-- `P1-INTAKE-001` - Node-based URL video intake upload Telegram/Drive.
+- (none)
 
 ## Blocked
 
@@ -33,6 +33,16 @@
 - `P1-DB-001` - Thiết lập MongoDB foundation + DB health API.
 - `P1-UX-001` - Sửa UX nav: Connection Test hiển thị ở panel bên phải, không hiển thị trong leftbar.
 - `P1-UX-002` - Refactor app shell và content routing cho homepage.
+- `P1-INTAKE-001` - Node-based URL video intake upload Telegram/Drive.
+- `P1-STORAGE-001` - Storage provider management page.
+- `P1-INTAKE-002` - Storage account selection and intake history.
+- `P1-INTAKE-003` - Intake history pagination and Telegram upload fallback.
+- `P1-INTAKE-004` - Improve direct media fetch reliability and config guidance.
+- `P1-INTAKE-005` - Built-in media resolver with local yt-dlp runtime.
+- `P1-INTAKE-006` - Step-level intake trace and resolver header propagation.
+- `P1-INTAKE-007` - YouTube resolver fallback to Android client.
+- `P1-INTAKE-008` - Resolver fetchability probe before profile selection.
+- `P1-INTAKE-009` - Intake quality selector, storage detail view, and provider create modal.
 
 ## Canceled
 

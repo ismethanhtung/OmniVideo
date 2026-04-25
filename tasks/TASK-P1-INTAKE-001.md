@@ -5,8 +5,8 @@
 - [x] Todo
 - [x] Ready
 - [x] In Progress
-- [ ] Review
-- [ ] Done
+- [x] Review
+- [x] Done
 
 ## Metadata
 
@@ -15,7 +15,7 @@
 - Priority: P1
 - Owner: AI Agent
 - Created: 2026-04-25
-- Status: In Progress
+- Status: Done
 
 ## Problem
 
@@ -33,19 +33,19 @@ Cần hiện thực luồng MVP: nhập link video từ các nền tảng, xử 
 
 ## Acceptance Criteria
 
-- [ ] Có leftbar link cho Video Intake và Storage Library.
-- [ ] Video Intake UI cho nhập URL, tags, storage provider, chạy pipeline.
-- [ ] Storage Library UI list metadata video đã lưu.
-- [ ] API intake tạo job run + step runs + events trong MongoDB.
-- [ ] Pipeline được chia node rõ ràng, không hard-code vào route/UI.
-- [ ] Không ghi binary video xuống local filesystem/server disk.
-- [ ] Telegram upload dùng remote URL khi có direct media URL.
-- [ ] Drive upload dùng resumable upload từ remote stream khi có access token.
-- [ ] Nếu page URL chưa resolve được direct media URL thì fail rõ lỗi và lưu trace.
-- [ ] Có test logic mới theo testing rules.
-- [ ] `npm run test` pass.
-- [ ] `npm run lint` pass.
-- [ ] `npm run build` pass.
+- [x] Có leftbar link cho Video Intake và Storage Library.
+- [x] Video Intake UI cho nhập URL, tags, storage provider, chạy pipeline.
+- [x] Storage Library UI list metadata video đã lưu.
+- [x] API intake tạo job run + step runs + events trong MongoDB.
+- [x] Pipeline được chia node rõ ràng, không hard-code vào route/UI.
+- [x] Không ghi binary video xuống local filesystem/server disk.
+- [x] Telegram upload dùng remote URL khi có direct media URL.
+- [x] Drive upload dùng resumable upload từ remote stream khi có access token.
+- [x] Nếu page URL chưa resolve được direct media URL thì fail rõ lỗi và lưu trace.
+- [x] Có test logic mới theo testing rules.
+- [x] `npm run test` pass.
+- [x] `npm run lint` pass.
+- [x] `npm run build` pass.
 
 ## Test Plan
 
@@ -65,8 +65,12 @@ Cần hiện thực luồng MVP: nhập link video từ các nền tảng, xử 
 
 ## Verification
 
-- Pending.
+- `npm run test`: pass, 4 files / 10 tests.
+- `npm run lint`: pass, no ESLint warnings/errors.
+- `npm run build`: pass.
+- API smoke invalid input: `VAL_SOURCE_URL_INVALID` trả về đúng contract và tạo failed run trace.
+- API smoke storage list: `/api/storage/assets?limit=5` trả về `ok: true`.
 
 ## Changelog
 
-- Pending.
+- Updated `changelog/changelog.md` under 2026-04-25.

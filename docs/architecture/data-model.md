@@ -42,7 +42,24 @@ Trường chính:
 - `createdFrom` (run/step refs)
 - `createdAt`
 
-## 2.3 `pipeline_definitions`
+## 2.3 `storage_provider_accounts`
+
+Dùng để quản lý nhiều storage account/vault.
+
+Trường chính:
+
+- `_id`
+- `providerType` (`telegram`, `drive`, `s3`, `local`, `other`)
+- `label`
+- `description`
+- `status` (`active`, `paused`, `error`)
+- `priority`
+- `tags`
+- `secrets` (server-only, không trả raw value về UI)
+- `usage` (assetCountApprox, lastUsedAt)
+- `createdAt`, `updatedAt`
+
+## 2.4 `pipeline_definitions`
 
 - `_id`
 - `name`
@@ -51,7 +68,7 @@ Trường chính:
 - `status` (`draft`, `active`, `archived`)
 - `createdAt`, `updatedAt`
 
-## 2.4 `job_runs`
+## 2.5 `job_runs`
 
 - `_id`
 - `pipelineId`
@@ -63,7 +80,7 @@ Trường chính:
 - `startedAt`, `endedAt`
 - `durationMs`
 
-## 2.5 `step_runs`
+## 2.6 `step_runs`
 
 - `_id`
 - `jobRunId`
@@ -76,7 +93,7 @@ Trường chính:
 - `metrics` (latencyMs, providerCalls, tokensUsed)
 - `startedAt`, `endedAt`
 
-## 2.6 `run_events`
+## 2.7 `run_events`
 
 - `_id`
 - `jobRunId`
@@ -86,7 +103,7 @@ Trường chính:
 - `payload`
 - `timestamp`
 
-## 2.7 `ai_provider_accounts`
+## 2.8 `ai_provider_accounts`
 
 - `_id`
 - `providerName`
@@ -99,7 +116,7 @@ Trường chính:
 - `status` (`active`, `paused`, `depleted`, `error`)
 - `lastHealthCheckAt`
 
-## 2.8 `social_accounts`
+## 2.9 `social_accounts`
 
 - `_id`
 - `platform` (`tiktok`, `youtube`, `facebook`, `shopee`, `other`)
@@ -110,7 +127,7 @@ Trường chính:
 - `channelTags`
 - `lastHealthCheckAt`
 
-## 2.9 `publish_records`
+## 2.10 `publish_records`
 
 - `_id`
 - `assetId`
@@ -121,7 +138,7 @@ Trường chính:
 - `errorCode`
 - `errorDetail`
 
-## 2.10 `connection_checks`
+## 2.11 `connection_checks`
 
 - `_id`
 - `serviceType` (`mongodb`, `provider`, `storage`, `social_api`, `queue`)
@@ -138,6 +155,7 @@ Trường chính:
 3. `assets`: `{ checksumSha256: 1 }`, `{ createdAt: -1 }`.
 4. `sources`: `{ sourceType: 1, originPlatform: 1, createdAt: -1 }`.
 5. `publish_records`: `{ socialAccountId: 1, publishedAt: -1 }`.
+6. `storage_provider_accounts`: `{ providerType: 1, status: 1, priority: -1 }`.
 
 ## 4. Data Integrity Rules
 

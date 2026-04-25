@@ -75,6 +75,7 @@ export function Leftbar({ activeSection, onSectionChange }: LeftbarProps) {
   const [navQuery, setNavQuery] = useState("");
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     general: true,
+    pipeline: true,
     workspace: true,
     connection: true,
   });
