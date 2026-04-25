@@ -17,6 +17,9 @@ import {
     Palette,
     Upload,
     User,
+    Share2,
+    ClipboardList,
+    Send,
 } from "lucide-react";
 
 import type { AppSectionId, LeftbarNavGroup, LeftbarNavItem } from "./types";
@@ -124,6 +127,34 @@ export const LEFTBAR_NAV: LeftbarNavGroup[] = [
                 label: "Support Access",
                 description: "Cấu hình debug/support nội bộ khi cần.",
                 badge: "Soon",
+            },
+        ],
+    },
+    {
+        sectionId: "social",
+        sectionIcon: Share2,
+        groupLabel: "Social Platforms",
+        items: [
+            {
+                id: "socialAccounts",
+                icon: Share2,
+                label: "Social Accounts",
+                description:
+                    "Quản lý account Facebook, TikTok, Shopee và YouTube với secrets được mask.",
+            },
+            {
+                id: "platformTasks",
+                icon: ClipboardList,
+                label: "Platform Tasks",
+                description:
+                    "Xem capability, scope còn thiếu và tác vụ có thể làm trên từng nền tảng.",
+            },
+            {
+                id: "publishRecords",
+                icon: Send,
+                label: "Publish Records",
+                description:
+                    "Lập kế hoạch đăng video từ Storage Library sang social account.",
             },
         ],
     },

@@ -7,7 +7,7 @@ import type { LeftbarNavItem } from "@/components/layout/types";
 type ConnectionStatus = "idle" | "checking" | "ok" | "down" | "skipped";
 
 type ConnectionCheck = {
-  serviceType: "mongodb" | "storage";
+  serviceType: "mongodb" | "storage" | "social";
   serviceKey: string;
   label: string;
   status: "ok" | "down" | "skipped";
@@ -16,6 +16,8 @@ type ConnectionCheck = {
   checkedAt: string;
   providerId?: string;
   providerType?: "telegram" | "drive";
+  accountId?: string;
+  platform?: "facebook" | "tiktok" | "shopee" | "youtube";
 };
 
 type ConnectionSummary = {
@@ -81,7 +83,7 @@ export function ConnectionTestPanel({ section }: ConnectionTestPanelProps) {
   const runConnectionTest = async () => {
     setState({
       status: "checking",
-      message: "Checking MongoDB and storage connections...",
+      message: "Checking MongoDB, storage, and social connections...",
       checks: [],
     });
 
@@ -220,8 +222,8 @@ export function ConnectionTestPanel({ section }: ConnectionTestPanelProps) {
           </div>
           <p className="mt-3 text-[12px] leading-5 text-main">{state.message}</p>
           <p className="mt-3 text-[11px] leading-5 text-muted">
-            Connection page hiện kiểm tra MongoDB + các storage account Telegram/Drive
-            đã cấu hình. Không hiển thị secrets.
+            Connection page hiện kiểm tra MongoDB, storage Telegram/Drive và social
+            accounts đã cấu hình. Không hiển thị secrets.
           </p>
         </aside>
       </div>
@@ -260,6 +262,7 @@ export function ConnectionTestPanel({ section }: ConnectionTestPanelProps) {
                       <p className="mt-1 font-mono text-[11px] text-muted">
                         {check.serviceType}
                         {check.providerType ? ` · ${check.providerType}` : ""}
+                        {check.platform ? ` · ${check.platform}` : ""}
                       </p>
                     </td>
                     <td className="px-4 py-3">

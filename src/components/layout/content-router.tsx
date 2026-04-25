@@ -9,6 +9,9 @@ import { LocalUploadIntakePanel } from "@/features/video-intake/local-upload-int
 import { VideoIntakePanel } from "@/features/video-intake/video-intake-panel";
 import { DisplayPreferencesPanel } from "@/features/workspace/display-preferences-panel";
 import { PlaceholderPanel } from "@/features/workspace/placeholder-panel";
+import { PlatformTasksPanel } from "@/features/social/platform-tasks-panel";
+import { PublishRecordsPanel } from "@/features/social/publish-records-panel";
+import { SocialAccountsPanel } from "@/features/social/social-accounts-panel";
 import type { AppFontKey, AppThemeKey } from "@/lib/ui/preferences";
 
 type SectionComponentProps = {
@@ -22,6 +25,9 @@ const SECTION_COMPONENTS: Partial<
     storageLibrary: StorageLibraryPanel,
     localUploadIntake: LocalUploadIntakePanel,
     storageProviders: StorageProvidersPanel,
+    socialAccounts: SocialAccountsPanel,
+    platformTasks: PlatformTasksPanel,
+    publishRecords: PublishRecordsPanel,
     videoIntake: VideoIntakePanel,
 };
 

@@ -22,6 +22,12 @@
 
 ## Done
 
+- `P2-SOCIAL-001` - Social docs and data model readiness.
+- `P2-SOCIAL-002` - Social account CRUD and masked secrets.
+- `P2-SOCIAL-003` - Social capability registry and platform task dashboard.
+- `P2-SOCIAL-004` - Social connection checks.
+- `P2-SOCIAL-005` - Publish records and manual publish planning.
+- `P2-SOCIAL-006` - Social navigation integration and UI polish.
 - `SETUP-DOC-001` - Khởi tạo full documentation system cho repo.
 - `SETUP-GOV-001` - Chuẩn hóa governance rules (engineering/product/agent/task/changelog).
 - `SETUP-ARCH-001` - Chuẩn hóa architecture docs cho Next.js + MongoDB.

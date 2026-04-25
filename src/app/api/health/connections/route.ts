@@ -3,12 +3,14 @@ import { NextResponse } from "next/server";
 import { getAppEnv } from "@/lib/config/env";
 import { checkStorageProviderConnections } from "@/lib/connections/storage-checks";
 import { getMongoDb } from "@/lib/db/mongodb";
+import { checkSocialAccountConnections } from "@/lib/social/connection-checks";
+import { listSocialAccountsForConnectionChecks } from "@/lib/social/repository";
 import { listStorageProviderAccountsForConnectionChecks } from "@/lib/storage-providers/repository";
 
 export const runtime = "nodejs";
 
 type ServiceCheck = {
-  serviceType: "mongodb" | "storage";
+  serviceType: "mongodb" | "storage" | "social";
   serviceKey: string;
   label: string;
   status: "ok" | "down" | "skipped";
@@ -17,6 +19,8 @@ type ServiceCheck = {
   checkedAt: string;
   providerId?: string;
   providerType?: "telegram" | "drive";
+  accountId?: string;
+  platform?: "facebook" | "tiktok" | "shopee" | "youtube";
 };
 
 export async function GET() {
@@ -41,7 +45,10 @@ export async function GET() {
       checkedAt: now,
     });
 
-    const storageAccounts = await listStorageProviderAccountsForConnectionChecks(db);
+    const [storageAccounts, socialAccounts] = await Promise.all([
+      listStorageProviderAccountsForConnectionChecks(db),
+      listSocialAccountsForConnectionChecks(db),
+    ]);
 
     if (storageAccounts.length === 0) {
       checks.push({
@@ -70,6 +77,22 @@ export async function GET() {
         })),
       );
     }
+
+    if (socialAccounts.length === 0) {
+      checks.push({
+        serviceType: "social",
+        serviceKey: "social:none",
+        label: "Social accounts",
+        status: "skipped",
+        message: "No Facebook/TikTok/Shopee/YouTube social account configured.",
+        latencyMs: 0,
+        checkedAt: now,
+      });
+    } else {
+      const socialChecks = await checkSocialAccountConnections(socialAccounts);
+
+      checks.push(...socialChecks);
+    }
   } catch (error) {
     checks.push({
       serviceType: "mongodb",
@@ -88,6 +111,15 @@ export async function GET() {
       serviceType: "storage",
       serviceKey: "storage:skipped-db-down",
       label: "Storage accounts",
+      status: "skipped",
+      message: "Skipped because MongoDB is down.",
+      latencyMs: 0,
+      checkedAt: now,
+    });
+    checks.push({
+      serviceType: "social",
+      serviceKey: "social:skipped-db-down",
+      label: "Social accounts",
       status: "skipped",
       message: "Skipped because MongoDB is down.",
       latencyMs: 0,

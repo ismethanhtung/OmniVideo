@@ -120,21 +120,44 @@ Trường chính:
 
 - `_id`
 - `platform` (`tiktok`, `youtube`, `facebook`, `shopee`, `other`)
+- `label`
 - `accountId`
 - `displayName`
+- `handle`
+- `authMode` (`oauth`, `access_token`, `api_key`, `manual`, `not_configured`)
+- `status` (`active`, `paused`, `error`)
 - `permissionScopes`
-- `connectionStatus`
+- `supportedFormats`
 - `channelTags`
+- `secrets` (server-only, không trả raw value về UI)
 - `lastHealthCheckAt`
+- `lastError`
+- `usage`
+
+## 2.9.1 `social_platform_capabilities`
+
+Capability registry cho UI và validation social.
+
+- `_id` (optional nếu persist registry)
+- `platform` (`facebook`, `tiktok`, `shopee`, `youtube`)
+- `formats` (`publishType`, required scopes, metadata limits)
+- `supportedTaskTypes`
+- `realPublishStatus`
+- `complianceNotes`
 
 ## 2.10 `publish_records`
 
 - `_id`
 - `assetId`
 - `socialAccountId`
+- `platform`
+- `publishType`
 - `platformPostId`
-- `status` (`queued`, `published`, `failed`, `retrying`)
+- `status` (`planned`, `queued`, `published`, `failed`, `retrying`, `canceled`)
+- `title`, `caption`, `hashtags`
+- `scheduledAt`
 - `publishedAt`
+- `retryCount`
 - `errorCode`
 - `errorDetail`
 
@@ -156,6 +179,8 @@ Trường chính:
 4. `sources`: `{ sourceType: 1, originPlatform: 1, createdAt: -1 }`.
 5. `publish_records`: `{ socialAccountId: 1, publishedAt: -1 }`.
 6. `storage_provider_accounts`: `{ providerType: 1, status: 1, priority: -1 }`.
+7. `social_accounts`: `{ platform: 1, status: 1, label: 1 }`.
+8. `publish_records`: `{ platform: 1, status: 1, createdAt: -1 }`, `{ assetId: 1, socialAccountId: 1 }`.
 
 ## 4. Data Integrity Rules
 

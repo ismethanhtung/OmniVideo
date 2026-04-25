@@ -2,8 +2,18 @@
 
 ## 2026-04-26
 
+### Added
+
+- Thêm Social Platform Control Center cho Facebook/TikTok/Shopee/YouTube gồm Social Accounts, Platform Tasks và Publish Records trong dashboard.
+- Thêm social domain foundation tại `src/lib/social/*`: account validation, secret masking, capability registry, publish record validation, retry eligibility và connection checks.
+- Thêm API social foundation: `GET/POST /api/social/accounts`, `GET/PATCH/DELETE /api/social/accounts/[accountId]`, `GET /api/social/capabilities`, `GET/POST /api/social/publish-records`, `GET /api/social/dashboard`.
+- Thêm `social` checks vào `GET /api/health/connections` và Connection Test panel.
+- Thêm Vitest config alias `@ -> src` để API route contract tests import App Router routes ổn định.
+- Thêm tests cho social validation, capability registry, secret masking, retry eligibility, connection checks và social API validation contracts.
+
 ### Changed
 
+- Cập nhật social docs/data model/roadmap/connection docs theo hướng Control Center trước, real publish adapter deferred.
 - Cập nhật API `GET /api/storage/providers/[providerId]` để trả editable payload (bao gồm secrets) phục vụ hydrate form edit.
 - Cập nhật Storage Providers UI: khi bấm `Edit` sẽ fetch chi tiết provider và nạp lại toàn bộ cấu hình đã lưu trước đó vào modal.
 - Cập nhật confirm modal Drive fallback trong Local Upload Intake để có thêm lựa chọn `Upload anyway`.
@@ -23,7 +33,9 @@
 
 ### Notes
 
-- Task IDs: P1-STORAGE-006, P1-UX-003, P1-UX-004
+- Task IDs: P2-SOCIAL-001, P2-SOCIAL-002, P2-SOCIAL-003, P2-SOCIAL-004, P2-SOCIAL-005, P2-SOCIAL-006, P1-STORAGE-006, P1-UX-003, P1-UX-004
+- Verification: `npm run test` pass (84 tests / 21 files); `npm run build` pass. Build còn warning cũ: `src/features/workspace/display-preferences-panel.tsx` import `Image` không dùng.
+- Risks: Social Control Center hiện chỉ tạo publish record trạng thái `planned`; real publish/OAuth adapters vẫn deferred.
 
 ## 2026-04-25
 

@@ -42,13 +42,14 @@ Mục tiêu: quản trị nền tảng vận hành.
 Phạm vi:
 
 1. AI Provider Management: account/model/quota/spend/fallback.
-2. Social Account Management: account/permission/health/publish mapping.
+2. Social Account Management: control center cho Facebook/TikTok/Shopee/YouTube gồm account/permission/capability/health/publish planning.
 3. Connection Center: trạng thái kết nối toàn hệ thống.
 
 Definition of Success:
 
 1. Có thể kiểm tra nhanh hệ thống đang khỏe hay lỗi ở đâu.
 2. Có chính sách chọn provider ưu tiên + fallback khi fail.
+3. Có thể lập kế hoạch publish video asset sang social account mà chưa cần auto-publish thật.
 
 ## Phase 3 - Video Pipeline Modularization
 

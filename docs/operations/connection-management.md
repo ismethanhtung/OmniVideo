@@ -11,7 +11,7 @@ Tạo một tab tập trung hiển thị trạng thái kết nối của toàn b
 3. Downloader service.
 4. AI providers.
 5. Storage providers.
-6. Social APIs.
+6. Social APIs/accounts.
 
 ## 3. Check Types
 
@@ -36,12 +36,14 @@ Tạo một tab tập trung hiển thị trạng thái kết nối của toàn b
 2. Bộ lọc theo domain (db/provider/storage/social).
 3. Link vào log lỗi gần nhất.
 4. Manual re-check button.
+5. Social account checks hiển thị theo platform/account và không lộ secrets.
 
 ## 6. Operational Rules
 
 1. Check interval phải configurable.
 2. Không chạy check quá dày gây rate-limit provider.
 3. Lỗi auth phải hiển thị hành động khắc phục (reconnect/update secret).
+4. Social Control Center phase đầu có thể trả `skipped` cho account `manual` vì real API publish/check chưa bật.
 
 ## 7. Readiness Rule
 
