@@ -26,7 +26,10 @@ export function getSocialOAuthConfig(platform: SocialPlatform): SocialOAuthConfi
       clientId: process.env.YOUTUBE_CLIENT_ID?.trim() ?? "",
       clientSecret: process.env.YOUTUBE_CLIENT_SECRET?.trim() ?? "",
       redirectUri,
-      scopes: ["https://www.googleapis.com/auth/youtube.upload"],
+      scopes: [
+        "https://www.googleapis.com/auth/youtube.upload",
+        "https://www.googleapis.com/auth/youtube.readonly",
+      ],
     };
   }
 

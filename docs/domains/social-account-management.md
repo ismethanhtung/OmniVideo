@@ -142,5 +142,6 @@ Platform notes:
    - Token cũ được cấp trước khi thêm scope sẽ không tự có quyền mới.
    - Bấm `Connect OAuth` lại để Google cấp token mới.
    - Nếu Google không hiện lại consent screen, vào Google Account -> Security -> Third-party access và remove app `omni`, rồi connect lại.
-10. Connection Test cho YouTube hiện kiểm tra access token còn hợp lệ và có scope `https://www.googleapis.com/auth/youtube.upload`; nó không dùng endpoint đọc channel để tránh yêu cầu scope đọc không cần thiết.
-11. `Publish now` của YouTube có thể chọn `private`, `unlisted`, hoặc `public`. Sau khi có `platformPostId`, mở YouTube Studio để kiểm tra metadata, copyright checks và visibility thực tế.
+10. Connection Test cho YouTube hiện kiểm tra access token còn hợp lệ và có scope `https://www.googleapis.com/auth/youtube.upload`.
+11. Trang Published Content có thể đọc danh sách video/Short đã upload trên channel khi OAuth token có thêm scope `https://www.googleapis.com/auth/youtube.readonly`; nếu account đã connect trước khi scope này được thêm thì cần Connect OAuth lại.
+12. `Publish now` của YouTube có thể chọn `private`, `unlisted`, hoặc `public`. Sau khi có `platformPostId`, mở YouTube Studio để kiểm tra metadata, copyright checks và visibility thực tế.

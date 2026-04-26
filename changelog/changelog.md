@@ -22,6 +22,10 @@
 - Thêm guardrails cho YouTube Shorts: chặn video thiếu metadata, video ngang hoặc dài hơn 3 phút trước khi upload.
 - Thêm trang Tutor Docs trong Social Platforms để chứa hướng dẫn OAuth/social integration dài và troubleshooting.
 - Thêm `docs/operations/tutorial-docs.md`.
+- Thêm trang Social Published Content để xem inventory video/Short theo social account và footprint publish theo từng asset.
+- Thêm API `GET /api/social/published-content` và domain service YouTube inventory best-effort, đọc uploads playlist khi account có scope `youtube.readonly`.
+- Thêm tests cho Social Published Content API và YouTube inventory success/failure path.
+- Thêm quick-open links cho social published posts: user có thể mở trực tiếp bài đăng từ `Publish Records` và `Published Content` khi có `platformPostId` hợp lệ.
 
 ### Changed
 
@@ -31,6 +35,8 @@
 - Cập nhật Publish Records modal: mặc định `Publish now`, chỉ hiển thị `Scheduled At` khi schedule, hiển thị trạng thái đang upload và khóa submit để tránh double publish.
 - Cập nhật Social Account modal: chuyển checklist YouTube OAuth dài sang quick setup và link mở Tutor Docs.
 - Cập nhật social docs với khuyến nghị OAuth/refresh-token flow là hướng dài hạn, manual access token chỉ là fallback/debug.
+- Cập nhật YouTube OAuth scopes để request thêm `https://www.googleapis.com/auth/youtube.readonly` phục vụ đọc inventory channel upload.
+- Cập nhật social UI để `platformPostId` không chỉ hiển thị text: YouTube tự build watch URL, còn ID đã là URL đầy đủ sẽ mở trực tiếp.
 - Cập nhật social account status semantics: account mới là `needs_auth`, chỉ OAuth callback/token exchange thành công mới set `connected`; Connection Test báo `AUTH_SOCIAL_NOT_CONNECTED` khi chưa kết nối thật.
 - Cập nhật Social Accounts UI để lỗi OAuth/config trong modal không còn ghi đè status bar của toàn trang.
 - Cập nhật Connection Test để YouTube account `connected` không còn bị skipped nếu có access token.
@@ -55,9 +61,9 @@
 
 ### Notes
 
-- Task IDs: P2-SOCIAL-001, P2-SOCIAL-002, P2-SOCIAL-003, P2-SOCIAL-004, P2-SOCIAL-005, P2-SOCIAL-006, P2-SOCIAL-007, P2-SOCIAL-008, P2-SOCIAL-009, P2-SOCIAL-010, P2-SOCIAL-011, P2-SOCIAL-012, P2-SOCIAL-013, P2-SOCIAL-014, P1-STORAGE-006, P1-UX-003, P1-UX-004, P1-STABILITY-002
-- Verification: `npm run test` pass (93 tests / 22 files); `npm run build` pass. Build còn warning cũ: `src/features/workspace/display-preferences-panel.tsx` import `Image` không dùng.
-- Risks: YouTube `Publish now` đã upload thật nhưng đang đọc video vào memory trước khi gửi; Shorts phụ thuộc metadata duration/width/height trong asset; Facebook/TikTok/Shopee real publish adapters vẫn deferred.
+- Task IDs: P2-SOCIAL-001, P2-SOCIAL-002, P2-SOCIAL-003, P2-SOCIAL-004, P2-SOCIAL-005, P2-SOCIAL-006, P2-SOCIAL-007, P2-SOCIAL-008, P2-SOCIAL-009, P2-SOCIAL-010, P2-SOCIAL-011, P2-SOCIAL-012, P2-SOCIAL-013, P2-SOCIAL-014, P2-SOCIAL-015, FAST-SOCIAL-001, P1-STORAGE-006, P1-UX-003, P1-UX-004, P1-STABILITY-002
+- Verification: `npm run test` pass (97 tests / 24 files); `npm run build` pass. Build còn warning cũ: `src/features/workspace/display-preferences-panel.tsx` import `Image` không dùng.
+- Risks: YouTube `Publish now` đã upload thật nhưng đang đọc video vào memory trước khi gửi; Shorts phụ thuộc metadata duration/width/height trong asset; YouTube Published Content cần OAuth reconnect để token có scope `youtube.readonly`; Facebook/TikTok/Shopee real publish adapters vẫn deferred.
 
 ## 2026-04-25
 

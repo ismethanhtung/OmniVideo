@@ -25,9 +25,12 @@ Tutor Docs gom các hướng dẫn tích hợp dài ra khỏi modal cấu hình.
 2. Connection Test says insufficient scopes:
    - Add `https://www.googleapis.com/auth/youtube.upload`.
    - Reconnect OAuth because old tokens do not receive newly added scopes.
-3. Upload requested public/unlisted but YouTube keeps it private:
+3. Published Content cannot fetch YouTube channel uploads:
+   - Add `https://www.googleapis.com/auth/youtube.readonly`.
+   - Reconnect OAuth because old tokens do not receive newly added scopes.
+4. Upload requested public/unlisted but YouTube keeps it private:
    - YouTube may force API uploads from unverified API projects to private until the project passes required review/audit.
-4. Shorts intent appears as a normal video:
+5. Shorts intent appears as a normal video:
    - YouTube Data API uses the same upload endpoint for Shorts and videos.
    - Shorts classification depends on the media: square or vertical, and no more than 3 minutes.
    - OmniVideo blocks `youtube_short` when asset metadata is missing, video is horizontal, or duration is over 3 minutes.

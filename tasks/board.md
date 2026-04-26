@@ -22,6 +22,8 @@
 
 ## Done
 
+- `FAST-SOCIAL-001` - Add quick-open links for published posts.
+- `P2-SOCIAL-015` - Social published content inventory.
 - `P1-STABILITY-002` - Switch Next.js bundler scripts to Turbopack.
 - `P2-SOCIAL-014` - Move long integration guidance into Tutor Docs.
 - `P2-SOCIAL-013` - Fix Publish Records UX, YouTube privacy, and Shorts guardrails.

@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Plus, RefreshCw } from "lucide-react";
+import { ExternalLink, Plus, RefreshCw } from "lucide-react";
 
 import type { LeftbarNavItem } from "@/components/layout/types";
 
 import {
+  buildPublishedPostUrl,
   formatPlatform,
   formatPublishType,
   type ApiResponse,
@@ -302,6 +303,7 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
               <th className="px-4 py-2 font-semibold">Mode</th>
               <th className="px-4 py-2 font-semibold">Privacy</th>
               <th className="px-4 py-2 font-semibold">Status</th>
+              <th className="px-4 py-2 font-semibold">Post</th>
               <th className="px-4 py-2 font-semibold">Schedule</th>
               <th className="px-4 py-2 font-semibold">Hashtags</th>
             </tr>
@@ -309,7 +311,7 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
           <tbody>
             {records.length === 0 ? (
               <tr>
-                <td className="px-4 py-6 text-muted" colSpan={9}>
+                <td className="px-4 py-6 text-muted" colSpan={10}>
                   Chưa có publish record nào.
                 </td>
               </tr>
@@ -335,6 +337,31 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
                     {record.privacyStatus ?? "private"}
                   </td>
                   <td className="px-4 py-3 text-muted">{record.status}</td>
+                  <td className="px-4 py-3 text-muted">
+                    {record.platformPostId ? (
+                      (() => {
+                        const postUrl = buildPublishedPostUrl({
+                          platform: record.platform,
+                          platformPostId: record.platformPostId,
+                        });
+
+                        return postUrl ? (
+                          <a
+                            href={postUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1 font-semibold text-main hover:underline"
+                          >
+                            Open <ExternalLink className="h-3 w-3" />
+                          </a>
+                        ) : (
+                          record.platformPostId
+                        );
+                      })()
+                    ) : (
+                      "-"
+                    )}
+                  </td>
                   <td className="max-w-[260px] px-4 py-3 text-muted">
                     {record.errorCode
                       ? `${record.errorCode}: ${record.errorDetail ?? ""}`

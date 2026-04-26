@@ -21,6 +21,7 @@ import {
     ClipboardList,
     Send,
     BookOpen,
+    ListVideo,
 } from "lucide-react";
 
 import type { AppSectionId, LeftbarNavGroup, LeftbarNavItem } from "./types";
@@ -156,6 +157,13 @@ export const LEFTBAR_NAV: LeftbarNavGroup[] = [
                 label: "Publish Records",
                 description:
                     "Lập kế hoạch đăng video từ Storage Library sang social account.",
+            },
+            {
+                id: "publishedContent",
+                icon: ListVideo,
+                label: "Published Content",
+                description:
+                    "Xem video/Short đã đăng theo social account và footprint nền tảng của từng asset.",
             },
             {
                 id: "tutorialDocs",

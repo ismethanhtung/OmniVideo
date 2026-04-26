@@ -10,6 +10,7 @@ import { VideoIntakePanel } from "@/features/video-intake/video-intake-panel";
 import { DisplayPreferencesPanel } from "@/features/workspace/display-preferences-panel";
 import { PlaceholderPanel } from "@/features/workspace/placeholder-panel";
 import { PlatformTasksPanel } from "@/features/social/platform-tasks-panel";
+import { PublishedContentPanel } from "@/features/social/published-content-panel";
 import { PublishRecordsPanel } from "@/features/social/publish-records-panel";
 import { SocialAccountsPanel } from "@/features/social/social-accounts-panel";
 import { TutorialDocsPanel } from "@/features/social/tutorial-docs-panel";
@@ -28,6 +29,7 @@ const SECTION_COMPONENTS: Partial<
     storageProviders: StorageProvidersPanel,
     socialAccounts: SocialAccountsPanel,
     platformTasks: PlatformTasksPanel,
+    publishedContent: PublishedContentPanel,
     publishRecords: PublishRecordsPanel,
     tutorialDocs: TutorialDocsPanel,
     videoIntake: VideoIntakePanel,

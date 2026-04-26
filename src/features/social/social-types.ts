@@ -80,3 +80,31 @@ export function formatPublishType(publishType: SocialPublishType) {
     .map((part) => part[0]?.toUpperCase() + part.slice(1))
     .join(" ");
 }
+
+function looksLikeUrl(value: string) {
+  return /^https?:\/\//i.test(value);
+}
+
+export function buildPublishedPostUrl({
+  platform,
+  platformPostId,
+}: {
+  platform: SocialPlatform;
+  platformPostId: string | null | undefined;
+}) {
+  const id = platformPostId?.trim();
+
+  if (!id) {
+    return null;
+  }
+
+  if (looksLikeUrl(id)) {
+    return id;
+  }
+
+  if (platform === "youtube") {
+    return `https://www.youtube.com/watch?v=${encodeURIComponent(id)}`;
+  }
+
+  return null;
+}
