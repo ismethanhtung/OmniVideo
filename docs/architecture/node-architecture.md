@@ -12,6 +12,21 @@
 - Node kết nối qua ports (typed input/output).
 - Execution theo topological order + dependency constraints.
 
+### 2.1 Workspace Canvas MVP
+
+Milestone canvas đầu tiên dùng browser-local draft để dựng graph trước khi có
+runtime runner đầy đủ.
+
+1. UI Workspace có catalog node, canvas, edge wiring cơ bản và inspector contract.
+2. Draft graph lưu tạm bằng `localStorage`, chưa persist vào MongoDB.
+3. Node template hiển thị `available/planned/blocked` để phân biệt capability đã có với node chỉ mới là contract.
+4. Execution từ canvas sang `pipeline_definitions/job_runs` là milestone sau; MVP này chỉ chuẩn hóa model và UX soạn flow.
+5. Canvas hỗ trợ drag node, pan/zoom viewport và báo lỗi connection trong UI thay vì throw ra app overlay.
+6. Runtime Bridge trong Workspace chỉ điều hướng tới module đã chạy thật (`Local Upload Intake`, `Publish Records`); graph runner trực tiếp cần API orchestration riêng ở milestone sau.
+7. Workspace có executable path đầu tiên cho `source.file -> storage.upload -> social.publish`, chạy tuần tự local upload API rồi publish-now API ngay trong Workspace.
+8. Workspace runner không ép một path duy nhất: `source.file -> storage.upload`, `source.asset -> social.publish`, và `source.file -> storage.upload -> social.publish` đều là executable paths.
+9. Runtime config thuộc về node đang chọn trong Inspector, không nằm tách khỏi graph như form global.
+
 ## 3. Node Categories
 
 ### Input Nodes

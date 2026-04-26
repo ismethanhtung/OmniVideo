@@ -1,6 +1,7 @@
 import type { ElementType } from "react";
 
 export type AppSectionId =
+  | "workspace"
   | "profile"
   | "ai"
   | "display"

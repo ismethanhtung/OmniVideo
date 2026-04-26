@@ -39,6 +39,12 @@
 - Thêm filters platform/status và phân trang cho `Publish Records` qua API + UI.
 - Thêm confirm modal trước khi xóa Social Account.
 - Thêm tests cho progress center, Publish Records filter/pagination API và key helper của Published Content.
+- Thêm Workspace Canvas MVP với node catalog, graph draft helpers, canvas/inspector UI, sample Douyin rework flow và local draft persistence.
+- Thêm drag node, pan/zoom canvas và Runtime Bridge cho Workspace để mở nhanh Local Upload Intake/Publish Records từ graph surface.
+- Thêm executable Workspace flow đầu tiên: `Upload Video -> Save to Storage -> Publish Social`, chạy trực tiếp trong Workspace qua local upload API và publish-now API.
+- Thêm input node `Storage Asset` để dùng video đã có trong Storage Library làm đầu vào Workspace flow.
+- Thêm executable Workspace modes linh hoạt: upload-only, existing-asset publish, và upload-to-social end-to-end.
+- Thêm Progress Center integration cho Workspace Flow, cập nhật tiến trình theo stage upload/publish.
 
 ### Changed
 
@@ -95,6 +101,15 @@
 - Cập nhật Storage Provider modal: khi chọn Drive, toàn bộ form chuyển thành 2 cột riêng; input (`Provider/Label/Description/Priority/Tags/Secrets`) ở cột trái và Drive OAuth guidance là panel độc lập ở cột phải.
 - Cập nhật `New Publish Record` asset selector từ plain text dropdown sang picker card có preview thumbnail + metadata tags (provider/platform/quality/size) để phân biệt asset dễ hơn.
 - Cập nhật version app từ `0.1.0` lên `0.2.0`.
+- Cập nhật Social runtime UI để dùng semantic status badges dùng chung cho `Published Content`, `Publish Records` và `Social Accounts`, giúp scan nhanh trạng thái `published/failed/planned/connected/needs_auth`.
+- Tinh chỉnh semantic status UI theo mật độ giao diện: giữ badge cho account-level status, còn dense rows/tables (Social Published Content, Publish Records, Video Intake, Local Upload Intake) dùng text-only status colors cho `success/failed/...` để gọn hơn.
+- Cập nhật default app section từ `profile` sang `workspace` và đăng ký Workspace trong navigation/content router.
+- Cập nhật Workspace thành full-width surface riêng, không còn bị giới hạn `max-w-7xl`; left catalog và right inspector scroll độc lập.
+- Cập nhật Workspace edge validation để lỗi thiếu input/output port hiển thị trong UI thay vì throw ra Next.js overlay.
+- Cập nhật node contract `storage.upload` để output `asset`, cho phép nối tiếp sang `social.publish` trong executable upload-to-social flow.
+- Cập nhật Workspace runtime config chuyển vào Inspector theo selected node thay vì form global trên graph.
+- Cập nhật Workspace canvas controls: bỏ title strip trong graph và đưa pan/zoom/graph status/reset/clear vào overlay bên trong canvas.
+- Cập nhật nút `Run Workspace Flow` sang primary action rõ hơn.
 
 ### Fixed
 
@@ -113,10 +128,12 @@
 - Sửa lỗi vận hành account Facebook nhiều Page bằng cách cho chọn target Page trực tiếp trong publish modal thay vì phụ thuộc duy nhất vào cấu hình account.
 - Sửa false-down Connection Test cho account Facebook nhiều Page (không còn đánh down khi token OK nhưng chưa set account-level pageId).
 - Sửa false-down YouTube Connection Test do access token hết hạn bằng refresh-token check path.
+- Sửa trạng thái reload mặc định hiện `Unknown section` do `profile` không nằm trong navigation registry.
+- Sửa border trái Inspector trên Workspace về border token mảnh, tránh vệt đậm lệch phong cách.
 
 ### Notes
 
-- Task IDs: P2-SOCIAL-001, P2-SOCIAL-002, P2-SOCIAL-003, P2-SOCIAL-004, P2-SOCIAL-005, P2-SOCIAL-006, P2-SOCIAL-007, P2-SOCIAL-008, P2-SOCIAL-009, P2-SOCIAL-010, P2-SOCIAL-011, P2-SOCIAL-012, P2-SOCIAL-013, P2-SOCIAL-014, P2-SOCIAL-015, P2-SOCIAL-016, P2-SOCIAL-017, P2-SOCIAL-018, FAST-SOCIAL-001, FAST-SOCIAL-002, FAST-SOCIAL-003, FAST-CONN-002, FAST-GOV-002, FAST-STORAGE-001, FAST-STORAGE-002, FAST-STORAGE-003, FAST-STORAGE-004, FAST-STORAGE-005, FAST-STORAGE-006, P1-STORAGE-006, P1-UX-003, P1-UX-004, P1-STABILITY-002
+- Task IDs: P2-SOCIAL-001, P2-SOCIAL-002, P2-SOCIAL-003, P2-SOCIAL-004, P2-SOCIAL-005, P2-SOCIAL-006, P2-SOCIAL-007, P2-SOCIAL-008, P2-SOCIAL-009, P2-SOCIAL-010, P2-SOCIAL-011, P2-SOCIAL-012, P2-SOCIAL-013, P2-SOCIAL-014, P2-SOCIAL-015, P2-SOCIAL-016, P2-SOCIAL-017, P2-SOCIAL-018, FAST-SOCIAL-001, FAST-SOCIAL-002, FAST-SOCIAL-003, FAST-SOCIAL-004, FAST-UX-005, FAST-CONN-002, FAST-GOV-002, FAST-STORAGE-001, FAST-STORAGE-002, FAST-STORAGE-003, FAST-STORAGE-004, FAST-STORAGE-005, FAST-STORAGE-006, P1-STORAGE-006, P1-UX-003, P1-UX-004, P1-STABILITY-002, P4-WORKSPACE-001, P4-WORKSPACE-002, P4-WORKSPACE-003, P4-WORKSPACE-004, P4-WORKSPACE-005
 - Verification: `npm run test` pass (102 tests / 25 files); `npm run build` pass. Build còn warning cũ: `src/features/workspace/display-preferences-panel.tsx` import `Image` không dùng.
 - Verification (FAST-STORAGE-001): superseded by FAST-STORAGE-002 OAuth-only pivot trong cùng ngày.
 - Verification (FAST-STORAGE-002): `npm run test -- --run src/lib/storage-providers/validation.test.ts src/lib/connections/storage-checks.test.ts` pass (14 tests / 2 files); `npm run build` pass.
@@ -127,6 +144,11 @@
 - Verification (FAST-SOCIAL-002): `npm run test -- --run src/lib/social/facebook-auth.test.ts src/lib/social/facebook-upload.test.ts src/lib/social/connection-checks.test.ts` pass (14 tests / 3 files); `npm run test` pass (120 tests / 30 files); `npm run build` pass with existing unused `Image` warning in `display-preferences-panel.tsx`.
 - Verification (FAST-SOCIAL-003): `npm run test -- --run src/lib/social/facebook-auth.test.ts src/lib/social/facebook-upload.test.ts src/lib/social/connection-checks.test.ts src/lib/social/validation.test.ts 'src/app/api/social/accounts/[accountId]/facebook-pages/route.test.ts'` pass (28 tests / 5 files); `npm run test` pass (123 tests / 31 files); `npm run build` pass with existing unused `Image` warning in `display-preferences-panel.tsx`.
 - Verification (FAST-CONN-002, FAST-GOV-002, P2-SOCIAL-018): `npm run test -- --run src/lib/social/connection-checks.test.ts src/lib/social/facebook-auth.test.ts src/lib/social/facebook-upload.test.ts src/lib/social/validation.test.ts src/app/api/social/publish-records/route.test.ts 'src/app/api/social/accounts/[accountId]/facebook-pages/route.test.ts'` pass (30 tests / 6 files); `npm run test` pass (124 tests / 31 files); `npm run build` pass with existing lint warnings (`navigation.ts` unused icons, `display-preferences-panel.tsx` unused `Image`).
+- Verification (P4-WORKSPACE-001): `npm run test -- --run src/lib/workspace/workspace-graph.test.ts src/components/layout/navigation.test.ts` pass (7 tests / 2 files); `npm run test` pass (143 tests / 37 files); `npm run build` pass with existing warning in `display-preferences-panel.tsx` (`Image` unused).
+- Verification (P4-WORKSPACE-002): `npm run test -- --run src/lib/workspace/workspace-graph.test.ts src/components/layout/navigation.test.ts` pass (9 tests / 2 files); `npm run test` pass (145 tests / 37 files); `npm run build` pass with existing warning in `display-preferences-panel.tsx` (`Image` unused).
+- Verification (P4-WORKSPACE-003): `npm run test -- --run src/lib/workspace/workspace-graph.test.ts src/components/layout/navigation.test.ts` pass (11 tests / 2 files); `npm run build` pass; `npm run test` pass (147 tests / 37 files). Build warning remains existing `display-preferences-panel.tsx` unused `Image`.
+- Verification (P4-WORKSPACE-004): `npm run test -- --run src/lib/workspace/workspace-graph.test.ts src/components/layout/navigation.test.ts` pass (12 tests / 2 files); `npm run build` pass; `npm run test` pass (148 tests / 37 files). Build warning remains existing `display-preferences-panel.tsx` unused `Image`.
+- Verification (P4-WORKSPACE-005): `npm run test -- --run src/lib/workspace/workspace-graph.test.ts src/components/layout/navigation.test.ts src/lib/ui/progress-center.test.ts` pass (14 tests / 3 files); `npm run build` pass; `npm run test` pass (148 tests / 37 files). Build warning remains existing `display-preferences-panel.tsx` unused `Image`.
 - Risks: YouTube `Publish now` đã upload thật nhưng đang đọc video vào memory trước khi gửi; TikTok publish có thể ở trạng thái processing/moderation và chưa có public post id ngay; YouTube Published Content cần OAuth reconnect để token có scope `youtube.readonly`; Facebook/Shopee real publish adapters vẫn deferred.
 
 ## 2026-04-25

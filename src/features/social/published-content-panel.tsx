@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ExternalLink, RefreshCw } from "lucide-react";
 
 import type { LeftbarNavItem } from "@/components/layout/types";
+import { StatusText } from "@/components/ui/status-text";
 
 import { buildPublishedFootprintKey } from "./published-content-keys";
 import {
@@ -14,6 +15,7 @@ import {
   type SocialPlatform,
   type SocialPublishType,
 } from "./social-types";
+import { StatusBadge } from "./status-badge";
 
 type PublishedContentPanelProps = {
   section: LeftbarNavItem;
@@ -164,9 +166,7 @@ export function PublishedContentPanel({ section }: PublishedContentPanelProps) {
       </header>
 
       <div className="border-b border-main bg-secondary/25 px-5 py-3 text-[12px] text-muted">
-        <span className="inline-flex border border-main bg-main px-2 py-1 text-[10px] font-bold uppercase">
-          {status}
-        </span>
+        <StatusBadge status={status} />
         <span className="ml-3">{message}</span>
       </div>
 
@@ -196,9 +196,11 @@ export function PublishedContentPanel({ section }: PublishedContentPanelProps) {
                       {formatPlatform(account.platform)} · {account.label}
                     </p>
                     <p className="mt-1 text-[11px] text-muted">
-                      {account.displayName ?? account.handle ?? account.accountId} ·{" "}
-                      {account.status}
+                      {account.displayName ?? account.handle ?? account.accountId}
                     </p>
+                    <div className="mt-2">
+                      <StatusBadge status={account.status} />
+                    </div>
                   </div>
                   <span className="border border-main bg-main px-2 py-1 text-[10px] font-bold uppercase text-muted">
                     {account.localRecords.length} local records
@@ -232,7 +234,9 @@ export function PublishedContentPanel({ section }: PublishedContentPanelProps) {
                             <td className="px-4 py-3 text-muted">
                               {formatPublishType(record.publishType)}
                             </td>
-                            <td className="px-4 py-3 text-muted">{record.status}</td>
+                            <td className="px-4 py-3 text-muted">
+                              <StatusText status={record.status} className="font-medium" />
+                            </td>
                             <td className="px-4 py-3 text-muted">
                               {formatDate(record.publishedAt)}
                             </td>
@@ -294,8 +298,13 @@ export function PublishedContentPanel({ section }: PublishedContentPanelProps) {
                       {account.label}
                     </p>
                     <p className="mt-1 text-[11px] leading-5 text-muted">
-                      {account.youtubeRemote?.status ?? "skipped"} ·{" "}
-                      {account.youtubeRemote?.message ?? "No YouTube fetch."}
+                      <StatusText
+                        status={account.youtubeRemote?.status ?? "skipped"}
+                        className="font-semibold"
+                      />{" "}
+                      <span className="ml-1">
+                        {account.youtubeRemote?.message ?? "No YouTube fetch."}
+                      </span>
                     </p>
                     <div className="mt-3 space-y-3">
                       {(account.youtubeRemote?.videos ?? []).map((video) => (
@@ -374,7 +383,8 @@ export function PublishedContentPanel({ section }: PublishedContentPanelProps) {
                         const content = (
                           <>
                             {formatPlatform(platform.platform)} ·{" "}
-                            {platform.accountLabel} · {platform.status}
+                            {platform.accountLabel} ·{" "}
+                            <StatusText status={platform.status} className="font-semibold" />
                             {postUrl ? (
                               <span className="inline-flex items-center gap-1">
                                 · Open <ExternalLink className="h-3 w-3" />

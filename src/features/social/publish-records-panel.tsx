@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ExternalLink, Plus, RefreshCw, Trash2 } from "lucide-react";
 
 import type { LeftbarNavItem } from "@/components/layout/types";
+import { StatusText } from "@/components/ui/status-text";
 import { getTelegramDownloadBlockedReason } from "@/lib/storage/telegram-download";
 import {
   finishProgressTask,
@@ -22,6 +23,7 @@ import {
   type SocialPublishType,
   type YouTubePrivacyStatus,
 } from "./social-types";
+import { StatusBadge } from "./status-badge";
 
 type PublishRecordsPanelProps = {
   section: LeftbarNavItem;
@@ -601,9 +603,7 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
       </header>
 
       <div className="border-b border-main bg-secondary/25 px-5 py-3 text-[12px] text-muted">
-        <span className="inline-flex border border-main bg-main px-2 py-1 text-[10px] font-bold uppercase">
-          {status}
-        </span>
+        <StatusBadge status={status} />
         <span className="ml-3">{message}</span>
       </div>
 
@@ -715,7 +715,9 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
                   <td className="px-4 py-3 text-muted">
                     {record.privacyStatus ?? "private"}
                   </td>
-                  <td className="px-4 py-3 text-muted">{record.status}</td>
+                  <td className="px-4 py-3 text-muted">
+                    <StatusText status={record.status} className="font-medium" />
+                  </td>
                   <td className="px-4 py-3 text-muted">
                     {record.platformPostId ? (
                       (() => {

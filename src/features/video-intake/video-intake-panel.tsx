@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { RefreshCw } from "lucide-react";
 
 import type { LeftbarNavItem } from "@/components/layout/types";
+import { StatusText } from "@/components/ui/status-text";
 
 type UploadProviderType = "telegram" | "drive";
 type IntakeQualityPreference = "best" | "1080p" | "720p" | "480p" | "360p";
@@ -536,8 +537,8 @@ export function VideoIntakePanel({ section }: VideoIntakePanelProps) {
                     </div>
 
                     <div className="space-y-3 px-4 py-4">
-                        <div className="inline-flex border border-main bg-main px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-muted">
-                            {state.status}
+                        <div className="text-[10px] font-bold uppercase tracking-wide">
+                            <StatusText status={state.status} />
                         </div>
                         <p className="text-[12px] leading-5 text-main">
                             {state.message}
@@ -594,8 +595,8 @@ export function VideoIntakePanel({ section }: VideoIntakePanelProps) {
                                             <span className="text-main">
                                                 {step.label}
                                             </span>
-                                            <span className="font-mono text-muted">
-                                                {step.status}
+                                            <span className="font-mono">
+                                                <StatusText status={step.status} />
                                             </span>
                                         </div>
                                         {step.errorCode ? (
@@ -692,8 +693,8 @@ export function VideoIntakePanel({ section }: VideoIntakePanelProps) {
                                         <td className="whitespace-nowrap px-4 py-3 text-muted">
                                             {formatDate(run.createdAt)}
                                         </td>
-                                        <td className="px-4 py-3 font-mono text-[11px] text-main">
-                                            {run.status}
+                                        <td className="px-4 py-3 font-mono text-[11px]">
+                                            <StatusText status={run.status} />
                                         </td>
                                         <td className="max-w-[360px] px-4 py-3">
                                             <p className="truncate text-main">

@@ -9,6 +9,7 @@ import { LocalUploadIntakePanel } from "@/features/video-intake/local-upload-int
 import { VideoIntakePanel } from "@/features/video-intake/video-intake-panel";
 import { DisplayPreferencesPanel } from "@/features/workspace/display-preferences-panel";
 import { PlaceholderPanel } from "@/features/workspace/placeholder-panel";
+import { WorkspaceCanvasPanel } from "@/features/workspace/workspace-canvas-panel";
 import { PlatformTasksPanel } from "@/features/social/platform-tasks-panel";
 import { PublishedContentPanel } from "@/features/social/published-content-panel";
 import { PublishRecordsPanel } from "@/features/social/publish-records-panel";
@@ -33,6 +34,7 @@ const SECTION_COMPONENTS: Partial<
     publishRecords: PublishRecordsPanel,
     tutorialDocs: TutorialDocsPanel,
     videoIntake: VideoIntakePanel,
+    workspace: WorkspaceCanvasPanel,
 };
 
 type ContentRouterProps = {
@@ -82,6 +84,14 @@ export function ContentRouter({
                         onAppFontChange={onAppFontChange}
                     />
                 </div>
+            </main>
+        );
+    }
+
+    if (activeSection === "workspace") {
+        return (
+            <main className="flex min-h-0 min-w-0 flex-1 overflow-hidden bg-secondary/35 p-3">
+                <SectionComponent section={section} />
             </main>
         );
     }

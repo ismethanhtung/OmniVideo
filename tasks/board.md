@@ -10,7 +10,7 @@
 
 ## In Progress
 
-- `P1-INTAKE-011` - Support raw cookie/header env for TikTok/Douyin resolver.
+- (none)
 
 ## Blocked
 
@@ -22,6 +22,13 @@
 
 ## Done
 
+- `P4-WORKSPACE-005` - Workspace progress integration and canvas toolbar polish.
+- `P4-WORKSPACE-004` - Make Workspace execution graph-flexible with Inspector node config.
+- `P4-WORKSPACE-003` - Execute upload-to-social flow directly from Workspace.
+- `P4-WORKSPACE-002` - Upgrade Workspace canvas ergonomics and runtime bridge.
+- `P4-WORKSPACE-001` - Workspace Canvas MVP for extensible node-flow pipelines.
+- `FAST-UX-005` - Use text-only semantic status colors in dense tables/lists.
+- `FAST-SOCIAL-004` - Add semantic status colors for social runtime panels.
 - `P2-SOCIAL-019` - Social publishing UX progress and records controls.
 - `P2-SOCIAL-018` - Support multi-destination publish planning in New Publish Record.
 - `FAST-GOV-002` - Add app versioning governance rules and sync leftbar version display.

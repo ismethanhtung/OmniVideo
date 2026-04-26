@@ -1,22 +1,13 @@
 import {
-    Bell,
-    Box,
     Cable,
-    Database,
     DownloadCloud,
     HardDrive,
     LayoutGrid,
     Layers,
-    LifeBuoy,
     Network,
-    Radio,
-    Server,
-    Shield,
-    Sparkles,
     Vault,
     Palette,
     Upload,
-    User,
     Share2,
     ClipboardList,
     Send,
@@ -26,9 +17,23 @@ import {
 
 import type { AppSectionId, LeftbarNavGroup, LeftbarNavItem } from "./types";
 
-export const DEFAULT_SECTION_ID: AppSectionId = "profile";
+export const DEFAULT_SECTION_ID: AppSectionId = "workspace";
 
 export const LEFTBAR_NAV: LeftbarNavGroup[] = [
+    {
+        sectionId: "workspace",
+        sectionIcon: Layers,
+        groupLabel: "Workspace",
+        items: [
+            {
+                id: "workspace",
+                icon: Layers,
+                label: "Workspace",
+                description:
+                    "Thiết kế node-flow pipeline linh hoạt bằng node contracts.",
+            },
+        ],
+    },
     {
         sectionId: "general",
         sectionIcon: LayoutGrid,
@@ -76,12 +81,7 @@ export const LEFTBAR_NAV: LeftbarNavGroup[] = [
             },
         ],
     },
-    {
-        sectionId: "workspace",
-        sectionIcon: Layers,
-        groupLabel: "Workspace",
-        items: [],
-    },
+
     {
         sectionId: "social",
         sectionIcon: Share2,

@@ -13,6 +13,7 @@ import {
   type SocialAuthMode,
   type SocialPlatform,
 } from "./social-types";
+import { StatusBadge } from "./status-badge";
 
 type SocialAccountsPanelProps = {
   section: LeftbarNavItem;
@@ -155,23 +156,6 @@ function compactSecrets(form: AccountFormState) {
       ["channelId", form.channelId],
       ["connectionJson", form.connectionJson],
     ].filter(([, value]) => value.trim()),
-  );
-}
-
-function StatusBadge({ status }: { status: SocialAccount["status"] }) {
-  const classes = {
-    connected: "border-emerald-200 bg-emerald-50 text-emerald-700",
-    needs_auth: "border-amber-200 bg-amber-50 text-amber-700",
-    paused: "border-amber-200 bg-amber-50 text-amber-700",
-    error: "border-rose-200 bg-rose-50 text-rose-700",
-  };
-
-  return (
-    <span
-      className={`inline-flex border px-2 py-1 text-[10px] font-bold uppercase tracking-wide ${classes[status]}`}
-    >
-      {status.replace("_", " ")}
-    </span>
   );
 }
 
