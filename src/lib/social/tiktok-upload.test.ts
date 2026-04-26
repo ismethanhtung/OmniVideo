@@ -48,6 +48,7 @@ function makeRecord(): PublishRecordDocument {
     socialAccountId: new ObjectId("507f1f77bcf86cd799439012"),
     platform: "tiktok",
     publishType: "tiktok_video",
+    facebookPageId: null,
     publishMode: "publish_now",
     privacyStatus: "private",
     status: "queued",

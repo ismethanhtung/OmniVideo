@@ -32,6 +32,7 @@ export type YouTubePrivacyStatus = "private" | "unlisted" | "public";
 export type SocialSecretMap = {
   accessToken?: string;
   refreshToken?: string;
+  pageAccessToken?: string;
   appId?: string;
   appSecret?: string;
   pageId?: string;
@@ -123,6 +124,7 @@ export type PublishRecordCreateInput = {
   assetId: string;
   socialAccountId: string;
   publishType: SocialPublishType;
+  facebookPageId?: string;
   publishNow?: boolean;
   privacyStatus?: YouTubePrivacyStatus;
   title?: string;
@@ -135,6 +137,7 @@ export type ValidatedPublishRecordInput = {
   assetId: string;
   socialAccountId: string;
   publishType: SocialPublishType;
+  facebookPageId: string | null;
   publishMode: PublishMode;
   privacyStatus: YouTubePrivacyStatus;
   title: string | null;
@@ -148,6 +151,7 @@ export type PublishRecordDocument = {
   socialAccountId: import("mongodb").ObjectId;
   platform: SocialPlatform;
   publishType: SocialPublishType;
+  facebookPageId: string | null;
   publishMode: PublishMode;
   privacyStatus: YouTubePrivacyStatus;
   status: PublishRecordStatus;

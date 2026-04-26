@@ -2,13 +2,13 @@
 
 ## 1. Objective
 
-Quản lý tập trung các nền tảng social phục vụ phát hành video: Facebook Reels/video, TikTok, Shopee product/video commerce, YouTube Shorts/video. Phase đầu là `Control Center`: quản lý account, capability, task/publish planning, connection status và traceability. YouTube và TikTok đã có adapter `publish_now`; Facebook/Shopee vẫn tách sang phase adapter sau.
+Quản lý tập trung các nền tảng social phục vụ phát hành video: Facebook Reels/video, TikTok, Shopee product/video commerce, YouTube Shorts/video. Phase đầu là `Control Center`: quản lý account, capability, task/publish planning, connection status và traceability. YouTube, TikTok và Facebook đã có adapter `publish_now`; Shopee vẫn tách sang phase adapter sau.
 
 ## 2. Platform Matrix
 
 | Platform | Initial formats | Primary tasks | Real publish status |
 | --- | --- | --- | --- |
-| `facebook` | `facebook_reel`, `facebook_video` | permission review, plan publish, connection check | deferred |
+| `facebook` | `facebook_reel`, `facebook_video` | permission review, plan publish, publish now, connection check | enabled for Page video/Reels publish |
 | `tiktok` | `tiktok_video` | permission review, plan publish, publish now, connection check | enabled for `publish_now` direct post |
 | `shopee` | `shopee_video` | product mapping, plan publish, connection check | deferred |
 | `youtube` | `youtube_short`, `youtube_video` | permission review, plan publish, publish now, connection check | enabled for `publish_now` upload |
@@ -64,10 +64,12 @@ Record có thể có `publishMode=schedule` hoặc `publishMode=publish_now`.
 1. Với YouTube account `connected`, `publish_now` gọi YouTube resumable upload ngay trong request tạo record. Nếu có `refreshToken` và OAuth env hợp lệ, server refresh access token trước khi upload. Thành công sẽ đổi record sang `published` và lưu `platformPostId`.
 2. Nếu YouTube upload fail, record chuyển sang `failed` và UI phải hiển thị `errorCode`/`errorDetail`.
 3. Với TikTok account `connected`, `publish_now` gọi Content Posting API Direct Post (`creator_info/query` -> `publish/video/init` -> upload -> `status/fetch`). Nếu TikTok trả `PUBLISH_COMPLETE`, record chuyển `published`; nếu còn processing/moderation thì record giữ `queued` để theo dõi tiếp bằng `publish_id`.
-4. Với Facebook/Shopee, `publish_now` chưa có adapter thật nên phải trả lỗi adapter chưa triển khai thay vì giả vờ đã đăng.
-5. `schedule` vẫn chỉ tạo record `planned`; worker/scheduler tự động chưa nằm trong scope hiện tại.
-6. `privacyStatus` cho YouTube nhận `private`, `unlisted`, hoặc `public`; Google có thể vẫn ép upload từ API project chưa được audit về private.
-7. `youtube_short` không có endpoint riêng. Hệ thống chỉ upload khi asset có metadata duration/width/height, thời lượng tối đa 3 phút, và aspect ratio vuông hoặc dọc. Nếu không đạt, record phải fail bằng `VAL_YOUTUBE_SHORT_*` để tránh đăng nhầm thành video thường.
+4. Với Facebook account `connected`, `publish_now` gọi Meta Graph API để publish Page video hoặc Reels. Adapter ưu tiên Page Access Token nếu có; nếu chỉ có user access token, hệ thống request Page token từ Graph API theo `pageId` trước khi upload.
+5. Với Shopee, `publish_now` chưa có adapter thật nên phải trả lỗi adapter chưa triển khai thay vì giả vờ đã đăng.
+6. `schedule` vẫn chỉ tạo record `planned`; worker/scheduler tự động chưa nằm trong scope hiện tại.
+7. `privacyStatus` cho YouTube nhận `private`, `unlisted`, hoặc `public`; Google có thể vẫn ép upload từ API project chưa được audit về private.
+8. `youtube_short` không có endpoint riêng. Hệ thống chỉ upload khi asset có metadata duration/width/height, thời lượng tối đa 3 phút, và aspect ratio vuông hoặc dọc. Nếu không đạt, record phải fail bằng `VAL_YOUTUBE_SHORT_*` để tránh đăng nhầm thành video thường.
+9. Publish form hỗ trợ chọn `facebookPageId` theo từng record để account Facebook nhiều Page vẫn publish đúng trang.
 
 ## 7. Publish Mapping Rules
 
@@ -76,7 +78,7 @@ Record có thể có `publishMode=schedule` hoặc `publishMode=publish_now`.
 3. `publishType` phải thuộc `supportedFormats` của account.
 4. Nếu publish failed, phải lưu `errorCode`, `errorDetail`, `retryCount`.
 5. Metadata publish gồm title/caption/hashtags/scheduledAt.
-6. `publish_now` records được server set `scheduledAt=now`; YouTube xử lý ngay, TikTok xử lý async theo trạng thái API; Facebook/Shopee còn deferred.
+6. `publish_now` records được server set `scheduledAt=now`; YouTube và Facebook xử lý ngay, TikTok xử lý async theo trạng thái API; Shopee còn deferred.
 
 ## 8. Retry Rules
 
@@ -118,10 +120,11 @@ Không nên bắt user thường xuyên copy/paste `accessToken`/`refreshToken` 
 
 Platform notes:
 
-1. Facebook: ưu tiên OAuth + Page permission, không nhập Page token thủ công làm chuẩn.
-2. TikTok: OAuth v2 + refresh token là flow chính; app chưa audit có thể bị giới hạn visibility và phải chờ moderation trước khi có post id public.
-3. Shopee: cần shop authorization; token phải gắn shop/product scope.
-4. YouTube: OAuth offline access là lựa chọn thực tế để refresh token lâu dài.
+1. Facebook: ưu tiên OAuth + Page permission, có `pageId` bắt buộc cho Page publishing; `pageAccessToken` thủ công chỉ là fallback/debug khi cần publish trực tiếp.
+2. Với account quản lý nhiều Page, user phải cấu hình `pageId` rõ ràng. Runtime resolver lấy danh sách `/me/accounts` để map đúng token theo Page.
+3. TikTok: OAuth v2 + refresh token là flow chính; app chưa audit có thể bị giới hạn visibility và phải chờ moderation trước khi có post id public.
+4. Shopee: cần shop authorization; token phải gắn shop/product scope.
+5. YouTube: OAuth offline access là lựa chọn thực tế để refresh token lâu dài.
 
 ### YouTube OAuth setup checklist
 

@@ -33,6 +33,7 @@ type PublishRecord = {
   socialAccountId: string;
   platform: SocialAccount["platform"];
   publishType: SocialPublishType;
+  facebookPageId?: string | null;
   publishMode?: PublishMode;
   privacyStatus?: YouTubePrivacyStatus;
   status: string;
@@ -52,6 +53,7 @@ type FormState = {
   assetId: string;
   socialAccountId: string;
   publishType: SocialPublishType | "";
+  facebookPageId: string;
   publishMode: PublishMode;
   privacyStatus: YouTubePrivacyStatus;
   title: string;
@@ -64,12 +66,18 @@ const EMPTY_FORM: FormState = {
   assetId: "",
   socialAccountId: "",
   publishType: "",
+  facebookPageId: "",
   publishMode: "publish_now",
   privacyStatus: "private",
   title: "",
   caption: "",
   hashtags: "",
   scheduledAt: "",
+};
+
+type FacebookPageOption = {
+  id: string;
+  name: string;
 };
 
 function splitCsv(value: string) {
@@ -92,6 +100,10 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
+  const [facebookPages, setFacebookPages] = useState<FacebookPageOption[]>([]);
+  const [facebookPagesStatus, setFacebookPagesStatus] = useState<
+    "idle" | "loading" | "ready" | "failed"
+  >("idle");
 
   const selectedAccount = useMemo(
     () => accounts.find((account) => account._id === form.socialAccountId),
@@ -102,8 +114,15 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
     [assets, form.assetId],
   );
   const isYouTubeShort = form.publishType === "youtube_short";
+  const isFacebookPublishType =
+    form.publishType === "facebook_reel" || form.publishType === "facebook_video";
   const canSubmit =
-    Boolean(form.assetId && form.socialAccountId && form.publishType) &&
+    Boolean(
+      form.assetId &&
+        form.socialAccountId &&
+        form.publishType &&
+        (!isFacebookPublishType || form.facebookPageId),
+    ) &&
     !isSubmitting;
 
   const selectedAssetShortHint = useMemo(() => {
@@ -179,8 +198,75 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
     void loadAll();
   }, []);
 
+  useEffect(() => {
+    if (!showForm || selectedAccount?.platform !== "facebook") {
+      setFacebookPages([]);
+      setFacebookPagesStatus("idle");
+      setForm((previous) => ({ ...previous, facebookPageId: "" }));
+      return;
+    }
+
+    const loadFacebookPages = async () => {
+      setFacebookPagesStatus("loading");
+      try {
+        const response = await fetch(
+          `/api/social/accounts/${selectedAccount._id}/facebook-pages`,
+          {
+            method: "GET",
+            cache: "no-store",
+          },
+        );
+        const payload = (await response.json()) as ApiResponse<{
+          pages: FacebookPageOption[];
+          configuredPageId: string | null;
+          source: "graph" | "cached";
+        }>;
+
+        if (!response.ok || !payload.ok || !payload.data) {
+          setFacebookPagesStatus("failed");
+          setFormMessage(payload.error ?? "Could not load Facebook pages.");
+          return;
+        }
+
+        const data = payload.data;
+
+        setFacebookPages(data.pages);
+        setFacebookPagesStatus("ready");
+        setForm((previous) => {
+          const hasCurrent = data.pages.some(
+            (page) => page.id === previous.facebookPageId,
+          );
+          const defaultPageId =
+            data.configuredPageId ??
+            data.pages[0]?.id ??
+            "";
+
+          return {
+            ...previous,
+            facebookPageId: hasCurrent ? previous.facebookPageId : defaultPageId,
+          };
+        });
+      } catch (error) {
+        setFacebookPagesStatus("failed");
+        setFormMessage(
+          error instanceof Error
+            ? error.message
+            : "Could not load Facebook pages.",
+        );
+      }
+    };
+
+    void loadFacebookPages();
+  }, [selectedAccount?._id, selectedAccount?.platform, showForm]);
+
   const createRecord = async () => {
     if (isSubmitting) {
+      return;
+    }
+
+    if (isFacebookPublishType && !form.facebookPageId) {
+      setStatus("failed");
+      setFormMessage("Select a Facebook Page before creating the publish record.");
       return;
     }
 
@@ -192,7 +278,9 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
           ? "Uploading to YouTube. Keep this modal open..."
           : selectedAccount?.platform === "tiktok"
             ? "Uploading to TikTok and waiting for posting status..."
-            : "Creating publish-now record..."
+            : selectedAccount?.platform === "facebook"
+              ? "Uploading to Facebook Page/Reels. Keep this modal open..."
+              : "Creating publish-now record..."
         : "Creating planned publish record...";
     setMessage(submitMessage);
     setFormMessage(submitMessage);
@@ -205,6 +293,7 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
           assetId: form.assetId,
           socialAccountId: form.socialAccountId,
           publishType: form.publishType,
+          facebookPageId: form.facebookPageId || null,
           publishNow: form.publishMode === "publish_now",
           privacyStatus: form.privacyStatus,
           title: form.title,
@@ -327,6 +416,11 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
                   </td>
                   <td className="px-4 py-3 text-main">
                     {record.socialAccount?.label ?? record.socialAccountId}
+                    {record.platform === "facebook" && record.facebookPageId ? (
+                      <p className="mt-1 text-[11px] text-muted">
+                        Page: {record.facebookPageId}
+                      </p>
+                    ) : null}
                   </td>
                   <td className="px-4 py-3 text-main">
                     {formatPlatform(record.platform)}
@@ -398,7 +492,7 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
                   New Publish Record
                 </p>
                 <p className="mt-1 text-[11px] leading-5 text-muted">
-                  YouTube và TikTok publish now sẽ upload thật khi account đã connected và asset có thể download. Facebook/Shopee hiện vẫn deferred nên publish now sẽ fail rõ ràng.
+                  YouTube, TikTok và Facebook publish now sẽ upload thật khi account đã connected và asset có thể download. Shopee hiện vẫn deferred nên publish now sẽ fail rõ ràng.
                 </p>
               </div>
               <button
@@ -406,6 +500,8 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
                 onClick={() => {
                   setShowForm(false);
                   setForm(EMPTY_FORM);
+                  setFacebookPages([]);
+                  setFacebookPagesStatus("idle");
                   setFormMessage("");
                 }}
                 disabled={isSubmitting}
@@ -446,6 +542,7 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
                     ...previous,
                     socialAccountId: event.target.value,
                     publishType: account?.supportedFormats[0] ?? "",
+                    facebookPageId: "",
                   }));
                 }}
                 disabled={isSubmitting}
@@ -480,6 +577,36 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
                 ))}
               </select>
             </label>
+            {selectedAccount?.platform === "facebook" ? (
+              <label className="text-[12px] font-medium text-main">
+                Facebook Page
+                <select
+                  value={form.facebookPageId}
+                  onChange={(event) =>
+                    setForm((previous) => ({
+                      ...previous,
+                      facebookPageId: event.target.value,
+                    }))
+                  }
+                  disabled={isSubmitting || facebookPagesStatus === "loading"}
+                  className="mt-1 w-full border border-main bg-main px-3 py-2 text-[12px]"
+                >
+                  <option value="">
+                    {facebookPagesStatus === "loading"
+                      ? "Loading pages..."
+                      : "Select Facebook Page"}
+                  </option>
+                  {facebookPages.map((page) => (
+                    <option key={page.id} value={page.id}>
+                      {page.name} ({page.id})
+                    </option>
+                  ))}
+                </select>
+                <span className="mt-1 block text-[11px] leading-5 text-muted">
+                  Chọn đúng Page để publish. Khi có nhiều Page, không chọn sẽ bị chặn publish.
+                </span>
+              </label>
+            ) : null}
             <fieldset className="border border-main bg-secondary/20 p-3">
               <legend className="px-1 text-[12px] font-medium text-main">
                 Publish mode
@@ -501,7 +628,7 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
                   <span>
                     Publish now
                     <span className="block text-[11px] text-muted">
-                      Upload ngay cho YouTube/TikTok. Các platform chưa có adapter thật sẽ trả lỗi chưa hỗ trợ.
+                      Upload ngay cho YouTube/TikTok/Facebook. Các platform chưa có adapter thật sẽ trả lỗi chưa hỗ trợ.
                     </span>
                   </span>
                 </label>
@@ -638,6 +765,8 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
               onClick={() => {
                 setShowForm(false);
                 setForm(EMPTY_FORM);
+                setFacebookPages([]);
+                setFacebookPagesStatus("idle");
                 setFormMessage("");
               }}
               disabled={isSubmitting}

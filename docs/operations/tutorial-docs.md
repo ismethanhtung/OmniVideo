@@ -38,8 +38,12 @@ Tutor Docs gom các hướng dẫn tích hợp dài ra khỏi modal cấu hình.
 ## 4. Other Platform Notes
 
 1. Facebook Reels/video:
-   - Scopes: `pages_manage_posts`, `pages_read_engagement`.
+   - Scopes: `pages_manage_posts`, `pages_read_engagement`, `pages_show_list`.
    - Page ID is required for page publishing.
+   - `Publish now` supports Page video and Reels through Meta Graph API when the account is connected and has a Page token or user token with Page access.
+   - If the app is still in development mode or missing Meta review, published content may only be visible to app roles or the API can return permission errors.
+   - If one Facebook login manages multiple Pages, set `pageId` explicitly in Social Account. OmniVideo resolves Page tokens via `/me/accounts`; missing or wrong `pageId` will fail with `AUTH_FACEBOOK_PAGE_ID_*`.
+   - In `New Publish Record`, chọn `Facebook Page` trực tiếp trước khi bấm `Publish now`; record sẽ lưu `facebookPageId` để đảm bảo publish đúng trang.
 2. TikTok:
    - Scopes: `video.upload`, `video.publish`.
    - Publish now uses Direct Post API and may stay `queued` while processing/moderating.

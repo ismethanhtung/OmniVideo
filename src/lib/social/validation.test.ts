@@ -101,6 +101,17 @@ describe("social validation", () => {
     expect(result.scheduledAt?.toISOString()).toBe("2026-04-26T12:00:00.000Z");
   });
 
+  it("requires facebookPageId for facebook publish types", () => {
+    expect(() =>
+      validatePublishRecordCreateInput({
+        assetId: "507f1f77bcf86cd799439011",
+        socialAccountId: "507f1f77bcf86cd799439012",
+        publishType: "facebook_reel",
+        publishNow: true,
+      }),
+    ).toThrow("facebookPageId is required for Facebook publish types");
+  });
+
   it("marks publish-now records with immediate schedule intent", () => {
     const result = validatePublishRecordCreateInput({
       assetId: "507f1f77bcf86cd799439011",

@@ -1,5 +1,6 @@
 import type { WithId } from "mongodb";
 
+import { resolveFacebookPageContext } from "./facebook-auth";
 import type { SocialAccountDocument, SocialPlatform } from "./types";
 
 export type SocialConnectionCheck = {
@@ -153,6 +154,54 @@ async function checkTikTokConnectedAccount(
   }
 }
 
+async function checkFacebookConnectedAccount(
+  account: WithId<SocialAccountDocument>,
+  base: Omit<SocialConnectionCheck, "status" | "message">,
+): Promise<SocialConnectionCheck> {
+  try {
+    const pageContext = await resolveFacebookPageContext(account);
+    const url = new URL(
+      `https://graph.facebook.com/v20.0/${encodeURIComponent(pageContext.pageId)}`,
+    );
+    url.searchParams.set("fields", "id,name");
+    url.searchParams.set("access_token", pageContext.pageAccessToken);
+    const response = await fetch(url.toString(), {
+      method: "GET",
+      cache: "no-store",
+    });
+    const payload = (await response.json().catch(() => null)) as
+      | { id?: string; name?: string; error?: { message?: string } }
+      | null;
+
+    if (!response.ok || payload?.error) {
+      return {
+        ...base,
+        status: "down",
+        message:
+          payload?.error?.message ??
+          `Facebook Page check failed with status ${response.status}.`,
+      };
+    }
+
+    return {
+      ...base,
+      status: "ok",
+      message: payload?.name
+        ? `Facebook Page token is valid for ${payload.name}.`
+        : "Facebook Page token is valid for publishing.",
+    };
+  } catch (error) {
+    return {
+      ...base,
+      status: "down",
+      message:
+        error instanceof Error
+          ? error.message
+          : "Facebook connection check failed.",
+    };
+  }
+}
+
 export async function checkSocialAccountConnections(
   accounts: Array<WithId<SocialAccountDocument>>,
 ): Promise<SocialConnectionCheck[]> {
@@ -194,6 +243,13 @@ export async function checkSocialAccountConnections(
 
     if (account.platform === "tiktok") {
       return checkTikTokConnectedAccount(account, {
+        ...base,
+        latencyMs: Date.now() - startedAt,
+      });
+    }
+
+    if (account.platform === "facebook") {
+      return checkFacebookConnectedAccount(account, {
         ...base,
         latencyMs: Date.now() - startedAt,
       });

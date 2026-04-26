@@ -65,6 +65,7 @@ export async function GET(
     const accessToken = readToken(tokenPayload, "access_token");
     const refreshToken = readToken(tokenPayload, "refresh_token");
     const openId = readToken(tokenPayload, "open_id");
+    const facebookUserId = readToken(tokenPayload, "user_id");
 
     if (!accessToken) {
       return NextResponse.redirect(
@@ -77,12 +78,18 @@ export async function GET(
 
     const config = getSocialOAuthConfig(platform);
     const db = await getSocialDb();
+    const platformAccountId =
+      platform === "tiktok"
+        ? openId
+        : platform === "facebook"
+          ? facebookUserId
+          : undefined;
 
     await markSocialAccountConnected({
       db,
       accountId,
       patch: {
-        accountId: openId ?? accountId,
+        ...(platformAccountId ? { accountId: platformAccountId } : {}),
         permissionScopes: config.scopes,
         secrets: {
           accessToken,

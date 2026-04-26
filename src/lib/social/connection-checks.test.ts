@@ -159,7 +159,62 @@ describe("checkSocialAccountConnections", () => {
     expect(checks[0].message).toContain("AUTH_YOUTUBE_SCOPE_MISSING");
   });
 
-  it("returns skipped for connected platforms without a concrete checker yet", async () => {
+  it("checks a connected Facebook account through Graph API Page lookup", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          id: "page-1",
+          name: "Omni Page",
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const checks = await checkSocialAccountConnections([
+      buildAccount({
+        platform: "facebook",
+        authMode: "oauth",
+        status: "connected",
+        supportedFormats: ["facebook_reel"],
+        secrets: {
+          pageId: "page-1",
+          pageAccessToken: "page-token",
+        },
+      }),
+    ]);
+
+    expect(checks[0].status).toBe("ok");
+    expect(checks[0].message).toContain("Omni Page");
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "https://graph.facebook.com/v20.0/page-1?fields=id%2Cname&access_token=page-token",
+      expect.objectContaining({
+        method: "GET",
+        cache: "no-store",
+      }),
+    );
+  });
+
+  it("returns down for connected Facebook account without pageId when token has multiple pages", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: [
+            {
+              id: "page-1",
+              name: "Page 1",
+              access_token: "page-token-1",
+            },
+            {
+              id: "page-2",
+              name: "Page 2",
+              access_token: "page-token-2",
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    );
+
     const checks = await checkSocialAccountConnections([
       buildAccount({
         platform: "facebook",
@@ -172,7 +227,7 @@ describe("checkSocialAccountConnections", () => {
       }),
     ]);
 
-    expect(checks[0].status).toBe("skipped");
-    expect(checks[0].message).toContain("deferred");
+    expect(checks[0].status).toBe("down");
+    expect(checks[0].message).toContain("AUTH_FACEBOOK_PAGE_ID_REQUIRED");
   });
 });

@@ -26,6 +26,7 @@ import {
   type ValidatedSocialAccountInput,
 } from "./types";
 import type { ValidatedSocialAccountUpdateInput } from "./validation";
+import { uploadVideoToFacebook } from "./facebook-upload";
 import { uploadVideoToTikTok } from "./tiktok-upload";
 import { uploadVideoToYouTube } from "./youtube-upload";
 
@@ -326,6 +327,7 @@ export async function createPublishRecord({
     socialAccountId: account._id,
     platform,
     publishType: input.publishType,
+    facebookPageId: input.facebookPageId,
     publishMode: input.publishMode,
     privacyStatus: input.privacyStatus,
     status: "planned",
@@ -397,7 +399,11 @@ export async function executePublishNow({
       throw new Error("VAL_PUBLISH_ASSET_NOT_FOUND");
     }
 
-    if (record.platform !== "youtube" && record.platform !== "tiktok") {
+    if (
+      record.platform !== "youtube" &&
+      record.platform !== "tiktok" &&
+      record.platform !== "facebook"
+    ) {
       throw new Error("PRV_SOCIAL_PUBLISH_ADAPTER_NOT_IMPLEMENTED");
     }
 
@@ -423,6 +429,35 @@ export async function executePublishNow({
               status: "published",
               platformPostId: upload.platformPostId,
               publishedAt: now,
+              errorCode: null,
+              errorDetail: null,
+              updatedAt: now,
+            },
+          },
+          { returnDocument: "after" },
+        );
+
+      return updated;
+    }
+
+    if (record.platform === "facebook") {
+      const upload = await uploadVideoToFacebook({
+        db,
+        account,
+        asset,
+        record,
+      });
+      const now = new Date();
+
+      const updated = await db
+        .collection<PublishRecordDocument>(PUBLISH_RECORDS_COLLECTION)
+        .findOneAndUpdate(
+          { _id: publishRecordId },
+          {
+            $set: {
+              status: upload.status,
+              platformPostId: upload.platformPostId,
+              publishedAt: upload.status === "published" ? now : null,
               errorCode: null,
               errorDetail: null,
               updatedAt: now,
@@ -540,6 +575,7 @@ export async function listPublishRecords({ db, limit = 50 }: { db: Db; limit?: n
           socialAccountId: 1,
           platform: 1,
           publishType: 1,
+          facebookPageId: 1,
           publishMode: 1,
           privacyStatus: 1,
           status: 1,

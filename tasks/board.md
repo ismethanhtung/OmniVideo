@@ -22,6 +22,10 @@
 
 ## Done
 
+- `FAST-SOCIAL-003` - Add Facebook Page picker in New Publish Record.
+- `FAST-SOCIAL-002` - Harden Facebook Page selection/token resolution for publish-now.
+- `P2-SOCIAL-017` - Enable Facebook publish-now adapter and controls.
+- `FAST-STORAGE-006` - Fix Drive provider edit null secret hydration and setup UX.
 - `FAST-STORAGE-005` - Add Drive OAuth refresh-token runtime flow for stable uploads.
 - `FAST-STORAGE-004` - Add Drive OAuth guidance and redirect URI mismatch hardening.
 - `FAST-STORAGE-003` - Add Drive OAuth connect flow and modal-scoped validation UX.

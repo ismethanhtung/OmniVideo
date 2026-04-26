@@ -29,6 +29,7 @@ type AccountFormState = {
   permissionScopes: string;
   accessToken: string;
   refreshToken: string;
+  pageAccessToken: string;
   appId: string;
   appSecret: string;
   pageId: string;
@@ -48,6 +49,7 @@ const EMPTY_FORM: AccountFormState = {
   permissionScopes: "",
   accessToken: "",
   refreshToken: "",
+  pageAccessToken: "",
   appId: "",
   appSecret: "",
   pageId: "",
@@ -75,16 +77,17 @@ const PLATFORM_GUIDES: Record<
 > = {
   facebook: {
     title: "Facebook Reels / Video",
-    recommended: "Prefer OAuth later; use Manual for planning-only accounts now.",
-    scopes: "pages_manage_posts, pages_read_engagement",
+    recommended: "Use OAuth or a Page access token; publish-now adapter is enabled for Page video/Reels.",
+    scopes: "pages_manage_posts, pages_read_engagement, pages_show_list",
     quickSetup: [
       "Configure Meta app credentials in .env.",
       "Save the account, then connect OAuth from edit mode.",
-      "Use Page ID when publishing to a page.",
+      "Set Page ID for the target Page; optionally paste Page Access Token for direct publishing.",
     ],
     notes: [
-      "Use Page ID when publishing to a page.",
-      "Long-lived Page tokens still need lifecycle handling; raw token entry is only a fallback.",
+      "Publishing targets Facebook Pages, not personal profiles.",
+      "If only a user token is stored, OmniVideo requests the Page access token from Graph API before upload.",
+      "Meta app review/live mode controls public visibility outside app roles.",
     ],
   },
   tiktok: {
@@ -144,6 +147,7 @@ function compactSecrets(form: AccountFormState) {
     [
       ["accessToken", form.accessToken],
       ["refreshToken", form.refreshToken],
+      ["pageAccessToken", form.pageAccessToken],
       ["appId", form.appId],
       ["appSecret", form.appSecret],
       ["pageId", form.pageId],
@@ -321,6 +325,7 @@ export function SocialAccountsPanel({ section }: SocialAccountsPanelProps) {
         permissionScopes: account.permissionScopes.join(", "),
         accessToken: account.secrets?.accessToken ?? "",
         refreshToken: account.secrets?.refreshToken ?? "",
+        pageAccessToken: account.secrets?.pageAccessToken ?? "",
         appId: account.secrets?.appId ?? "",
         appSecret: account.secrets?.appSecret ?? "",
         pageId: account.secrets?.pageId ?? "",
@@ -484,6 +489,12 @@ export function SocialAccountsPanel({ section }: SocialAccountsPanelProps) {
                     <p className="mt-1 text-[11px] text-muted">
                       {account.displayName ?? account.handle ?? account.accountId ?? "-"}
                     </p>
+                    {account.platform === "facebook" &&
+                    account.secretSummary.pageId?.configured ? (
+                      <p className="mt-1 text-[11px] text-muted">
+                        Page ID: {account.secretSummary.pageId.preview ?? "configured"}
+                      </p>
+                    ) : null}
                   </td>
                   <td className="px-4 py-3 text-main">
                     {formatPlatform(account.platform)}
@@ -699,6 +710,7 @@ export function SocialAccountsPanel({ section }: SocialAccountsPanelProps) {
             {[
               "accessToken",
               "refreshToken",
+              "pageAccessToken",
               "appId",
               "appSecret",
               "pageId",

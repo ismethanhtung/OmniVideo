@@ -14,6 +14,11 @@ import {
 } from "lucide-react";
 
 import type { LeftbarNavItem } from "@/components/layout/types";
+import {
+  EMPTY_STORAGE_PROVIDER_SECRETS,
+  normalizeStorageProviderSecretFormState,
+  type StorageProviderSecretFormState,
+} from "@/lib/storage-providers/form-secrets";
 
 type ProviderType = "telegram" | "drive" | "s3" | "local" | "other";
 type ProviderStatus = "active" | "paused" | "error";
@@ -48,20 +53,7 @@ type ApiResponse<T> = {
   error?: string;
 };
 
-type SecretFormState = {
-  botToken: string;
-  chatId: string;
-  accessToken: string;
-  refreshToken: string;
-  folderId: string;
-  endpoint: string;
-  bucket: string;
-  region: string;
-  accessKeyId: string;
-  secretAccessKey: string;
-  basePath: string;
-  connectionJson: string;
-};
+type SecretFormState = StorageProviderSecretFormState;
 
 type SubmitState =
   | { status: "idle"; message: string }
@@ -107,20 +99,14 @@ const PROVIDER_OPTIONS: Array<{
   },
 ];
 
-const EMPTY_SECRETS: SecretFormState = {
-  botToken: "",
-  chatId: "",
-  accessToken: "",
-  refreshToken: "",
-  folderId: "",
-  endpoint: "",
-  bucket: "",
-  region: "",
-  accessKeyId: "",
-  secretAccessKey: "",
-  basePath: "",
-  connectionJson: "",
-};
+const EMPTY_SECRETS = EMPTY_STORAGE_PROVIDER_SECRETS;
+
+const DRIVE_QUICK_SETUP = [
+  "Enable Google Drive API in Google Cloud.",
+  "Set DRIVE_CLIENT_ID, DRIVE_CLIENT_SECRET, and STORAGE_OAUTH_BASE_URL.",
+  "Add the exact redirect URI below to Authorized redirect URIs.",
+  "Click Connect OAuth, then save the provider after tokens are filled.",
+];
 
 function compactSecretPayload(secrets: SecretFormState) {
   return Object.fromEntries(
@@ -550,10 +536,7 @@ export function StorageProvidersPanel({ section }: StorageProvidersPanelProps) {
       setDescription(editableProvider.description ?? "");
       setPriority(editableProvider.priority);
       setTags(editableProvider.tags.join(", "));
-      setSecrets({
-        ...EMPTY_SECRETS,
-        ...editableProvider.secrets,
-      });
+      setSecrets(normalizeStorageProviderSecretFormState(editableProvider.secrets));
       setShowCreateForm(true);
       setState({
         status: "success",
@@ -866,22 +849,33 @@ export function StorageProvidersPanel({ section }: StorageProvidersPanelProps) {
                   ) : null}
                   {providerType === "drive" ? (
                     <>
-                      <label className="block">
-                        <span className="text-[12px] font-medium text-main">OAuth Access Token</span>
-                        <p className="mt-1 text-[11px] text-muted">
-                          Use personal Google OAuth token for Drive upload quota.
-                        </p>
-                        <p className="mt-2 text-[11px] leading-5 text-muted">
-                          In Google Cloud OAuth client, add Authorized redirect URI:
-                        </p>
-                        <p className="mt-1 break-all border border-main bg-secondary/20 px-2 py-1 font-mono text-[11px] text-main">
-                          {driveOAuthRedirectUri ||
-                            `${browserOrigin || "http://localhost:3001"}/api/storage/oauth/callback/drive`}
-                        </p>
-                        <p className="mt-1 text-[11px] text-muted">
-                          If Google shows <span className="font-mono">redirect_uri_mismatch</span>, copy this exact URI and update OAuth client settings.
-                        </p>
-                      </label>
+                      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_260px]">
+                        <div className="border border-main bg-secondary/20 p-3">
+                          <p className="text-[12px] font-semibold text-main">
+                            Google Drive OAuth setup
+                          </p>
+                          <p className="mt-1 text-[11px] leading-5 text-muted">
+                            OAuth is required for personal Drive quota. Access tokens are short-lived; keep a refresh token by reconnecting OAuth after env config is ready.
+                          </p>
+                          <ol className="mt-3 list-decimal space-y-1 pl-4 text-[11px] leading-5 text-muted">
+                            {DRIVE_QUICK_SETUP.map((step) => (
+                              <li key={step}>{step}</li>
+                            ))}
+                          </ol>
+                        </div>
+                        <div className="border border-main bg-main p-3">
+                          <p className="text-[10px] font-bold uppercase tracking-wide text-muted">
+                            Redirect URI
+                          </p>
+                          <p className="mt-2 break-all font-mono text-[11px] leading-5 text-main">
+                            {driveOAuthRedirectUri ||
+                              `${browserOrigin || "http://localhost:3001"}/api/storage/oauth/callback/drive`}
+                          </p>
+                          <p className="mt-3 text-[11px] leading-5 text-muted">
+                            `redirect_uri_mismatch` means this value does not exactly match Google Cloud OAuth client settings.
+                          </p>
+                        </div>
+                      </div>
                       <button
                         type="button"
                         onClick={() => {

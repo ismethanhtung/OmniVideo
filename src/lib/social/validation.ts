@@ -58,6 +58,7 @@ const YOUTUBE_PRIVACY_STATUSES = new Set<YouTubePrivacyStatus>([
 const SECRET_KEYS: Array<keyof SocialSecretMap> = [
   "accessToken",
   "refreshToken",
+  "pageAccessToken",
   "appId",
   "appSecret",
   "pageId",
@@ -319,6 +320,7 @@ export function validatePublishRecordCreateInput(
   }
 
   const scheduledAtRaw = readString(payload.scheduledAt);
+  const facebookPageId = readString(payload.facebookPageId);
   const publishNow = payload.publishNow === true;
   const privacyStatus = readString(payload.privacyStatus) ?? "private";
 
@@ -342,10 +344,22 @@ export function validatePublishRecordCreateInput(
     });
   }
 
+  if (
+    (payload.publishType === "facebook_video" ||
+      payload.publishType === "facebook_reel") &&
+    !facebookPageId
+  ) {
+    throw new SocialError({
+      errorCode: "VAL_FACEBOOK_PAGE_ID_REQUIRED",
+      message: "facebookPageId is required for Facebook publish types.",
+    });
+  }
+
   return {
     assetId,
     socialAccountId,
     publishType: payload.publishType,
+    facebookPageId: facebookPageId ?? null,
     publishMode: publishNow ? "publish_now" : "schedule",
     privacyStatus: privacyStatus as YouTubePrivacyStatus,
     title: readString(payload.title) ?? null,

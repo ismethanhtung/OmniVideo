@@ -49,7 +49,7 @@ export function getSocialOAuthConfig(platform: SocialPlatform): SocialOAuthConfi
       clientId: process.env.FACEBOOK_CLIENT_ID?.trim() ?? "",
       clientSecret: process.env.FACEBOOK_CLIENT_SECRET?.trim() ?? "",
       redirectUri,
-      scopes: ["pages_manage_posts", "pages_read_engagement"],
+      scopes: ["pages_manage_posts", "pages_read_engagement", "pages_show_list"],
     };
   }
 

@@ -13,7 +13,7 @@ export const SOCIAL_PLATFORM_CAPABILITIES: SocialPlatformCapability[] = [
         publishType: "facebook_reel",
         label: "Reels",
         assetType: "video",
-        requiredScopes: ["pages_manage_posts", "pages_read_engagement"],
+        requiredScopes: ["pages_manage_posts", "pages_read_engagement", "pages_show_list"],
         metadataLimits: {
           titleMaxLength: 120,
           captionMaxLength: 2200,
@@ -26,7 +26,7 @@ export const SOCIAL_PLATFORM_CAPABILITIES: SocialPlatformCapability[] = [
         publishType: "facebook_video",
         label: "Video",
         assetType: "video",
-        requiredScopes: ["pages_manage_posts", "pages_read_engagement"],
+        requiredScopes: ["pages_manage_posts", "pages_read_engagement", "pages_show_list"],
         metadataLimits: {
           titleMaxLength: 255,
           captionMaxLength: 5000,
@@ -36,8 +36,13 @@ export const SOCIAL_PLATFORM_CAPABILITIES: SocialPlatformCapability[] = [
         },
       },
     ],
-    supportedTaskTypes: ["plan_publish", "permission_review", "connection_check"],
-    realPublishStatus: "deferred",
+    supportedTaskTypes: [
+      "plan_publish",
+      "publish_now",
+      "permission_review",
+      "connection_check",
+    ],
+    realPublishStatus: "enabled",
     complianceNotes: [
       "Publish requires valid Page/account permissions.",
       "Content must respect Meta policies and usage rights.",
