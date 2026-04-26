@@ -5,6 +5,7 @@ import { ExternalLink, RefreshCw } from "lucide-react";
 
 import type { LeftbarNavItem } from "@/components/layout/types";
 
+import { buildPublishedFootprintKey } from "./published-content-keys";
 import {
   buildPublishedPostUrl,
   formatPlatform,
@@ -363,11 +364,12 @@ export function PublishedContentPanel({ section }: PublishedContentPanelProps) {
                       {asset.platforms.length} destinations
                     </p>
                     <div className="mt-3 flex flex-wrap gap-2">
-                      {asset.platforms.map((platform) => {
+                      {asset.platforms.map((platform, index) => {
                         const postUrl = buildPublishedPostUrl({
                           platform: platform.platform,
                           platformPostId: platform.platformPostId,
                         });
+                        const footprintKey = buildPublishedFootprintKey(platform, index);
 
                         const content = (
                           <>
@@ -383,7 +385,7 @@ export function PublishedContentPanel({ section }: PublishedContentPanelProps) {
 
                         return postUrl ? (
                           <a
-                            key={`${platform.accountId}-${platform.publishType}-${platform.platformPostId ?? platform.status}`}
+                            key={footprintKey}
                             href={postUrl}
                             target="_blank"
                             rel="noreferrer"
@@ -393,9 +395,9 @@ export function PublishedContentPanel({ section }: PublishedContentPanelProps) {
                           </a>
                         ) : (
                           <span
-                          key={`${platform.accountId}-${platform.publishType}-${platform.platformPostId ?? platform.status}`}
-                          className="border border-main bg-secondary/20 px-2 py-1 text-[11px] text-main"
-                        >
+                            key={footprintKey}
+                            className="border border-main bg-secondary/20 px-2 py-1 text-[11px] text-main"
+                          >
                             {content}
                           </span>
                         );

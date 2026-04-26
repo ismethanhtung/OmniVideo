@@ -6,6 +6,7 @@ import { checkSocialAccountConnections } from "./connection-checks";
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
 });
 
 function buildAccount(overrides: Partial<SocialAccountDocument>) {
@@ -128,7 +129,54 @@ describe("checkSocialAccountConnections", () => {
     expect(checks[0].status).toBe("ok");
     expect(checks[0].message).toContain("youtube.upload scope");
     expect(fetchSpy).toHaveBeenCalledWith(
-      "https://www.googleapis.com/oauth2/v1/tokeninfo?access_token=token",
+      "https://oauth2.googleapis.com/tokeninfo?access_token=token",
+      { cache: "no-store" },
+    );
+  });
+
+  it("refreshes YouTube token before checking scope when refresh credentials exist", async () => {
+    vi.stubEnv("YOUTUBE_CLIENT_ID", "client-id");
+    vi.stubEnv("YOUTUBE_CLIENT_SECRET", "client-secret");
+    const fetchSpy = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            access_token: "fresh-token",
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            scope: "https://www.googleapis.com/auth/youtube.upload",
+          }),
+          { status: 200 },
+        ),
+      );
+
+    const checks = await checkSocialAccountConnections([
+      buildAccount({
+        platform: "youtube",
+        authMode: "oauth",
+        status: "connected",
+        supportedFormats: ["youtube_short", "youtube_video"],
+        secrets: {
+          accessToken: "old-token",
+          refreshToken: "refresh-token",
+        },
+      }),
+    ]);
+
+    expect(checks[0].status).toBe("ok");
+    expect(fetchSpy).toHaveBeenNthCalledWith(
+      1,
+      "https://oauth2.googleapis.com/token",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(fetchSpy).toHaveBeenNthCalledWith(
+      2,
+      "https://oauth2.googleapis.com/tokeninfo?access_token=fresh-token",
       { cache: "no-store" },
     );
   });
@@ -194,7 +242,7 @@ describe("checkSocialAccountConnections", () => {
     );
   });
 
-  it("returns down for connected Facebook account without pageId when token has multiple pages", async () => {
+  it("returns ok for connected Facebook account without pageId when token has multiple pages", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       new Response(
         JSON.stringify({
@@ -227,7 +275,7 @@ describe("checkSocialAccountConnections", () => {
       }),
     ]);
 
-    expect(checks[0].status).toBe("down");
-    expect(checks[0].message).toContain("AUTH_FACEBOOK_PAGE_ID_REQUIRED");
+    expect(checks[0].status).toBe("ok");
+    expect(checks[0].message).toContain("Select target Page");
   });
 });

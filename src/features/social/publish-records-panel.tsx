@@ -1,9 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { ExternalLink, Plus, RefreshCw } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { ExternalLink, Plus, RefreshCw, Trash2 } from "lucide-react";
 
 import type { LeftbarNavItem } from "@/components/layout/types";
+import { getTelegramDownloadBlockedReason } from "@/lib/storage/telegram-download";
+import {
+  finishProgressTask,
+  startProgressTask,
+  updateProgressTask,
+} from "@/lib/ui/progress-center";
 
 import {
   buildPublishedPostUrl,
@@ -12,6 +18,7 @@ import {
   type ApiResponse,
   type PublishMode,
   type SocialAccount,
+  type SocialPlatform,
   type SocialPublishType,
   type YouTubePrivacyStatus,
 } from "./social-types";
@@ -23,7 +30,17 @@ type PublishRecordsPanelProps = {
 type StoredVideoAsset = {
   _id: string;
   durationMs?: number | null;
-  metadata?: { title?: string | null; width?: number | null; height?: number | null };
+  sizeBytes?: number | null;
+  metadata?: {
+    title?: string | null;
+    width?: number | null;
+    height?: number | null;
+    originPlatform?: string | null;
+    actualQuality?: string | null;
+  };
+  createdFrom?: {
+    storageProviderLabel?: string | null;
+  };
   storageProvider: string;
 };
 
@@ -51,40 +68,113 @@ type PublishRecord = {
 
 type FormState = {
   assetId: string;
-  socialAccountId: string;
-  publishType: SocialPublishType | "";
-  facebookPageId: string;
   publishMode: PublishMode;
-  privacyStatus: YouTubePrivacyStatus;
   title: string;
   caption: string;
   hashtags: string;
   scheduledAt: string;
+  destinations: DestinationState[];
+};
+
+type Pagination = {
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
 };
 
 const EMPTY_FORM: FormState = {
   assetId: "",
-  socialAccountId: "",
-  publishType: "",
-  facebookPageId: "",
   publishMode: "publish_now",
-  privacyStatus: "private",
   title: "",
   caption: "",
   hashtags: "",
   scheduledAt: "",
+  destinations: [],
 };
+
+const DEFAULT_PAGINATION: Pagination = {
+  page: 1,
+  pageSize: 10,
+  total: 0,
+  totalPages: 1,
+};
+const PUBLISH_RECORD_PAGE_SIZE = 10;
+
+const PUBLISH_STATUS_OPTIONS = [
+  "planned",
+  "queued",
+  "published",
+  "failed",
+  "retrying",
+  "canceled",
+] as const;
 
 type FacebookPageOption = {
   id: string;
   name: string;
 };
 
+type DestinationState = {
+  id: string;
+  socialAccountId: string;
+  publishType: SocialPublishType | "";
+  facebookPageId: string;
+  privacyStatus: YouTubePrivacyStatus;
+};
+
+function createDestinationRow(): DestinationState {
+  return {
+    id:
+      typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `dest-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    socialAccountId: "",
+    publishType: "",
+    facebookPageId: "",
+    privacyStatus: "private",
+  };
+}
+
 function splitCsv(value: string) {
   return value
     .split(",")
     .map((entry) => entry.trim())
     .filter(Boolean);
+}
+
+function formatBytes(size?: number | null) {
+  if (!size || size <= 0) {
+    return "-";
+  }
+
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let value = size;
+  let unitIndex = 0;
+
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+
+  const precision = value >= 100 ? 0 : value >= 10 ? 1 : 2;
+  return `${value.toFixed(precision)} ${units[unitIndex]}`;
+}
+
+function buildDestinationLabel({
+  destination,
+  accounts,
+}: {
+  destination: DestinationState;
+  accounts: SocialAccount[];
+}) {
+  const account = accounts.find((entry) => entry._id === destination.socialAccountId);
+  const accountLabel = account?.label ?? destination.socialAccountId;
+  const publishType = destination.publishType
+    ? formatPublishType(destination.publishType)
+    : "Unknown";
+
+  return `${publishType} · ${accountLabel}`;
 }
 
 export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
@@ -98,35 +188,49 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
   const [message, setMessage] = useState("Ready.");
   const [formMessage, setFormMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitProgress, setSubmitProgress] = useState(0);
   const [showForm, setShowForm] = useState(false);
+  const [showAssetPicker, setShowAssetPicker] = useState(false);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
-  const [facebookPages, setFacebookPages] = useState<FacebookPageOption[]>([]);
-  const [facebookPagesStatus, setFacebookPagesStatus] = useState<
-    "idle" | "loading" | "ready" | "failed"
-  >("idle");
-
-  const selectedAccount = useMemo(
-    () => accounts.find((account) => account._id === form.socialAccountId),
-    [accounts, form.socialAccountId],
-  );
+  const [platformFilter, setPlatformFilter] = useState<SocialPlatform | "all">("all");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [pagination, setPagination] = useState<Pagination>(DEFAULT_PAGINATION);
+  const [facebookPagesByAccount, setFacebookPagesByAccount] = useState<
+    Record<string, FacebookPageOption[]>
+  >({});
+  const [loadingFacebookAccountIds, setLoadingFacebookAccountIds] = useState<
+    Record<string, boolean>
+  >({});
   const selectedAsset = useMemo(
     () => assets.find((asset) => asset._id === form.assetId),
     [assets, form.assetId],
   );
-  const isYouTubeShort = form.publishType === "youtube_short";
-  const isFacebookPublishType =
-    form.publishType === "facebook_reel" || form.publishType === "facebook_video";
+  const hasYouTubeShortDestination = form.destinations.some(
+    (destination) => destination.publishType === "youtube_short",
+  );
+  const isDestinationValid = (destination: DestinationState) => {
+    if (!destination.socialAccountId || !destination.publishType) {
+      return false;
+    }
+
+    if (
+      (destination.publishType === "facebook_reel" ||
+        destination.publishType === "facebook_video") &&
+      !destination.facebookPageId
+    ) {
+      return false;
+    }
+
+    return true;
+  };
   const canSubmit =
     Boolean(
-      form.assetId &&
-        form.socialAccountId &&
-        form.publishType &&
-        (!isFacebookPublishType || form.facebookPageId),
+      form.assetId && form.destinations.length > 0 && form.destinations.every(isDestinationValid),
     ) &&
     !isSubmitting;
 
   const selectedAssetShortHint = useMemo(() => {
-    if (!selectedAsset || !isYouTubeShort) {
+    if (!selectedAsset || !hasYouTubeShortDestination) {
       return null;
     }
 
@@ -154,15 +258,28 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
     }
 
     return `Đủ điều kiện Shorts: ${width}x${height}, ${Math.round(durationMs / 1000)}s.`;
-  }, [isYouTubeShort, selectedAsset]);
+  }, [hasYouTubeShortDestination, selectedAsset]);
 
-  const loadAll = async () => {
+  const loadAll = useCallback(async (nextPage = 1) => {
     setStatus("loading");
     setMessage("Loading publish planning data...");
 
     try {
+      const params = new URLSearchParams({
+        page: String(nextPage),
+        pageSize: String(PUBLISH_RECORD_PAGE_SIZE),
+      });
+
+      if (platformFilter !== "all") {
+        params.set("platform", platformFilter);
+      }
+
+      if (statusFilter !== "all") {
+        params.set("status", statusFilter);
+      }
+
       const [recordsResponse, accountsResponse, assetsResponse] = await Promise.all([
-        fetch("/api/social/publish-records?limit=50", {
+        fetch(`/api/social/publish-records?${params.toString()}`, {
           method: "GET",
           cache: "no-store",
         }),
@@ -184,153 +301,256 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
       }
 
       setRecords(recordsPayload.data ?? []);
+      setPagination(recordsPayload.pagination ?? DEFAULT_PAGINATION);
       setAccounts(accountsPayload.data ?? []);
       setAssets(assetsPayload.data ?? []);
       setStatus("ready");
-      setMessage(`Loaded ${(recordsPayload.data ?? []).length} publish records.`);
+      setMessage(
+        `Loaded ${(recordsPayload.data ?? []).length} of ${
+          recordsPayload.pagination?.total ?? (recordsPayload.data ?? []).length
+        } publish records.`,
+      );
     } catch (error) {
       setStatus("failed");
       setMessage(error instanceof Error ? error.message : "Could not load data.");
     }
-  };
+  }, [platformFilter, statusFilter]);
 
   useEffect(() => {
-    void loadAll();
-  }, []);
+    void loadAll(1);
+  }, [loadAll]);
 
-  useEffect(() => {
-    if (!showForm || selectedAccount?.platform !== "facebook") {
-      setFacebookPages([]);
-      setFacebookPagesStatus("idle");
-      setForm((previous) => ({ ...previous, facebookPageId: "" }));
-      return;
+  const ensureFacebookPages = async (accountId: string) => {
+    if (!accountId) {
+      return { pages: [] as FacebookPageOption[], configuredPageId: null as string | null };
     }
 
-    const loadFacebookPages = async () => {
-      setFacebookPagesStatus("loading");
-      try {
-        const response = await fetch(
-          `/api/social/accounts/${selectedAccount._id}/facebook-pages`,
-          {
-            method: "GET",
-            cache: "no-store",
-          },
-        );
-        const payload = (await response.json()) as ApiResponse<{
-          pages: FacebookPageOption[];
-          configuredPageId: string | null;
-          source: "graph" | "cached";
-        }>;
+    if (facebookPagesByAccount[accountId]) {
+      return {
+        pages: facebookPagesByAccount[accountId],
+        configuredPageId: null,
+      };
+    }
 
-        if (!response.ok || !payload.ok || !payload.data) {
-          setFacebookPagesStatus("failed");
-          setFormMessage(payload.error ?? "Could not load Facebook pages.");
-          return;
-        }
+    setLoadingFacebookAccountIds((previous) => ({ ...previous, [accountId]: true }));
 
-        const data = payload.data;
+    try {
+      const response = await fetch(
+        `/api/social/accounts/${accountId}/facebook-pages`,
+        {
+          method: "GET",
+          cache: "no-store",
+        },
+      );
+      const payload = (await response.json()) as ApiResponse<{
+        pages: FacebookPageOption[];
+        configuredPageId: string | null;
+        source: "graph" | "cached";
+      }>;
 
-        setFacebookPages(data.pages);
-        setFacebookPagesStatus("ready");
-        setForm((previous) => {
-          const hasCurrent = data.pages.some(
-            (page) => page.id === previous.facebookPageId,
-          );
-          const defaultPageId =
-            data.configuredPageId ??
-            data.pages[0]?.id ??
-            "";
-
-          return {
-            ...previous,
-            facebookPageId: hasCurrent ? previous.facebookPageId : defaultPageId,
-          };
-        });
-      } catch (error) {
-        setFacebookPagesStatus("failed");
-        setFormMessage(
-          error instanceof Error
-            ? error.message
-            : "Could not load Facebook pages.",
-        );
+      if (!response.ok || !payload.ok || !payload.data) {
+        throw new Error(payload.error ?? "Could not load Facebook pages.");
       }
-    };
 
-    void loadFacebookPages();
-  }, [selectedAccount?._id, selectedAccount?.platform, showForm]);
+      setFacebookPagesByAccount((previous) => ({
+        ...previous,
+        [accountId]: payload.data?.pages ?? [],
+      }));
+
+      return payload.data;
+    } finally {
+      setLoadingFacebookAccountIds((previous) => ({ ...previous, [accountId]: false }));
+    }
+  };
 
   const createRecord = async () => {
     if (isSubmitting) {
       return;
     }
+    const destinations = form.destinations.filter(isDestinationValid);
 
-    if (isFacebookPublishType && !form.facebookPageId) {
+    if (destinations.length === 0) {
       setStatus("failed");
-      setFormMessage("Select a Facebook Page before creating the publish record.");
+      setFormMessage("Add at least one valid destination before publishing.");
       return;
     }
 
     setIsSubmitting(true);
+    setSubmitProgress(0);
     setStatus("loading");
     const submitMessage =
       form.publishMode === "publish_now"
-        ? selectedAccount?.platform === "youtube"
-          ? "Uploading to YouTube. Keep this modal open..."
-          : selectedAccount?.platform === "tiktok"
-            ? "Uploading to TikTok and waiting for posting status..."
-            : selectedAccount?.platform === "facebook"
-              ? "Uploading to Facebook Page/Reels. Keep this modal open..."
-              : "Creating publish-now record..."
+        ? `Publishing to ${destinations.length} destination(s) in background...`
         : "Creating planned publish record...";
     setMessage(submitMessage);
     setFormMessage(submitMessage);
+    const progressTaskId = startProgressTask({
+      title:
+        form.publishMode === "publish_now"
+          ? "Publishing social destinations"
+          : "Creating publish records",
+      description: submitMessage,
+      scope: "publish",
+      progress: 0,
+    });
+    let successCount = 0;
+    let failedCount = 0;
+    let currentProgress = 0;
+
+    const updatePublishProgress = ({
+      destinationIndex,
+      stagePercent,
+      destinationLabel,
+      detail,
+    }: {
+      destinationIndex: number;
+      stagePercent: number;
+      destinationLabel: string;
+      detail: string;
+    }) => {
+      const nextProgress = Math.round(
+        ((destinationIndex + stagePercent / 100) / destinations.length) * 100,
+      );
+      currentProgress = Math.max(currentProgress, nextProgress);
+      setSubmitProgress(currentProgress);
+      const completed = destinationIndex;
+      const progressText = `${successCount}/${destinations.length} success · ${failedCount} failed · ${completed}/${destinations.length} completed`;
+      const detailText = `${destinationLabel} · ${detail}`;
+      const composed = `${progressText}. ${detailText}`;
+      setFormMessage(`${composed} (${currentProgress}%).`);
+      updateProgressTask(progressTaskId, {
+        progress: currentProgress,
+        description: composed,
+      });
+    };
+
+    type DestinationResult = {
+      ok: boolean;
+      error?: string;
+    };
+
+    const results: DestinationResult[] = [];
 
     try {
-      const response = await fetch("/api/social/publish-records", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          assetId: form.assetId,
-          socialAccountId: form.socialAccountId,
-          publishType: form.publishType,
-          facebookPageId: form.facebookPageId || null,
-          publishNow: form.publishMode === "publish_now",
-          privacyStatus: form.privacyStatus,
-          title: form.title,
-          caption: form.caption,
-          hashtags: splitCsv(form.hashtags),
-          scheduledAt: form.scheduledAt || null,
-        }),
-      });
-      const payload = (await response.json()) as ApiResponse<PublishRecord>;
+      for (const [index, destination] of destinations.entries()) {
+        const destinationLabel = buildDestinationLabel({ destination, accounts });
+        updatePublishProgress({
+          destinationIndex: index,
+          stagePercent: 20,
+          destinationLabel,
+          detail: "Preparing request",
+        });
 
-      if (!response.ok || !payload.ok || !payload.data) {
+        try {
+          updatePublishProgress({
+            destinationIndex: index,
+            stagePercent: 40,
+            destinationLabel,
+            detail: "Sending request",
+          });
+          const response = await fetch("/api/social/publish-records", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              assetId: form.assetId,
+              socialAccountId: destination.socialAccountId,
+              publishType: destination.publishType,
+              facebookPageId: destination.facebookPageId || null,
+              publishNow: form.publishMode === "publish_now",
+              privacyStatus: destination.privacyStatus,
+              title: form.title,
+              caption: form.caption,
+              hashtags: splitCsv(form.hashtags),
+              scheduledAt: form.scheduledAt || null,
+            }),
+          });
+          updatePublishProgress({
+            destinationIndex: index,
+            stagePercent: 65,
+            destinationLabel,
+            detail: `Response received (HTTP ${response.status})`,
+          });
+          const payload = (await response.json()) as ApiResponse<PublishRecord>;
+          updatePublishProgress({
+            destinationIndex: index,
+            stagePercent: 85,
+            destinationLabel,
+            detail: "Validating response payload",
+          });
+
+          const isSuccess = response.ok && payload.ok && Boolean(payload.data);
+
+          if (isSuccess) {
+            successCount += 1;
+            results.push({ ok: true });
+          } else {
+            failedCount += 1;
+            results.push({
+              ok: false,
+              error: payload.error ?? "Could not create publish record.",
+            });
+          }
+        } catch (error) {
+          failedCount += 1;
+          results.push({
+            ok: false,
+            error: error instanceof Error ? error.message : "Could not create publish record.",
+          });
+        }
+
+        updatePublishProgress({
+          destinationIndex: index + 1,
+          stagePercent: 0,
+          destinationLabel,
+          detail: "Destination completed",
+        });
+      }
+
+      const failed = results.filter((result) => !result.ok);
+      const firstError = failed[0]?.error ?? "Could not create publish record.";
+
+      if (successCount === 0) {
         setStatus("failed");
-        const errorMessage = payload.error ?? "Could not create publish record.";
-        setMessage(errorMessage);
-        setFormMessage(errorMessage);
+        setMessage(firstError);
+        setFormMessage(firstError);
+        finishProgressTask({
+          id: progressTaskId,
+          status: "failed",
+          description: `${successCount}/${destinations.length} success · ${failedCount} failed.`,
+          error: firstError,
+        });
         return;
       }
 
       setShowForm(false);
-      setForm(EMPTY_FORM);
+      setForm({ ...EMPTY_FORM, destinations: [createDestinationRow()] });
       setFormMessage("");
-      await loadAll();
+      await loadAll(1);
+      setStatus(failed.length === 0 ? "ready" : "failed");
       setMessage(
-        payload.data.status === "published"
-          ? `Published. Platform post id: ${payload.data.platformPostId ?? "-"}`
-          : payload.data.status === "queued"
-            ? `Upload accepted and is processing. Tracking id: ${payload.data.platformPostId ?? "-"}`
-          : payload.data.status === "failed"
-            ? `${payload.data.errorCode ?? "Publish failed"}: ${payload.data.errorDetail ?? ""}`
-            : "Publish record planned.",
+        failed.length === 0
+          ? `Created ${successCount} publish record(s).`
+          : `Created ${successCount} record(s), ${failed.length} failed. First error: ${firstError}`,
       );
+      finishProgressTask({
+        id: progressTaskId,
+        status: failed.length === 0 ? "success" : "failed",
+        description:
+          `${successCount}/${destinations.length} success · ${failedCount} failed.`,
+        error: failed.length === 0 ? undefined : firstError,
+      });
     } catch (error) {
       setStatus("failed");
       const errorMessage =
         error instanceof Error ? error.message : "Could not create publish record.";
       setMessage(errorMessage);
       setFormMessage(errorMessage);
+      finishProgressTask({
+        id: progressTaskId,
+        status: "failed",
+        description: "Publish request failed.",
+        error: errorMessage,
+      });
     } finally {
       setIsSubmitting(false);
     }
@@ -355,8 +575,10 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
           <button
             type="button"
             onClick={() => {
-              setForm(EMPTY_FORM);
+              setForm({ ...EMPTY_FORM, destinations: [createDestinationRow()] });
               setFormMessage("");
+              setSubmitProgress(0);
+              setShowAssetPicker(false);
               setShowForm(true);
             }}
             className="inline-flex items-center gap-2 border border-main bg-secondary px-3 py-1.5 text-[12px] font-semibold text-main hover:bg-secondary/75"
@@ -366,7 +588,7 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
           </button>
           <button
             type="button"
-            onClick={() => void loadAll()}
+            onClick={() => void loadAll(pagination.page)}
             disabled={status === "loading"}
             className="inline-flex items-center gap-2 border border-main bg-main px-3 py-1.5 text-[12px] font-semibold text-main hover:bg-secondary disabled:opacity-60"
           >
@@ -383,6 +605,65 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
           {status}
         </span>
         <span className="ml-3">{message}</span>
+      </div>
+
+      <div className="flex flex-wrap items-end justify-between gap-3 border-b border-main bg-main px-5 py-3">
+        <div className="flex flex-wrap gap-3">
+          <label className="text-[11px] font-semibold text-main">
+            Platform
+            <select
+              value={platformFilter}
+              onChange={(event) =>
+                setPlatformFilter(event.target.value as SocialPlatform | "all")
+              }
+              className="mt-1 block min-w-32 border border-main bg-main px-2 py-1.5 text-[12px] font-normal text-main"
+            >
+              <option value="all">All platforms</option>
+              <option value="youtube">YouTube</option>
+              <option value="tiktok">TikTok</option>
+              <option value="facebook">Facebook</option>
+              <option value="shopee">Shopee</option>
+            </select>
+          </label>
+          <label className="text-[11px] font-semibold text-main">
+            Status
+            <select
+              value={statusFilter}
+              onChange={(event) => setStatusFilter(event.target.value)}
+              className="mt-1 block min-w-32 border border-main bg-main px-2 py-1.5 text-[12px] font-normal text-main"
+            >
+              <option value="all">All statuses</option>
+              {PUBLISH_STATUS_OPTIONS.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <div className="flex items-center gap-2 text-[11px] text-muted">
+          <button
+            type="button"
+            onClick={() => void loadAll(Math.max(1, pagination.page - 1))}
+            disabled={status === "loading" || pagination.page <= 1}
+            className="border border-main bg-main px-2.5 py-1 font-semibold text-main hover:bg-secondary disabled:opacity-50"
+          >
+            Previous
+          </button>
+          <span>
+            Page {pagination.page} / {pagination.totalPages} · {pagination.total} record(s)
+          </span>
+          <button
+            type="button"
+            onClick={() =>
+              void loadAll(Math.min(pagination.totalPages, pagination.page + 1))
+            }
+            disabled={status === "loading" || pagination.page >= pagination.totalPages}
+            className="border border-main bg-main px-2.5 py-1 font-semibold text-main hover:bg-secondary disabled:opacity-50"
+          >
+            Next
+          </button>
+        </div>
       </div>
 
       <div className="overflow-x-auto">
@@ -499,114 +780,140 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
                 type="button"
                 onClick={() => {
                   setShowForm(false);
-                  setForm(EMPTY_FORM);
-                  setFacebookPages([]);
-                  setFacebookPagesStatus("idle");
-                  setFormMessage("");
+                  if (!isSubmitting) {
+                    setForm({ ...EMPTY_FORM, destinations: [createDestinationRow()] });
+                    setFormMessage("");
+                    setSubmitProgress(0);
+                    setShowAssetPicker(false);
+                  }
                 }}
-                disabled={isSubmitting}
                 className="border border-main bg-main px-2.5 py-1 text-[11px] font-semibold text-main hover:bg-secondary"
               >
-                Close
+                {isSubmitting ? "Hide" : "Close"}
               </button>
             </div>
 
             <div className="grid gap-3 px-4 py-4 md:grid-cols-2">
+            {isSubmitting ? (
+              <div className="border border-main bg-secondary/20 p-3 md:col-span-2">
+                <div className="flex items-center justify-between gap-3 text-[11px] text-muted">
+                  <span>{formMessage}</span>
+                  <span className="font-semibold text-main">{submitProgress}%</span>
+                </div>
+                <div className="mt-2 h-2 overflow-hidden border border-main bg-main">
+                  <div
+                    className="h-full bg-emerald-500 transition-all"
+                    style={{ width: `${submitProgress}%` }}
+                  />
+                </div>
+                <p className="mt-2 text-[11px] leading-5 text-muted">
+                  Bạn có thể bấm Hide; tiến trình vẫn nằm trong nút Progress trên topbar.
+                </p>
+              </div>
+            ) : null}
             <label className="text-[12px] font-medium text-main">
               Video Asset
-              <select
-                value={form.assetId}
-                onChange={(event) =>
-                  setForm((previous) => ({ ...previous, assetId: event.target.value }))
-                }
+              <button
+                type="button"
+                onClick={() => setShowAssetPicker((previous) => !previous)}
                 disabled={isSubmitting}
-                className="mt-1 w-full border border-main bg-main px-3 py-2 text-[12px]"
+                className="mt-1 flex w-full items-center justify-between border border-main bg-main px-3 py-2 text-left text-[12px] text-main"
               >
-                <option value="">Select asset</option>
-                {assets.map((asset) => (
-                  <option key={asset._id} value={asset._id}>
-                    {asset.metadata?.title ?? asset._id}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="text-[12px] font-medium text-main">
-              Social Account
-              <select
-                value={form.socialAccountId}
-                onChange={(event) => {
-                  const account = accounts.find(
-                    (entry) => entry._id === event.target.value,
-                  );
-                  setForm((previous) => ({
-                    ...previous,
-                    socialAccountId: event.target.value,
-                    publishType: account?.supportedFormats[0] ?? "",
-                    facebookPageId: "",
-                  }));
-                }}
-                disabled={isSubmitting}
-                className="mt-1 w-full border border-main bg-main px-3 py-2 text-[12px]"
-              >
-                <option value="">Select account</option>
-                {accounts.map((account) => (
-                  <option key={account._id} value={account._id}>
-                    {formatPlatform(account.platform)} · {account.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="text-[12px] font-medium text-main">
-              Publish Type
-              <select
-                value={form.publishType}
-                onChange={(event) =>
-                  setForm((previous) => ({
-                    ...previous,
-                    publishType: event.target.value as SocialPublishType,
-                  }))
-                }
-                disabled={isSubmitting}
-                className="mt-1 w-full border border-main bg-main px-3 py-2 text-[12px]"
-              >
-                <option value="">Select type</option>
-                {(selectedAccount?.supportedFormats ?? []).map((format) => (
-                  <option key={format} value={format}>
-                    {formatPublishType(format)}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {selectedAccount?.platform === "facebook" ? (
-              <label className="text-[12px] font-medium text-main">
-                Facebook Page
-                <select
-                  value={form.facebookPageId}
-                  onChange={(event) =>
-                    setForm((previous) => ({
-                      ...previous,
-                      facebookPageId: event.target.value,
-                    }))
-                  }
-                  disabled={isSubmitting || facebookPagesStatus === "loading"}
-                  className="mt-1 w-full border border-main bg-main px-3 py-2 text-[12px]"
-                >
-                  <option value="">
-                    {facebookPagesStatus === "loading"
-                      ? "Loading pages..."
-                      : "Select Facebook Page"}
-                  </option>
-                  {facebookPages.map((page) => (
-                    <option key={page.id} value={page.id}>
-                      {page.name} ({page.id})
-                    </option>
-                  ))}
-                </select>
-                <span className="mt-1 block text-[11px] leading-5 text-muted">
-                  Chọn đúng Page để publish. Khi có nhiều Page, không chọn sẽ bị chặn publish.
+                <span className="truncate">
+                  {selectedAsset?.metadata?.title ?? selectedAsset?._id ?? "Select asset"}
                 </span>
-              </label>
-            ) : null}
+                <span className="ml-2 text-[11px] text-muted">
+                  {showAssetPicker ? "Close" : "Browse"}
+                </span>
+              </button>
+              {selectedAsset ? (
+                <div className="mt-2 flex items-center gap-2 text-[10px] text-muted">
+                  <span className="border border-main bg-secondary/20 px-1.5 py-0.5">
+                    {selectedAsset.storageProvider}
+                  </span>
+                  {selectedAsset.metadata?.originPlatform ? (
+                    <span className="border border-main bg-secondary/20 px-1.5 py-0.5">
+                      {selectedAsset.metadata.originPlatform}
+                    </span>
+                  ) : null}
+                  {selectedAsset.metadata?.actualQuality ? (
+                    <span className="border border-main bg-secondary/20 px-1.5 py-0.5">
+                      {selectedAsset.metadata.actualQuality}
+                    </span>
+                  ) : null}
+                </div>
+              ) : null}
+              {showAssetPicker ? (
+                <div className="mt-2 max-h-64 overflow-y-auto border border-main bg-main">
+                  {assets.length === 0 ? (
+                    <p className="px-3 py-4 text-[11px] text-muted">No asset available.</p>
+                  ) : (
+                    <div className="space-y-2 p-2">
+                      {assets.map((asset) => {
+                        const isSelected = form.assetId === asset._id;
+                        const previewBlockedReason = getTelegramDownloadBlockedReason({
+                          storageProvider: asset.storageProvider,
+                          sizeBytes: asset.sizeBytes ?? undefined,
+                        });
+
+                        return (
+                          <button
+                            key={asset._id}
+                            type="button"
+                            onClick={() => {
+                              setForm((previous) => ({ ...previous, assetId: asset._id }));
+                              setShowAssetPicker(false);
+                            }}
+                            className={`flex w-full items-start gap-2 border p-2 text-left ${
+                              isSelected
+                                ? "border-accent bg-secondary/35"
+                                : "border-main bg-main hover:bg-secondary/20"
+                            }`}
+                          >
+                            {previewBlockedReason ? (
+                              <div className="flex h-12 w-20 shrink-0 items-center justify-center border border-main bg-secondary text-[10px] text-muted">
+                                No preview
+                              </div>
+                            ) : (
+                              <video
+                                preload="metadata"
+                                muted
+                                className="h-12 w-20 shrink-0 border border-main bg-black object-cover"
+                                src={`/api/storage/assets/${asset._id}/download?disposition=inline`}
+                              />
+                            )}
+                            <div className="min-w-0">
+                              <p className="truncate text-[12px] font-semibold text-main">
+                                {asset.metadata?.title ?? asset._id}
+                              </p>
+                              <p className="mt-1 truncate text-[10px] text-muted">
+                                {asset.createdFrom?.storageProviderLabel ?? asset.storageProvider} ·{" "}
+                                {formatBytes(asset.sizeBytes)}
+                              </p>
+                              <div className="mt-1 flex flex-wrap gap-1">
+                                <span className="border border-main bg-secondary/20 px-1.5 py-0.5 text-[10px] text-main">
+                                  {asset.storageProvider}
+                                </span>
+                                {asset.metadata?.originPlatform ? (
+                                  <span className="border border-main bg-secondary/20 px-1.5 py-0.5 text-[10px] text-main">
+                                    {asset.metadata.originPlatform}
+                                  </span>
+                                ) : null}
+                                {asset.metadata?.actualQuality ? (
+                                  <span className="border border-main bg-secondary/20 px-1.5 py-0.5 text-[10px] text-main">
+                                    {asset.metadata.actualQuality}
+                                  </span>
+                                ) : null}
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              ) : null}
+            </label>
             <fieldset className="border border-main bg-secondary/20 p-3">
               <legend className="px-1 text-[12px] font-medium text-main">
                 Publish mode
@@ -670,29 +977,225 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
                 />
               </label>
             ) : null}
-            {selectedAccount?.platform === "youtube" ? (
-              <label className="text-[12px] font-medium text-main">
-                YouTube Privacy
-                <select
-                  value={form.privacyStatus}
-                  disabled={isSubmitting}
-                  onChange={(event) =>
+            <div className="border border-main bg-secondary/10 p-3 md:col-span-2">
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <p className="text-[12px] font-semibold text-main">Destinations</p>
+                <button
+                  type="button"
+                  onClick={() =>
                     setForm((previous) => ({
                       ...previous,
-                      privacyStatus: event.target.value as YouTubePrivacyStatus,
+                      destinations: [...previous.destinations, createDestinationRow()],
                     }))
                   }
-                  className="mt-1 w-full border border-main bg-main px-3 py-2 text-[12px]"
+                  disabled={isSubmitting}
+                  className="inline-flex items-center gap-1.5 border border-main bg-main px-2.5 py-1 text-[11px] font-semibold text-main hover:bg-secondary"
                 >
-                  <option value="private">Private</option>
-                  <option value="unlisted">Unlisted</option>
-                  <option value="public">Public</option>
-                </select>
-                <span className="mt-1 block text-[11px] leading-5 text-muted">
-                  Google may still force API uploads from unverified projects to private.
-                </span>
-              </label>
-            ) : null}
+                  <Plus className="h-3 w-3" />
+                  Add Destination
+                </button>
+              </div>
+
+              {form.destinations.length === 0 ? (
+                <p className="text-[11px] text-muted">Add at least one destination.</p>
+              ) : (
+                <div className="space-y-3">
+                  {form.destinations.map((destination, index) => {
+                    const destinationAccount = accounts.find(
+                      (account) => account._id === destination.socialAccountId,
+                    );
+                    const isFacebookDestination =
+                      destination.publishType === "facebook_reel" ||
+                      destination.publishType === "facebook_video";
+                    const isYouTubeDestination =
+                      destination.publishType === "youtube_short" ||
+                      destination.publishType === "youtube_video";
+                    const facebookPages =
+                      facebookPagesByAccount[destination.socialAccountId] ?? [];
+                    const isLoadingPages =
+                      loadingFacebookAccountIds[destination.socialAccountId] === true;
+
+                    return (
+                      <div key={destination.id} className="border border-main bg-main p-3">
+                        <div className="mb-2 flex items-center justify-between gap-2">
+                          <p className="text-[11px] font-semibold text-main">
+                            Destination {index + 1}
+                          </p>
+                          {form.destinations.length > 1 ? (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setForm((previous) => ({
+                                  ...previous,
+                                  destinations: previous.destinations.filter(
+                                    (entry) => entry.id !== destination.id,
+                                  ),
+                                }))
+                              }
+                              disabled={isSubmitting}
+                              className="inline-flex items-center gap-1 border border-main bg-main px-2 py-1 text-[10px] font-semibold text-main hover:bg-secondary"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                              Remove
+                            </button>
+                          ) : null}
+                        </div>
+
+                        <div className="grid gap-3 md:grid-cols-2">
+                          <label className="text-[12px] font-medium text-main">
+                            Social Account
+                            <select
+                              value={destination.socialAccountId}
+                              onChange={async (event) => {
+                                const nextAccountId = event.target.value;
+                                const account = accounts.find(
+                                  (entry) => entry._id === nextAccountId,
+                                );
+                                let defaultFacebookPageId = "";
+
+                                if (account?.platform === "facebook" && nextAccountId) {
+                                  try {
+                                    const facebookData =
+                                      await ensureFacebookPages(nextAccountId);
+                                    defaultFacebookPageId =
+                                      facebookData.configuredPageId ??
+                                      facebookData.pages[0]?.id ??
+                                      "";
+                                  } catch (error) {
+                                    setFormMessage(
+                                      error instanceof Error
+                                        ? error.message
+                                        : "Could not load Facebook pages.",
+                                    );
+                                  }
+                                }
+
+                                setForm((previous) => ({
+                                  ...previous,
+                                  destinations: previous.destinations.map((entry) =>
+                                    entry.id === destination.id
+                                      ? {
+                                          ...entry,
+                                          socialAccountId: nextAccountId,
+                                          publishType: account?.supportedFormats[0] ?? "",
+                                          facebookPageId: defaultFacebookPageId,
+                                          privacyStatus: "private",
+                                        }
+                                      : entry,
+                                  ),
+                                }));
+                              }}
+                              disabled={isSubmitting}
+                              className="mt-1 w-full border border-main bg-main px-3 py-2 text-[12px]"
+                            >
+                              <option value="">Select account</option>
+                              {accounts.map((account) => (
+                                <option key={account._id} value={account._id}>
+                                  {formatPlatform(account.platform)} · {account.label}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+
+                          <label className="text-[12px] font-medium text-main">
+                            Publish Type
+                            <select
+                              value={destination.publishType}
+                              onChange={(event) =>
+                                setForm((previous) => ({
+                                  ...previous,
+                                  destinations: previous.destinations.map((entry) =>
+                                    entry.id === destination.id
+                                      ? {
+                                          ...entry,
+                                          publishType: event.target.value as SocialPublishType,
+                                          facebookPageId:
+                                            event.target.value === "facebook_reel" ||
+                                            event.target.value === "facebook_video"
+                                              ? entry.facebookPageId
+                                              : "",
+                                        }
+                                      : entry,
+                                  ),
+                                }))
+                              }
+                              disabled={isSubmitting || !destinationAccount}
+                              className="mt-1 w-full border border-main bg-main px-3 py-2 text-[12px]"
+                            >
+                              <option value="">Select type</option>
+                              {(destinationAccount?.supportedFormats ?? []).map((format) => (
+                                <option key={format} value={format}>
+                                  {formatPublishType(format)}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+
+                          {isFacebookDestination ? (
+                            <label className="text-[12px] font-medium text-main md:col-span-2">
+                              Facebook Page
+                              <select
+                                value={destination.facebookPageId}
+                                onChange={(event) =>
+                                  setForm((previous) => ({
+                                    ...previous,
+                                    destinations: previous.destinations.map((entry) =>
+                                      entry.id === destination.id
+                                        ? { ...entry, facebookPageId: event.target.value }
+                                        : entry,
+                                    ),
+                                  }))
+                                }
+                                disabled={isSubmitting || isLoadingPages}
+                                className="mt-1 w-full border border-main bg-main px-3 py-2 text-[12px]"
+                              >
+                                <option value="">
+                                  {isLoadingPages ? "Loading pages..." : "Select Facebook Page"}
+                                </option>
+                                {facebookPages.map((page) => (
+                                  <option key={page.id} value={page.id}>
+                                    {page.name} ({page.id})
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                          ) : null}
+
+                          {isYouTubeDestination ? (
+                            <label className="text-[12px] font-medium text-main md:col-span-2">
+                              YouTube Privacy
+                              <select
+                                value={destination.privacyStatus}
+                                disabled={isSubmitting}
+                                onChange={(event) =>
+                                  setForm((previous) => ({
+                                    ...previous,
+                                    destinations: previous.destinations.map((entry) =>
+                                      entry.id === destination.id
+                                        ? {
+                                            ...entry,
+                                            privacyStatus:
+                                              event.target.value as YouTubePrivacyStatus,
+                                          }
+                                        : entry,
+                                    ),
+                                  }))
+                                }
+                                className="mt-1 w-full border border-main bg-main px-3 py-2 text-[12px]"
+                              >
+                                <option value="private">Private</option>
+                                <option value="unlisted">Unlisted</option>
+                                <option value="public">Public</option>
+                              </select>
+                            </label>
+                          ) : null}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
             {selectedAssetShortHint ? (
               <div className="border border-main bg-secondary/25 px-3 py-2 text-[11px] leading-5 text-muted md:col-span-2">
                 {selectedAssetShortHint}
@@ -764,9 +1267,7 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
               type="button"
               onClick={() => {
                 setShowForm(false);
-                setForm(EMPTY_FORM);
-                setFacebookPages([]);
-                setFacebookPagesStatus("idle");
+                setForm({ ...EMPTY_FORM, destinations: [createDestinationRow()] });
                 setFormMessage("");
               }}
               disabled={isSubmitting}

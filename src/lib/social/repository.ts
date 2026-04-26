@@ -19,6 +19,7 @@ import {
   SocialError,
   type EditableSocialAccount,
   type PublishRecordDocument,
+  type PublishRecordStatus,
   type SanitizedSocialAccount,
   type SocialAccountDocument,
   type SocialPlatform,
@@ -32,6 +33,20 @@ import { uploadVideoToYouTube } from "./youtube-upload";
 
 const SOCIAL_ACCOUNTS_COLLECTION = "social_accounts";
 const PUBLISH_RECORDS_COLLECTION = "publish_records";
+
+type PublishRecordListFilters = {
+  platform?: SocialPlatform;
+  status?: PublishRecordStatus;
+};
+
+type PublishRecordListInput = PublishRecordListFilters & {
+  limit?: number;
+};
+
+type PublishRecordPageInput = PublishRecordListFilters & {
+  page: number;
+  pageSize: number;
+};
 
 export async function getSocialDb(): Promise<Db> {
   return getMongoDb();
@@ -547,73 +562,139 @@ export async function executePublishNow({
   }
 }
 
-export async function listPublishRecords({ db, limit = 50 }: { db: Db; limit?: number }) {
+function buildPublishRecordMatch({
+  platform,
+  status,
+}: PublishRecordListFilters) {
+  const match: Partial<Pick<PublishRecordDocument, "platform" | "status">> = {};
+
+  if (platform) {
+    match.platform = platform;
+  }
+
+  if (status) {
+    match.status = status;
+  }
+
+  return match;
+}
+
+function buildPublishRecordLookupStages() {
+  return [
+    {
+      $lookup: {
+        from: SOCIAL_ACCOUNTS_COLLECTION,
+        localField: "socialAccountId",
+        foreignField: "_id",
+        as: "socialAccount",
+      },
+    },
+    {
+      $lookup: {
+        from: "assets",
+        localField: "assetId",
+        foreignField: "_id",
+        as: "asset",
+      },
+    },
+    {
+      $project: {
+        assetId: 1,
+        socialAccountId: 1,
+        platform: 1,
+        publishType: 1,
+        facebookPageId: 1,
+        publishMode: 1,
+        privacyStatus: 1,
+        status: 1,
+        title: 1,
+        caption: 1,
+        hashtags: 1,
+        scheduledAt: 1,
+        publishedAt: 1,
+        platformPostId: 1,
+        retryCount: 1,
+        errorCode: 1,
+        errorDetail: 1,
+        createdAt: 1,
+        updatedAt: 1,
+        socialAccount: {
+          $let: {
+            vars: { account: { $arrayElemAt: ["$socialAccount", 0] } },
+            in: {
+              label: "$$account.label",
+              displayName: "$$account.displayName",
+              handle: "$$account.handle",
+            },
+          },
+        },
+        asset: {
+          $let: {
+            vars: { asset: { $arrayElemAt: ["$asset", 0] } },
+            in: {
+              title: "$$asset.metadata.title",
+              storageProvider: "$$asset.storageProvider",
+              providerAssetId: "$$asset.providerAssetId",
+            },
+          },
+        },
+      },
+    },
+  ];
+}
+
+export async function listPublishRecords({
+  db,
+  limit = 50,
+  platform,
+  status,
+}: { db: Db } & PublishRecordListInput) {
+  const match = buildPublishRecordMatch({ platform, status });
+
   return db
     .collection<PublishRecordDocument>(PUBLISH_RECORDS_COLLECTION)
     .aggregate([
+      ...(Object.keys(match).length > 0 ? [{ $match: match }] : []),
       { $sort: { createdAt: -1 } },
       { $limit: limit },
-      {
-        $lookup: {
-          from: SOCIAL_ACCOUNTS_COLLECTION,
-          localField: "socialAccountId",
-          foreignField: "_id",
-          as: "socialAccount",
-        },
-      },
-      {
-        $lookup: {
-          from: "assets",
-          localField: "assetId",
-          foreignField: "_id",
-          as: "asset",
-        },
-      },
-      {
-        $project: {
-          assetId: 1,
-          socialAccountId: 1,
-          platform: 1,
-          publishType: 1,
-          facebookPageId: 1,
-          publishMode: 1,
-          privacyStatus: 1,
-          status: 1,
-          title: 1,
-          caption: 1,
-          hashtags: 1,
-          scheduledAt: 1,
-          publishedAt: 1,
-          platformPostId: 1,
-          retryCount: 1,
-          errorCode: 1,
-          errorDetail: 1,
-          createdAt: 1,
-          updatedAt: 1,
-          socialAccount: {
-            $let: {
-              vars: { account: { $arrayElemAt: ["$socialAccount", 0] } },
-              in: {
-                label: "$$account.label",
-                displayName: "$$account.displayName",
-                handle: "$$account.handle",
-              },
-            },
-          },
-          asset: {
-            $let: {
-              vars: { asset: { $arrayElemAt: ["$asset", 0] } },
-              in: {
-                title: "$$asset.metadata.title",
-                storageProvider: "$$asset.storageProvider",
-                providerAssetId: "$$asset.providerAssetId",
-              },
-            },
-          },
-        },
-      },
+      ...buildPublishRecordLookupStages(),
     ])
     .toArray();
+}
+
+export async function listPublishRecordsPage({
+  db,
+  page,
+  pageSize,
+  platform,
+  status,
+}: { db: Db } & PublishRecordPageInput) {
+  const match = buildPublishRecordMatch({ platform, status });
+  const query = Object.keys(match).length > 0 ? match : {};
+  const skip = (page - 1) * pageSize;
+  const [items, total] = await Promise.all([
+    db
+      .collection<PublishRecordDocument>(PUBLISH_RECORDS_COLLECTION)
+      .aggregate([
+        ...(Object.keys(match).length > 0 ? [{ $match: match }] : []),
+        { $sort: { createdAt: -1 } },
+        { $skip: skip },
+        { $limit: pageSize },
+        ...buildPublishRecordLookupStages(),
+      ])
+      .toArray(),
+    db
+      .collection<PublishRecordDocument>(PUBLISH_RECORDS_COLLECTION)
+      .countDocuments(query),
+  ]);
+
+  return {
+    items,
+    page,
+    pageSize,
+    total,
+    totalPages: Math.max(1, Math.ceil(total / pageSize)),
+  };
 }
 
 export async function getSocialDashboard(db: Db) {

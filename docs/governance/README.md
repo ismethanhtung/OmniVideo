@@ -7,6 +7,7 @@
 - `definition-of-ready-done.md`: điều kiện bắt đầu/kết thúc task.
 - `changelog-policy.md`: chuẩn ghi lịch sử thay đổi.
 - `testing-rules.md`: quy tắc testing bắt buộc cho mọi thay đổi code.
+- `versioning-rules.md`: quy tắc versioning và đồng bộ hiển thị version.
 
 Mọi agent phải đọc ít nhất 4 file trước khi bắt đầu làm việc:
 

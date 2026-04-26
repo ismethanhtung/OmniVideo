@@ -59,6 +59,12 @@ export type SocialCapability = {
 export type ApiResponse<T> = {
   ok: boolean;
   data?: T;
+  pagination?: {
+    page: number;
+    pageSize: number;
+    total: number;
+    totalPages: number;
+  };
   error?: string;
   errorCode?: string;
 };

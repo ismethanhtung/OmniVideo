@@ -6,6 +6,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { ChevronDown, ChevronRight, Search } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
+import packageJson from "../../../package.json";
 
 import { LEFTBAR_NAV } from "@/components/layout/navigation";
 import type { AppSectionId, LeftbarNavGroup } from "@/components/layout/types";
@@ -50,7 +51,7 @@ function SettingsSectionHeader({
         >
             <div className="flex min-w-0 items-center gap-2.5">
                 <Icon className="h-3.5 w-3.5 shrink-0 text-muted group-hover:text-main" />
-                <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted group-hover:text-main">
+                <span className="text-[10px] font-black uppercase tracking-[0.12em] text-muted group-hover:text-main">
                     {label}
                 </span>
             </div>
@@ -210,7 +211,7 @@ export function Leftbar({ activeSection, onSectionChange }: LeftbarProps) {
 
             <div className="shrink-0 border-t border-main bg-secondary/30 px-3 py-3">
                 <p className="text-center text-[10px] font-medium text-muted">
-                    OmniVideo + v0.2.0
+                    OmniVideo + v{packageJson.version}
                 </p>
             </div>
         </aside>

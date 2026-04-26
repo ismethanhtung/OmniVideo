@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Archive,
+  BookOpen,
   CheckCircle2,
   Database,
   HardDrive,
@@ -108,6 +109,12 @@ const DRIVE_QUICK_SETUP = [
   "Click Connect OAuth, then save the provider after tokens are filled.",
 ];
 
+const DRIVE_SETUP_NOTES = [
+  "OAuth token must include drive.file scope for upload access.",
+  "If redirect_uri_mismatch appears, verify protocol/host/port/path are identical in Google Cloud.",
+  "Reconnect OAuth after env or redirect changes to refresh stored tokens.",
+];
+
 function compactSecretPayload(secrets: SecretFormState) {
   return Object.fromEntries(
     Object.entries(secrets)
@@ -190,6 +197,11 @@ export function StorageProvidersPanel({ section }: StorageProvidersPanelProps) {
     status: "idle",
     message: "Ready.",
   });
+  const openTutorialDocs = () => {
+    window.dispatchEvent(
+      new CustomEvent("omnivideo:navigate", { detail: "tutorialDocs" }),
+    );
+  };
 
   const activeCount = useMemo(
     () => providers.filter((provider) => provider.status === "active").length,
@@ -734,7 +746,7 @@ export function StorageProvidersPanel({ section }: StorageProvidersPanelProps) {
       {showCreateForm ? (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/35 px-4 py-6">
           <form
-            className="max-h-[90vh] w-full max-w-2xl overflow-y-auto border border-main bg-main shadow-xl"
+            className="max-h-[90vh] w-full max-w-5xl overflow-y-auto border border-main bg-main shadow-xl"
             onSubmit={(event) => {
               event.preventDefault();
               void saveProvider();
@@ -761,9 +773,9 @@ export function StorageProvidersPanel({ section }: StorageProvidersPanelProps) {
               </button>
             </div>
 
-            <div className="space-y-4 px-4 py-4">
+            <div className="px-4 py-4">
               {state.status === "failed" ? (
-                <div className="border border-rose-300 bg-rose-50 px-3 py-2 text-[11px] text-rose-700">
+                <div className="mb-4 border border-rose-300 bg-rose-50 px-3 py-2 text-[11px] text-rose-700">
                   <p className="font-semibold">{state.message}</p>
                   {state.errorCode ? (
                     <p className="mt-1 font-mono text-[10px]">{state.errorCode}</p>
@@ -771,68 +783,76 @@ export function StorageProvidersPanel({ section }: StorageProvidersPanelProps) {
                 </div>
               ) : null}
 
-              <label className="block">
-                <span className="text-[12px] font-medium text-main">Provider</span>
-                <select
-                  value={providerType}
-                  onChange={(event) => setProviderType(event.target.value as ProviderType)}
-                  disabled={Boolean(editingProviderId)}
-                  className="mt-1 w-full border border-main bg-main px-3 py-2 text-[12px] text-main outline-none transition-colors focus:border-accent"
-                >
-                  {PROVIDER_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <div
+                className={
+                  providerType === "drive"
+                    ? "grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]"
+                    : ""
+                }
+              >
+                <div className="space-y-4">
+                  <label className="block">
+                    <span className="text-[12px] font-medium text-main">Provider</span>
+                    <select
+                      value={providerType}
+                      onChange={(event) => setProviderType(event.target.value as ProviderType)}
+                      disabled={Boolean(editingProviderId)}
+                      className="mt-1 w-full border border-main bg-main px-3 py-2 text-[12px] text-main outline-none transition-colors focus:border-accent"
+                    >
+                      {PROVIDER_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
 
-              <label className="block">
-                <span className="text-[12px] font-medium text-main">Label</span>
-                <input
-                  value={label}
-                  onChange={(event) => setLabel(event.target.value)}
-                  placeholder="Main Telegram vault"
-                  className="mt-1 w-full border border-main bg-main px-3 py-2 text-[12px] text-main outline-none transition-colors placeholder:text-muted/60 focus:border-accent"
-                />
-              </label>
+                  <label className="block">
+                    <span className="text-[12px] font-medium text-main">Label</span>
+                    <input
+                      value={label}
+                      onChange={(event) => setLabel(event.target.value)}
+                      placeholder="Main Telegram vault"
+                      className="mt-1 w-full border border-main bg-main px-3 py-2 text-[12px] text-main outline-none transition-colors placeholder:text-muted/60 focus:border-accent"
+                    />
+                  </label>
 
-              <label className="block">
-                <span className="text-[12px] font-medium text-main">Description</span>
-                <textarea
-                  value={description}
-                  onChange={(event) => setDescription(event.target.value)}
-                  rows={2}
-                  placeholder="Internal storage role"
-                  className="mt-1 w-full resize-none border border-main bg-main px-3 py-2 text-[12px] text-main outline-none transition-colors placeholder:text-muted/60 focus:border-accent"
-                />
-              </label>
+                  <label className="block">
+                    <span className="text-[12px] font-medium text-main">Description</span>
+                    <textarea
+                      value={description}
+                      onChange={(event) => setDescription(event.target.value)}
+                      rows={2}
+                      placeholder="Internal storage role"
+                      className="mt-1 w-full resize-none border border-main bg-main px-3 py-2 text-[12px] text-main outline-none transition-colors placeholder:text-muted/60 focus:border-accent"
+                    />
+                  </label>
 
-              <div className="grid gap-3 sm:grid-cols-2">
-                <label className="block">
-                  <span className="text-[12px] font-medium text-main">Priority</span>
-                  <input
-                    type="number"
-                    min={0}
-                    max={100}
-                    value={priority}
-                    onChange={(event) => setPriority(Number(event.target.value))}
-                    className="mt-1 w-full border border-main bg-main px-3 py-2 text-[12px] text-main outline-none transition-colors focus:border-accent"
-                  />
-                </label>
-                <label className="block">
-                  <span className="text-[12px] font-medium text-main">Tags</span>
-                  <input
-                    value={tags}
-                    onChange={(event) => setTags(event.target.value)}
-                    className="mt-1 w-full border border-main bg-main px-3 py-2 text-[12px] text-main outline-none transition-colors focus:border-accent"
-                  />
-                </label>
-              </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="block">
+                      <span className="text-[12px] font-medium text-main">Priority</span>
+                      <input
+                        type="number"
+                        min={0}
+                        max={100}
+                        value={priority}
+                        onChange={(event) => setPriority(Number(event.target.value))}
+                        className="mt-1 w-full border border-main bg-main px-3 py-2 text-[12px] text-main outline-none transition-colors focus:border-accent"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="text-[12px] font-medium text-main">Tags</span>
+                      <input
+                        value={tags}
+                        onChange={(event) => setTags(event.target.value)}
+                        className="mt-1 w-full border border-main bg-main px-3 py-2 text-[12px] text-main outline-none transition-colors focus:border-accent"
+                      />
+                    </label>
+                  </div>
 
-              <div className="border-t border-main pt-4">
-                <p className="mb-3 text-[12px] font-semibold text-main">Secret Configuration</p>
-                <div className="space-y-3">
+                  <div className="border-t border-main pt-4">
+                    <p className="mb-3 text-[12px] font-semibold text-main">Secret Configuration</p>
+                    <div className="space-y-3">
                   {providerType === "telegram" ? (
                     <>
                       <SecretInput
@@ -849,33 +869,6 @@ export function StorageProvidersPanel({ section }: StorageProvidersPanelProps) {
                   ) : null}
                   {providerType === "drive" ? (
                     <>
-                      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_260px]">
-                        <div className="border border-main bg-secondary/20 p-3">
-                          <p className="text-[12px] font-semibold text-main">
-                            Google Drive OAuth setup
-                          </p>
-                          <p className="mt-1 text-[11px] leading-5 text-muted">
-                            OAuth is required for personal Drive quota. Access tokens are short-lived; keep a refresh token by reconnecting OAuth after env config is ready.
-                          </p>
-                          <ol className="mt-3 list-decimal space-y-1 pl-4 text-[11px] leading-5 text-muted">
-                            {DRIVE_QUICK_SETUP.map((step) => (
-                              <li key={step}>{step}</li>
-                            ))}
-                          </ol>
-                        </div>
-                        <div className="border border-main bg-main p-3">
-                          <p className="text-[10px] font-bold uppercase tracking-wide text-muted">
-                            Redirect URI
-                          </p>
-                          <p className="mt-2 break-all font-mono text-[11px] leading-5 text-main">
-                            {driveOAuthRedirectUri ||
-                              `${browserOrigin || "http://localhost:3001"}/api/storage/oauth/callback/drive`}
-                          </p>
-                          <p className="mt-3 text-[11px] leading-5 text-muted">
-                            `redirect_uri_mismatch` means this value does not exactly match Google Cloud OAuth client settings.
-                          </p>
-                        </div>
-                      </div>
                       <button
                         type="button"
                         onClick={() => {
@@ -953,17 +946,70 @@ export function StorageProvidersPanel({ section }: StorageProvidersPanelProps) {
                       />
                     </label>
                   ) : null}
-                </div>
-              </div>
+                    </div>
+                  </div>
 
-              <button
-                type="submit"
-                disabled={state.status === "loading"}
-                className="inline-flex items-center gap-2 border border-main bg-secondary px-3 py-2 text-[12px] font-semibold text-main transition-colors hover:bg-secondary/75 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <Plus className="h-3.5 w-3.5" />
-                {editingProviderId ? "Update Provider" : "Save Provider"}
-              </button>
+                  <button
+                    type="submit"
+                    disabled={state.status === "loading"}
+                    className="inline-flex items-center gap-2 border border-main bg-secondary px-3 py-2 text-[12px] font-semibold text-main transition-colors hover:bg-secondary/75 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    {editingProviderId ? "Update Provider" : "Save Provider"}
+                  </button>
+                </div>
+
+                {providerType === "drive" ? (
+                  <aside className="h-fit border border-main bg-secondary/25 p-3">
+                    <p className="text-[12px] font-semibold text-main">
+                      Google Drive OAuth Setup
+                    </p>
+                    <p className="mt-2 text-[11px] leading-5 text-muted">
+                      OAuth should be the default flow for Drive uploads. Access tokens are short-lived; keep refresh token support enabled by reconnecting after env setup.
+                    </p>
+                    <div className="mt-3 border border-main bg-main p-2">
+                      <p className="text-[10px] font-bold uppercase tracking-wide text-muted">
+                        Quick setup
+                      </p>
+                      <ol className="mt-2 list-decimal space-y-1 pl-4 text-[11px] leading-5 text-muted">
+                        {DRIVE_QUICK_SETUP.map((step) => (
+                          <li key={step}>{step}</li>
+                        ))}
+                      </ol>
+                    </div>
+                    <div className="mt-3 border border-main bg-main p-2">
+                      <p className="text-[10px] font-bold uppercase tracking-wide text-muted">
+                        Common scopes
+                      </p>
+                      <p className="mt-1 break-all font-mono text-[11px] text-main">
+                        https://www.googleapis.com/auth/drive.file
+                      </p>
+                    </div>
+                    <div className="mt-3 border border-main bg-main p-2">
+                      <p className="text-[10px] font-bold uppercase tracking-wide text-muted">
+                        Redirect URI
+                      </p>
+                      <p className="mt-1 break-all font-mono text-[11px] text-main">
+                        {driveOAuthRedirectUri ||
+                          `${browserOrigin || "http://localhost:3001"}/api/storage/oauth/callback/drive`}
+                      </p>
+                    </div>
+                    <ul className="mt-3 space-y-1 text-[11px] leading-5 text-muted">
+                      {DRIVE_SETUP_NOTES.map((note) => (
+                        <li key={note}>{note}</li>
+                      ))}
+                    </ul>
+                    <button
+                      type="button"
+                      onClick={openTutorialDocs}
+                      className="mt-3 inline-flex w-full items-center justify-center gap-2 border border-main bg-main px-3 py-2 text-[11px] font-semibold text-main hover:bg-secondary"
+                    >
+                      <BookOpen className="h-3.5 w-3.5" />
+                      Open Tutor Docs
+                    </button>
+                  </aside>
+                ) : null}
+              </div>
             </div>
           </form>
         </div>

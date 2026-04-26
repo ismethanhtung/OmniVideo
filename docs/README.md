@@ -63,6 +63,7 @@ Tài liệu chính thức cho repo OmniVideo (single-user system), định hư�
 - `docs/governance/definition-of-ready-done.md`
 - `docs/governance/changelog-policy.md`
 - `docs/governance/testing-rules.md`
+- `docs/governance/versioning-rules.md`
 
 ### Board và thay đổi
 

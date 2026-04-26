@@ -195,6 +195,7 @@ Nguyên tắc dữ liệu:
 6. `docs/governance/definition-of-ready-done.md`
 7. `docs/governance/changelog-policy.md`
 8. `docs/governance/testing-rules.md`
+9. `docs/governance/versioning-rules.md`
 
 ## 14. Ưu tiên thực thi kế tiếp
 

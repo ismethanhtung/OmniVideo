@@ -24,18 +24,66 @@ async function checkYouTubeConnectedAccount(
   base: Omit<SocialConnectionCheck, "status" | "message">,
 ): Promise<SocialConnectionCheck> {
   const accessToken = account.secrets.accessToken?.trim();
+  const refreshToken = account.secrets.refreshToken?.trim();
+  const clientId = process.env.YOUTUBE_CLIENT_ID?.trim();
+  const clientSecret = process.env.YOUTUBE_CLIENT_SECRET?.trim();
 
-  if (!accessToken) {
+  if (!accessToken && !refreshToken) {
     return {
       ...base,
       status: "down",
-      message: "AUTH_SOCIAL_SECRET_MISSING: connected YouTube account has no access token.",
+      message:
+        "AUTH_SOCIAL_SECRET_MISSING: connected YouTube account has no access or refresh token.",
     };
   }
 
   try {
+    let tokenForCheck = accessToken ?? "";
+
+    if (refreshToken && clientId && clientSecret) {
+      const refreshResponse = await fetch("https://oauth2.googleapis.com/token", {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          client_id: clientId,
+          client_secret: clientSecret,
+          refresh_token: refreshToken,
+          grant_type: "refresh_token",
+        }),
+      });
+      const refreshPayload = (await refreshResponse.json().catch(() => null)) as
+        | {
+            access_token?: string;
+            error?: string;
+            error_description?: string;
+          }
+        | null;
+
+      if (!refreshResponse.ok || !refreshPayload?.access_token) {
+        return {
+          ...base,
+          status: "down",
+          message:
+            refreshPayload?.error_description ??
+            refreshPayload?.error ??
+            `AUTH_YOUTUBE_REFRESH_FAILED: status ${refreshResponse.status}.`,
+        };
+      }
+
+      tokenForCheck = refreshPayload.access_token;
+    }
+
+    if (!tokenForCheck) {
+      return {
+        ...base,
+        status: "down",
+        message:
+          "AUTH_SOCIAL_SECRET_MISSING: connected YouTube account has no usable access token.",
+      };
+    }
+
     const response = await fetch(
-      `https://www.googleapis.com/oauth2/v1/tokeninfo?access_token=${encodeURIComponent(accessToken)}`,
+      `https://oauth2.googleapis.com/tokeninfo?access_token=${encodeURIComponent(tokenForCheck)}`,
       { cache: "no-store" },
     );
 
@@ -191,13 +239,24 @@ async function checkFacebookConnectedAccount(
         : "Facebook Page token is valid for publishing.",
     };
   } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Facebook connection check failed.";
+
+    if (message.startsWith("AUTH_FACEBOOK_PAGE_ID_REQUIRED")) {
+      return {
+        ...base,
+        status: "ok",
+        message:
+          "Facebook token is valid for multiple Pages. Select target Page in New Publish Record.",
+      };
+    }
+
     return {
       ...base,
       status: "down",
-      message:
-        error instanceof Error
-          ? error.message
-          : "Facebook connection check failed.",
+      message,
     };
   }
 }

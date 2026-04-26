@@ -6,6 +6,11 @@ import { RefreshCw, Upload } from "lucide-react";
 import type { LeftbarNavItem } from "@/components/layout/types";
 import { TELEGRAM_BOT_DOWNLOAD_LIMIT_BYTES } from "@/lib/storage/telegram-download";
 import {
+    finishProgressTask,
+    startProgressTask,
+    updateProgressTask,
+} from "@/lib/ui/progress-center";
+import {
     needsDriveConfirmationForLargeLocalFile,
     pickBestDriveFallbackAccount,
 } from "@/lib/video-intake/local-upload-routing";
@@ -339,6 +344,12 @@ export function LocalUploadIntakePanel({
             status: "running",
             message: "Uploading local file and running pipeline...",
         });
+        const progressTaskId = startProgressTask({
+            title: "Local upload intake",
+            description: `Uploading ${videoFile.name} to ${targetAccount.label}.`,
+            scope: "upload",
+            progress: 10,
+        });
 
         try {
             const formData = new FormData();
@@ -349,10 +360,18 @@ export function LocalUploadIntakePanel({
             formData.append("storageProviderAccountId", targetAccount._id);
             formData.append("contentIntent", "other");
             formData.append("ownershipStatus", "unknown");
+            updateProgressTask(progressTaskId, {
+                progress: 25,
+                description: "Sending file to intake API...",
+            });
 
             const response = await fetch("/api/video-intake/local-runs", {
                 method: "POST",
                 body: formData,
+            });
+            updateProgressTask(progressTaskId, {
+                progress: 75,
+                description: "Pipeline response received; refreshing run history...",
             });
             const payload = (await response.json()) as LocalIntakeApiResult;
 
@@ -366,6 +385,12 @@ export function LocalUploadIntakePanel({
                     await loadRunDetail(payload.data.runId);
                 }
                 await loadHistory(1);
+                finishProgressTask({
+                    id: progressTaskId,
+                    status: "failed",
+                    description: "Local upload intake failed.",
+                    error: payload.error ?? payload.data?.errorMessage,
+                });
                 return;
             }
 
@@ -378,13 +403,25 @@ export function LocalUploadIntakePanel({
                 await loadRunDetail(payload.data.runId);
             }
             await loadHistory(1);
+            finishProgressTask({
+                id: progressTaskId,
+                status: "success",
+                description: "Local upload pipeline completed.",
+            });
         } catch (error) {
+            const errorMessage =
+                error instanceof Error
+                    ? error.message
+                    : "Local upload intake failed.";
             setState({
                 status: "failed",
-                message:
-                    error instanceof Error
-                        ? error.message
-                        : "Local upload intake failed.",
+                message: errorMessage,
+            });
+            finishProgressTask({
+                id: progressTaskId,
+                status: "failed",
+                description: "Local upload intake failed.",
+                error: errorMessage,
             });
         }
     };

@@ -22,6 +22,10 @@
 
 ## Done
 
+- `P2-SOCIAL-019` - Social publishing UX progress and records controls.
+- `P2-SOCIAL-018` - Support multi-destination publish planning in New Publish Record.
+- `FAST-GOV-002` - Add app versioning governance rules and sync leftbar version display.
+- `FAST-CONN-002` - Stabilize social connection checks for Facebook multi-page and YouTube refresh flow.
 - `FAST-SOCIAL-003` - Add Facebook Page picker in New Publish Record.
 - `FAST-SOCIAL-002` - Harden Facebook Page selection/token resolution for publish-now.
 - `P2-SOCIAL-017` - Enable Facebook publish-now adapter and controls.

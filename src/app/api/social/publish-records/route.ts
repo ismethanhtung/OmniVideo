@@ -4,12 +4,32 @@ import {
   createPublishRecord,
   executePublishNow,
   getSocialDb,
-  listPublishRecords,
+  listPublishRecordsPage,
 } from "@/lib/social/repository";
-import { SocialError } from "@/lib/social/types";
+import {
+  SocialError,
+  type PublishRecordStatus,
+  type SocialPlatform,
+} from "@/lib/social/types";
 import { validatePublishRecordCreateInput } from "@/lib/social/validation";
 
 export const runtime = "nodejs";
+
+const SOCIAL_PLATFORMS = new Set<SocialPlatform>([
+  "facebook",
+  "tiktok",
+  "shopee",
+  "youtube",
+]);
+
+const PUBLISH_RECORD_STATUSES = new Set<PublishRecordStatus>([
+  "planned",
+  "queued",
+  "published",
+  "failed",
+  "retrying",
+  "canceled",
+]);
 
 function serializeRecord(record: Record<string, unknown>) {
   return {
@@ -24,16 +44,42 @@ function serializeRecord(record: Record<string, unknown>) {
 export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
-    const limit = Number(url.searchParams.get("limit") ?? 50);
+    const pageRaw = Number(url.searchParams.get("page") ?? 1);
+    const pageSizeRaw = Number(
+      url.searchParams.get("pageSize") ?? url.searchParams.get("limit") ?? 50,
+    );
+    const page = Number.isFinite(pageRaw) ? Math.max(1, Math.floor(pageRaw)) : 1;
+    const pageSize = Number.isFinite(pageSizeRaw)
+      ? Math.min(100, Math.max(1, Math.floor(pageSizeRaw)))
+      : 50;
+    const platformRaw = url.searchParams.get("platform");
+    const statusRaw = url.searchParams.get("status");
+    const platform =
+      platformRaw && SOCIAL_PLATFORMS.has(platformRaw as SocialPlatform)
+        ? (platformRaw as SocialPlatform)
+        : undefined;
+    const status =
+      statusRaw && PUBLISH_RECORD_STATUSES.has(statusRaw as PublishRecordStatus)
+        ? (statusRaw as PublishRecordStatus)
+        : undefined;
     const db = await getSocialDb();
-    const records = await listPublishRecords({
+    const result = await listPublishRecordsPage({
       db,
-      limit: Number.isFinite(limit) ? Math.min(100, Math.max(1, limit)) : 50,
+      page,
+      pageSize,
+      platform,
+      status,
     });
 
     return NextResponse.json({
       ok: true,
-      data: records.map((record) => serializeRecord(record)),
+      data: result.items.map((record) => serializeRecord(record)),
+      pagination: {
+        page: result.page,
+        pageSize: result.pageSize,
+        total: result.total,
+        totalPages: result.totalPages,
+      },
     });
   } catch (error) {
     return NextResponse.json(

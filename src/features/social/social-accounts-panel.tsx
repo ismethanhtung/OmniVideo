@@ -188,6 +188,9 @@ export function SocialAccountsPanel({ section }: SocialAccountsPanelProps) {
   const [modalMessage, setModalMessage] = useState("Ready.");
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [confirmDeleteAccountId, setConfirmDeleteAccountId] = useState<string | null>(
+    null,
+  );
   const [form, setForm] = useState<AccountFormState>(EMPTY_FORM);
 
   const activeCount = useMemo(
@@ -385,6 +388,7 @@ export function SocialAccountsPanel({ section }: SocialAccountsPanelProps) {
   };
 
   const deleteAccount = async (accountId: string) => {
+    setConfirmDeleteAccountId(null);
     setStatus("loading");
     setMessage("Deleting social account...");
 
@@ -526,7 +530,7 @@ export function SocialAccountsPanel({ section }: SocialAccountsPanelProps) {
                       </button>
                       <button
                         type="button"
-                        onClick={() => void deleteAccount(account._id)}
+                        onClick={() => setConfirmDeleteAccountId(account._id)}
                         className="btn-danger inline-flex items-center gap-1 border px-2 py-1 text-[11px] font-semibold"
                       >
                         <Trash2 className="h-3 w-3" />
@@ -540,6 +544,54 @@ export function SocialAccountsPanel({ section }: SocialAccountsPanelProps) {
           </tbody>
         </table>
       </div>
+
+      {confirmDeleteAccountId ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-4 py-6">
+          <section className="w-full max-w-md border border-main bg-main shadow-xl">
+            <div className="border-b border-main bg-secondary/35 px-4 py-3">
+              <p className="text-[13px] font-semibold text-main">
+                Confirm Social Account Delete
+              </p>
+              <p className="mt-1 text-[11px] leading-5 text-muted">
+                Thao tác này sẽ xóa account khỏi OmniVideo nếu không còn publish record active.
+              </p>
+            </div>
+            <div className="px-4 py-4 text-[12px] text-main">
+              {(() => {
+                const account = accounts.find(
+                  (entry) => entry._id === confirmDeleteAccountId,
+                );
+
+                return (
+                  <p>
+                    Delete{" "}
+                    <span className="font-semibold">
+                      {account?.label ?? confirmDeleteAccountId}
+                    </span>
+                    ?
+                  </p>
+                );
+              })()}
+            </div>
+            <div className="flex justify-end gap-2 border-t border-main bg-secondary/25 px-4 py-3">
+              <button
+                type="button"
+                onClick={() => setConfirmDeleteAccountId(null)}
+                className="border border-main bg-main px-3 py-1.5 text-[12px] font-semibold text-main hover:bg-secondary"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void deleteAccount(confirmDeleteAccountId)}
+                className="btn-danger border px-3 py-1.5 text-[12px] font-semibold"
+              >
+                Delete Account
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
 
       {showForm ? (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/35 px-4 py-6">
