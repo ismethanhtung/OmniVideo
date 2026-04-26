@@ -51,6 +51,7 @@ Tài liệu chính thức cho repo OmniVideo (single-user system), định hư�
 - `docs/operations/observability.md`: metrics/logs/traces và dashboard vận hành.
 - `docs/operations/connection-management.md`: Connection Center cho tất cả tích hợp.
 - `docs/operations/incident-playbook.md`: playbook xử lý sự cố.
+- `docs/operations/tutorial-docs.md`: hướng dẫn tích hợp dài cho OAuth/social publish và troubleshooting.
 - `docs/operations/test-execution-playbook.md`: playbook chạy test và xử lý lỗi test.
 
 ### Governance

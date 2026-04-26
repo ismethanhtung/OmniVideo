@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Edit3, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { BookOpen, Edit3, Plus, RefreshCw, Trash2 } from "lucide-react";
 
 import type { LeftbarNavItem } from "@/components/layout/types";
 
@@ -70,13 +70,18 @@ const PLATFORM_GUIDES: Record<
     recommended: string;
     notes: string[];
     scopes: string;
-    setupSteps?: string[];
+    quickSetup: string[];
   }
 > = {
   facebook: {
     title: "Facebook Reels / Video",
     recommended: "Prefer OAuth later; use Manual for planning-only accounts now.",
     scopes: "pages_manage_posts, pages_read_engagement",
+    quickSetup: [
+      "Configure Meta app credentials in .env.",
+      "Save the account, then connect OAuth from edit mode.",
+      "Use Page ID when publishing to a page.",
+    ],
     notes: [
       "Use Page ID when publishing to a page.",
       "Long-lived Page tokens still need lifecycle handling; raw token entry is only a fallback.",
@@ -86,6 +91,11 @@ const PLATFORM_GUIDES: Record<
     title: "TikTok Video",
     recommended: "Prefer OAuth later; use Manual until publish adapter is enabled.",
     scopes: "video.upload, video.publish",
+    quickSetup: [
+      "Configure TikTok app credentials in .env.",
+      "Confirm app review/eligibility before real publish.",
+      "Save the account, then connect OAuth from edit mode.",
+    ],
     notes: [
       "TikTok publish APIs require app review/eligibility.",
       "Manual tokens are inconvenient and should not be the primary long-term workflow.",
@@ -95,6 +105,11 @@ const PLATFORM_GUIDES: Record<
     title: "Shopee Product Video",
     recommended: "Use Manual or API Key metadata first; real shop authorization comes later.",
     scopes: "shop_authorization, product_write",
+    quickSetup: [
+      "Configure Shopee partner credentials in .env.",
+      "Record Shop ID for product/video mapping.",
+      "Use full OAuth/shop authorization when adapter is enabled.",
+    ],
     notes: [
       "Shop ID is useful for planning product/video mapping.",
       "Real publish must verify shop/product permissions before posting.",
@@ -104,15 +119,11 @@ const PLATFORM_GUIDES: Record<
     title: "YouTube Shorts / Video",
     recommended: "Prefer OAuth later with offline refresh token storage.",
     scopes: "youtube.upload",
-    setupSteps: [
-      "Open Google Cloud Console.",
-      "Search for and enable YouTube Data API v3.",
-      "Configure OAuth consent screen, then create OAuth Client ID with type Web Application.",
-      "Copy Client ID and Client Secret into .env as YOUTUBE_CLIENT_ID and YOUTUBE_CLIENT_SECRET.",
-      "Set SOCIAL_OAUTH_BASE_URL to the running app base URL, for example http://localhost:3001 or your real domain.",
-      "Add the redirect URI shown below to Authorized redirect URIs in the OAuth Client.",
-      "If Google shows Error 403 access_denied because omni is still in testing, add your email in APIs & Services > OAuth consent screen > Audience > Test users.",
-      "If Connection Test still says insufficient scopes after adding youtube.upload, reconnect OAuth. Tokens issued before the scope change do not receive the new scope.",
+    quickSetup: [
+      "Enable YouTube Data API v3 in Google Cloud.",
+      "Set YOUTUBE_CLIENT_ID, YOUTUBE_CLIENT_SECRET, and SOCIAL_OAUTH_BASE_URL.",
+      "Add the redirect URI below to Authorized redirect URIs.",
+      "Save account, edit it, then Connect OAuth.",
     ],
     notes: [
       "Channel ID helps identify the target channel before OAuth is wired.",
@@ -183,6 +194,11 @@ export function SocialAccountsPanel({ section }: SocialAccountsPanelProps) {
   const oauthBaseUrl =
     typeof window === "undefined" ? "" : window.location.origin;
   const redirectUri = `${oauthBaseUrl}/api/social/oauth/callback/${form.platform}`;
+  const openTutorialDocs = () => {
+    window.dispatchEvent(
+      new CustomEvent("omnivideo:navigate", { detail: "tutorialDocs" }),
+    );
+  };
 
   const openCreateForm = () => {
     setForm(EMPTY_FORM);
@@ -716,24 +732,22 @@ export function SocialAccountsPanel({ section }: SocialAccountsPanelProps) {
                 </p>
                 <div className="mt-3 border border-main bg-main p-2">
                   <p className="text-[10px] font-bold uppercase tracking-wide text-muted">
+                    Quick setup
+                  </p>
+                  <ol className="mt-2 list-decimal space-y-1 pl-4 text-[11px] leading-5 text-muted">
+                    {platformGuide.quickSetup.map((step) => (
+                      <li key={step}>{step}</li>
+                    ))}
+                  </ol>
+                </div>
+                <div className="mt-3 border border-main bg-main p-2">
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-muted">
                     Common scopes
                   </p>
                   <p className="mt-1 text-[11px] text-main">
                     {platformGuide.scopes}
                   </p>
                 </div>
-                {platformGuide.setupSteps ? (
-                  <div className="mt-3 border border-main bg-main p-2">
-                    <p className="text-[10px] font-bold uppercase tracking-wide text-muted">
-                      OAuth setup
-                    </p>
-                    <ol className="mt-2 list-decimal space-y-1 pl-4 text-[11px] leading-5 text-muted">
-                      {platformGuide.setupSteps.map((step) => (
-                        <li key={step}>{step}</li>
-                      ))}
-                    </ol>
-                  </div>
-                ) : null}
                 <div className="mt-3 border border-main bg-main p-2">
                   <p className="text-[10px] font-bold uppercase tracking-wide text-muted">
                     Redirect URI
@@ -747,6 +761,14 @@ export function SocialAccountsPanel({ section }: SocialAccountsPanelProps) {
                     <li key={note}>{note}</li>
                   ))}
                 </ul>
+                <button
+                  type="button"
+                  onClick={openTutorialDocs}
+                  className="mt-3 inline-flex w-full items-center justify-center gap-2 border border-main bg-main px-3 py-2 text-[11px] font-semibold text-main hover:bg-secondary"
+                >
+                  <BookOpen className="h-3.5 w-3.5" />
+                  Open Tutor Docs
+                </button>
               </aside>
             </div>
 

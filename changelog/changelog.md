@@ -20,12 +20,16 @@
 - Thêm unit tests cho YouTube upload adapter, bao gồm refresh-token flow.
 - Thêm chọn YouTube privacy trong New Publish Record và lưu `privacyStatus` vào publish records.
 - Thêm guardrails cho YouTube Shorts: chặn video thiếu metadata, video ngang hoặc dài hơn 3 phút trước khi upload.
+- Thêm trang Tutor Docs trong Social Platforms để chứa hướng dẫn OAuth/social integration dài và troubleshooting.
+- Thêm `docs/operations/tutorial-docs.md`.
 
 ### Changed
 
+- Cập nhật Next.js `dev` và `build` scripts để chạy Turbopack rõ ràng (`next dev --turbopack`, `next build --turbopack`).
 - Cập nhật social docs/data model/roadmap/connection docs theo hướng Control Center trước; YouTube đã bật adapter upload thật, Facebook/TikTok/Shopee vẫn deferred.
 - Cập nhật Publish Records để lưu `publishMode` (`schedule` hoặc `publish_now`); YouTube `publish_now` gọi upload thật, platform chưa có adapter sẽ fail rõ ràng thay vì giả vờ đã đăng.
 - Cập nhật Publish Records modal: mặc định `Publish now`, chỉ hiển thị `Scheduled At` khi schedule, hiển thị trạng thái đang upload và khóa submit để tránh double publish.
+- Cập nhật Social Account modal: chuyển checklist YouTube OAuth dài sang quick setup và link mở Tutor Docs.
 - Cập nhật social docs với khuyến nghị OAuth/refresh-token flow là hướng dài hạn, manual access token chỉ là fallback/debug.
 - Cập nhật social account status semantics: account mới là `needs_auth`, chỉ OAuth callback/token exchange thành công mới set `connected`; Connection Test báo `AUTH_SOCIAL_NOT_CONNECTED` khi chưa kết nối thật.
 - Cập nhật Social Accounts UI để lỗi OAuth/config trong modal không còn ghi đè status bar của toàn trang.
@@ -51,7 +55,7 @@
 
 ### Notes
 
-- Task IDs: P2-SOCIAL-001, P2-SOCIAL-002, P2-SOCIAL-003, P2-SOCIAL-004, P2-SOCIAL-005, P2-SOCIAL-006, P2-SOCIAL-007, P2-SOCIAL-008, P2-SOCIAL-009, P2-SOCIAL-010, P2-SOCIAL-011, P2-SOCIAL-012, P2-SOCIAL-013, P1-STORAGE-006, P1-UX-003, P1-UX-004
+- Task IDs: P2-SOCIAL-001, P2-SOCIAL-002, P2-SOCIAL-003, P2-SOCIAL-004, P2-SOCIAL-005, P2-SOCIAL-006, P2-SOCIAL-007, P2-SOCIAL-008, P2-SOCIAL-009, P2-SOCIAL-010, P2-SOCIAL-011, P2-SOCIAL-012, P2-SOCIAL-013, P2-SOCIAL-014, P1-STORAGE-006, P1-UX-003, P1-UX-004, P1-STABILITY-002
 - Verification: `npm run test` pass (93 tests / 22 files); `npm run build` pass. Build còn warning cũ: `src/features/workspace/display-preferences-panel.tsx` import `Image` không dùng.
 - Risks: YouTube `Publish now` đã upload thật nhưng đang đọc video vào memory trước khi gửi; Shorts phụ thuộc metadata duration/width/height trong asset; Facebook/TikTok/Shopee real publish adapters vẫn deferred.
 

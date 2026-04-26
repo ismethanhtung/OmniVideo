@@ -12,6 +12,7 @@ import { PlaceholderPanel } from "@/features/workspace/placeholder-panel";
 import { PlatformTasksPanel } from "@/features/social/platform-tasks-panel";
 import { PublishRecordsPanel } from "@/features/social/publish-records-panel";
 import { SocialAccountsPanel } from "@/features/social/social-accounts-panel";
+import { TutorialDocsPanel } from "@/features/social/tutorial-docs-panel";
 import type { AppFontKey, AppThemeKey } from "@/lib/ui/preferences";
 
 type SectionComponentProps = {
@@ -28,6 +29,7 @@ const SECTION_COMPONENTS: Partial<
     socialAccounts: SocialAccountsPanel,
     platformTasks: PlatformTasksPanel,
     publishRecords: PublishRecordsPanel,
+    tutorialDocs: TutorialDocsPanel,
     videoIntake: VideoIntakePanel,
 };
 

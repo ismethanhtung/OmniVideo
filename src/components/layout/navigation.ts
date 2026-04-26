@@ -20,6 +20,7 @@ import {
     Share2,
     ClipboardList,
     Send,
+    BookOpen,
 } from "lucide-react";
 
 import type { AppSectionId, LeftbarNavGroup, LeftbarNavItem } from "./types";
@@ -155,6 +156,13 @@ export const LEFTBAR_NAV: LeftbarNavGroup[] = [
                 label: "Publish Records",
                 description:
                     "Lập kế hoạch đăng video từ Storage Library sang social account.",
+            },
+            {
+                id: "tutorialDocs",
+                icon: BookOpen,
+                label: "Tutor Docs",
+                description:
+                    "Hướng dẫn tích hợp OAuth, social publish và các cấu hình vận hành quan trọng.",
             },
         ],
     },

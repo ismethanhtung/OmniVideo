@@ -12,6 +12,7 @@ export type AppSectionId =
   | "socialAccounts"
   | "platformTasks"
   | "publishRecords"
+  | "tutorialDocs"
   | "integrations"
   | "security"
   | "data"

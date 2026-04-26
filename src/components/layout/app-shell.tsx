@@ -43,6 +43,22 @@ export function AppShell() {
     root.setAttribute("data-theme", initialTheme);
   }, []);
 
+  useEffect(() => {
+    const handleNavigate = (event: Event) => {
+      const sectionId = (event as CustomEvent<AppSectionId>).detail;
+
+      if (sectionId) {
+        setActiveSection(sectionId);
+      }
+    };
+
+    window.addEventListener("omnivideo:navigate", handleNavigate);
+
+    return () => {
+      window.removeEventListener("omnivideo:navigate", handleNavigate);
+    };
+  }, []);
+
   const applyTheme = (theme: AppThemeKey) => {
     const root = document.documentElement;
     setAppTheme(theme);
