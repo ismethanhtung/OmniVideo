@@ -38,6 +38,35 @@ const youtubeTroubleshooting = [
   },
 ];
 
+const driveSetupSteps = [
+  "Open Google Cloud Console.",
+  "Enable Google Drive API.",
+  "Create OAuth Client ID with type Web Application.",
+  "Copy Client ID and Client Secret into .env as DRIVE_CLIENT_ID and DRIVE_CLIENT_SECRET.",
+  "Set STORAGE_OAUTH_BASE_URL to your running app URL (for example http://localhost:3001).",
+  "Add Authorized redirect URI: {STORAGE_OAUTH_BASE_URL}/api/storage/oauth/callback/drive",
+  "Open Storage Providers > New > Google Drive, then click Connect OAuth.",
+];
+
+const driveTroubleshooting = [
+  {
+    title: "Error 400 redirect_uri_mismatch",
+    body: "Google OAuth client redirect URI must exactly match the URI shown in Storage Provider modal, including protocol, host, port, and path.",
+  },
+  {
+    title: "OAuth popup opened but token not filled",
+    body: "Allow popups for the app domain and retry Connect OAuth.",
+  },
+  {
+    title: "Missing OAuth env vars",
+    body: "Set DRIVE_CLIENT_ID and DRIVE_CLIENT_SECRET. Optionally set STORAGE_OAUTH_BASE_URL to the exact running domain.",
+  },
+  {
+    title: "Upload works then fails with invalid authentication credentials",
+    body: "Access tokens are short-lived. Keep DRIVE_CLIENT_ID and DRIVE_CLIENT_SECRET configured, then reconnect OAuth so OmniVideo can store refresh_token and auto-refresh at runtime.",
+  },
+];
+
 const platformCards = [
   {
     title: "Facebook Reels / Video",
@@ -128,6 +157,25 @@ export function TutorialDocsPanel({ section }: TutorialDocsPanelProps) {
               </div>
             </div>
           </article>
+
+          <article className="border border-main bg-secondary/20 p-4">
+            <div className="flex items-center gap-2">
+              <BookOpen className="h-4 w-4 text-muted" />
+              <h2 className="text-[14px] font-semibold text-main">
+                Google Drive OAuth Setup
+              </h2>
+            </div>
+            <ol className="mt-4 grid gap-2 text-[12px] leading-5 text-muted">
+              {driveSetupSteps.map((step, index) => (
+                <li key={step} className="flex gap-3 border border-main bg-main p-3">
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center border border-main text-[10px] font-bold text-main">
+                    {index + 1}
+                  </span>
+                  <span>{step}</span>
+                </li>
+              ))}
+            </ol>
+          </article>
         </div>
 
         <aside className="space-y-4">
@@ -137,6 +185,21 @@ export function TutorialDocsPanel({ section }: TutorialDocsPanelProps) {
             </h2>
             <div className="mt-3 space-y-3">
               {youtubeTroubleshooting.map((item) => (
+                <div key={item.title} className="border border-main bg-main p-3">
+                  <div className="flex items-start gap-2">
+                    <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted" />
+                    <div>
+                      <p className="text-[12px] font-semibold text-main">
+                        {item.title}
+                      </p>
+                      <p className="mt-1 text-[11px] leading-5 text-muted">
+                        {item.body}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+              {driveTroubleshooting.map((item) => (
                 <div key={item.title} className="border border-main bg-main p-3">
                   <div className="flex items-start gap-2">
                     <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted" />

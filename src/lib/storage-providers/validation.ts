@@ -44,7 +44,7 @@ function normalizeSecrets(value: unknown): StorageProviderSecretMap {
     botToken: readString(payload.botToken),
     chatId: readString(payload.chatId),
     accessToken: readString(payload.accessToken),
-    driveServiceAccountJson: readString(payload.driveServiceAccountJson),
+    refreshToken: readString(payload.refreshToken),
     folderId: readString(payload.folderId),
     endpoint: readString(payload.endpoint),
     bucket: readString(payload.bucket),
@@ -111,13 +111,11 @@ export function validateStorageProviderCreateInput(
 
   if (
     payload.providerType === "drive" &&
-    !secrets.driveServiceAccountJson &&
     !secrets.accessToken
   ) {
     throw new StorageProviderError({
       errorCode: "VAL_STORAGE_PROVIDER_SECRET_REQUIRED",
-      message:
-        "Missing required secret fields: driveServiceAccountJson or accessToken.",
+      message: "Missing required secret fields: accessToken.",
     });
   }
 

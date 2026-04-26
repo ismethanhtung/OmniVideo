@@ -6,7 +6,7 @@ import {
   readGoogleDriveErrorMessage,
   withGoogleDrivePermissionHint,
 } from "../storage/google-drive-error";
-import { resolveDriveAccessToken } from "../storage/drive-service-account";
+import { resolveDriveRuntimeAccessToken } from "../storage/drive-token";
 
 export type ConnectionStatus = "ok" | "down" | "skipped";
 
@@ -127,9 +127,9 @@ async function checkDriveAccount(
   let accessToken: string | undefined;
 
   try {
-    accessToken = await resolveDriveAccessToken({
+    accessToken = await resolveDriveRuntimeAccessToken({
       accessToken: account.secrets.accessToken?.trim(),
-      driveServiceAccountJson: account.secrets.driveServiceAccountJson?.trim(),
+      refreshToken: account.secrets.refreshToken?.trim(),
     });
   } catch (error) {
     return {
@@ -148,7 +148,7 @@ async function checkDriveAccount(
     return {
       ...base,
       status: "down",
-      message: "Missing accessToken or driveServiceAccountJson in secrets.",
+      message: "Missing accessToken (or refreshToken flow) in storage account secrets.",
       latencyMs: Date.now() - startedAt,
       checkedAt,
     };

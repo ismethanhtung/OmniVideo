@@ -12,7 +12,7 @@ import {
   readGoogleDriveErrorMessage,
   withGoogleDrivePermissionHint,
 } from "../storage/google-drive-error";
-import { resolveDriveAccessToken } from "../storage/drive-service-account";
+import { resolveDriveRuntimeAccessToken } from "../storage/drive-token";
 
 type StorageUploadAccount = {
   accountId?: string;
@@ -291,28 +291,15 @@ type DriveFileResponse = {
 
 async function resolveDriveUploadAccessToken(account?: StorageUploadAccount) {
   const { GOOGLE_DRIVE_ACCESS_TOKEN } = getAppEnv();
+  let accessToken: string | undefined;
 
   try {
-    const accessToken = await resolveDriveAccessToken({
-      accessToken: account?.secrets?.accessToken ?? GOOGLE_DRIVE_ACCESS_TOKEN,
-      driveServiceAccountJson: account?.secrets?.driveServiceAccountJson,
+    accessToken = await resolveDriveRuntimeAccessToken({
+      accessToken:
+        account?.secrets?.accessToken?.trim() ?? GOOGLE_DRIVE_ACCESS_TOKEN?.trim(),
+      refreshToken: account?.secrets?.refreshToken?.trim(),
     });
-
-    if (!accessToken) {
-      throw new IntakeError({
-        errorCode: "STG_DRIVE_ENV_MISSING",
-        message: "Missing Google Drive accessToken or driveServiceAccountJson.",
-        category: "provider",
-        retryable: false,
-      });
-    }
-
-    return accessToken;
   } catch (error) {
-    if (error instanceof IntakeError) {
-      throw error;
-    }
-
     throw new IntakeError({
       errorCode: "STG_DRIVE_AUTH_FAILED",
       message:
@@ -323,6 +310,17 @@ async function resolveDriveUploadAccessToken(account?: StorageUploadAccount) {
       retryable: false,
     });
   }
+
+  if (!accessToken) {
+    throw new IntakeError({
+      errorCode: "STG_DRIVE_ENV_MISSING",
+      message: "Missing Google Drive accessToken (or refreshToken flow).",
+      category: "provider",
+      retryable: false,
+    });
+  }
+
+  return accessToken;
 }
 
 async function uploadToDrive(
@@ -331,7 +329,8 @@ async function uploadToDrive(
 ): Promise<StorageUploadResult> {
   const { GOOGLE_DRIVE_FOLDER_ID } = getAppEnv();
   const accessToken = await resolveDriveUploadAccessToken(account);
-  const folderId = account?.secrets?.folderId ?? GOOGLE_DRIVE_FOLDER_ID;
+  const folderId =
+    account?.secrets?.folderId?.trim() ?? GOOGLE_DRIVE_FOLDER_ID?.trim();
 
   const filename = `${Date.now()}-omnivideo-intake.mp4`;
   const metadata = {
@@ -569,7 +568,8 @@ export async function uploadLocalMedia({
 
   const { GOOGLE_DRIVE_FOLDER_ID } = getAppEnv();
   const accessToken = await resolveDriveUploadAccessToken(account);
-  const folderId = account?.secrets?.folderId ?? GOOGLE_DRIVE_FOLDER_ID;
+  const folderId =
+    account?.secrets?.folderId?.trim() ?? GOOGLE_DRIVE_FOLDER_ID?.trim();
 
   return uploadToDriveByBytes({
     file,

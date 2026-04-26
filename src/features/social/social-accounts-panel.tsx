@@ -89,16 +89,16 @@ const PLATFORM_GUIDES: Record<
   },
   tiktok: {
     title: "TikTok Video",
-    recommended: "Prefer OAuth later; use Manual until publish adapter is enabled.",
+    recommended: "Use OAuth with video.publish scope; publish-now adapter is enabled.",
     scopes: "video.upload, video.publish",
     quickSetup: [
       "Configure TikTok app credentials in .env.",
-      "Confirm app review/eligibility before real publish.",
       "Save the account, then connect OAuth from edit mode.",
+      "Confirm app review/eligibility before publishing publicly at scale.",
     ],
     notes: [
-      "TikTok publish APIs require app review/eligibility.",
-      "Manual tokens are inconvenient and should not be the primary long-term workflow.",
+      "TikTok Content Posting API can still keep unaudited app posts private.",
+      "Manual tokens are fallback only; OAuth + refresh token is the maintainable flow.",
     ],
   },
   shopee: {

@@ -190,7 +190,9 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
       form.publishMode === "publish_now"
         ? selectedAccount?.platform === "youtube"
           ? "Uploading to YouTube. Keep this modal open..."
-          : "Creating publish-now record..."
+          : selectedAccount?.platform === "tiktok"
+            ? "Uploading to TikTok and waiting for posting status..."
+            : "Creating publish-now record..."
         : "Creating planned publish record...";
     setMessage(submitMessage);
     setFormMessage(submitMessage);
@@ -227,7 +229,9 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
       await loadAll();
       setMessage(
         payload.data.status === "published"
-          ? `Published to YouTube. Platform post id: ${payload.data.platformPostId ?? "-"}`
+          ? `Published. Platform post id: ${payload.data.platformPostId ?? "-"}`
+          : payload.data.status === "queued"
+            ? `Upload accepted and is processing. Tracking id: ${payload.data.platformPostId ?? "-"}`
           : payload.data.status === "failed"
             ? `${payload.data.errorCode ?? "Publish failed"}: ${payload.data.errorDetail ?? ""}`
             : "Publish record planned.",
@@ -394,7 +398,7 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
                   New Publish Record
                 </p>
                 <p className="mt-1 text-[11px] leading-5 text-muted">
-                  YouTube publish now uploads immediately when the account is connected and the asset can be downloaded. Other platforms will fail with an adapter-not-implemented error until their upload adapters exist.
+                  YouTube và TikTok publish now sẽ upload thật khi account đã connected và asset có thể download. Facebook/Shopee hiện vẫn deferred nên publish now sẽ fail rõ ràng.
                 </p>
               </div>
               <button
@@ -497,7 +501,7 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
                   <span>
                     Publish now
                     <span className="block text-[11px] text-muted">
-                      Upload immediately for YouTube. Other platforms will show an adapter-not-implemented error until their upload adapters exist.
+                      Upload ngay cho YouTube/TikTok. Các platform chưa có adapter thật sẽ trả lỗi chưa hỗ trợ.
                     </span>
                   </span>
                 </label>

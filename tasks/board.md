@@ -22,6 +22,12 @@
 
 ## Done
 
+- `FAST-STORAGE-005` - Add Drive OAuth refresh-token runtime flow for stable uploads.
+- `FAST-STORAGE-004` - Add Drive OAuth guidance and redirect URI mismatch hardening.
+- `FAST-STORAGE-003` - Add Drive OAuth connect flow and modal-scoped validation UX.
+- `FAST-STORAGE-002` - Switch Google Drive storage flow to OAuth-only.
+- `FAST-STORAGE-001` - Enforce Drive folder target for Service Account uploads.
+- `P2-SOCIAL-016` - Enable TikTok publish-now adapter.
 - `FAST-SOCIAL-001` - Add quick-open links for published posts.
 - `P2-SOCIAL-015` - Social published content inventory.
 - `P1-STABILITY-002` - Switch Next.js bundler scripts to Turbopack.

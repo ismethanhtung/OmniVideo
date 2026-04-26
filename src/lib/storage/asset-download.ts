@@ -6,11 +6,11 @@ import {
   isTelegramBotDownloadTooBig,
   isTelegramGetFileTooBigError,
 } from "@/lib/storage/telegram-download";
-import { resolveDriveAccessToken } from "./drive-service-account";
 import {
   readGoogleDriveErrorMessage,
   withGoogleDrivePermissionHint,
 } from "./google-drive-error";
+import { resolveDriveRuntimeAccessToken } from "./drive-token";
 
 import type { Db, WithId } from "mongodb";
 
@@ -153,10 +153,26 @@ async function resolveDriveDownload({
   rangeHeader?: string | null;
 }) {
   const provider = await getProviderForAsset({ db, asset });
-  const accessToken = await resolveDriveAccessToken({
-    accessToken: provider?.secrets.accessToken ?? getAppEnv().GOOGLE_DRIVE_ACCESS_TOKEN,
-    driveServiceAccountJson: provider?.secrets.driveServiceAccountJson,
-  });
+  let accessToken: string | undefined;
+
+  try {
+    accessToken = await resolveDriveRuntimeAccessToken({
+      accessToken:
+        provider?.secrets.accessToken?.trim() ??
+        getAppEnv().GOOGLE_DRIVE_ACCESS_TOKEN?.trim(),
+      refreshToken: provider?.secrets.refreshToken?.trim(),
+    });
+  } catch (error) {
+    return {
+      ok: false as const,
+      status: 401,
+      errorCode: "STG_DRIVE_AUTH_FAILED",
+      error:
+        error instanceof Error
+          ? `Google Drive auth failed: ${error.message}`
+          : "Google Drive auth failed.",
+    };
+  }
   const fileId =
     stringValue(asset.storagePointer?.fileId) || stringValue(asset.providerAssetId);
 

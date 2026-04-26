@@ -26,6 +26,7 @@ import {
   type ValidatedSocialAccountInput,
 } from "./types";
 import type { ValidatedSocialAccountUpdateInput } from "./validation";
+import { uploadVideoToTikTok } from "./tiktok-upload";
 import { uploadVideoToYouTube } from "./youtube-upload";
 
 const SOCIAL_ACCOUNTS_COLLECTION = "social_accounts";
@@ -396,7 +397,7 @@ export async function executePublishNow({
       throw new Error("VAL_PUBLISH_ASSET_NOT_FOUND");
     }
 
-    if (record.platform !== "youtube") {
+    if (record.platform !== "youtube" && record.platform !== "tiktok") {
       throw new Error("PRV_SOCIAL_PUBLISH_ADAPTER_NOT_IMPLEMENTED");
     }
 
@@ -404,7 +405,36 @@ export async function executePublishNow({
       throw new Error("AUTH_SOCIAL_NOT_CONNECTED");
     }
 
-    const upload = await uploadVideoToYouTube({
+    if (record.platform === "youtube") {
+      const upload = await uploadVideoToYouTube({
+        db,
+        account,
+        asset,
+        record,
+      });
+      const now = new Date();
+
+      const updated = await db
+        .collection<PublishRecordDocument>(PUBLISH_RECORDS_COLLECTION)
+        .findOneAndUpdate(
+          { _id: publishRecordId },
+          {
+            $set: {
+              status: "published",
+              platformPostId: upload.platformPostId,
+              publishedAt: now,
+              errorCode: null,
+              errorDetail: null,
+              updatedAt: now,
+            },
+          },
+          { returnDocument: "after" },
+        );
+
+      return updated;
+    }
+
+    const upload = await uploadVideoToTikTok({
       db,
       account,
       asset,
@@ -412,15 +442,36 @@ export async function executePublishNow({
     });
     const now = new Date();
 
+    if (upload.status === "published") {
+      const updated = await db
+        .collection<PublishRecordDocument>(PUBLISH_RECORDS_COLLECTION)
+        .findOneAndUpdate(
+          { _id: publishRecordId },
+          {
+            $set: {
+              status: "published",
+              platformPostId: upload.platformPostId,
+              publishedAt: now,
+              errorCode: null,
+              errorDetail: null,
+              updatedAt: now,
+            },
+          },
+          { returnDocument: "after" },
+        );
+
+      return updated;
+    }
+
     const updated = await db
       .collection<PublishRecordDocument>(PUBLISH_RECORDS_COLLECTION)
       .findOneAndUpdate(
         { _id: publishRecordId },
         {
           $set: {
-            status: "published",
-            platformPostId: upload.platformPostId,
-            publishedAt: now,
+            status: "queued",
+            platformPostId: upload.publishId,
+            publishedAt: null,
             errorCode: null,
             errorDetail: null,
             updatedAt: now,

@@ -61,8 +61,13 @@ export const SOCIAL_PLATFORM_CAPABILITIES: SocialPlatformCapability[] = [
         },
       },
     ],
-    supportedTaskTypes: ["plan_publish", "permission_review", "connection_check"],
-    realPublishStatus: "deferred",
+    supportedTaskTypes: [
+      "plan_publish",
+      "publish_now",
+      "permission_review",
+      "connection_check",
+    ],
+    realPublishStatus: "enabled",
     complianceNotes: [
       "Publish requires TikTok API eligibility and user authorization.",
       "Automation must respect TikTok platform rate limits and review rules.",

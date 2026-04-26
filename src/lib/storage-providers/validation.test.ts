@@ -35,23 +35,20 @@ describe("storage provider validation", () => {
         label: "Drive vault",
         secrets: {},
       }),
-    ).toThrow(
-      "Missing required secret fields: driveServiceAccountJson or accessToken.",
-    );
+    ).toThrow("Missing required secret fields: accessToken.");
   });
 
-  it("accepts drive provider with service account json secret", () => {
+  it("accepts drive provider with access token secret", () => {
     const result = validateStorageProviderCreateInput({
       providerType: "drive",
-      label: "Drive service account",
+      label: "Drive oauth",
       secrets: {
-        driveServiceAccountJson:
-          '{"client_email":"omni@project.iam.gserviceaccount.com","private_key":"-----BEGIN PRIVATE KEY-----\\nkey\\n-----END PRIVATE KEY-----\\n"}',
+        accessToken: "ya29.oauth-token",
       },
     });
 
     expect(result.providerType).toBe("drive");
-    expect(result.secrets.driveServiceAccountJson).toContain("client_email");
+    expect(result.secrets.accessToken).toBe("ya29.oauth-token");
   });
 
   it("does not expose raw secrets in sanitized documents", () => {
@@ -102,7 +99,7 @@ describe("storage provider validation", () => {
       priority: 50,
       tags: ["raw", "primary"],
       secrets: {
-        driveServiceAccountJson: "{\"client_email\":\"drive@service\"}",
+        accessToken: "ya29.edit-token",
         folderId: "folder-123",
       },
       usage: {
@@ -114,7 +111,7 @@ describe("storage provider validation", () => {
     });
 
     expect(result._id).toBe("507f1f77bcf86cd799439012");
-    expect(result.secrets.driveServiceAccountJson).toContain("client_email");
+    expect(result.secrets.accessToken).toBe("ya29.edit-token");
     expect(result.secrets.folderId).toBe("folder-123");
   });
 

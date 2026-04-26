@@ -1,25 +1,9 @@
 import { ObjectId } from "mongodb";
-import { generateKeyPairSync } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { StorageProviderDocument } from "@/lib/storage-providers/types";
 
 import { checkStorageProviderConnections } from "./storage-checks";
-
-function buildServiceAccountJson() {
-  const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
-  const privatePem = privateKey.export({
-    type: "pkcs8",
-    format: "pem",
-  }) as string;
-
-  return JSON.stringify({
-    type: "service_account",
-    private_key: privatePem,
-    client_email: "omni@omnivideo-dev.iam.gserviceaccount.com",
-    token_uri: "https://oauth2.googleapis.com/token",
-  });
-}
 
 function buildAccount(
   overrides: Partial<StorageProviderDocument> & {
@@ -49,6 +33,7 @@ function buildAccount(
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
 });
 
 describe("checkStorageProviderConnections", () => {
@@ -134,9 +119,45 @@ describe("checkStorageProviderConnections", () => {
 
     expect(checks[0].status).toBe("down");
     expect(checks[0].message).toContain(
-      "Missing accessToken or driveServiceAccountJson",
+      "Missing accessToken (or refreshToken flow)",
     );
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("uses refresh token when drive oauth client config is available", async () => {
+    vi.stubEnv("DRIVE_CLIENT_ID", "drive-client");
+    vi.stubEnv("DRIVE_CLIENT_SECRET", "drive-secret");
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            access_token: "refreshed-token",
+            token_type: "Bearer",
+            expires_in: 3600,
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ user: { displayName: "OmniVideo" } }), {
+          status: 200,
+        }),
+      );
+
+    const checks = await checkStorageProviderConnections([
+      buildAccount({
+        providerType: "drive",
+        label: "Drive refresh",
+        secrets: {
+          accessToken: "expired-token",
+          refreshToken: "refresh-token",
+        },
+      }),
+    ]);
+
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(checks[0].status).toBe("ok");
   });
 
   it("returns ok when drive about endpoint succeeds", async () => {
@@ -156,40 +177,6 @@ describe("checkStorageProviderConnections", () => {
       }),
     ]);
 
-    expect(checks[0].status).toBe("ok");
-    expect(checks[0].message).toContain("healthy");
-  });
-
-  it("returns ok when drive service account token exchange succeeds", async () => {
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            access_token: "service-account-token",
-            token_type: "Bearer",
-            expires_in: 3600,
-          }),
-          { status: 200 },
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ user: { displayName: "OmniVideo" } }), {
-          status: 200,
-        }),
-      );
-
-    const checks = await checkStorageProviderConnections([
-      buildAccount({
-        providerType: "drive",
-        label: "Drive SA",
-        secrets: {
-          driveServiceAccountJson: buildServiceAccountJson(),
-        },
-      }),
-    ]);
-
-    expect(fetchSpy).toHaveBeenCalledTimes(2);
     expect(checks[0].status).toBe("ok");
     expect(checks[0].message).toContain("healthy");
   });

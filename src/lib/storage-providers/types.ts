@@ -6,7 +6,7 @@ export type StorageProviderSecretMap = {
   botToken?: string;
   chatId?: string;
   accessToken?: string;
-  driveServiceAccountJson?: string;
+  refreshToken?: string;
   folderId?: string;
   endpoint?: string;
   bucket?: string;

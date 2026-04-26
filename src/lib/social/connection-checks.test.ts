@@ -61,6 +61,45 @@ describe("checkSocialAccountConnections", () => {
     expect(checks[0].message).toContain("AUTH_SOCIAL_SECRET_MISSING");
   });
 
+  it("checks a connected TikTok account via creator_info/query", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            creator_username: "omni_creator",
+          },
+          error: {
+            code: "ok",
+            message: "",
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const checks = await checkSocialAccountConnections([
+      buildAccount({
+        platform: "tiktok",
+        authMode: "oauth",
+        status: "connected",
+        supportedFormats: ["tiktok_video"],
+        permissionScopes: ["video.publish", "video.upload"],
+        secrets: {
+          accessToken: "token",
+        },
+      }),
+    ]);
+
+    expect(checks[0].status).toBe("ok");
+    expect(checks[0].message).toContain("@omni_creator");
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "https://open.tiktokapis.com/v2/post/publish/creator_info/query/",
+      expect.objectContaining({
+        method: "POST",
+      }),
+    );
+  });
+
   it("checks a connected YouTube account against the channel endpoint", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       new Response(

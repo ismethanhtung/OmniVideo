@@ -42,7 +42,35 @@ Tutor Docs gom các hướng dẫn tích hợp dài ra khỏi modal cấu hình.
    - Page ID is required for page publishing.
 2. TikTok:
    - Scopes: `video.upload`, `video.publish`.
-   - Real publish depends on API eligibility and app review.
+   - Publish now uses Direct Post API and may stay `queued` while processing/moderating.
+   - If app is not audited, visibility can be restricted (for example private-only).
 3. Shopee:
    - Scopes: `shop_authorization`, `product_write`.
    - Real publish must validate shop/product ownership.
+
+## 5. Google Drive OAuth Setup (Storage Providers)
+
+1. Open Google Cloud Console.
+2. Enable Google Drive API.
+3. Configure OAuth consent screen.
+4. Create OAuth Client ID with type `Web application`.
+5. Add env vars:
+   - `DRIVE_CLIENT_ID`
+   - `DRIVE_CLIENT_SECRET`
+   - `STORAGE_OAUTH_BASE_URL` (for example `http://localhost:3001`).
+6. Add Authorized redirect URI:
+   - `{STORAGE_OAUTH_BASE_URL}/api/storage/oauth/callback/drive`
+7. Open `Storage Providers` -> `New` -> chọn `Google Drive` -> click `Connect OAuth`.
+
+## 6. Google Drive Troubleshooting
+
+1. `Error 400: redirect_uri_mismatch`
+   - URI trong Google OAuth client phải khớp tuyệt đối với URI hiển thị trong modal Storage Provider (protocol + host + port + path).
+2. Popup OAuth không tự điền token vào modal
+   - Bật popup cho domain app và thử lại.
+3. API báo thiếu cấu hình OAuth
+   - Kiểm tra `DRIVE_CLIENT_ID` và `DRIVE_CLIENT_SECRET`.
+4. Upload được lúc đầu rồi lỗi `invalid authentication credentials`
+   - Access token là short-lived.
+   - Cần giữ `DRIVE_CLIENT_ID` + `DRIVE_CLIENT_SECRET` để hệ thống refresh token runtime.
+   - Reconnect OAuth để lấy/stored `refresh_token` nếu account cũ chưa có.

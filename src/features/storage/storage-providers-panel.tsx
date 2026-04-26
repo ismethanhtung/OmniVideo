@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ChangeEvent } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Archive,
   CheckCircle2,
@@ -42,6 +42,8 @@ type EditableStorageProviderAccount = Omit<StorageProviderAccount, "secretSummar
 type ApiResponse<T> = {
   ok: boolean;
   data?: T;
+  url?: string;
+  redirectUri?: string;
   errorCode?: string;
   error?: string;
 };
@@ -50,7 +52,7 @@ type SecretFormState = {
   botToken: string;
   chatId: string;
   accessToken: string;
-  driveServiceAccountJson: string;
+  refreshToken: string;
   folderId: string;
   endpoint: string;
   bucket: string;
@@ -83,7 +85,7 @@ const PROVIDER_OPTIONS: Array<{
     value: "drive",
     label: "Google Drive",
     icon: HardDrive,
-    help: "Service account JSON key + optional folder.",
+    help: "OAuth access token + optional folder.",
   },
   {
     value: "s3",
@@ -109,7 +111,7 @@ const EMPTY_SECRETS: SecretFormState = {
   botToken: "",
   chatId: "",
   accessToken: "",
-  driveServiceAccountJson: "",
+  refreshToken: "",
   folderId: "",
   endpoint: "",
   bucket: "",
@@ -173,6 +175,14 @@ function SecretInput({
   );
 }
 
+type DriveOAuthMessage = {
+  type: "omnivideo_drive_oauth";
+  ok: boolean;
+  message: string;
+  accessToken?: string;
+  refreshToken?: string;
+};
+
 type StorageProvidersPanelProps = {
   section: LeftbarNavItem;
 };
@@ -188,6 +198,8 @@ export function StorageProvidersPanel({ section }: StorageProvidersPanelProps) {
   const [secrets, setSecrets] = useState<SecretFormState>(EMPTY_SECRETS);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [editingProviderId, setEditingProviderId] = useState<string | null>(null);
+  const [driveOAuthRedirectUri, setDriveOAuthRedirectUri] = useState<string>("");
+  const [browserOrigin, setBrowserOrigin] = useState<string>("");
   const [state, setState] = useState<SubmitState>({
     status: "idle",
     message: "Ready.",
@@ -212,45 +224,48 @@ export function StorageProvidersPanel({ section }: StorageProvidersPanelProps) {
     setEditingProviderId(null);
   };
 
-  const onDriveJsonFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    event.target.value = "";
+  useEffect(() => {
+    setBrowserOrigin(window.location.origin);
+  }, []);
 
-    if (!file) {
-      return;
-    }
+  useEffect(() => {
+    const onMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) {
+        return;
+      }
 
-    try {
-      const rawJson = (await file.text()).trim();
-      const parsed = JSON.parse(rawJson) as Record<string, unknown>;
-      const clientEmail =
-        typeof parsed.client_email === "string" ? parsed.client_email.trim() : "";
-      const privateKey =
-        typeof parsed.private_key === "string" ? parsed.private_key.trim() : "";
+      const payload = event.data as DriveOAuthMessage;
 
-      if (!clientEmail || !privateKey) {
+      if (!payload || payload.type !== "omnivideo_drive_oauth") {
+        return;
+      }
+
+      if (!payload.ok || !payload.accessToken) {
         setState({
           status: "failed",
-          message:
-            "Service Account JSON missing client_email/private_key. Check file key.",
-          errorCode: "VAL_DRIVE_SERVICE_ACCOUNT_JSON_INVALID",
+          message: payload.message || "Drive OAuth failed.",
+          errorCode: "AUTH_DRIVE_OAUTH_FAILED",
         });
         return;
       }
 
-      updateSecret("driveServiceAccountJson", rawJson);
+      updateSecret("accessToken", payload.accessToken);
+      if (payload.refreshToken) {
+        updateSecret("refreshToken", payload.refreshToken);
+      }
       setState({
         status: "success",
-        message: `Loaded Drive Service Account key from ${file.name}.`,
+        message: payload.refreshToken
+          ? "Drive OAuth connected. Access and refresh tokens have been filled."
+          : "Drive OAuth connected. Access token has been filled.",
       });
-    } catch {
-      setState({
-        status: "failed",
-        message: "Could not read Service Account JSON file.",
-        errorCode: "VAL_DRIVE_SERVICE_ACCOUNT_JSON_PARSE_FAILED",
-      });
-    }
-  };
+    };
+
+    window.addEventListener("message", onMessage);
+    return () => {
+      window.removeEventListener("message", onMessage);
+    };
+  }, []);
 
   const loadProviders = async () => {
     setState({ status: "loading", message: "Loading storage providers..." });
@@ -289,6 +304,16 @@ export function StorageProvidersPanel({ section }: StorageProvidersPanelProps) {
 
   const saveProvider = async () => {
     const isEditing = Boolean(editingProviderId);
+
+    if (providerType === "drive" && !secrets.accessToken.trim()) {
+      setState({
+        status: "failed",
+        message: "Missing required secret fields: accessToken.",
+        errorCode: "VAL_STORAGE_PROVIDER_SECRET_REQUIRED",
+      });
+      return;
+    }
+
     setState({
       status: "loading",
       message: isEditing
@@ -356,6 +381,58 @@ export function StorageProvidersPanel({ section }: StorageProvidersPanelProps) {
           error instanceof Error
             ? error.message
             : "Could not save storage provider.",
+      });
+    }
+  };
+
+  const connectDriveOAuth = async () => {
+    setState({
+      status: "loading",
+      message: "Starting Drive OAuth...",
+    });
+
+    try {
+      const response = await fetch("/api/storage/oauth/start", {
+        method: "GET",
+        cache: "no-store",
+      });
+      const payload = (await response.json()) as ApiResponse<unknown>;
+
+      if (!response.ok || !payload.ok || !payload.url) {
+        setState({
+          status: "failed",
+          message: payload.error ?? "Could not start Drive OAuth.",
+          errorCode: payload.errorCode,
+        });
+        return;
+      }
+      setDriveOAuthRedirectUri(payload.redirectUri ?? "");
+
+      const popup = window.open(
+        payload.url,
+        "omnivideo-drive-oauth",
+        "popup=yes,width=640,height=740",
+      );
+
+      if (!popup) {
+        setState({
+          status: "failed",
+          message: "Popup blocked. Allow popups and try OAuth again.",
+          errorCode: "AUTH_DRIVE_OAUTH_POPUP_BLOCKED",
+        });
+        return;
+      }
+
+      setState({
+        status: "success",
+        message: "Drive OAuth window opened. Complete consent to continue.",
+      });
+    } catch (error) {
+      setState({
+        status: "failed",
+        message:
+          error instanceof Error ? error.message : "Could not start Drive OAuth.",
+        errorCode: "AUTH_DRIVE_OAUTH_START_FAILED",
       });
     }
   };
@@ -702,6 +779,15 @@ export function StorageProvidersPanel({ section }: StorageProvidersPanelProps) {
             </div>
 
             <div className="space-y-4 px-4 py-4">
+              {state.status === "failed" ? (
+                <div className="border border-rose-300 bg-rose-50 px-3 py-2 text-[11px] text-rose-700">
+                  <p className="font-semibold">{state.message}</p>
+                  {state.errorCode ? (
+                    <p className="mt-1 font-mono text-[10px]">{state.errorCode}</p>
+                  ) : null}
+                </div>
+              ) : null}
+
               <label className="block">
                 <span className="text-[12px] font-medium text-main">Provider</span>
                 <select
@@ -781,37 +867,38 @@ export function StorageProvidersPanel({ section }: StorageProvidersPanelProps) {
                   {providerType === "drive" ? (
                     <>
                       <label className="block">
-                        <span className="text-[12px] font-medium text-main">
-                          Service Account JSON key
-                        </span>
-                        <div className="mt-1 space-y-2 border border-main bg-main p-2">
-                          <input
-                            type="file"
-                            accept=".json,application/json"
-                            onChange={(event) => {
-                              void onDriveJsonFileChange(event);
-                            }}
-                            className="w-full text-[12px] text-main file:mr-2 file:border file:border-main file:bg-secondary file:px-2 file:py-1 file:text-[11px] file:font-semibold file:text-main"
-                          />
-                          <textarea
-                            value={secrets.driveServiceAccountJson}
-                            onChange={(event) =>
-                              updateSecret(
-                                "driveServiceAccountJson",
-                                event.target.value,
-                              )
-                            }
-                            rows={7}
-                            placeholder='{"type":"service_account","client_email":"...","private_key":"..."}'
-                            className="w-full resize-y border border-main bg-main px-3 py-2 font-mono text-[12px] text-main outline-none transition-colors placeholder:text-muted/60 focus:border-accent"
-                          />
-                        </div>
+                        <span className="text-[12px] font-medium text-main">OAuth Access Token</span>
+                        <p className="mt-1 text-[11px] text-muted">
+                          Use personal Google OAuth token for Drive upload quota.
+                        </p>
+                        <p className="mt-2 text-[11px] leading-5 text-muted">
+                          In Google Cloud OAuth client, add Authorized redirect URI:
+                        </p>
+                        <p className="mt-1 break-all border border-main bg-secondary/20 px-2 py-1 font-mono text-[11px] text-main">
+                          {driveOAuthRedirectUri ||
+                            `${browserOrigin || "http://localhost:3001"}/api/storage/oauth/callback/drive`}
+                        </p>
+                        <p className="mt-1 text-[11px] text-muted">
+                          If Google shows <span className="font-mono">redirect_uri_mismatch</span>, copy this exact URI and update OAuth client settings.
+                        </p>
                       </label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void connectDriveOAuth();
+                        }}
+                        className="inline-flex items-center gap-2 border border-main bg-secondary px-3 py-1.5 text-[11px] font-semibold text-main transition-colors hover:bg-secondary/75"
+                      >
+                        Connect OAuth
+                      </button>
                       <SecretInput
-                        label="Access Token (legacy optional)"
+                        label="Access Token"
                         value={secrets.accessToken}
                         onChange={(value) => updateSecret("accessToken", value)}
                       />
+                      <p className="text-[11px] text-muted">
+                        Refresh token is captured automatically after OAuth consent and used for long-lived upload sessions.
+                      </p>
                       <SecretInput
                         label="Folder ID optional"
                         value={secrets.folderId}

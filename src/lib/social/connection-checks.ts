@@ -81,6 +81,78 @@ async function checkYouTubeConnectedAccount(
   }
 }
 
+async function checkTikTokConnectedAccount(
+  account: WithId<SocialAccountDocument>,
+  base: Omit<SocialConnectionCheck, "status" | "message">,
+): Promise<SocialConnectionCheck> {
+  const accessToken = account.secrets.accessToken?.trim();
+
+  if (!accessToken) {
+    return {
+      ...base,
+      status: "down",
+      message: "AUTH_SOCIAL_SECRET_MISSING: connected TikTok account has no access token.",
+    };
+  }
+
+  const requiredScope = "video.publish";
+  if (!account.permissionScopes.includes(requiredScope)) {
+    return {
+      ...base,
+      status: "down",
+      message: `AUTH_TIKTOK_SCOPE_MISSING: account is missing ${requiredScope}. Reconnect OAuth.`,
+    };
+  }
+
+  try {
+    const response = await fetch(
+      "https://open.tiktokapis.com/v2/post/publish/creator_info/query/",
+      {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${accessToken}`,
+          "content-type": "application/json; charset=UTF-8",
+        },
+        body: JSON.stringify({}),
+      },
+    );
+    const payload = (await response.json().catch(() => null)) as
+      | {
+          data?: { creator_username?: string };
+          error?: { code?: string; message?: string };
+        }
+      | null;
+    const errorCode = payload?.error?.code?.trim();
+
+    if (!response.ok || (errorCode && errorCode !== "ok")) {
+      return {
+        ...base,
+        status: "down",
+        message:
+          payload?.error?.message ??
+          `TikTok creator info check failed with status ${response.status}.`,
+      };
+    }
+
+    return {
+      ...base,
+      status: "ok",
+      message: payload?.data?.creator_username
+        ? `TikTok OAuth is valid for @${payload.data.creator_username}.`
+        : "TikTok OAuth token is valid for publishing.",
+    };
+  } catch (error) {
+    return {
+      ...base,
+      status: "down",
+      message:
+        error instanceof Error
+          ? error.message
+          : "TikTok connection check failed.",
+    };
+  }
+}
+
 export async function checkSocialAccountConnections(
   accounts: Array<WithId<SocialAccountDocument>>,
 ): Promise<SocialConnectionCheck[]> {
@@ -115,6 +187,13 @@ export async function checkSocialAccountConnections(
 
     if (account.platform === "youtube") {
       return checkYouTubeConnectedAccount(account, {
+        ...base,
+        latencyMs: Date.now() - startedAt,
+      });
+    }
+
+    if (account.platform === "tiktok") {
+      return checkTikTokConnectedAccount(account, {
         ...base,
         latencyMs: Date.now() - startedAt,
       });
