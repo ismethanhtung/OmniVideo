@@ -10,7 +10,7 @@
 
 ## In Progress
 
-- (none)
+- `FAST-AUDIO-008` - Align Edge TTS voice to segment timestamps.
 
 ## Blocked
 
@@ -22,6 +22,10 @@
 
 ## Done
 
+- `FAST-AUDIO-007` - Chunk Edge TTS SSML requests.
+- `FAST-AUDIO-006` - Sanitize Edge TTS SSML text.
+- `FAST-AUDIO-005` - Fix Edge TTS websocket runtime failure.
+- `P2-AUDIO-006` - Edge TTS voice generation for Audio Transcript.
 - `P2-AUDIO-005` - Groq segment translation for Audio Transcript and Workspace.
 - `FAST-AUDIO-004` - Add Audio Transcript step trace and generic naming.
 - `FAST-AUDIO-003` - Harden ffmpeg binary resolution for audio extraction.

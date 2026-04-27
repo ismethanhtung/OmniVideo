@@ -29,6 +29,69 @@ export const GROQ_TRANSLATION_MODELS = [
   },
 ];
 
+export const EDGE_TTS_VOICES = [
+  {
+    id: "vi-VN-HoaiMyNeural",
+    label: "Vietnamese - HoaiMy",
+    locale: "vi-VN",
+    gender: "Female",
+  },
+  {
+    id: "vi-VN-NamMinhNeural",
+    label: "Vietnamese - Nam Minh",
+    locale: "vi-VN",
+    gender: "Male",
+  },
+  {
+    id: "en-US-JennyNeural",
+    label: "English - Jenny",
+    locale: "en-US",
+    gender: "Female",
+  },
+  {
+    id: "en-US-GuyNeural",
+    label: "English - Guy",
+    locale: "en-US",
+    gender: "Male",
+  },
+] as const;
+
+export const EDGE_TTS_OUTPUT_FORMATS = [
+  {
+    id: "audio-24khz-48kbitrate-mono-mp3",
+    label: "MP3 24kHz 48kbps mono",
+    mimeType: "audio/mpeg",
+    extension: "mp3",
+  },
+  {
+    id: "audio-24khz-96kbitrate-mono-mp3",
+    label: "MP3 24kHz 96kbps mono",
+    mimeType: "audio/mpeg",
+    extension: "mp3",
+  },
+  {
+    id: "audio-48khz-192kbitrate-mono-mp3",
+    label: "MP3 48kHz 192kbps mono",
+    mimeType: "audio/mpeg",
+    extension: "mp3",
+  },
+  {
+    id: "webm-24khz-16bit-mono-opus",
+    label: "WebM Opus 24kHz mono",
+    mimeType: "audio/webm",
+    extension: "webm",
+  },
+] as const;
+
+export const DEFAULT_EDGE_TTS_SETTINGS = {
+  voice: "vi-VN-HoaiMyNeural",
+  rate: 0,
+  pitch: 0,
+  volume: 0,
+  outputFormat: "audio-24khz-48kbitrate-mono-mp3",
+  preserveTimestampGaps: true,
+} as const;
+
 export type ChineseTranscriptionRequest = {
   fileName: string;
   mimeType?: string;
@@ -83,6 +146,45 @@ export type TranscriptTranslationResult = {
   };
 };
 
+export type EdgeTtsVoiceId = (typeof EDGE_TTS_VOICES)[number]["id"] | string;
+export type EdgeTtsOutputFormat =
+  (typeof EDGE_TTS_OUTPUT_FORMATS)[number]["id"];
+
+export type VoiceGenerationSettings = {
+  voice: EdgeTtsVoiceId;
+  rate: number;
+  pitch: number;
+  volume: number;
+  outputFormat: EdgeTtsOutputFormat;
+  preserveTimestampGaps: boolean;
+};
+
+export type VoiceGenerationSegment = {
+  id: number;
+  start: number;
+  end: number;
+  text: string;
+};
+
+export type VoiceGenerationResult = {
+  audioBase64: string;
+  mimeType: string;
+  extension: string;
+  fileName: string;
+  byteLength: number;
+  segmentCount: number;
+  alignment: {
+    mode: "natural" | "timeline";
+    targetDurationSeconds?: number;
+    chunks: number;
+  };
+  settings: VoiceGenerationSettings;
+  provider: {
+    name: "edge-tts";
+    connectionId: string;
+  };
+};
+
 export type ChineseTranscriptionResult = {
   text: string;
   language: string;
@@ -116,7 +218,10 @@ export type ChineseTranscriptionErrorCode =
   | "SYS_AUDIO_EXTRACTION_FAILED"
   | "PRV_GROQ_TRANSCRIPTION_FAILED"
   | "VAL_TRANSLATION_SEGMENTS_REQUIRED"
-  | "PRV_GROQ_TRANSLATION_FAILED";
+  | "PRV_GROQ_TRANSLATION_FAILED"
+  | "VAL_TTS_SEGMENTS_REQUIRED"
+  | "VAL_TTS_CONFIG_INVALID"
+  | "PRV_EDGE_TTS_FAILED";
 
 export class ChineseTranscriptionError extends Error {
   constructor(

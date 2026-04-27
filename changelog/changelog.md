@@ -4,6 +4,8 @@
 
 ### Added
 
+- Thêm Edge-TTS voice generation cho Audio Transcript: sinh voice tiếng Việt từ translated segments, cấu hình voice/rate/pitch/volume/output format và tùy chọn giữ timestamp gaps, kèm audio preview/download.
+- Thêm API `POST /api/audio/voice-generation` và adapter `src/lib/multilingual-audio/edge-tts.ts` với validation, SSML builder và Edge ReadAloud websocket client.
 - Thêm Groq LLM segment translation cho Audio Transcript: dịch transcript segments sang tiếng Việt bằng chat completions, giữ nguyên `id/start/end`, có model selector mặc định `llama-3.1-8b-instant`, và toggle xem bản gốc/bản dịch.
 - Thêm API `POST /api/audio/transcript-translation` và Workspace node `text.translate-transcript` để nối sau `Audio Transcript`.
 - Thêm Audio Transcript MVP: API `POST /api/audio/chinese-transcription` nhận video/audio, extract compressed MP3 mono 16k bằng bundled `ffmpeg-static`, gọi Groq `whisper-large-v3-turbo` với `verbose_json` và trả transcript kèm segment/word timestamps.
@@ -29,6 +31,9 @@
 
 ### Fixed
 
+- Sửa Edge-TTS `SSML is invalid` khi bật `preserveTimestampGaps` hoặc transcript dài: adapter không còn gửi SSML `<break>`, chia long transcript thành nhiều request nhỏ rồi nối audio bytes cho MVP preview/download.
+- Sửa tiếp lỗi Edge-TTS `SSML is invalid` khi translated segment chứa ký tự control/invisible: adapter giờ sanitize text trước khi XML escape/build SSML và validation tính theo sanitized text.
+- Sửa lỗi Edge-TTS `PRV_EDGE_TTS_FAILED: Edge-TTS websocket failed/closed without audio`: voice generation giờ dùng server-side TLS websocket transport có `Sec-MS-GEC`, Edge-compatible headers, full Edge voice name trong SSML và pitch dạng `Hz`.
 - Sửa lỗi dịch bỏ sót segment sau một đoạn dài: translator giờ retry các segment còn nguyên CJK/source text và split batch nhỏ hơn khi Groq báo request quá lớn.
 - Sửa `SYS_AUDIO_EXTRACTION_FAILED` khi `ffmpeg-static` resolve tới path không tồn tại trong runtime deploy: extractor giờ kiểm tra binary tồn tại, fallback sang `process.cwd()/node_modules/ffmpeg-static/ffmpeg`, rồi fallback sang `ffmpeg` trong PATH.
 - Sửa `PRV_GROQ_TRANSCRIPTION_FAILED: Request Entity Too Large` debug gap: API/UI giờ trả step trace validate/extract/size-check/Groq, hiển thị source size và extracted audio size; payload gửi Groq đổi sang MP3 mono 16k 64kbps để giảm size.
@@ -37,7 +42,11 @@
 
 ### Notes
 
-- Task IDs: P2-AUDIO-001, FAST-AUDIO-002, FAST-AUDIO-003, FAST-AUDIO-004, P2-AUDIO-005, P4-WORKSPACE-006, FAST-WORKSPACE-007, FAST-SOCIAL-005
+- Task IDs: P2-AUDIO-001, FAST-AUDIO-002, FAST-AUDIO-003, FAST-AUDIO-004, FAST-AUDIO-005, FAST-AUDIO-006, FAST-AUDIO-007, P2-AUDIO-005, P2-AUDIO-006, P4-WORKSPACE-006, FAST-WORKSPACE-007, FAST-SOCIAL-005
+- Verification (FAST-AUDIO-007): `npm run test -- --run src/lib/multilingual-audio/edge-tts.test.ts src/app/api/audio/voice-generation/route.test.ts` pass (8 tests / 2 files); real local API smoke with 2 gapped segments and `preserveTimestampGaps=true` pass (`ok=true`, MP3 audio returned); real local API smoke with 45 segments pass (`ok=true`, MP3 audio returned, 1,270,824 bytes); `npm run test` pass (197 tests / 47 files); `npm run build` pass with existing warning in `src/features/workspace/display-preferences-panel.tsx` (`Image` unused).
+- Verification (FAST-AUDIO-006): `npm run test -- --run src/lib/multilingual-audio/edge-tts.test.ts src/app/api/audio/voice-generation/route.test.ts` pass (7 tests / 2 files); real local API smoke `POST /api/audio/voice-generation` pass with control char payload (`ok=true`, MP3 audio returned, 24,336 bytes); `npm run test` pass (196 tests / 47 files); `npm run build` pass with existing warning in `src/features/workspace/display-preferences-panel.tsx` (`Image` unused).
+- Verification (FAST-AUDIO-005): `npm run test -- --run src/lib/multilingual-audio/edge-tts.test.ts src/app/api/audio/voice-generation/route.test.ts` pass (7 tests / 2 files); real local API smoke `POST /api/audio/voice-generation` pass (`ok=true`, MP3 audio returned, 18,720 bytes); `npm run test` pass (196 tests / 47 files); `npm run build` pass with existing warning in `src/features/workspace/display-preferences-panel.tsx` (`Image` unused).
+- Verification (P2-AUDIO-006): `npm run test -- --run src/lib/multilingual-audio/edge-tts.test.ts src/app/api/audio/voice-generation/route.test.ts` pass (7 tests / 2 files); `npm run test` pass (196 tests / 47 files); `npm run build` pass with existing warning in `src/features/workspace/display-preferences-panel.tsx` (`Image` unused).
 - Verification (P2-AUDIO-005): `npm run test -- --run src/lib/multilingual-audio/transcript-translation.test.ts src/app/api/audio/transcript-translation/route.test.ts src/lib/workspace/workspace-graph.test.ts src/components/layout/navigation.test.ts` pass (30 tests / 4 files); `npm run test` pass (189 tests / 45 files); `npm run build` pass with existing warning in `src/features/workspace/display-preferences-panel.tsx` (`Image` unused).
 - Verification (FAST-AUDIO-004): `npm run test -- --run src/lib/multilingual-audio/audio-extraction.test.ts src/lib/multilingual-audio/chinese-transcription.test.ts src/lib/multilingual-audio/groq-transcription.test.ts src/components/layout/navigation.test.ts src/lib/workspace/workspace-graph.test.ts` pass (30 tests / 5 files); `npm run test` pass (180 tests / 43 files); `npm run build` pass with existing warning in `src/features/workspace/display-preferences-panel.tsx` (`Image` unused).
 - Verification (FAST-AUDIO-003): `npm run test -- --run src/lib/multilingual-audio/audio-extraction.test.ts` pass (4 tests / 1 file); `npm run test` pass (178 tests / 42 files); `npm run build` pass with existing warning in `src/features/workspace/display-preferences-panel.tsx` (`Image` unused).

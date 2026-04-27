@@ -1,16 +1,28 @@
 "use client";
 
 import { useState } from "react";
-import { Captions, FileAudio, Loader2, Mic2 } from "lucide-react";
+import {
+    Captions,
+    Download,
+    FileAudio,
+    Loader2,
+    Mic2,
+    Volume2,
+} from "lucide-react";
 
 import type { LeftbarNavItem } from "@/components/layout/types";
 import type {
     AudioTranscriptionStep,
     ChineseTranscriptionResult,
+    EdgeTtsOutputFormat,
     TranscriptTranslationResult,
+    VoiceGenerationResult,
 } from "@/lib/multilingual-audio/types";
 import {
+    DEFAULT_EDGE_TTS_SETTINGS,
     DEFAULT_TRANSLATION_MODEL,
+    EDGE_TTS_OUTPUT_FORMATS,
+    EDGE_TTS_VOICES,
     GROQ_TRANSLATION_MODELS,
 } from "@/lib/multilingual-audio/types";
 
@@ -34,6 +46,17 @@ type TranslationApiPayload =
     | {
           ok: true;
           data: TranscriptTranslationResult;
+      }
+    | {
+          ok: false;
+          errorCode?: string;
+          error?: string;
+      };
+
+type VoiceGenerationApiPayload =
+    | {
+          ok: true;
+          data: VoiceGenerationResult;
       }
     | {
           ok: false;
@@ -126,20 +149,41 @@ export function ChineseTranscriptionPanel({
     const [translationModel, setTranslationModel] = useState(
         DEFAULT_TRANSLATION_MODEL,
     );
+    const [ttsVoice, setTtsVoice] = useState<string>(
+        DEFAULT_EDGE_TTS_SETTINGS.voice,
+    );
+    const [ttsRate, setTtsRate] = useState<number>(
+        DEFAULT_EDGE_TTS_SETTINGS.rate,
+    );
+    const [ttsPitch, setTtsPitch] = useState<number>(
+        DEFAULT_EDGE_TTS_SETTINGS.pitch,
+    );
+    const [ttsVolume, setTtsVolume] = useState<number>(
+        DEFAULT_EDGE_TTS_SETTINGS.volume,
+    );
+    const [ttsOutputFormat, setTtsOutputFormat] = useState<EdgeTtsOutputFormat>(
+        DEFAULT_EDGE_TTS_SETTINGS.outputFormat,
+    );
+    const [ttsPreserveTimestampGaps, setTtsPreserveTimestampGaps] =
+        useState<boolean>(DEFAULT_EDGE_TTS_SETTINGS.preserveTimestampGaps);
     const [segmentView, setSegmentView] = useState<"source" | "translation">(
         "translation",
     );
     const [isRunning, setIsRunning] = useState(false);
     const [isTranslating, setIsTranslating] = useState(false);
+    const [isGeneratingVoice, setIsGeneratingVoice] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [translationError, setTranslationError] = useState<string | null>(
         null,
     );
+    const [voiceError, setVoiceError] = useState<string | null>(null);
     const [result, setResult] = useState<ChineseTranscriptionResult | null>(
         null,
     );
     const [translation, setTranslation] =
         useState<TranscriptTranslationResult | null>(null);
+    const [voiceResult, setVoiceResult] =
+        useState<VoiceGenerationResult | null>(null);
     const [steps, setSteps] = useState<AudioTranscriptionStep[]>([]);
 
     const runTranscription = async () => {
@@ -151,8 +195,10 @@ export function ChineseTranscriptionPanel({
         setIsRunning(true);
         setError(null);
         setTranslationError(null);
+        setVoiceError(null);
         setResult(null);
         setTranslation(null);
+        setVoiceResult(null);
         setSteps([]);
 
         try {
@@ -204,6 +250,8 @@ export function ChineseTranscriptionPanel({
         setIsTranslating(true);
         setTranslationError(null);
         setTranslation(null);
+        setVoiceError(null);
+        setVoiceResult(null);
 
         try {
             const response = await fetch("/api/audio/transcript-translation", {
@@ -239,12 +287,69 @@ export function ChineseTranscriptionPanel({
         }
     };
 
+    const runVoiceGeneration = async () => {
+        if (!translation?.translatedSegments.length) {
+            setVoiceError("Chưa có bản dịch tiếng Việt để sinh voice.");
+            return;
+        }
+
+        setIsGeneratingVoice(true);
+        setVoiceError(null);
+        setVoiceResult(null);
+
+        try {
+            const response = await fetch("/api/audio/voice-generation", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    segments: translation.translatedSegments.map((segment) => ({
+                        id: segment.id,
+                        start: segment.start,
+                        end: segment.end,
+                        text: segment.translatedText,
+                    })),
+                    settings: {
+                        voice: ttsVoice,
+                        rate: ttsRate,
+                        pitch: ttsPitch,
+                        volume: ttsVolume,
+                        outputFormat: ttsOutputFormat,
+                        preserveTimestampGaps: ttsPreserveTimestampGaps,
+                    },
+                }),
+            });
+            const payload =
+                (await response.json()) as VoiceGenerationApiPayload;
+
+            if (!payload.ok) {
+                throw new Error(
+                    payload.errorCode
+                        ? `${payload.errorCode}: ${payload.error ?? "Voice generation failed."}`
+                        : (payload.error ?? "Voice generation failed."),
+                );
+            }
+
+            setVoiceResult(payload.data);
+        } catch (requestError) {
+            setVoiceError(
+                requestError instanceof Error
+                    ? requestError.message
+                    : "Voice generation failed.",
+            );
+        } finally {
+            setIsGeneratingVoice(false);
+        }
+    };
+
     const translationById = new Map(
         translation?.translatedSegments.map((segment) => [
             segment.id,
             segment,
         ]) ?? [],
     );
+    const voiceAudioUrl = voiceResult
+        ? `data:${voiceResult.mimeType};base64,${voiceResult.audioBase64}`
+        : null;
 
     return (
         <section className="border border-main bg-main">
@@ -396,6 +501,7 @@ export function ChineseTranscriptionPanel({
                                     </p>
                                     <p className="mt-1 text-[10px] leading-4 text-muted">
                                         Dịch segment sang tiếng Việt.
+                                        (llama-4-scout)
                                     </p>
                                 </div>
                                 <button
@@ -473,6 +579,201 @@ export function ChineseTranscriptionPanel({
                                         {translation.model} ·{" "}
                                         {translation.chunks.length} chunk(s)
                                     </p>
+                                </div>
+                            ) : null}
+                        </div>
+                    ) : null}
+
+                    {translation ? (
+                        <div className="space-y-3 border border-main bg-secondary/20 p-4">
+                            <div className="flex items-start gap-2">
+                                <Volume2 className="mt-0.5 h-4 w-4 text-muted" />
+                                <div>
+                                    <p className="text-[12px] font-semibold text-main">
+                                        Voice Generation
+                                    </p>
+                                    <p className="mt-1 text-[10px] leading-4 text-muted">
+                                        Sinh voice tiếng Việt từ translated
+                                        segments bằng Edge-TTS.
+                                    </p>
+                                </div>
+                            </div>
+
+                            <label className="block">
+                                <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                    Voice
+                                </span>
+                                <select
+                                    value={ttsVoice}
+                                    disabled={isGeneratingVoice}
+                                    onChange={(event) =>
+                                        setTtsVoice(event.currentTarget.value)
+                                    }
+                                    className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main"
+                                >
+                                    {EDGE_TTS_VOICES.map((voice) => (
+                                        <option key={voice.id} value={voice.id}>
+                                            {voice.label}
+                                        </option>
+                                    ))}
+                                </select>
+                            </label>
+
+                            <label className="block">
+                                <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                    Output format
+                                </span>
+                                <select
+                                    value={ttsOutputFormat}
+                                    disabled={isGeneratingVoice}
+                                    onChange={(event) =>
+                                        setTtsOutputFormat(
+                                            event.currentTarget
+                                                .value as EdgeTtsOutputFormat,
+                                        )
+                                    }
+                                    className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main"
+                                >
+                                    {EDGE_TTS_OUTPUT_FORMATS.map((format) => (
+                                        <option
+                                            key={format.id}
+                                            value={format.id}
+                                        >
+                                            {format.label}
+                                        </option>
+                                    ))}
+                                </select>
+                            </label>
+
+                            <div className="grid gap-2">
+                                {[
+                                    {
+                                        label: "Rate",
+                                        value: ttsRate,
+                                        setter: setTtsRate,
+                                    },
+                                    {
+                                        label: "Pitch",
+                                        value: ttsPitch,
+                                        setter: setTtsPitch,
+                                    },
+                                    {
+                                        label: "Volume",
+                                        value: ttsVolume,
+                                        setter: setTtsVolume,
+                                    },
+                                ].map((control) => (
+                                    <label
+                                        key={control.label}
+                                        className="block border border-main bg-main px-3 py-2"
+                                    >
+                                        <span className="flex items-center justify-between gap-3 text-[10px] font-semibold text-muted">
+                                            <span>{control.label}</span>
+                                            <span className="text-main">
+                                                {control.value > 0 ? "+" : ""}
+                                                {control.value}%
+                                            </span>
+                                        </span>
+                                        <input
+                                            type="range"
+                                            min={-100}
+                                            max={100}
+                                            step={5}
+                                            value={control.value}
+                                            disabled={isGeneratingVoice}
+                                            onChange={(event) =>
+                                                control.setter(
+                                                    Number(
+                                                        event.currentTarget
+                                                            .value,
+                                                    ),
+                                                )
+                                            }
+                                            className="mt-2 w-full accent-[var(--color-accent)]"
+                                        />
+                                    </label>
+                                ))}
+                            </div>
+
+                            <label className="flex items-center justify-between gap-3 border border-main bg-main px-3 py-2">
+                                <span>
+                                    <span className="block text-[11px] font-semibold text-main">
+                                        Preserve timestamp gaps
+                                    </span>
+                                    <span className="block text-[10px] text-muted">
+                                        Thêm khoảng lặng giữa segments theo
+                                        timestamp.
+                                    </span>
+                                </span>
+                                <input
+                                    type="checkbox"
+                                    checked={ttsPreserveTimestampGaps}
+                                    disabled={isGeneratingVoice}
+                                    onChange={(event) =>
+                                        setTtsPreserveTimestampGaps(
+                                            event.currentTarget.checked,
+                                        )
+                                    }
+                                    className="h-4 w-4 accent-[var(--color-accent)]"
+                                />
+                            </label>
+
+                            <button
+                                type="button"
+                                disabled={
+                                    isGeneratingVoice ||
+                                    translation.translatedSegments.length === 0
+                                }
+                                onClick={runVoiceGeneration}
+                                className="inline-flex w-full items-center justify-center gap-2 border border-accent/35 bg-accent/10 px-3 py-2 text-[12px] font-semibold text-accent transition-colors hover:bg-accent/15 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                                {isGeneratingVoice ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                    <Volume2 className="h-4 w-4" />
+                                )}
+                                {isGeneratingVoice
+                                    ? "Generating voice..."
+                                    : "Generate Voice"}
+                            </button>
+
+                            {voiceError ? (
+                                <p className="border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-[11px] leading-5 text-rose-700">
+                                    {voiceError}
+                                </p>
+                            ) : null}
+
+                            {voiceResult && voiceAudioUrl ? (
+                                <div className="space-y-2 border border-emerald-500/30 bg-emerald-500/10 p-3">
+                                    <p className="text-[11px] font-semibold text-emerald-700">
+                                        Voice ready ·{" "}
+                                        {formatBytes(voiceResult.byteLength)}
+                                    </p>
+                                    <p className="text-[10px] leading-4 text-emerald-700">
+                                        {voiceResult.settings.voice} ·{" "}
+                                        {voiceResult.segmentCount} segment(s) ·{" "}
+                                        {voiceResult.alignment.mode}
+                                        {voiceResult.alignment
+                                            .targetDurationSeconds
+                                            ? ` · target ${formatTime(
+                                                  voiceResult.alignment
+                                                      .targetDurationSeconds,
+                                              )}`
+                                            : ""}
+                                    </p>
+                                    <audio
+                                        controls
+                                        src={voiceAudioUrl}
+                                        className="w-full"
+                                    />
+                                    <a
+                                        href={voiceAudioUrl}
+                                        download={voiceResult.fileName}
+                                        className="inline-flex items-center gap-2 border border-emerald-500/35 bg-main px-2 py-1 text-[10px] font-semibold text-emerald-700 hover:bg-secondary"
+                                    >
+                                        <Download className="h-3.5 w-3.5" />
+                                        Download {voiceResult.extension}
+                                    </a>
                                 </div>
                             ) : null}
                         </div>

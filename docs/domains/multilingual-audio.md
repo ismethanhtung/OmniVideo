@@ -17,6 +17,17 @@ Hỗ trợ xử lý audio đa ngôn ngữ cho video linh hoạt: phát hiện ng
 - Bước dịch segment-level đã có trên cùng Audio Transcript flow: Groq chat LLM
   dịch từng segment sang tiếng Việt, giữ nguyên `id/start/end`, có model selector
   mặc định `llama-3.1-8b-instant`.
+- Bước sinh voice-over đầu tiên đã có trên Audio Transcript flow: Edge-TTS nhận
+  Vietnamese translated segments, cho cấu hình voice/rate/pitch/volume/output
+  format và tùy chọn thêm khoảng lặng theo timestamp gap. Output hiện trả audio
+  để preview/download trong UI, chưa persist vào storage và chưa duration-stretch
+  từng segment để khớp tuyệt đối timeline. Edge-TTS transport dùng server-side
+  websocket handshake với `Sec-MS-GEC`, Edge-like headers và full Edge voice name
+  trong SSML. Text từ translated segments được sanitize để loại ký tự control
+  không hợp lệ trước khi XML escape, tránh Edge reject `SSML is invalid`.
+  Transcript dài được chia thành nhiều Edge-TTS request nhỏ rồi nối audio bytes
+  cho MVP preview/download. Không dùng SSML `<break>` vì ReadAloud endpoint reject
+  thẻ này; chèn silence đúng timestamp cần task mux audio riêng.
 
 ## 3. Target Workflow
 
@@ -66,3 +77,5 @@ Hỗ trợ xử lý audio đa ngôn ngữ cho video linh hoạt: phát hiện ng
    không dùng chung với bước ASR extraction vì chất lượng và runtime khác nhau.
 5. Transcript dài nên được chunk theo segment ranges trong task sau để tránh
    vượt context/output limit của LLM.
+6. Edge-TTS là provider MVP nhanh cho lồng tiếng; cần provider abstraction/fallback
+   trước khi dùng cho batch job dài hoặc production-grade dubbing.
