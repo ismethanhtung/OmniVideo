@@ -8,6 +8,7 @@ export type AppSectionId =
   | "notif"
   | "videoIntake"
   | "localUploadIntake"
+  | "chineseTranscription"
   | "storageProviders"
   | "storageLibrary"
   | "socialAccounts"

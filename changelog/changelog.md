@@ -1,5 +1,52 @@
 # OmniVideo Changelog
 
+## 2026-04-27
+
+### Added
+
+- Thêm Groq LLM segment translation cho Audio Transcript: dịch transcript segments sang tiếng Việt bằng chat completions, giữ nguyên `id/start/end`, có model selector mặc định `llama-3.1-8b-instant`, và toggle xem bản gốc/bản dịch.
+- Thêm API `POST /api/audio/transcript-translation` và Workspace node `text.translate-transcript` để nối sau `Audio Transcript`.
+- Thêm Audio Transcript MVP: API `POST /api/audio/chinese-transcription` nhận video/audio, extract compressed MP3 mono 16k bằng bundled `ffmpeg-static`, gọi Groq `whisper-large-v3-turbo` với `verbose_json` và trả transcript kèm segment/word timestamps.
+- Thêm trang `Audio Transcript` trong Video Pipeline để upload video/audio, chọn language hint, nhập prompt, bật word timestamps và xem transcript/segments/words.
+- Thêm Workspace node `audio.chinese-transcribe` chạy trực tiếp từ `source.file` qua cùng API transcription.
+- Thêm tests cho multilingual audio validation, ffmpeg command, Groq adapter, API missing-file case, Workspace transcription planning và navigation.
+- Thêm generic `planWorkspaceFlow(graph)` trong `src/lib/workspace/workspace-graph.ts` với topological order, cycle detection và phân loại step (`upload-and-store`, `use-existing-asset`, `publish`).
+- Thêm helper `updateWorkspaceNodeConfig` để mutate runtime config theo từng node.
+- Thêm tests `planWorkspaceFlow` cho fan-out 1 storage → nhiều Publish Social, multi `source.asset` song song, source.file thiếu storage downstream, publish thiếu producer, và cycle.
+
+### Changed
+
+- Chuyển Translation controls của Audio Transcript sang cột trái ngay dưới Extract + Transcribe, mở rộng model selector theo Groq production/preview docs hiện tại, và backend dịch theo chunk adaptive để tránh TPM/request-too-large.
+- Cập nhật multilingual audio docs để ghi rõ scope MVP ZH transcription và giới hạn chưa source-separate voice/music.
+- Refactor Workspace executor sang generic graph runner: `runWorkspaceFlow` lặp `plan.steps`, không còn giới hạn 3 flow cứng (`upload-to-storage`, `asset-to-social`, `upload-to-social`).
+- Chuyển toàn bộ runtime config (storageAccountId, socialAccountId, publishType, privacyStatus, facebookPageId, caption, hashtags, title, tags) từ state global single-slot sang `node.config` per-node, persist qua localStorage draft.
+- Inspector form giờ mutate trực tiếp `node.config` của node được chọn; file upload lưu trong map `runtimeFilesByNodeId` ngoài graph.
+- Workspace Run Status panel hiển thị step list theo `flowPlan.steps` và status badge per-node ngay trên canvas thay vì 3 step cố định.
+- Backward-compat: `getWorkspaceExecutableUploadToSocialPlan` rút lại thành adapter trên `planWorkspaceFlow` để giữ contract cũ.
+- Cập nhật Inspector `social.publish` trong Workspace: thay `Facebook Page ID` text input bằng dropdown `Facebook Page`, load danh sách page từ API theo account và auto chọn page mặc định khi có.
+- Cập nhật Facebook page-list flow để giảm lỗi rate-limit (`OAuthException code=4`): `GET /api/social/accounts/[accountId]/facebook-pages` đọc cache từ account (`connectionJson.pages`) và thêm action `Update Pages` ở Social Accounts để refresh thủ công khi cần.
+- Cập nhật OAuth callback/create-account (Facebook) theo hướng best-effort hydrate page cache vào account secrets, không làm fail flow chính nếu refresh pages bị giới hạn request.
+
+### Fixed
+
+- Sửa lỗi dịch bỏ sót segment sau một đoạn dài: translator giờ retry các segment còn nguyên CJK/source text và split batch nhỏ hơn khi Groq báo request quá lớn.
+- Sửa `SYS_AUDIO_EXTRACTION_FAILED` khi `ffmpeg-static` resolve tới path không tồn tại trong runtime deploy: extractor giờ kiểm tra binary tồn tại, fallback sang `process.cwd()/node_modules/ffmpeg-static/ffmpeg`, rồi fallback sang `ffmpeg` trong PATH.
+- Sửa `PRV_GROQ_TRANSCRIPTION_FAILED: Request Entity Too Large` debug gap: API/UI giờ trả step trace validate/extract/size-check/Groq, hiển thị source size và extracted audio size; payload gửi Groq đổi sang MP3 mono 16k 64kbps để giảm size.
+- Sửa `VAL_AUDIO_FILE_TOO_LARGE` bị áp sai lên video nguồn trong Audio Transcript; giờ app extract audio trước, convert sang compressed audio, rồi mới kiểm tra giới hạn payload gửi Groq.
+- Sửa lỗi Workspace chỉ hỗ trợ 1 instance mỗi loại node: graph có 2 `social.publish` giờ phát 2 publish records riêng với social account/publish type/Page riêng cho từng node.
+
+### Notes
+
+- Task IDs: P2-AUDIO-001, FAST-AUDIO-002, FAST-AUDIO-003, FAST-AUDIO-004, P2-AUDIO-005, P4-WORKSPACE-006, FAST-WORKSPACE-007, FAST-SOCIAL-005
+- Verification (P2-AUDIO-005): `npm run test -- --run src/lib/multilingual-audio/transcript-translation.test.ts src/app/api/audio/transcript-translation/route.test.ts src/lib/workspace/workspace-graph.test.ts src/components/layout/navigation.test.ts` pass (30 tests / 4 files); `npm run test` pass (189 tests / 45 files); `npm run build` pass with existing warning in `src/features/workspace/display-preferences-panel.tsx` (`Image` unused).
+- Verification (FAST-AUDIO-004): `npm run test -- --run src/lib/multilingual-audio/audio-extraction.test.ts src/lib/multilingual-audio/chinese-transcription.test.ts src/lib/multilingual-audio/groq-transcription.test.ts src/components/layout/navigation.test.ts src/lib/workspace/workspace-graph.test.ts` pass (30 tests / 5 files); `npm run test` pass (180 tests / 43 files); `npm run build` pass with existing warning in `src/features/workspace/display-preferences-panel.tsx` (`Image` unused).
+- Verification (FAST-AUDIO-003): `npm run test -- --run src/lib/multilingual-audio/audio-extraction.test.ts` pass (4 tests / 1 file); `npm run test` pass (178 tests / 42 files); `npm run build` pass with existing warning in `src/features/workspace/display-preferences-panel.tsx` (`Image` unused).
+- Verification (FAST-AUDIO-002): `npm run test -- --run src/lib/multilingual-audio/validation.test.ts src/lib/multilingual-audio/audio-extraction.test.ts src/lib/multilingual-audio/groq-transcription.test.ts` pass (10 tests / 3 files); `npm run test` pass (175 tests / 42 files); `npm run build` pass with existing warning in `src/features/workspace/display-preferences-panel.tsx` (`Image` unused).
+- Verification (P2-AUDIO-001): `npm run test -- --run src/lib/multilingual-audio/validation.test.ts src/lib/multilingual-audio/audio-extraction.test.ts src/lib/multilingual-audio/groq-transcription.test.ts src/app/api/audio/chinese-transcription/route.test.ts src/lib/workspace/workspace-graph.test.ts src/components/layout/navigation.test.ts` pass (30 tests / 6 files); `npm run test` pass (173 tests / 42 files); `npm run build` pass with existing warning in `src/features/workspace/display-preferences-panel.tsx` (`Image` unused); `npm audit --omit=dev` reports current Next/PostCSS vulnerabilities, not fixed in this task because suggested fix upgrades Next outside current range.
+- Verification: `npm run test` pass (154 tests / 37 files); `npm run build` pass. Build warning duy nhất là `display-preferences-panel.tsx` `Image` unused (cũ).
+- Verification (FAST-WORKSPACE-007): `npm run test -- --run src/lib/social/facebook-pages-client.test.ts src/lib/workspace/workspace-graph.test.ts` pass (19 tests / 2 files); `npm run build` pass with existing warning in `src/features/workspace/display-preferences-panel.tsx` (`Image` unused).
+- Verification (FAST-SOCIAL-005): `npm run test -- --run src/lib/social/facebook-auth.test.ts 'src/app/api/social/accounts/[accountId]/facebook-pages/route.test.ts' src/lib/social/facebook-pages-client.test.ts` pass (12 tests / 3 files); `npm run build` pass with existing warning in `src/features/workspace/display-preferences-panel.tsx` (`Image` unused).
+
 ## 2026-04-26
 
 ### Added

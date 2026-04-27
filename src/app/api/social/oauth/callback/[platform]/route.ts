@@ -1,8 +1,13 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
+import { refreshFacebookPagesForAccount } from "@/lib/social/facebook-auth";
 import { exchangeOAuthCode, getSocialOAuthConfig } from "@/lib/social/oauth";
-import { getSocialDb, markSocialAccountConnected } from "@/lib/social/repository";
+import {
+  getSocialDb,
+  getSocialAccountById,
+  markSocialAccountConnected,
+} from "@/lib/social/repository";
 import type { SocialPlatform } from "@/lib/social/types";
 
 export const runtime = "nodejs";
@@ -85,6 +90,28 @@ export async function GET(
           ? facebookUserId
           : undefined;
 
+    let connectionJson = JSON.stringify(tokenPayload);
+    if (platform === "facebook") {
+      try {
+        const account = await getSocialAccountById({ db, accountId });
+        const facebookResult = await refreshFacebookPagesForAccount(
+          {
+            ...account,
+            secrets: {
+              ...account.secrets,
+              accessToken,
+              refreshToken,
+              openId,
+              connectionJson,
+            },
+          },
+        );
+        connectionJson = facebookResult.connectionJson;
+      } catch {
+        // Keep OAuth success path resilient even if page-list refresh is rate-limited.
+      }
+    }
+
     await markSocialAccountConnected({
       db,
       accountId,
@@ -95,7 +122,7 @@ export async function GET(
           accessToken,
           refreshToken,
           openId,
-          connectionJson: JSON.stringify(tokenPayload),
+          connectionJson,
         },
       },
     });

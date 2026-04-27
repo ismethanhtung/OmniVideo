@@ -175,6 +175,9 @@ export function SocialAccountsPanel({ section }: SocialAccountsPanelProps) {
   const [confirmDeleteAccountId, setConfirmDeleteAccountId] = useState<string | null>(
     null,
   );
+  const [refreshingFacebookPageIds, setRefreshingFacebookPageIds] = useState<
+    Record<string, boolean>
+  >({});
   const [form, setForm] = useState<AccountFormState>(EMPTY_FORM);
 
   const activeCount = useMemo(
@@ -401,6 +404,44 @@ export function SocialAccountsPanel({ section }: SocialAccountsPanelProps) {
     }
   };
 
+  const refreshFacebookPages = async (accountId: string) => {
+    setRefreshingFacebookPageIds((previous) => ({
+      ...previous,
+      [accountId]: true,
+    }));
+    setStatus("loading");
+    setMessage("Refreshing Facebook pages...");
+
+    try {
+      const response = await fetch(`/api/social/accounts/${accountId}/facebook-pages`, {
+        method: "POST",
+      });
+      const payload = (await response.json()) as ApiResponse<{
+        pages: Array<{ id: string; name: string }>;
+      }>;
+
+      if (!response.ok || !payload.ok || !payload.data) {
+        setStatus("failed");
+        setMessage(payload.error ?? "Could not refresh Facebook pages.");
+        return;
+      }
+
+      await loadAccounts();
+      setStatus("ready");
+      setMessage(`Facebook pages updated (${payload.data.pages.length}).`);
+    } catch (error) {
+      setStatus("failed");
+      setMessage(
+        error instanceof Error ? error.message : "Could not refresh Facebook pages.",
+      );
+    } finally {
+      setRefreshingFacebookPageIds((previous) => ({
+        ...previous,
+        [accountId]: false,
+      }));
+    }
+  };
+
   return (
     <section className="overflow-hidden border border-main bg-main">
       <header className="flex flex-wrap items-start justify-between gap-3 border-b border-main bg-secondary/45 px-5 py-4">
@@ -504,6 +545,23 @@ export function SocialAccountsPanel({ section }: SocialAccountsPanelProps) {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex gap-2">
+                      {account.platform === "facebook" ? (
+                        <button
+                          type="button"
+                          onClick={() => void refreshFacebookPages(account._id)}
+                          disabled={Boolean(refreshingFacebookPageIds[account._id])}
+                          className="inline-flex items-center gap-1 border border-main bg-main px-2 py-1 text-[11px] font-semibold text-main hover:bg-secondary disabled:opacity-60"
+                        >
+                          <RefreshCw
+                            className={`h-3 w-3 ${
+                              refreshingFacebookPageIds[account._id]
+                                ? "animate-spin"
+                                : ""
+                            }`}
+                          />
+                          Update Pages
+                        </button>
+                      ) : null}
                       <button
                         type="button"
                         onClick={() => void editAccount(account._id)}

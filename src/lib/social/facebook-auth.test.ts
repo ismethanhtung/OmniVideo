@@ -1,7 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { SocialAccountDocument } from "./types";
-import { resolveFacebookPageContext } from "./facebook-auth";
+import {
+  listFacebookPagesForAccount,
+  mergeFacebookPagesToConnectionJson,
+  resolveFacebookPageContext,
+} from "./facebook-auth";
 
 function makeAccount(
   secrets: SocialAccountDocument["secrets"] = {
@@ -145,5 +149,63 @@ describe("resolveFacebookPageContext", () => {
         }),
       ),
     ).rejects.toThrow("AUTH_FACEBOOK_PAGE_ID_REQUIRED");
+  });
+});
+
+describe("facebook page cache", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("reads cached pages by default without calling graph", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    const result = await listFacebookPagesForAccount(
+      makeAccount({
+        accessToken: "user-token",
+        connectionJson: JSON.stringify({
+          pages: [{ id: "page-1", name: "Page 1", access_token: "token-1" }],
+        }),
+      }),
+    );
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(result.source).toBe("cached");
+    expect(result.pages).toEqual([{ id: "page-1", name: "Page 1" }]);
+  });
+
+  it("refreshes from graph when requested", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: [{ id: "page-2", name: "Page 2", access_token: "token-2" }],
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const result = await listFacebookPagesForAccount(
+      makeAccount({
+        accessToken: "user-token",
+      }),
+      { refreshFromGraph: true },
+    );
+
+    expect(result.source).toBe("graph");
+    expect(result.pages).toEqual([{ id: "page-2", name: "Page 2" }]);
+    expect(result.connectionJson).toContain('"pages"');
+    expect(result.connectionJson).toContain('"access_token":"token-2"');
+  });
+
+  it("merges pages into existing connectionJson payload", () => {
+    const connectionJson = mergeFacebookPagesToConnectionJson({
+      connectionJson: JSON.stringify({
+        access_token: "user-token",
+      }),
+      pages: [{ id: "page-9", name: "Page 9", accessToken: "token-9" }],
+    });
+
+    expect(connectionJson).toContain('"access_token":"user-token"');
+    expect(connectionJson).toContain('"id":"page-9"');
+    expect(connectionJson).toContain('"access_token":"token-9"');
   });
 });

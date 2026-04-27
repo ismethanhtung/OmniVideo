@@ -1,0 +1,615 @@
+"use client";
+
+import { useState } from "react";
+import { Captions, FileAudio, Loader2, Mic2 } from "lucide-react";
+
+import type { LeftbarNavItem } from "@/components/layout/types";
+import type {
+    AudioTranscriptionStep,
+    ChineseTranscriptionResult,
+    TranscriptTranslationResult,
+} from "@/lib/multilingual-audio/types";
+import {
+    DEFAULT_TRANSLATION_MODEL,
+    GROQ_TRANSLATION_MODELS,
+} from "@/lib/multilingual-audio/types";
+
+type ChineseTranscriptionPanelProps = {
+    section: LeftbarNavItem;
+};
+
+type ApiPayload =
+    | {
+          ok: true;
+          data: ChineseTranscriptionResult;
+      }
+    | {
+          ok: false;
+          errorCode?: string;
+          error?: string;
+          steps?: AudioTranscriptionStep[];
+      };
+
+type TranslationApiPayload =
+    | {
+          ok: true;
+          data: TranscriptTranslationResult;
+      }
+    | {
+          ok: false;
+          errorCode?: string;
+          error?: string;
+      };
+
+function formatTime(seconds: number) {
+    if (!Number.isFinite(seconds)) return "00:00.000";
+    const minutes = Math.floor(seconds / 60);
+    const remaining = seconds - minutes * 60;
+    return `${String(minutes).padStart(2, "0")}:${remaining
+        .toFixed(3)
+        .padStart(6, "0")}`;
+}
+
+function formatBytes(bytes: number) {
+    if (!Number.isFinite(bytes)) return "n/a";
+    if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+    if (bytes >= 1024) return `${(bytes / 1024).toFixed(2)} KB`;
+    return `${bytes} B`;
+}
+
+function stepTone(status: AudioTranscriptionStep["status"]) {
+    if (status === "success") return "text-emerald-700";
+    if (status === "failed") return "text-rose-700";
+    return "text-muted";
+}
+
+function StepTracePanel({ steps }: { steps: AudioTranscriptionStep[] }) {
+    if (steps.length === 0) return null;
+
+    return (
+        <div className="border border-main bg-main">
+            <div className="border-b border-main bg-secondary/30 px-4 py-2">
+                <p className="text-[12px] font-semibold text-main">Run steps</p>
+            </div>
+            <div className="divide-y divide-[var(--border-color)]">
+                {steps.map((step, index) => (
+                    <div
+                        key={`${step.id}-${index}`}
+                        className="grid gap-2 px-4 py-3 lg:grid-cols-[150px_minmax(0,1fr)]"
+                    >
+                        <div>
+                            <p className="text-[11px] font-semibold text-main">
+                                {index + 1}. {step.label}
+                            </p>
+                            <p
+                                className={`mt-0.5 text-[10px] font-bold uppercase ${stepTone(
+                                    step.status,
+                                )}`}
+                            >
+                                {step.status}
+                            </p>
+                        </div>
+                        <div className="min-w-0">
+                            <p className="text-[11px] leading-5 text-muted">
+                                {step.detail}
+                            </p>
+                            {step.metrics ? (
+                                <div className="mt-2 flex flex-wrap gap-1.5">
+                                    {Object.entries(step.metrics).map(
+                                        ([key, value]) => (
+                                            <span
+                                                key={key}
+                                                className="border border-main bg-secondary/25 px-2 py-1 text-[10px] text-main"
+                                            >
+                                                {key}: {String(value)}
+                                            </span>
+                                        ),
+                                    )}
+                                </div>
+                            ) : null}
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+}
+
+export function ChineseTranscriptionPanel({
+    section,
+}: ChineseTranscriptionPanelProps) {
+    const Icon = section.icon;
+    const [file, setFile] = useState<File | null>(null);
+    const [language, setLanguage] = useState("zh");
+    const [prompt, setPrompt] = useState("");
+    const [includeWordTimestamps, setIncludeWordTimestamps] = useState(true);
+    const [translationModel, setTranslationModel] = useState(
+        DEFAULT_TRANSLATION_MODEL,
+    );
+    const [segmentView, setSegmentView] = useState<"source" | "translation">(
+        "translation",
+    );
+    const [isRunning, setIsRunning] = useState(false);
+    const [isTranslating, setIsTranslating] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [translationError, setTranslationError] = useState<string | null>(
+        null,
+    );
+    const [result, setResult] = useState<ChineseTranscriptionResult | null>(
+        null,
+    );
+    const [translation, setTranslation] =
+        useState<TranscriptTranslationResult | null>(null);
+    const [steps, setSteps] = useState<AudioTranscriptionStep[]>([]);
+
+    const runTranscription = async () => {
+        if (!file) {
+            setError("Chọn video/audio trước khi chạy transcription.");
+            return;
+        }
+
+        setIsRunning(true);
+        setError(null);
+        setTranslationError(null);
+        setResult(null);
+        setTranslation(null);
+        setSteps([]);
+
+        try {
+            const formData = new FormData();
+            formData.set("videoFile", file);
+            formData.set("language", language);
+            formData.set(
+                "includeWordTimestamps",
+                String(includeWordTimestamps),
+            );
+            if (prompt.trim()) {
+                formData.set("prompt", prompt.trim());
+            }
+
+            const response = await fetch("/api/audio/chinese-transcription", {
+                method: "POST",
+                body: formData,
+            });
+            const payload = (await response.json()) as ApiPayload;
+
+            if (!payload.ok) {
+                setSteps(payload.steps ?? []);
+                throw new Error(
+                    payload.errorCode
+                        ? `${payload.errorCode}: ${payload.error ?? "Transcription failed."}`
+                        : (payload.error ?? "Transcription failed."),
+                );
+            }
+
+            setSteps(payload.data.steps);
+            setResult(payload.data);
+        } catch (requestError) {
+            setError(
+                requestError instanceof Error
+                    ? requestError.message
+                    : "Transcription failed.",
+            );
+        } finally {
+            setIsRunning(false);
+        }
+    };
+
+    const runTranslation = async () => {
+        if (!result?.segments.length) {
+            setTranslationError("Chưa có transcript segments để dịch.");
+            return;
+        }
+
+        setIsTranslating(true);
+        setTranslationError(null);
+        setTranslation(null);
+
+        try {
+            const response = await fetch("/api/audio/transcript-translation", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    segments: result.segments,
+                    sourceLanguage: result.language || language,
+                    targetLanguage: "vi",
+                    model: translationModel,
+                }),
+            });
+            const payload = (await response.json()) as TranslationApiPayload;
+
+            if (!payload.ok) {
+                throw new Error(
+                    payload.errorCode
+                        ? `${payload.errorCode}: ${payload.error ?? "Translation failed."}`
+                        : (payload.error ?? "Translation failed."),
+                );
+            }
+
+            setTranslation(payload.data);
+            setSegmentView("translation");
+        } catch (requestError) {
+            setTranslationError(
+                requestError instanceof Error
+                    ? requestError.message
+                    : "Translation failed.",
+            );
+        } finally {
+            setIsTranslating(false);
+        }
+    };
+
+    const translationById = new Map(
+        translation?.translatedSegments.map((segment) => [
+            segment.id,
+            segment,
+        ]) ?? [],
+    );
+
+    return (
+        <section className="border border-main bg-main">
+            <header className="flex flex-col gap-3 border-b border-main bg-secondary/45 px-5 py-4 lg:flex-row lg:items-start lg:justify-between">
+                <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                        <Icon className="h-4 w-4 text-muted" />
+                        <h1 className="truncate text-[15px] font-semibold text-main">
+                            {section.label}
+                        </h1>
+                    </div>
+                    <p className="mt-1 max-w-3xl text-[12px] leading-5 text-muted">
+                        {section.description}
+                    </p>
+                </div>
+                <div className="grid shrink-0 grid-cols-3 gap-2 text-[10px] text-muted">
+                    <div className="border border-main bg-main px-3 py-2">
+                        <p className="font-semibold text-main">Model</p>
+                        <p>whisper-large-v3-turbo</p>
+                    </div>
+                    <div className="border border-main bg-main px-3 py-2">
+                        <p className="font-semibold text-main">Language</p>
+                        <p>{language || "auto"}</p>
+                    </div>
+                    <div className="border border-main bg-main px-3 py-2">
+                        <p className="font-semibold text-main">Audio</p>
+                        <p>MP3 mono 16k</p>
+                    </div>
+                </div>
+            </header>
+
+            <div className="grid gap-4 p-5 xl:grid-cols-[380px_minmax(0,1fr)]">
+                <aside className="space-y-3">
+                    <div className="border border-main bg-secondary/20 p-4">
+                        <div className="flex items-center gap-2">
+                            <FileAudio className="h-4 w-4 text-muted" />
+                            <p className="text-[12px] font-semibold text-main">
+                                Source Video
+                            </p>
+                        </div>
+                        <label className="mt-3 block">
+                            <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                Video/audio file
+                            </span>
+                            <input
+                                type="file"
+                                accept="video/*,audio/*,.mp4,.mov,.webm,.mp3,.m4a,.wav,.ogg"
+                                disabled={isRunning}
+                                onChange={(event) =>
+                                    setFile(
+                                        event.currentTarget.files?.[0] ?? null,
+                                    )
+                                }
+                                className="block w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main file:mr-2 file:border-0 file:bg-secondary file:px-2 file:py-1 file:text-[10px] file:font-semibold file:text-main"
+                            />
+                        </label>
+                        {file ? (
+                            <p className="mt-2 truncate text-[11px] text-muted">
+                                {file.name} ·{" "}
+                                {(file.size / 1024 / 1024).toFixed(2)} MB
+                            </p>
+                        ) : null}
+                    </div>
+
+                    <div className="space-y-3 border border-main bg-secondary/20 p-4">
+                        <label className="block">
+                            <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                Language hint
+                            </span>
+                            <select
+                                value={language}
+                                disabled={isRunning}
+                                onChange={(event) =>
+                                    setLanguage(event.currentTarget.value)
+                                }
+                                className="mb-3 w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main"
+                            >
+                                <option value="zh">Chinese (zh)</option>
+                                <option value="vi">Vietnamese (vi)</option>
+                                <option value="en">English (en)</option>
+                                <option value="ja">Japanese (ja)</option>
+                                <option value="ko">Korean (ko)</option>
+                            </select>
+                            <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                Prompt
+                            </span>
+                            <textarea
+                                value={prompt}
+                                disabled={isRunning}
+                                rows={3}
+                                placeholder="Tên riêng, thuật ngữ, ngữ cảnh nội dung..."
+                                onChange={(event) =>
+                                    setPrompt(event.currentTarget.value)
+                                }
+                                className="w-full resize-none border border-main bg-main px-2 py-1.5 text-[11px] leading-5 text-main placeholder:text-muted/60"
+                            />
+                        </label>
+                        <label className="flex items-center justify-between gap-3 border border-main bg-main px-3 py-2">
+                            <span>
+                                <span className="block text-[11px] font-semibold text-main">
+                                    Word timestamps
+                                </span>
+                                <span className="block text-[10px] text-muted">
+                                    Bật khi cần canh lại voice/subtitle chi tiết
+                                    hơn.
+                                </span>
+                            </span>
+                            <input
+                                type="checkbox"
+                                checked={includeWordTimestamps}
+                                disabled={isRunning}
+                                onChange={(event) =>
+                                    setIncludeWordTimestamps(
+                                        event.currentTarget.checked,
+                                    )
+                                }
+                                className="h-4 w-4 accent-[var(--color-accent)]"
+                            />
+                        </label>
+                        <button
+                            type="button"
+                            disabled={isRunning || !file}
+                            onClick={runTranscription}
+                            className="inline-flex w-full items-center justify-center gap-2 border border-accent/35 bg-accent/10 px-3 py-2 text-[12px] font-semibold text-accent transition-colors hover:bg-accent/15 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                            {isRunning ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                                <Mic2 className="h-4 w-4" />
+                            )}
+                            {isRunning
+                                ? "Transcribing..."
+                                : "Extract + Transcribe"}
+                        </button>
+                    </div>
+
+                    {error ? (
+                        <p className="border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-[11px] leading-5 text-rose-700">
+                            {error}
+                        </p>
+                    ) : null}
+
+                    {result ? (
+                        <div className="space-y-3 border border-main bg-secondary/20 p-4">
+                            <div className="flex items-start justify-between gap-3">
+                                <div>
+                                    <p className="text-[12px] font-semibold text-main">
+                                        Translation
+                                    </p>
+                                    <p className="mt-1 text-[10px] leading-4 text-muted">
+                                        Dịch segment sang tiếng Việt.
+                                    </p>
+                                </div>
+                                <button
+                                    type="button"
+                                    disabled={!translation}
+                                    onClick={() =>
+                                        setSegmentView((current) =>
+                                            current === "source"
+                                                ? "translation"
+                                                : "source",
+                                        )
+                                    }
+                                    className="shrink-0 border border-main bg-main px-2 py-1 text-[10px] font-semibold text-main hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                    {segmentView === "source"
+                                        ? "Xem tiếng Việt"
+                                        : "Xem bản gốc"}
+                                </button>
+                            </div>
+
+                            <label className="block">
+                                <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                    Model
+                                </span>
+                                <select
+                                    value={translationModel}
+                                    disabled={isTranslating}
+                                    onChange={(event) =>
+                                        setTranslationModel(
+                                            event.currentTarget.value,
+                                        )
+                                    }
+                                    className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main"
+                                >
+                                    {GROQ_TRANSLATION_MODELS.map((model) => (
+                                        <option key={model.id} value={model.id}>
+                                            {model.label}
+                                        </option>
+                                    ))}
+                                </select>
+                            </label>
+
+                            <button
+                                type="button"
+                                disabled={
+                                    isTranslating ||
+                                    result.segments.length === 0
+                                }
+                                onClick={runTranslation}
+                                className="inline-flex w-full items-center justify-center gap-2 border border-accent/35 bg-accent/10 px-3 py-2 text-[12px] font-semibold text-accent transition-colors hover:bg-accent/15 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                                {isTranslating ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                    <Captions className="h-4 w-4" />
+                                )}
+                                {isTranslating
+                                    ? "Translating..."
+                                    : "Translate to VI"}
+                            </button>
+
+                            {translationError ? (
+                                <p className="border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-[11px] leading-5 text-rose-700">
+                                    {translationError}
+                                </p>
+                            ) : null}
+
+                            {translation ? (
+                                <div className="border border-emerald-500/30 bg-emerald-500/10 px-3 py-2">
+                                    <p className="text-[11px] font-semibold text-emerald-700">
+                                        {translation.translatedSegments.length}{" "}
+                                        translated segments
+                                    </p>
+                                    <p className="mt-1 text-[10px] leading-4 text-emerald-700">
+                                        {translation.model} ·{" "}
+                                        {translation.chunks.length} chunk(s)
+                                    </p>
+                                </div>
+                            ) : null}
+                        </div>
+                    ) : null}
+                </aside>
+
+                <main className="min-w-0 space-y-4">
+                    <StepTracePanel steps={steps} />
+                    {!result ? (
+                        <div className="border border-dashed border-main bg-secondary/20 px-5 py-8">
+                            <div className="flex items-center gap-2">
+                                <Captions className="h-4 w-4 text-muted" />
+                                <p className="text-[13px] font-semibold text-main">
+                                    Transcript output
+                                </p>
+                            </div>
+                            <p className="mt-2 max-w-2xl text-[12px] leading-5 text-muted">
+                                Kết quả sẽ gồm transcript tổng, segment
+                                timestamps và word timestamps nếu bật ở cấu
+                                hình.
+                            </p>
+                        </div>
+                    ) : (
+                        <>
+                            <div className="border border-main bg-secondary/20 p-4">
+                                <div className="flex flex-wrap items-start justify-between gap-3">
+                                    <div>
+                                        <p className="text-[12px] font-semibold text-main">
+                                            Transcript
+                                        </p>
+                                        <p className="mt-1 text-[10px] text-muted">
+                                            {result.source.fileName} ·{" "}
+                                            {result.model} · request{" "}
+                                            {result.provider.requestId ?? "n/a"}
+                                        </p>
+                                        <p className="mt-1 text-[10px] text-muted">
+                                            Source{" "}
+                                            {formatBytes(
+                                                result.source.fileSizeBytes,
+                                            )}{" "}
+                                            · Audio{" "}
+                                            {formatBytes(
+                                                result.audio.fileSizeBytes,
+                                            )}{" "}
+                                            · {result.audio.format}{" "}
+                                            {result.audio.bitrateKbps}kbps
+                                        </p>
+                                    </div>
+                                    <span className="border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-[10px] font-bold uppercase text-emerald-700">
+                                        {result.segments.length} segments
+                                    </span>
+                                </div>
+                                <p className="mt-3 whitespace-pre-wrap text-[13px] leading-6 text-main">
+                                    {result.text || "(empty transcript)"}
+                                </p>
+                            </div>
+
+                            <div className="border border-main bg-main">
+                                <div className="border-b border-main bg-secondary/30 px-4 py-2">
+                                    <p className="text-[12px] font-semibold text-main">
+                                        Segments
+                                    </p>
+                                </div>
+                                <div className="thin-scrollbar max-h-[420px] overflow-auto">
+                                    {result.segments.map((segment) =>
+                                        (() => {
+                                            const translated =
+                                                translationById.get(segment.id);
+                                            const displayText =
+                                                segmentView === "translation" &&
+                                                translated
+                                                    ? translated.translatedText
+                                                    : segment.text;
+                                            return (
+                                                <div
+                                                    key={segment.id}
+                                                    className="grid gap-3 border-b border-main px-4 py-3 last:border-b-0 md:grid-cols-[160px_minmax(0,1fr)]"
+                                                >
+                                                    <p className="text-[11px] font-semibold text-muted">
+                                                        {formatTime(
+                                                            segment.start,
+                                                        )}{" "}
+                                                        →{" "}
+                                                        {formatTime(
+                                                            segment.end,
+                                                        )}
+                                                    </p>
+                                                    <div className="min-w-0">
+                                                        <p className="text-[12px] leading-5 text-main">
+                                                            {displayText}
+                                                        </p>
+                                                        {translated &&
+                                                        segmentView ===
+                                                            "translation" ? (
+                                                            <p className="mt-1 text-[10px] leading-4 text-muted">
+                                                                Source:{" "}
+                                                                {
+                                                                    translated.sourceText
+                                                                }
+                                                            </p>
+                                                        ) : null}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })(),
+                                    )}
+                                </div>
+                            </div>
+
+                            {result.words.length > 0 ? (
+                                <div className="border border-main bg-main">
+                                    <div className="border-b border-main bg-secondary/30 px-4 py-2">
+                                        <p className="text-[12px] font-semibold text-main">
+                                            Words
+                                        </p>
+                                    </div>
+                                    <div className="thin-scrollbar max-h-60 overflow-auto p-4">
+                                        <div className="flex flex-wrap gap-1.5">
+                                            {result.words.map((word, index) => (
+                                                <span
+                                                    key={`${word.word}-${index}-${word.start}`}
+                                                    title={`${formatTime(word.start)} -> ${formatTime(
+                                                        word.end,
+                                                    )}`}
+                                                    className="border border-main bg-secondary/25 px-2 py-1 text-[11px] text-main"
+                                                >
+                                                    {word.word}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                            ) : null}
+                        </>
+                    )}
+                </main>
+            </div>
+        </section>
+    );
+}

@@ -16,4 +16,16 @@ describe("navigation registry", () => {
     expect(workspaceGroup?.items.map((item) => item.id)).toContain("workspace");
     expect(getNavItem("workspace")?.description).toContain("node-flow");
   });
+
+  it("registers audio transcription as a video pipeline page", () => {
+    const pipelineGroup = LEFTBAR_NAV.find(
+      (group) => group.sectionId === "pipeline",
+    );
+
+    expect(pipelineGroup?.items.map((item) => item.id)).toContain(
+      "chineseTranscription",
+    );
+    expect(getNavItem("chineseTranscription")?.description).toContain("Groq");
+    expect(getNavItem("chineseTranscription")?.label).toBe("Audio Transcript");
+  });
 });

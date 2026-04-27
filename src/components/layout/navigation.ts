@@ -13,6 +13,7 @@ import {
     Send,
     BookOpen,
     ListVideo,
+    Mic2,
 } from "lucide-react";
 
 import type { AppSectionId, LeftbarNavGroup, LeftbarNavItem } from "./types";
@@ -65,6 +66,13 @@ export const LEFTBAR_NAV: LeftbarNavGroup[] = [
                 label: "Local Upload Intake",
                 description:
                     "Upload video từ máy local lên Telegram/Drive và persist metadata đầy đủ vào MongoDB.",
+            },
+            {
+                id: "chineseTranscription",
+                icon: Mic2,
+                label: "Audio Transcript",
+                description:
+                    "Extract audio từ video/audio và gọi Groq Whisper Large v3 Turbo để lấy text + timestamp.",
             },
             {
                 id: "storageProviders",

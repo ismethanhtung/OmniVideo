@@ -121,10 +121,11 @@ Không nên bắt user thường xuyên copy/paste `accessToken`/`refreshToken` 
 Platform notes:
 
 1. Facebook: ưu tiên OAuth + Page permission, có `pageId` bắt buộc cho Page publishing; `pageAccessToken` thủ công chỉ là fallback/debug khi cần publish trực tiếp.
-2. Với account quản lý nhiều Page, user phải cấu hình `pageId` rõ ràng. Runtime resolver lấy danh sách `/me/accounts` để map đúng token theo Page.
-3. TikTok: OAuth v2 + refresh token là flow chính; app chưa audit có thể bị giới hạn visibility và phải chờ moderation trước khi có post id public.
-4. Shopee: cần shop authorization; token phải gắn shop/product scope.
-5. YouTube: OAuth offline access là lựa chọn thực tế để refresh token lâu dài.
+2. Với account quản lý nhiều Page, OmniVideo cache danh sách Page (`id`, `name`, `access_token`) trong `secrets.connectionJson.pages` để UI/runtime đọc local, giảm gọi Graph API lặp lại và tránh rate-limit `OAuthException code=4`.
+3. Khi user tạo Page mới, dùng action `Update Pages` trong `Social Accounts` để refresh cache từ Graph API.
+4. TikTok: OAuth v2 + refresh token là flow chính; app chưa audit có thể bị giới hạn visibility và phải chờ moderation trước khi có post id public.
+5. Shopee: cần shop authorization; token phải gắn shop/product scope.
+6. YouTube: OAuth offline access là lựa chọn thực tế để refresh token lâu dài.
 
 ### YouTube OAuth setup checklist
 

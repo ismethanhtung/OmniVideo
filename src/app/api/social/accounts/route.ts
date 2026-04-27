@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server";
 
+import { refreshFacebookPagesForAccount } from "@/lib/social/facebook-auth";
 import {
   createSocialAccount,
+  getSocialAccountById,
   getSocialDb,
   listSocialAccounts,
+  updateSocialAccount,
 } from "@/lib/social/repository";
 import { SocialError } from "@/lib/social/types";
 import { validateSocialAccountCreateInput } from "@/lib/social/validation";
@@ -37,7 +40,30 @@ export async function POST(request: Request) {
     const payload = await request.json();
     const input = validateSocialAccountCreateInput(payload);
     const db = await getSocialDb();
-    const account = await createSocialAccount({ db, input });
+    const created = await createSocialAccount({ db, input });
+    let account = created;
+
+    if (input.platform === "facebook" && input.secrets.accessToken?.trim()) {
+      try {
+        const editableAccount = await getSocialAccountById({
+          db,
+          accountId: created._id,
+        });
+        const pages = await refreshFacebookPagesForAccount(editableAccount);
+        account = await updateSocialAccount({
+          db,
+          accountId: created._id,
+          patch: {
+            secrets: {
+              ...editableAccount.secrets,
+              connectionJson: pages.connectionJson,
+            },
+          },
+        });
+      } catch {
+        // Do not block account creation if Facebook page cache refresh fails.
+      }
+    }
 
     return NextResponse.json(
       {

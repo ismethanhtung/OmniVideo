@@ -22,6 +22,14 @@
 
 ## Done
 
+- `P2-AUDIO-005` - Groq segment translation for Audio Transcript and Workspace.
+- `FAST-AUDIO-004` - Add Audio Transcript step trace and generic naming.
+- `FAST-AUDIO-003` - Harden ffmpeg binary resolution for audio extraction.
+- `FAST-AUDIO-002` - Fix Groq transcription size validation after audio extraction.
+- `P2-AUDIO-001` - Chinese voice extraction and Groq Whisper timestamp transcription MVP.
+- `FAST-SOCIAL-005` - Cache Facebook page list and add manual Update Pages in Social Accounts.
+- `FAST-WORKSPACE-007` - Add Facebook Page picker for Workspace Publish Social inspector.
+- `P4-WORKSPACE-006` - Free-form Workspace flow execution with per-node runtime config.
 - `P4-WORKSPACE-005` - Workspace progress integration and canvas toolbar polish.
 - `P4-WORKSPACE-004` - Make Workspace execution graph-flexible with Inspector node config.
 - `P4-WORKSPACE-003` - Execute upload-to-social flow directly from Workspace.

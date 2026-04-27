@@ -3,6 +3,7 @@ import type { ComponentType } from "react";
 import { getNavItem } from "@/components/layout/navigation";
 import type { AppSectionId, LeftbarNavItem } from "@/components/layout/types";
 import { ConnectionTestPanel } from "@/features/connections/connection-test-panel";
+import { ChineseTranscriptionPanel } from "@/features/audio/chinese-transcription-panel";
 import { StorageLibraryPanel } from "@/features/storage/storage-library-panel";
 import { StorageProvidersPanel } from "@/features/storage/storage-providers-panel";
 import { LocalUploadIntakePanel } from "@/features/video-intake/local-upload-intake-panel";
@@ -26,6 +27,7 @@ const SECTION_COMPONENTS: Partial<
 > = {
     connectionTest: ConnectionTestPanel,
     storageLibrary: StorageLibraryPanel,
+    chineseTranscription: ChineseTranscriptionPanel,
     localUploadIntake: LocalUploadIntakePanel,
     storageProviders: StorageProvidersPanel,
     socialAccounts: SocialAccountsPanel,

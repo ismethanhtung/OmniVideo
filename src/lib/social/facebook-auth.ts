@@ -84,6 +84,12 @@ export type FacebookPageOption = {
   name: string;
 };
 
+type FacebookCachedPage = {
+  id: string;
+  name: string;
+  accessToken: string;
+};
+
 async function listFacebookPages(userAccessToken: string) {
   const url = new URL(`${GRAPH_API_BASE}/me/accounts`);
   url.searchParams.set("fields", "id,name,access_token");
@@ -115,25 +121,78 @@ async function listFacebookPages(userAccessToken: string) {
     .filter((page) => page.id && page.accessToken);
 }
 
-export async function listFacebookPagesForAccount(account: SocialAccountDocument) {
-  const cachedPages = readConnectionJsonPages(account.secrets.connectionJson);
+function parseConnectionJsonPayload(connectionJson: string | undefined) {
+  if (!connectionJson?.trim()) {
+    return {};
+  }
+
+  try {
+    return JSON.parse(connectionJson) as Record<string, unknown>;
+  } catch {
+    return {};
+  }
+}
+
+export function mergeFacebookPagesToConnectionJson({
+  connectionJson,
+  pages,
+}: {
+  connectionJson: string | undefined;
+  pages: FacebookCachedPage[];
+}) {
+  const payload = parseConnectionJsonPayload(connectionJson);
+  const nextPayload = {
+    ...payload,
+    pages: pages.map((page) => ({
+      id: page.id,
+      name: page.name,
+      access_token: page.accessToken,
+    })),
+  };
+
+  return JSON.stringify(nextPayload);
+}
+
+export async function refreshFacebookPagesForAccount(
+  account: SocialAccountDocument,
+) {
   const userAccessToken = account.secrets.accessToken?.trim();
-  const configuredPageId = account.secrets.pageId?.trim() ?? null;
 
   if (!userAccessToken) {
-    return {
-      pages: cachedPages.map((page) => ({ id: page.id, name: page.name || page.id })),
-      configuredPageId,
-      source: "cached" as const,
-    };
+    throw new Error("AUTH_FACEBOOK_ACCESS_TOKEN_MISSING");
   }
 
   const pages = await listFacebookPages(userAccessToken);
+  const configuredPageId = account.secrets.pageId?.trim() ?? null;
+  const connectionJson = mergeFacebookPagesToConnectionJson({
+    connectionJson: account.secrets.connectionJson,
+    pages,
+  });
 
   return {
     pages: pages.map((page) => ({ id: page.id, name: page.name || page.id })),
     configuredPageId,
+    connectionJson,
     source: "graph" as const,
+  };
+}
+
+export async function listFacebookPagesForAccount(
+  account: SocialAccountDocument,
+  options?: { refreshFromGraph?: boolean },
+) {
+  const configuredPageId = account.secrets.pageId?.trim() ?? null;
+  const refreshFromGraph = Boolean(options?.refreshFromGraph);
+
+  if (refreshFromGraph) {
+    return refreshFacebookPagesForAccount(account);
+  }
+
+  const cachedPages = readConnectionJsonPages(account.secrets.connectionJson);
+  return {
+    pages: cachedPages.map((page) => ({ id: page.id, name: page.name || page.id })),
+    configuredPageId,
+    source: "cached" as const,
   };
 }
 

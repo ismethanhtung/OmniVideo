@@ -9,6 +9,14 @@ Hỗ trợ xử lý audio đa ngôn ngữ cho video linh hoạt: phát hiện ng
 - Domain này được đánh dấu `research-heavy`.
 - Chưa phải ưu tiên triển khai trong phase setup.
 - Cần thiết kế kỹ để tránh lỗi sync và chất lượng voice thấp.
+- MVP đầu tiên đã có cho ZH transcription: upload video/audio, extract audio
+  speech-ready thành MP3 mono 16k 64kbps bằng bundled `ffmpeg-static`, gọi Groq
+  `whisper-large-v3-turbo`, và trả transcript kèm segment/word timestamps. Giới
+  hạn upload Groq áp lên audio đã extract, không áp lên video nguồn. MVP này
+  chưa tách voice khỏi nhạc nền bằng source-separation model.
+- Bước dịch segment-level đã có trên cùng Audio Transcript flow: Groq chat LLM
+  dịch từng segment sang tiếng Việt, giữ nguyên `id/start/end`, có model selector
+  mặc định `llama-3.1-8b-instant`.
 
 ## 3. Target Workflow
 
@@ -54,3 +62,7 @@ Hỗ trợ xử lý audio đa ngôn ngữ cho video linh hoạt: phát hiện ng
 1. Làm incremental: 1 language pair (ZH->VI hoặc EN->VI) trước.
 2. Ưu tiên subtitle sync đúng trước khi tối ưu style giọng.
 3. Caching transcript/translation để giảm cost.
+4. Tách nhạc nền/voice thật sự nên là node riêng dùng source-separation model,
+   không dùng chung với bước ASR extraction vì chất lượng và runtime khác nhau.
+5. Transcript dài nên được chunk theo segment ranges trong task sau để tránh
+   vượt context/output limit của LLM.
