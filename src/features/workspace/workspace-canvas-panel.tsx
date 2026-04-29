@@ -62,6 +62,7 @@ import {
     type VoiceGenerationResult,
 } from "@/lib/multilingual-audio/types";
 import type { VideoDubbingResult } from "@/lib/multilingual-audio/video-dubbing";
+import type { VideoEditResult } from "@/lib/video-processing/video-edit-pipeline";
 
 type WorkspaceCanvasPanelProps = {
     section: LeftbarNavItem;
@@ -223,7 +224,9 @@ async function fetchWorkspaceJson<T>(input: {
             error instanceof Error && error.message
                 ? error.message
                 : "network error";
-        throw new Error(`${input.actionLabel} failed at ${input.url}: ${detail}`);
+        throw new Error(
+            `${input.actionLabel} failed at ${input.url}: ${detail}`,
+        );
     }
 
     let payload: unknown = null;
@@ -1415,7 +1418,8 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         }
                         formData.set("videoFile", file);
                     } else {
-                        const upstreamArtifact = artifactByProducer[sourceNode.id];
+                        const upstreamArtifact =
+                            artifactByProducer[sourceNode.id];
                         if (!upstreamArtifact) {
                             setNodeStatus(
                                 mirrorNode.id,
@@ -1426,7 +1430,10 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                                 `Mirror Video '${mirrorNode.label}' thiếu video artifact upstream.`,
                             );
                         }
-                        formData.set("videoFile", base64ToFile(upstreamArtifact));
+                        formData.set(
+                            "videoFile",
+                            base64ToFile(upstreamArtifact),
+                        );
                     }
                     formData.set(
                         "axis",
@@ -1482,6 +1489,180 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         `Mirrored video ready: ${formatBytes(mirrorPayload.data.byteLength)}.`,
                     );
                     advanceProgress(`Mirror ${mirrorNode.label} complete.`);
+                } else if (step.kind === "edit-video") {
+                    const sourceNode = findNode(step.sourceNodeId);
+                    const editNode = findNode(step.editNodeId);
+                    const translationNode = findNode(step.translationNodeId);
+                    if (!sourceNode || !editNode || !translationNode) {
+                        throw new Error("Missing video edit nodes.");
+                    }
+
+                    const translation =
+                        translationByProducer[step.translationNodeId];
+                    if (!translation) {
+                        setNodeStatus(
+                            editNode.id,
+                            "skipped",
+                            "Chưa có translated transcript upstream.",
+                        );
+                        throw new Error(
+                            `Mask Logo/Subtitles '${editNode.label}' thiếu translated transcript upstream.`,
+                        );
+                    }
+
+                    const formData = new FormData();
+                    if (sourceNode.templateNodeType === "source.file") {
+                        const file = runtimeFilesByNodeId[sourceNode.id];
+                        if (!file) {
+                            setNodeStatus(
+                                sourceNode.id,
+                                "failed",
+                                "Chưa chọn file video.",
+                            );
+                            setNodeStatus(
+                                editNode.id,
+                                "skipped",
+                                "Chưa có file để edit.",
+                            );
+                            throw new Error(
+                                `Upload Video '${sourceNode.label}' chưa chọn file.`,
+                            );
+                        }
+                        formData.set("videoFile", file);
+                    } else {
+                        const upstreamArtifact =
+                            artifactByProducer[sourceNode.id];
+                        if (!upstreamArtifact) {
+                            setNodeStatus(
+                                editNode.id,
+                                "skipped",
+                                "Chưa có video artifact upstream.",
+                            );
+                            throw new Error(
+                                `Mask Logo/Subtitles '${editNode.label}' thiếu video artifact upstream.`,
+                            );
+                        }
+                        formData.set(
+                            "videoFile",
+                            base64ToFile(upstreamArtifact),
+                        );
+                    }
+
+                    formData.set(
+                        "mirrorEnabled",
+                        String(
+                            getBooleanConfig(editNode, "mirrorEnabled", false),
+                        ),
+                    );
+                    formData.set("blurEnabled", "true");
+                    formData.set("subtitleOverlayEnabled", "true");
+                    formData.set(
+                        "regionX",
+                        String(getNumberConfig(editNode, "regionX", 0)),
+                    );
+                    formData.set(
+                        "regionY",
+                        String(getNumberConfig(editNode, "regionY", 78)),
+                    );
+                    formData.set(
+                        "regionWidth",
+                        String(getNumberConfig(editNode, "regionWidth", 100)),
+                    );
+                    formData.set(
+                        "regionHeight",
+                        String(getNumberConfig(editNode, "regionHeight", 16)),
+                    );
+                    formData.set(
+                        "timelineStart",
+                        String(getNumberConfig(editNode, "timelineStart", 0)),
+                    );
+                    formData.set(
+                        "timelineEnd",
+                        String(
+                            getNumberConfig(editNode, "timelineEnd", 999999),
+                        ),
+                    );
+                    formData.set(
+                        "blurStrength",
+                        String(getNumberConfig(editNode, "blurStrength", 18)),
+                    );
+                    formData.set(
+                        "subtitleFontFamily",
+                        getStringConfig(
+                            editNode,
+                            "subtitleFontFamily",
+                            "Arial",
+                        ),
+                    );
+                    formData.set(
+                        "subtitleFontSize",
+                        String(
+                            getNumberConfig(editNode, "subtitleFontSize", 64),
+                        ),
+                    );
+                    formData.set(
+                        "subtitleMarginBottom",
+                        String(
+                            getNumberConfig(
+                                editNode,
+                                "subtitleMarginBottom",
+                                280,
+                            ),
+                        ),
+                    );
+                    formData.set(
+                        "translatedSegmentsJson",
+                        JSON.stringify(translation.translatedSegments),
+                    );
+
+                    setNodeStatus(
+                        editNode.id,
+                        "running",
+                        "Blurring region and burning Vietnamese subtitles...",
+                    );
+                    const editPayload = await fetchWorkspaceJson<{
+                        ok: true;
+                        data: VideoEditResult;
+                    }>({
+                        url: "/api/video-processing/edit",
+                        actionLabel: "Video edit",
+                        init: { method: "POST", body: formData },
+                    });
+
+                    const artifact: WorkspaceRuntimeArtifact = {
+                        fileName: editPayload.data.fileName,
+                        mimeType: editPayload.data.mimeType,
+                        base64: editPayload.data.videoBase64,
+                        byteLength: editPayload.data.byteLength,
+                        kind: "video",
+                        detail: `Blur + subtitles (${editPayload.data.transform.segmentCount} segment(s))`,
+                    };
+                    artifactByProducer[step.editNodeId] = artifact;
+                    setRuntimeArtifactsByNodeId((current) => ({
+                        ...current,
+                        [editNode.id]: artifact,
+                    }));
+                    setNodeStatus(
+                        sourceNode.id,
+                        "success",
+                        sourceNode.templateNodeType === "source.file"
+                            ? "Source file used."
+                            : "Video artifact used.",
+                    );
+                    setNodeStatus(
+                        translationNode.id,
+                        "success",
+                        `${translation.translatedSegments.length} translated segment(s) used.`,
+                    );
+                    setNodeStatus(
+                        editNode.id,
+                        "success",
+                        `${formatBytes(editPayload.data.byteLength)} MP4.`,
+                    );
+                    summary.push(
+                        `Edited video ready: ${formatBytes(editPayload.data.byteLength)}.`,
+                    );
+                    advanceProgress(`Video edit ${editNode.label} complete.`);
                 } else if (step.kind === "store-artifact") {
                     const artifactNode = findNode(step.artifactNodeId);
                     const storageNode = findNode(step.storageNodeId);
@@ -1724,6 +1905,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     step.kind === "generate-voice" ||
                     step.kind === "dub-video" ||
                     step.kind === "mirror-video" ||
+                    step.kind === "edit-video" ||
                     step.kind === "store-artifact"
                 ) {
                     abortRemaining = true;
@@ -2445,6 +2627,14 @@ function describeStep(
             subtitle: "Flip video horizontally with ffmpeg",
         };
     }
+    if (step.kind === "edit-video") {
+        return {
+            key: `edit-${step.editNodeId}`,
+            statusKey: step.editNodeId,
+            label: `Edit · ${findLabel(step.sourceNodeId)} + ${findLabel(step.translationNodeId)} → ${findLabel(step.editNodeId)}`,
+            subtitle: "Blur region and burn Vietnamese subtitles with ffmpeg",
+        };
+    }
     if (step.kind === "store-artifact") {
         return {
             key: `store-artifact-${step.storageNodeId}`,
@@ -2632,6 +2822,185 @@ function NodeRuntimeConfig({
                             </option>
                         ))}
                     </RuntimeSelect>
+                </div>
+            </InspectorSection>
+        );
+    }
+
+    if (node.templateNodeType === "edit.mask-region") {
+        return (
+            <InspectorSection title="Runtime Config">
+                <div className="space-y-2 border border-main bg-secondary/20 p-2">
+                    <label className="flex items-center justify-between gap-3 border border-main bg-main px-3 py-2">
+                        <span>
+                            <span className="block text-[11px] font-semibold text-main">
+                                Mirror before blur
+                            </span>
+                            <span className="block text-[10px] text-muted">
+                                Ket hop hflip trong cung edit request.
+                            </span>
+                        </span>
+                        <input
+                            type="checkbox"
+                            checked={getBooleanConfig(
+                                node,
+                                "mirrorEnabled",
+                                false,
+                            )}
+                            disabled={isRunningFlow}
+                            onChange={(event) =>
+                                setConfig({
+                                    mirrorEnabled: event.currentTarget.checked,
+                                })
+                            }
+                            className="h-4 w-4 accent-[var(--color-accent)]"
+                        />
+                    </label>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                        <RuntimeTextInput
+                            label="Region X %"
+                            value={String(getNumberConfig(node, "regionX", 0))}
+                            disabled={isRunningFlow}
+                            placeholder="0"
+                            onChange={(value) =>
+                                setConfig({ regionX: Number(value) })
+                            }
+                        />
+                        <RuntimeTextInput
+                            label="Region Y %"
+                            value={String(getNumberConfig(node, "regionY", 78))}
+                            disabled={isRunningFlow}
+                            placeholder="78"
+                            onChange={(value) =>
+                                setConfig({ regionY: Number(value) })
+                            }
+                        />
+                        <RuntimeTextInput
+                            label="Region width %"
+                            value={String(
+                                getNumberConfig(node, "regionWidth", 100),
+                            )}
+                            disabled={isRunningFlow}
+                            placeholder="100"
+                            onChange={(value) =>
+                                setConfig({ regionWidth: Number(value) })
+                            }
+                        />
+                        <RuntimeTextInput
+                            label="Region height %"
+                            value={String(
+                                getNumberConfig(node, "regionHeight", 16),
+                            )}
+                            disabled={isRunningFlow}
+                            placeholder="16"
+                            onChange={(value) =>
+                                setConfig({ regionHeight: Number(value) })
+                            }
+                        />
+                        <RuntimeTextInput
+                            label="Start seconds"
+                            value={String(
+                                getNumberConfig(node, "timelineStart", 0),
+                            )}
+                            disabled={isRunningFlow}
+                            placeholder="0"
+                            onChange={(value) =>
+                                setConfig({ timelineStart: Number(value) })
+                            }
+                        />
+                        <RuntimeTextInput
+                            label="End seconds"
+                            value={String(
+                                getNumberConfig(node, "timelineEnd", 999999),
+                            )}
+                            disabled={isRunningFlow}
+                            placeholder="999999"
+                            onChange={(value) =>
+                                setConfig({ timelineEnd: Number(value) })
+                            }
+                        />
+                        <RuntimeTextInput
+                            label="Blur strength"
+                            value={String(
+                                getNumberConfig(node, "blurStrength", 18),
+                            )}
+                            disabled={isRunningFlow}
+                            placeholder="18"
+                            onChange={(value) =>
+                                setConfig({ blurStrength: Number(value) })
+                            }
+                        />
+                        <RuntimeTextInput
+                            label="Subtitle font"
+                            value={getStringConfig(
+                                node,
+                                "subtitleFontFamily",
+                                "Arial",
+                            )}
+                            disabled={isRunningFlow}
+                            placeholder="Arial"
+                            onChange={(value) =>
+                                setConfig({ subtitleFontFamily: value })
+                            }
+                        />
+                        <RuntimeTextInput
+                            label="Subtitle size"
+                            value={String(
+                                getNumberConfig(node, "subtitleFontSize", 64),
+                            )}
+                            disabled={isRunningFlow}
+                            placeholder="64"
+                            onChange={(value) =>
+                                setConfig({ subtitleFontSize: Number(value) })
+                            }
+                        />
+                        <RuntimeTextInput
+                            label="Subtitle Y margin"
+                            value={String(
+                                getNumberConfig(
+                                    node,
+                                    "subtitleMarginBottom",
+                                    280,
+                                ),
+                            )}
+                            disabled={isRunningFlow}
+                            placeholder="280"
+                            onChange={(value) =>
+                                setConfig({
+                                    subtitleMarginBottom: Number(value),
+                                })
+                            }
+                        />
+                    </div>
+                    {runtimeArtifact ? (
+                        <div className="space-y-2 border border-emerald-500/30 bg-emerald-500/10 p-3">
+                            <p className="text-[11px] font-semibold text-emerald-700">
+                                {runtimeArtifact.detail} ·{" "}
+                                {formatBytes(runtimeArtifact.byteLength)}
+                            </p>
+                            <video
+                                controls
+                                src={artifactDataUrl(runtimeArtifact)}
+                                className="max-h-56 w-full bg-black"
+                            />
+                            <a
+                                href={artifactDataUrl(runtimeArtifact)}
+                                download={runtimeArtifact.fileName}
+                                className="inline-flex border border-main bg-main px-2 py-1 text-[10px] font-semibold text-main hover:bg-secondary"
+                            >
+                                Download {runtimeArtifact.fileName}
+                            </a>
+                        </div>
+                    ) : (
+                        <div className="flex items-start gap-2 border border-main bg-main px-3 py-2">
+                            <Captions className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted" />
+                            <p className="text-[10px] leading-4 text-muted">
+                                Node này cần một video upstream và Translate
+                                Transcript upstream; blur luôn được burn chung
+                                với phụ đề tiếng Việt theo timestamps.
+                            </p>
+                        </div>
+                    )}
                 </div>
             </InspectorSection>
         );

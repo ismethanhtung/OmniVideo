@@ -3,6 +3,7 @@
 import { useState } from "react";
 import {
     Captions,
+    Copy,
     Download,
     FileAudio,
     Loader2,
@@ -210,6 +211,9 @@ export function ChineseTranscriptionPanel({
     const [voiceResult, setVoiceResult] =
         useState<VoiceGenerationResult | null>(null);
     const [steps, setSteps] = useState<AudioTranscriptionStep[]>([]);
+    const [copiedSegmentsLabel, setCopiedSegmentsLabel] = useState<
+        "json" | "text" | null
+    >(null);
 
     useState(() => {
         fetch("/api/ai-providers")
@@ -433,6 +437,33 @@ export function ChineseTranscriptionPanel({
     const voiceAudioUrl = voiceResult
         ? `data:${voiceResult.mimeType};base64,${voiceResult.audioBase64}`
         : null;
+    const copySegmentsToClipboard = async (mode: "json" | "text") => {
+        if (!result) return;
+
+        const text =
+            mode === "json"
+                ? JSON.stringify(translation?.translatedSegments ?? [], null, 2)
+                : result.segments
+                      .map((segment) => {
+                          const translated = translationById.get(segment.id);
+                          const displayText =
+                              segmentView === "translation" && translated
+                                  ? translated.translatedText
+                                  : segment.text;
+                          const sourceLine =
+                              translated && segmentView === "translation"
+                                  ? `\nSource: ${translated.sourceText}`
+                                  : "";
+                          return `${formatTime(segment.start)} -> ${formatTime(
+                              segment.end,
+                          )}\n${displayText}${sourceLine}`;
+                      })
+                      .join("\n\n");
+
+        await navigator.clipboard.writeText(text);
+        setCopiedSegmentsLabel(mode);
+        window.setTimeout(() => setCopiedSegmentsLabel(null), 1800);
+    };
 
     return (
         <section className="border border-main bg-main">
@@ -985,10 +1016,45 @@ export function ChineseTranscriptionPanel({
                             </div>
 
                             <div className="border border-main bg-main">
-                                <div className="border-b border-main bg-secondary/30 px-4 py-2">
-                                    <p className="text-[12px] font-semibold text-main">
-                                        Segments
-                                    </p>
+                                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-main bg-secondary/30 px-4 py-2">
+                                    <div>
+                                        <p className="text-[12px] font-semibold text-main">
+                                            Segments
+                                        </p>
+                                        {translation ? (
+                                            <p className="mt-0.5 text-[10px] leading-4 text-muted">
+                                                Copy JSON để dán vào Video Tools
+                                                Lab `translatedSegmentsJson`.
+                                            </p>
+                                        ) : null}
+                                    </div>
+                                    <div className="flex flex-wrap gap-2">
+                                        <button
+                                            type="button"
+                                            disabled={!translation}
+                                            onClick={() =>
+                                                copySegmentsToClipboard("json")
+                                            }
+                                            className="inline-flex items-center gap-1.5 border border-main bg-main px-2 py-1 text-[10px] font-semibold text-main hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-50"
+                                        >
+                                            <Copy className="h-3.5 w-3.5" />
+                                            {copiedSegmentsLabel === "json"
+                                                ? "Copied JSON"
+                                                : "Copy translatedSegments JSON"}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() =>
+                                                copySegmentsToClipboard("text")
+                                            }
+                                            className="inline-flex items-center gap-1.5 border border-main bg-main px-2 py-1 text-[10px] font-semibold text-main hover:bg-secondary"
+                                        >
+                                            <Copy className="h-3.5 w-3.5" />
+                                            {copiedSegmentsLabel === "text"
+                                                ? "Copied text"
+                                                : "Copy visible text"}
+                                        </button>
+                                    </div>
                                 </div>
                                 <div className="thin-scrollbar max-h-[420px] overflow-auto">
                                     {result.segments.map((segment) =>

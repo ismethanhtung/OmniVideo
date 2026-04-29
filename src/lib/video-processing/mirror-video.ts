@@ -9,7 +9,8 @@ import { resolveFfmpegPath } from "@/lib/multilingual-audio/audio-extraction";
 type FfmpegSpawn = typeof spawn;
 
 let mirrorFfmpegSpawnForTest: FfmpegSpawn | null = null;
-let mirrorReadFileForTest: ((filePath: string) => Promise<Buffer>) | null = null;
+let mirrorReadFileForTest: ((filePath: string) => Promise<Buffer>) | null =
+    null;
 
 export type MirrorVideoAxis = "horizontal";
 
@@ -48,7 +49,9 @@ export class MirrorVideoError extends Error {
     }
 }
 
-export function setMirrorVideoFfmpegSpawnForTest(spawnImpl: FfmpegSpawn | null) {
+export function setMirrorVideoFfmpegSpawnForTest(
+    spawnImpl: FfmpegSpawn | null,
+) {
     mirrorFfmpegSpawnForTest = spawnImpl;
 }
 
@@ -60,10 +63,12 @@ export function setMirrorVideoReadFileForTest(
 
 function sanitizeOutputName(fileName: string) {
     const base = fileName.replace(/\.[^.]+$/u, "") || "omnivideo-video";
-    return `${base
-        .replace(/[^a-zA-Z0-9._-]+/g, "-")
-        .replace(/^-+|-+$/g, "")
-        .slice(0, 90) || "omnivideo-video"}-mirror.mp4`;
+    return `${
+        base
+            .replace(/[^a-zA-Z0-9._-]+/g, "-")
+            .replace(/^-+|-+$/g, "")
+            .slice(0, 90) || "omnivideo-video"
+    }-mirror.mp4`;
 }
 
 export function normalizeMirrorAxis(axis: string | undefined): MirrorVideoAxis {
@@ -94,9 +99,9 @@ export function buildMirrorVideoFfmpegArgs(input: {
         "-c:v",
         "libx264",
         "-preset",
-        "veryfast",
+        "medium",
         "-crf",
-        "18",
+        "23",
         "-c:a",
         "copy",
         "-movflags",
@@ -123,7 +128,9 @@ async function runFfmpeg(args: string[]) {
                 resolve();
                 return;
             }
-            reject(new Error(stderr.trim() || `ffmpeg exited with code ${code}`));
+            reject(
+                new Error(stderr.trim() || `ffmpeg exited with code ${code}`),
+            );
         });
     });
 }

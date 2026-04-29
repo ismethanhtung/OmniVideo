@@ -18,7 +18,7 @@
 
 ## Review
 
-- (none)
+- `P2-VIDEO-002` - Partial Blur and Subtitle Overlay Pipeline.
 
 ## Done
 

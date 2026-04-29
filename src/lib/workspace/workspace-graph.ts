@@ -140,6 +140,12 @@ export type WorkspaceFlowStep =
           mirrorNodeId: string;
       }
     | {
+          kind: "edit-video";
+          sourceNodeId: string;
+          editNodeId: string;
+          translationNodeId: string;
+      }
+    | {
           kind: "store-artifact";
           artifactNodeId: string;
           storageNodeId: string;
@@ -241,17 +247,60 @@ export const WORKSPACE_NODE_TEMPLATES: WorkspaceNodeTemplate[] = [
         description:
             "Làm mờ logo, tem hoặc phụ đề gốc theo vùng chọn timeline.",
         category: "processing",
-        status: "planned",
-        inputPorts: [{ id: "video", label: "Video", dataType: "video" }],
+        status: "available",
+        inputPorts: [
+            { id: "video", label: "Video", dataType: "video" },
+            {
+                id: "transcript",
+                label: "Translated transcript",
+                dataType: "transcript",
+            },
+        ],
         outputPorts: [
             { id: "video", label: "Masked video", dataType: "video" },
         ],
         configFields: [
             {
-                key: "region",
-                label: "Mask region",
-                type: "region",
+                key: "regionX",
+                label: "Region X %",
+                type: "number",
                 required: true,
+                defaultValue: 0,
+            },
+            {
+                key: "regionY",
+                label: "Region Y %",
+                type: "number",
+                required: true,
+                defaultValue: 78,
+            },
+            {
+                key: "regionWidth",
+                label: "Region width %",
+                type: "number",
+                required: true,
+                defaultValue: 100,
+            },
+            {
+                key: "regionHeight",
+                label: "Region height %",
+                type: "number",
+                required: true,
+                defaultValue: 16,
+            },
+            {
+                key: "timelineStart",
+                label: "Timeline start seconds",
+                type: "number",
+                required: true,
+                defaultValue: 0,
+            },
+            {
+                key: "timelineEnd",
+                label: "Timeline end seconds",
+                type: "number",
+                required: true,
+                defaultValue: 999999,
             },
             {
                 key: "blurStrength",
@@ -259,6 +308,41 @@ export const WORKSPACE_NODE_TEMPLATES: WorkspaceNodeTemplate[] = [
                 type: "number",
                 required: true,
                 defaultValue: 18,
+            },
+            {
+                key: "subtitleOverlayEnabled",
+                label: "Burn translated subtitles",
+                type: "boolean",
+                required: true,
+                defaultValue: true,
+            },
+            {
+                key: "subtitleFontFamily",
+                label: "Subtitle font family",
+                type: "text",
+                required: false,
+                defaultValue: "Arial",
+            },
+            {
+                key: "subtitleFontSize",
+                label: "Subtitle font size",
+                type: "number",
+                required: false,
+                defaultValue: 64,
+            },
+            {
+                key: "subtitleMarginBottom",
+                label: "Subtitle bottom margin",
+                type: "number",
+                required: false,
+                defaultValue: 280,
+            },
+            {
+                key: "mirrorEnabled",
+                label: "Mirror horizontal",
+                type: "boolean",
+                required: false,
+                defaultValue: false,
             },
         ],
         timeoutMs: 600000,
@@ -785,6 +869,53 @@ export function deleteWorkspaceNode(
     };
 }
 
+function areWorkspacePortsCompatible(
+    fromPort: WorkspacePort,
+    toPort: WorkspacePort,
+) {
+    if (fromPort.dataType === toPort.dataType) return true;
+    if (fromPort.dataType === "asset" && toPort.dataType === "video") {
+        return true;
+    }
+    if (fromPort.dataType === "video" && toPort.dataType === "asset") {
+        return true;
+    }
+    if (fromPort.dataType === "source" && toPort.dataType === "video") {
+        return true;
+    }
+    return false;
+}
+
+function selectWorkspaceConnectionPorts(input: {
+    graph: WorkspaceGraph;
+    fromTemplate: WorkspaceNodeTemplate;
+    toTemplate: WorkspaceNodeTemplate;
+    toNodeId: string;
+}) {
+    const occupiedInputPorts = new Set(
+        input.graph.edges
+            .filter((edge) => edge.toNodeId === input.toNodeId)
+            .map((edge) => edge.toPortId),
+    );
+
+    for (const fromPort of input.fromTemplate.outputPorts) {
+        for (const toPort of input.toTemplate.inputPorts) {
+            if (occupiedInputPorts.has(toPort.id)) continue;
+            if (areWorkspacePortsCompatible(fromPort, toPort)) {
+                return { fromPort, toPort };
+            }
+        }
+    }
+
+    const fromPort = input.fromTemplate.outputPorts[0];
+    const toPort =
+        input.toTemplate.inputPorts.find(
+            (port) => !occupiedInputPorts.has(port.id),
+        ) ?? input.toTemplate.inputPorts[0];
+
+    return fromPort && toPort ? { fromPort, toPort } : null;
+}
+
 export function moveWorkspaceNode(
     graph: WorkspaceGraph,
     nodeId: string,
@@ -839,8 +970,26 @@ export function validateWorkspaceConnection(
         };
     }
 
-    const fromPort = fromTemplate.outputPorts[0];
-    const toPort = toTemplate.inputPorts[0];
+    if (
+        graph.edges.some(
+            (edge) =>
+                edge.fromNodeId === fromNodeId && edge.toNodeId === toNodeId,
+        )
+    ) {
+        return {
+            ok: false,
+            error: "Kết nối này đã tồn tại trong graph.",
+        };
+    }
+
+    const selectedPorts = selectWorkspaceConnectionPorts({
+        graph,
+        fromTemplate,
+        toTemplate,
+        toNodeId,
+    });
+    const fromPort = selectedPorts?.fromPort;
+    const toPort = selectedPorts?.toPort;
 
     if (!fromPort || !toPort) {
         return {
@@ -880,8 +1029,17 @@ export function connectWorkspaceNodes(
     const toTemplate = toNode
         ? getWorkspaceNodeTemplate(toNode.templateNodeType)
         : undefined;
-    const fromPort = fromTemplate?.outputPorts[0];
-    const toPort = toTemplate?.inputPorts[0];
+    const selectedPorts =
+        fromTemplate && toTemplate
+            ? selectWorkspaceConnectionPorts({
+                  graph,
+                  fromTemplate,
+                  toTemplate,
+                  toNodeId,
+              })
+            : null;
+    const fromPort = selectedPorts?.fromPort;
+    const toPort = selectedPorts?.toPort;
 
     if (!fromNode || !toNode || !fromPort || !toPort) {
         throw new Error("Cannot connect workspace nodes.");
@@ -1055,6 +1213,9 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
     const dubbingNodes = graph.nodes.filter(
         (node) => node.templateNodeType === "audio.video-dubbing",
     );
+    const editNodes = graph.nodes.filter(
+        (node) => node.templateNodeType === "edit.mask-region",
+    );
     const mirrorNodes = graph.nodes.filter(
         (node) => node.templateNodeType === "edit.mirror",
     );
@@ -1109,15 +1270,26 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
                     node !== undefined &&
                     node.templateNodeType === "edit.mirror",
             );
+        const downstreamEdit = graph.edges
+            .filter((edge) => edge.fromNodeId === fileNode.id)
+            .map((edge) =>
+                graph.nodes.find((node) => node.id === edge.toNodeId),
+            )
+            .filter(
+                (node): node is WorkspaceNodeInstance =>
+                    node !== undefined &&
+                    node.templateNodeType === "edit.mask-region",
+            );
 
         if (
             downstreamStorage.length === 0 &&
             downstreamTranscription.length === 0 &&
             downstreamDubbing.length === 0 &&
-            downstreamMirror.length === 0
+            downstreamMirror.length === 0 &&
+            downstreamEdit.length === 0
         ) {
             errors.push(
-                `Upload Video '${fileNode.label}' (${fileNode.id}) cần nối tới Save to Storage, Audio Transcript, Video Dubbing hoặc Mirror Video downstream.`,
+                `Upload Video '${fileNode.label}' (${fileNode.id}) cần nối tới Save to Storage, Audio Transcript, Video Dubbing, Mirror Video hoặc Mask Logo/Subtitles downstream.`,
             );
             continue;
         }
@@ -1205,6 +1377,39 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
         }
         consumedStorageByArtifact.set(storageNode.id, mirrorNode.id);
         artifactToStorage.set(mirrorNode.id, storageNode.id);
+    }
+
+    for (const editNode of editNodes) {
+        const downstreamStorage = graph.edges
+            .filter((edge) => edge.fromNodeId === editNode.id)
+            .map((edge) =>
+                graph.nodes.find((node) => node.id === edge.toNodeId),
+            )
+            .filter(
+                (node): node is WorkspaceNodeInstance =>
+                    node !== undefined &&
+                    node.templateNodeType === "storage.upload",
+            );
+
+        if (downstreamStorage.length === 0) continue;
+        if (downstreamStorage.length > 1) {
+            errors.push(
+                `Mask Logo/Subtitles '${editNode.label}' (${editNode.id}) đang nối tới nhiều Save to Storage; backend hiện chỉ hỗ trợ 1.`,
+            );
+            continue;
+        }
+        const storageNode = downstreamStorage[0];
+        if (
+            consumedStorageByFile.has(storageNode.id) ||
+            consumedStorageByArtifact.has(storageNode.id)
+        ) {
+            errors.push(
+                `Save to Storage '${storageNode.label}' (${storageNode.id}) đang nhận từ nhiều producer; chưa hỗ trợ fan-in.`,
+            );
+            continue;
+        }
+        consumedStorageByArtifact.set(storageNode.id, editNode.id);
+        artifactToStorage.set(editNode.id, storageNode.id);
     }
 
     const producers = new Set<string>();
@@ -1422,6 +1627,83 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
         artifactProducers.add(mirrorNode.id);
     }
 
+    const editSteps: WorkspaceFlowStep[] = [];
+    for (const editNode of editNodes) {
+        const upstreamVideos = graph.edges
+            .filter((edge) => edge.toNodeId === editNode.id)
+            .map((edge) =>
+                graph.nodes.find((node) => node.id === edge.fromNodeId),
+            )
+            .filter(
+                (node): node is WorkspaceNodeInstance =>
+                    node !== undefined &&
+                    (node.templateNodeType === "source.file" ||
+                        node.templateNodeType === "audio.video-dubbing" ||
+                        node.templateNodeType === "edit.mirror"),
+            );
+        const upstreamTranslations = graph.edges
+            .filter((edge) => edge.toNodeId === editNode.id)
+            .map((edge) =>
+                graph.nodes.find((node) => node.id === edge.fromNodeId),
+            )
+            .filter(
+                (node): node is WorkspaceNodeInstance =>
+                    node !== undefined &&
+                    node.templateNodeType === "text.translate-transcript",
+            );
+
+        if (upstreamVideos.length === 0) {
+            errors.push(
+                `Mask Logo/Subtitles '${editNode.label}' (${editNode.id}) cần upstream Upload Video, Video Dubbing hoặc Mirror Video.`,
+            );
+            continue;
+        }
+        if (upstreamVideos.length > 1) {
+            errors.push(
+                `Mask Logo/Subtitles '${editNode.label}' (${editNode.id}) đang nhận nhiều video source; chưa hỗ trợ fan-in.`,
+            );
+            continue;
+        }
+        if (upstreamTranslations.length === 0) {
+            errors.push(
+                `Mask Logo/Subtitles '${editNode.label}' (${editNode.id}) cần upstream Translate Transcript để đè phụ đề tiếng Việt.`,
+            );
+            continue;
+        }
+        if (upstreamTranslations.length > 1) {
+            errors.push(
+                `Mask Logo/Subtitles '${editNode.label}' (${editNode.id}) đang nhận nhiều Translate Transcript; chưa hỗ trợ fan-in.`,
+            );
+            continue;
+        }
+
+        const upstreamVideo = upstreamVideos[0];
+        const upstreamTranslation = upstreamTranslations[0];
+        if (
+            upstreamVideo.templateNodeType !== "source.file" &&
+            !artifactProducers.has(upstreamVideo.id)
+        ) {
+            errors.push(
+                `Mask Logo/Subtitles '${editNode.label}' (${editNode.id}) cần video artifact upstream chạy được.`,
+            );
+            continue;
+        }
+        if (!translationProducers.has(upstreamTranslation.id)) {
+            errors.push(
+                `Mask Logo/Subtitles '${editNode.label}' (${editNode.id}) cần Translate Transcript upstream chạy được.`,
+            );
+            continue;
+        }
+
+        editSteps.push({
+            kind: "edit-video",
+            sourceNodeId: upstreamVideo.id,
+            editNodeId: editNode.id,
+            translationNodeId: upstreamTranslation.id,
+        });
+        artifactProducers.add(editNode.id);
+    }
+
     for (const storageNode of storageNodes) {
         if (
             consumedStorageByFile.has(storageNode.id) ||
@@ -1483,6 +1765,7 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
         voiceSteps.length === 0 &&
         dubbingSteps.length === 0 &&
         mirrorSteps.length === 0 &&
+        editSteps.length === 0 &&
         artifactStorageSteps.length === 0 &&
         publishSteps.length === 0 &&
         errors.length === 0
@@ -1501,6 +1784,7 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
             ...voiceSteps,
             ...dubbingSteps,
             ...mirrorSteps,
+            ...editSteps,
             ...artifactStorageSteps,
             ...publishSteps,
         ],

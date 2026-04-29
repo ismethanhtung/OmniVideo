@@ -651,6 +651,112 @@ describe("workspace graph helpers", () => {
         ]);
     });
 
+    it("plans partial blur with translated subtitle overlay before storage", () => {
+        const fileTemplate = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "source.file",
+        )!;
+        const transcriptionTemplate = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "audio.chinese-transcribe",
+        )!;
+        const translationTemplate = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "text.translate-transcript",
+        )!;
+        const editTemplate = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "edit.mask-region",
+        )!;
+        const storageTemplate = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "storage.upload",
+        )!;
+
+        let graph: WorkspaceGraph = createEmptyWorkspaceGraph("Blur subtitles");
+        graph = addWorkspaceNode(graph, fileTemplate, { x: 0, y: 0 });
+        graph = addWorkspaceNode(graph, transcriptionTemplate, { x: 240, y: 0 });
+        graph = addWorkspaceNode(graph, translationTemplate, { x: 480, y: 0 });
+        graph = addWorkspaceNode(graph, editTemplate, { x: 720, y: 0 });
+        graph = addWorkspaceNode(graph, storageTemplate, { x: 960, y: 0 });
+        graph = connectWorkspaceNodes(
+            graph,
+            "source-file-1",
+            "audio-chinese-transcribe-1",
+        );
+        graph = connectWorkspaceNodes(
+            graph,
+            "audio-chinese-transcribe-1",
+            "text-translate-transcript-1",
+        );
+        graph = connectWorkspaceNodes(
+            graph,
+            "source-file-1",
+            "edit-mask-region-1",
+        );
+        graph = connectWorkspaceNodes(
+            graph,
+            "text-translate-transcript-1",
+            "edit-mask-region-1",
+        );
+        graph = connectWorkspaceNodes(
+            graph,
+            "edit-mask-region-1",
+            "storage-upload-1",
+        );
+
+        const plan = planWorkspaceFlow(graph);
+        expect(plan.ok).toBe(true);
+        expect(plan.steps).toEqual([
+            {
+                kind: "transcribe-chinese",
+                sourceFileNodeId: "source-file-1",
+                transcriptionNodeId: "audio-chinese-transcribe-1",
+            },
+            {
+                kind: "translate-transcript",
+                transcriptionNodeId: "audio-chinese-transcribe-1",
+                translationNodeId: "text-translate-transcript-1",
+            },
+            {
+                kind: "edit-video",
+                sourceNodeId: "source-file-1",
+                editNodeId: "edit-mask-region-1",
+                translationNodeId: "text-translate-transcript-1",
+            },
+            {
+                kind: "store-artifact",
+                artifactNodeId: "edit-mask-region-1",
+                storageNodeId: "storage-upload-1",
+                producerNodeId: "storage-upload-1",
+            },
+        ]);
+        expect(
+            graph.edges.find(
+                (edge) =>
+                    edge.fromNodeId === "text-translate-transcript-1" &&
+                    edge.toNodeId === "edit-mask-region-1",
+            )?.toPortId,
+        ).toBe("transcript");
+    });
+
+    it("rejects partial blur without translated transcript upstream", () => {
+        const fileTemplate = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "source.file",
+        )!;
+        const editTemplate = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "edit.mask-region",
+        )!;
+
+        let graph: WorkspaceGraph = createEmptyWorkspaceGraph("Bad blur");
+        graph = addWorkspaceNode(graph, fileTemplate, { x: 0, y: 0 });
+        graph = addWorkspaceNode(graph, editTemplate, { x: 240, y: 0 });
+        graph = connectWorkspaceNodes(
+            graph,
+            "source-file-1",
+            "edit-mask-region-1",
+        );
+
+        const plan = planWorkspaceFlow(graph);
+        expect(plan.ok).toBe(false);
+        expect(plan.errors.join("\n")).toMatch(/Translate Transcript/);
+    });
+
     it("rejects mirror video without an executable upstream", () => {
         const mirrorTemplate = WORKSPACE_NODE_TEMPLATES.find(
             (entry) => entry.nodeType === "edit.mirror",
