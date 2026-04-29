@@ -406,17 +406,30 @@ export function AiProvidersPanel({ section }: AiProvidersPanelProps) {
         ) : null}
 
         {showForm ? (
-          <div className="mb-5 border border-main bg-secondary/20 p-5">
-            <h2 className="text-[13px] font-semibold text-main">
-              {editingId ? "Edit Provider" : "New AI Provider"}
-            </h2>
-            <p className="mt-1 text-[11px] text-muted">
-              {editingId
-                ? "Cập nhật thông tin provider. Để trống API key nếu không muốn thay đổi."
-                : "Thêm một OpenAI-compatible AI provider mới."}
-            </p>
+          <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/35 px-4 py-6">
+            <div className="max-h-[90vh] w-full max-w-4xl overflow-y-auto border border-main bg-main shadow-xl">
+              <div className="flex items-center justify-between border-b border-main bg-secondary/35 px-4 py-3">
+                <div>
+                  <p className="text-[12px] font-semibold text-main">
+                    {editingId ? "Edit AI Provider" : "New AI Provider"}
+                  </p>
+                  <p className="mt-1 text-[11px] text-muted">
+                    {editingId
+                      ? "Cập nhật thông tin provider. Để trống API key nếu không muốn thay đổi."
+                      : "Thêm một OpenAI-compatible AI provider mới."}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={resetForm}
+                  className="border border-main bg-main px-2.5 py-1 text-[11px] font-semibold text-main hover:bg-secondary"
+                >
+                  Close
+                </button>
+              </div>
 
-            <div className="mt-4 grid gap-3 lg:grid-cols-2">
+              <div className="p-5">
+                <div className="grid gap-3 lg:grid-cols-2">
               <label className="block">
                 <span className="mb-1 block text-[10px] font-semibold text-muted">
                   Label *
@@ -553,48 +566,50 @@ export function AiProvidersPanel({ section }: AiProvidersPanelProps) {
                   className="w-full border border-main bg-main px-3 py-2 text-[12px] text-main placeholder:text-muted/60"
                 />
               </label>
-            </div>
+                </div>
 
-            {submitState.status !== "idle" ? (
-              <div
-                className={`mt-3 border px-3 py-2 text-[11px] font-medium ${
-                  submitState.status === "success"
-                    ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700"
-                    : submitState.status === "failed"
-                      ? "border-rose-500/30 bg-rose-500/10 text-rose-700"
-                      : "border-main bg-secondary/30 text-main"
-                }`}
-              >
-                {submitState.message}
+                {submitState.status !== "idle" ? (
+                  <div
+                    className={`mt-3 border px-3 py-2 text-[11px] font-medium ${
+                      submitState.status === "success"
+                        ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700"
+                        : submitState.status === "failed"
+                          ? "border-rose-500/30 bg-rose-500/10 text-rose-700"
+                          : "border-main bg-secondary/30 text-main"
+                    }`}
+                  >
+                    {submitState.message}
+                  </div>
+                ) : null}
+
+                <div className="mt-4 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={handleSubmit}
+                    disabled={
+                      submitState.status === "loading" ||
+                      !formLabel.trim() ||
+                      !formBaseUrl.trim() ||
+                      (!editingId && !formApiKey.trim())
+                    }
+                    className="inline-flex items-center gap-2 border border-accent/35 bg-accent/10 px-4 py-2 text-[12px] font-semibold text-accent hover:bg-accent/15 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {submitState.status === "loading" ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                    )}
+                    {editingId ? "Update" : "Create"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={resetForm}
+                    className="border border-main bg-main px-4 py-2 text-[12px] font-semibold text-main hover:bg-secondary"
+                  >
+                    Cancel
+                  </button>
+                </div>
               </div>
-            ) : null}
-
-            <div className="mt-4 flex gap-2">
-              <button
-                type="button"
-                onClick={handleSubmit}
-                disabled={
-                  submitState.status === "loading" ||
-                  !formLabel.trim() ||
-                  !formBaseUrl.trim() ||
-                  (!editingId && !formApiKey.trim())
-                }
-                className="inline-flex items-center gap-2 border border-accent/35 bg-accent/10 px-4 py-2 text-[12px] font-semibold text-accent hover:bg-accent/15 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {submitState.status === "loading" ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <CheckCircle2 className="h-3.5 w-3.5" />
-                )}
-                {editingId ? "Update" : "Create"}
-              </button>
-              <button
-                type="button"
-                onClick={resetForm}
-                className="border border-main bg-main px-4 py-2 text-[12px] font-semibold text-main hover:bg-secondary"
-              >
-                Cancel
-              </button>
             </div>
           </div>
         ) : null}

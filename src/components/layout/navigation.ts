@@ -1,5 +1,5 @@
 import {
-    BrainCircuit,
+    Bot,
     Cable,
     DownloadCloud,
     HardDrive,
@@ -13,6 +13,7 @@ import {
     ClipboardList,
     Send,
     BookOpen,
+    Clapperboard,
     ListVideo,
     Mic2,
     RadioTower,
@@ -51,7 +52,7 @@ export const LEFTBAR_NAV: LeftbarNavGroup[] = [
             },
             {
                 id: "aiProviders",
-                icon: BrainCircuit,
+                icon: Bot,
                 label: "AI Providers",
                 description:
                     "Quản lý kết nối AI providers (Groq, OpenRouter, custom) với quota và usage tracking.",
@@ -167,6 +168,13 @@ export const LEFTBAR_NAV: LeftbarNavGroup[] = [
                 label: "Piper TTS Sandbox",
                 description:
                     "Test local Piper voice model ONNX bằng CPU, không cần GPU.",
+            },
+            {
+                id: "videoToolsLab",
+                icon: Clapperboard,
+                label: "Video Tools Lab",
+                description:
+                    "Test upload, preview và mirror video bằng ffmpeg trước khi đưa vào pipeline.",
             },
         ],
     },

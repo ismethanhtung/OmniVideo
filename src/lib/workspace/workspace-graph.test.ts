@@ -555,6 +555,117 @@ describe("workspace graph helpers", () => {
         ]);
     });
 
+    it("plans mirror video artifact storage from an uploaded file", () => {
+        const fileTemplate = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "source.file",
+        )!;
+        const mirrorTemplate = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "edit.mirror",
+        )!;
+        const storageTemplate = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "storage.upload",
+        )!;
+
+        let graph: WorkspaceGraph = createEmptyWorkspaceGraph("Mirror");
+        graph = addWorkspaceNode(graph, fileTemplate, { x: 0, y: 0 });
+        graph = addWorkspaceNode(graph, mirrorTemplate, { x: 240, y: 0 });
+        graph = addWorkspaceNode(graph, storageTemplate, { x: 480, y: 0 });
+        graph = connectWorkspaceNodes(graph, "source-file-1", "edit-mirror-1");
+        graph = connectWorkspaceNodes(
+            graph,
+            "edit-mirror-1",
+            "storage-upload-1",
+        );
+
+        const plan = planWorkspaceFlow(graph);
+        expect(plan.ok).toBe(true);
+        expect(plan.steps).toEqual([
+            {
+                kind: "mirror-video",
+                sourceNodeId: "source-file-1",
+                mirrorNodeId: "edit-mirror-1",
+            },
+            {
+                kind: "store-artifact",
+                artifactNodeId: "edit-mirror-1",
+                storageNodeId: "storage-upload-1",
+                producerNodeId: "storage-upload-1",
+            },
+        ]);
+    });
+
+    it("plans mirror after video dubbing before storage", () => {
+        const fileTemplate = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "source.file",
+        )!;
+        const dubbingTemplate = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "audio.video-dubbing",
+        )!;
+        const mirrorTemplate = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "edit.mirror",
+        )!;
+        const storageTemplate = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "storage.upload",
+        )!;
+
+        let graph: WorkspaceGraph = createEmptyWorkspaceGraph("Dub then mirror");
+        graph = addWorkspaceNode(graph, fileTemplate, { x: 0, y: 0 });
+        graph = addWorkspaceNode(graph, dubbingTemplate, { x: 240, y: 0 });
+        graph = addWorkspaceNode(graph, mirrorTemplate, { x: 480, y: 0 });
+        graph = addWorkspaceNode(graph, storageTemplate, { x: 720, y: 0 });
+        graph = connectWorkspaceNodes(
+            graph,
+            "source-file-1",
+            "audio-video-dubbing-1",
+        );
+        graph = connectWorkspaceNodes(
+            graph,
+            "audio-video-dubbing-1",
+            "edit-mirror-1",
+        );
+        graph = connectWorkspaceNodes(
+            graph,
+            "edit-mirror-1",
+            "storage-upload-1",
+        );
+
+        const plan = planWorkspaceFlow(graph);
+        expect(plan.ok).toBe(true);
+        expect(plan.steps).toEqual([
+            {
+                kind: "dub-video",
+                sourceNodeId: "source-file-1",
+                dubbingNodeId: "audio-video-dubbing-1",
+            },
+            {
+                kind: "mirror-video",
+                sourceNodeId: "audio-video-dubbing-1",
+                mirrorNodeId: "edit-mirror-1",
+            },
+            {
+                kind: "store-artifact",
+                artifactNodeId: "edit-mirror-1",
+                storageNodeId: "storage-upload-1",
+                producerNodeId: "storage-upload-1",
+            },
+        ]);
+    });
+
+    it("rejects mirror video without an executable upstream", () => {
+        const mirrorTemplate = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "edit.mirror",
+        )!;
+
+        let graph: WorkspaceGraph = createEmptyWorkspaceGraph("Bad mirror");
+        graph = addWorkspaceNode(graph, mirrorTemplate, { x: 0, y: 0 });
+
+        const plan = planWorkspaceFlow(graph);
+        expect(plan.ok).toBe(false);
+        expect(plan.errors.join("\n")).toMatch(
+            /cần upstream Upload Video hoặc Video Dubbing/,
+        );
+    });
+
     it("rejects publish nodes without an upstream producer", () => {
         const publishTemplate = WORKSPACE_NODE_TEMPLATES.find(
             (entry) => entry.nodeType === "social.publish",

@@ -11,6 +11,7 @@ export type AppSectionId =
   | "localUploadIntake"
   | "chineseTranscription"
   | "piperTtsSandbox"
+  | "videoToolsLab"
   | "storageProviders"
   | "storageLibrary"
   | "socialAccounts"

@@ -22,6 +22,8 @@
 
 ## Done
 
+- `P2-VIDEO-001` - Mirror Video Node and Video Tools Lab.
+- `FAST-AUDIO-016` - Improve Workspace Flow Error Detail.
 - `FAST-AUDIO-015` - Add AI Provider Selector to Workspace Dubbing.
 - `P2-AUDIO-007` - Workspace Audio Dubbing Nodes.
 - `FAST-AUDIO-014` - Optimize Groq segment translation latency and completeness.

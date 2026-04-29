@@ -40,6 +40,7 @@ Page URL như YouTube/TikTok/Facebook không phải direct media URL. OmniVideo 
 4. Overlay watermark/subtitle.
 5. Adjust volume/ducking.
 6. Speed adjustment (creative use hợp lệ).
+7. Mirror horizontal cho biến thể edit hợp lệ.
 
 ## 5. Traceability Requirements
 

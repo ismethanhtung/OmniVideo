@@ -34,6 +34,7 @@ import {
     createDouyinReworkSampleGraph,
     createEmptyWorkspaceGraph,
     createAssetToSocialSampleGraph,
+    createUploadDubbingToSocialSampleGraph,
     createUploadToStorageSampleGraph,
     createUploadToSocialSampleGraph,
     deleteWorkspaceNode,
@@ -187,6 +188,69 @@ function base64ToFile(artifact: WorkspaceRuntimeArtifact) {
         bytes[index] = binary.charCodeAt(index);
     }
     return new File([bytes], artifact.fileName, { type: artifact.mimeType });
+}
+
+function getWorkspaceApiErrorMessage(
+    payload: unknown,
+    fallback: string,
+    status?: number,
+) {
+    if (payload && typeof payload === "object") {
+        const data = payload as { error?: unknown; errorCode?: unknown };
+        if (typeof data.error === "string" && data.error.trim()) {
+            return data.error;
+        }
+        if (typeof data.errorCode === "string" && data.errorCode.trim()) {
+            return data.errorCode;
+        }
+    }
+    if (typeof status === "number" && status >= 400) {
+        return `${fallback} (HTTP ${status})`;
+    }
+    return fallback;
+}
+
+async function fetchWorkspaceJson<T>(input: {
+    url: string;
+    actionLabel: string;
+    init?: RequestInit;
+}) {
+    let response: Response;
+    try {
+        response = await fetch(input.url, input.init);
+    } catch (error) {
+        const detail =
+            error instanceof Error && error.message
+                ? error.message
+                : "network error";
+        throw new Error(`${input.actionLabel} failed at ${input.url}: ${detail}`);
+    }
+
+    let payload: unknown = null;
+    try {
+        payload = await response.json();
+    } catch {
+        payload = null;
+    }
+
+    const ok =
+        response.ok &&
+        (!payload ||
+            typeof payload !== "object" ||
+            !("ok" in payload) ||
+            (payload as { ok?: unknown }).ok !== false);
+
+    if (!ok) {
+        throw new Error(
+            `${input.actionLabel} failed at ${input.url}: ${getWorkspaceApiErrorMessage(
+                payload,
+                "Unexpected API error.",
+                response.status,
+            )}`,
+        );
+    }
+
+    return payload as T;
 }
 
 function statusClass(status: WorkspaceNodeTemplate["status"]) {
@@ -641,6 +705,14 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
         resetRunState(next, true);
     };
 
+    const seedUploadDubbingFlow = () => {
+        setPendingSourceNodeId(null);
+        setConnectionError(null);
+        const next = createUploadDubbingToSocialSampleGraph();
+        setGraph(next);
+        resetRunState(next, true);
+    };
+
     const clearDraft = () => {
         setPendingSourceNodeId(null);
         setConnectionError(null);
@@ -894,20 +966,18 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     formData.set("contentIntent", "other");
                     formData.set("ownershipStatus", "unknown");
 
-                    const uploadResponse = await fetch(
-                        "/api/video-intake/local-runs",
-                        { method: "POST", body: formData },
-                    );
-                    const uploadPayload = await uploadResponse.json();
-
-                    if (!uploadPayload.ok || !uploadPayload.data?.assetId) {
-                        const reason =
-                            uploadPayload.error ??
-                            uploadPayload.errorCode ??
-                            "Workspace upload step failed.";
-                        setNodeStatus(fileNode.id, "failed", reason);
-                        setNodeStatus(storageNode.id, "failed", reason);
-                        throw new Error(reason);
+                    const uploadPayload = await fetchWorkspaceJson<{
+                        ok: true;
+                        data?: { assetId?: string; runId?: string };
+                    }>({
+                        url: "/api/video-intake/local-runs",
+                        actionLabel: "Upload to storage",
+                        init: { method: "POST", body: formData },
+                    });
+                    if (!uploadPayload.data?.assetId) {
+                        throw new Error(
+                            "Upload to storage failed at /api/video-intake/local-runs: assetId missing.",
+                        );
                     }
 
                     const newAssetId = uploadPayload.data.assetId as string;
@@ -985,30 +1055,14 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         formData.set("prompt", prompt);
                     }
 
-                    const transcriptionResponse = await fetch(
-                        "/api/audio/chinese-transcription",
-                        { method: "POST", body: formData },
-                    );
-                    const transcriptionPayload =
-                        (await transcriptionResponse.json()) as
-                            | {
-                                  ok: true;
-                                  data: ChineseTranscriptionResult;
-                              }
-                            | {
-                                  ok: false;
-                                  errorCode?: string;
-                                  error?: string;
-                              };
-
-                    if (!transcriptionPayload.ok) {
-                        const reason =
-                            transcriptionPayload.error ??
-                            transcriptionPayload.errorCode ??
-                            "Workspace transcription step failed.";
-                        setNodeStatus(transcriptionNode.id, "failed", reason);
-                        throw new Error(reason);
-                    }
+                    const transcriptionPayload = await fetchWorkspaceJson<{
+                        ok: true;
+                        data: ChineseTranscriptionResult;
+                    }>({
+                        url: "/api/audio/chinese-transcription",
+                        actionLabel: "Chinese transcription",
+                        init: { method: "POST", body: formData },
+                    });
 
                     transcriptByProducer[step.transcriptionNodeId] =
                         transcriptionPayload.data;
@@ -1052,9 +1106,13 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         "Translating transcript segments with Groq...",
                     );
 
-                    const translationResponse = await fetch(
-                        "/api/audio/transcript-translation",
-                        {
+                    const translationPayload = await fetchWorkspaceJson<{
+                        ok: true;
+                        data: TranscriptTranslationResult;
+                    }>({
+                        url: "/api/audio/transcript-translation",
+                        actionLabel: "Transcript translation",
+                        init: {
                             method: "POST",
                             headers: { "Content-Type": "application/json" },
                             body: JSON.stringify({
@@ -1072,27 +1130,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                                 ),
                             }),
                         },
-                    );
-                    const translationPayload =
-                        (await translationResponse.json()) as
-                            | {
-                                  ok: true;
-                                  data: TranscriptTranslationResult;
-                              }
-                            | {
-                                  ok: false;
-                                  errorCode?: string;
-                                  error?: string;
-                              };
-
-                    if (!translationPayload.ok) {
-                        const reason =
-                            translationPayload.error ??
-                            translationPayload.errorCode ??
-                            "Workspace translation step failed.";
-                        setNodeStatus(translationNode.id, "failed", reason);
-                        throw new Error(reason);
-                    }
+                    });
 
                     translationByProducer[step.translationNodeId] =
                         translationPayload.data;
@@ -1132,9 +1170,13 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         "running",
                         "Generating Vietnamese voice with Piper...",
                     );
-                    const voiceResponse = await fetch(
-                        "/api/audio/voice-generation",
-                        {
+                    const voicePayload = await fetchWorkspaceJson<{
+                        ok: true;
+                        data: VoiceGenerationResult;
+                    }>({
+                        url: "/api/audio/voice-generation",
+                        actionLabel: "Voice generation",
+                        init: {
                             method: "POST",
                             headers: { "Content-Type": "application/json" },
                             body: JSON.stringify({
@@ -1178,19 +1220,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                                 },
                             }),
                         },
-                    );
-                    const voicePayload = (await voiceResponse.json()) as
-                        | { ok: true; data: VoiceGenerationResult }
-                        | { ok: false; errorCode?: string; error?: string };
-
-                    if (!voicePayload.ok) {
-                        const reason =
-                            voicePayload.error ??
-                            voicePayload.errorCode ??
-                            "Workspace voice generation step failed.";
-                        setNodeStatus(voiceNode.id, "failed", reason);
-                        throw new Error(reason);
-                    }
+                    });
 
                     const artifact: WorkspaceRuntimeArtifact = {
                         fileName: voicePayload.data.fileName,
@@ -1320,22 +1350,14 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         "running",
                         "Transcribing, translating, generating voice and muxing MP4...",
                     );
-                    const dubbingResponse = await fetch(
-                        "/api/audio/video-dubbing",
-                        { method: "POST", body: formData },
-                    );
-                    const dubbingPayload = (await dubbingResponse.json()) as
-                        | { ok: true; data: VideoDubbingResult }
-                        | { ok: false; errorCode?: string; error?: string };
-
-                    if (!dubbingPayload.ok) {
-                        const reason =
-                            dubbingPayload.error ??
-                            dubbingPayload.errorCode ??
-                            "Workspace video dubbing step failed.";
-                        setNodeStatus(dubbingNode.id, "failed", reason);
-                        throw new Error(reason);
-                    }
+                    const dubbingPayload = await fetchWorkspaceJson<{
+                        ok: true;
+                        data: VideoDubbingResult;
+                    }>({
+                        url: "/api/audio/video-dubbing",
+                        actionLabel: "Video dubbing",
+                        init: { method: "POST", body: formData },
+                    });
 
                     const artifact: WorkspaceRuntimeArtifact = {
                         fileName: dubbingPayload.data.fileName,
@@ -1366,6 +1388,100 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         `Dubbed video ready: ${formatBytes(dubbingPayload.data.byteLength)}.`,
                     );
                     advanceProgress(`Dubbing ${dubbingNode.label} complete.`);
+                } else if (step.kind === "mirror-video") {
+                    const sourceNode = findNode(step.sourceNodeId);
+                    const mirrorNode = findNode(step.mirrorNodeId);
+                    if (!sourceNode || !mirrorNode) {
+                        throw new Error("Missing mirror video nodes.");
+                    }
+
+                    const formData = new FormData();
+                    if (sourceNode.templateNodeType === "source.file") {
+                        const file = runtimeFilesByNodeId[sourceNode.id];
+                        if (!file) {
+                            setNodeStatus(
+                                sourceNode.id,
+                                "failed",
+                                "Chưa chọn file video.",
+                            );
+                            setNodeStatus(
+                                mirrorNode.id,
+                                "skipped",
+                                "Chưa có file để mirror.",
+                            );
+                            throw new Error(
+                                `Upload Video '${sourceNode.label}' chưa chọn file.`,
+                            );
+                        }
+                        formData.set("videoFile", file);
+                    } else {
+                        const upstreamArtifact = artifactByProducer[sourceNode.id];
+                        if (!upstreamArtifact) {
+                            setNodeStatus(
+                                mirrorNode.id,
+                                "skipped",
+                                "Chưa có video artifact upstream.",
+                            );
+                            throw new Error(
+                                `Mirror Video '${mirrorNode.label}' thiếu video artifact upstream.`,
+                            );
+                        }
+                        formData.set("videoFile", base64ToFile(upstreamArtifact));
+                    }
+                    formData.set(
+                        "axis",
+                        getStringConfig(mirrorNode, "axis", "horizontal"),
+                    );
+
+                    setNodeStatus(
+                        mirrorNode.id,
+                        "running",
+                        "Mirroring video horizontally with ffmpeg...",
+                    );
+                    const mirrorPayload = await fetchWorkspaceJson<{
+                        ok: true;
+                        data: {
+                            videoBase64: string;
+                            mimeType: "video/mp4";
+                            fileName: string;
+                            byteLength: number;
+                            transform: { axis: "horizontal"; filter: "hflip" };
+                        };
+                    }>({
+                        url: "/api/video-processing/mirror",
+                        actionLabel: "Mirror video",
+                        init: { method: "POST", body: formData },
+                    });
+
+                    const artifact: WorkspaceRuntimeArtifact = {
+                        fileName: mirrorPayload.data.fileName,
+                        mimeType: mirrorPayload.data.mimeType,
+                        base64: mirrorPayload.data.videoBase64,
+                        byteLength: mirrorPayload.data.byteLength,
+                        kind: "video",
+                        detail: `Mirror ${mirrorPayload.data.transform.axis}`,
+                    };
+                    artifactByProducer[step.mirrorNodeId] = artifact;
+                    setRuntimeArtifactsByNodeId((current) => ({
+                        ...current,
+                        [mirrorNode.id]: artifact,
+                    }));
+                    setNodeStatus(
+                        sourceNode.id,
+                        "success",
+                        sourceNode.templateNodeType === "source.file"
+                            ? "Source file used."
+                            : "Video artifact used.",
+                    );
+                    setNodeStatus(
+                        mirrorNode.id,
+                        "success",
+                        `${formatBytes(mirrorPayload.data.byteLength)} MP4.`,
+                    );
+                    summary.push(
+                        `Mirrored video ready: ${formatBytes(mirrorPayload.data.byteLength)}.`,
+                    );
+                    advanceProgress(`Mirror ${mirrorNode.label} complete.`);
                 } else if (step.kind === "store-artifact") {
                     const artifactNode = findNode(step.artifactNodeId);
                     const storageNode = findNode(step.storageNodeId);
@@ -1380,7 +1496,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                             "Chưa có artifact upstream.",
                         );
                         throw new Error(
-                            `Save to Storage '${storageNode.label}' thiếu dubbed artifact upstream.`,
+                            `Save to Storage '${storageNode.label}' thiếu generated artifact upstream.`,
                         );
                     }
                     const storageAccountId = getStringConfig(
@@ -1404,7 +1520,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     setNodeStatus(
                         storageNode.id,
                         "running",
-                        `Saving dubbed video to ${storageAccount.label}...`,
+                        `Saving generated video to ${storageAccount.label}...`,
                     );
                     const uploadForm = new FormData();
                     uploadForm.set("videoFile", base64ToFile(artifact));
@@ -1418,24 +1534,28 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         "storageProviderAccountId",
                         storageAccount._id,
                     );
-                    uploadForm.set("tags", "workspace,dubbing");
+                    uploadForm.set(
+                        "tags",
+                        artifactNode.templateNodeType === "edit.mirror"
+                            ? "workspace,mirror"
+                            : "workspace,dubbing",
+                    );
                     uploadForm.set("title", artifact.fileName);
                     uploadForm.set("contentIntent", "other");
                     uploadForm.set("ownershipStatus", "unknown");
 
-                    const uploadResponse = await fetch(
-                        "/api/video-intake/local-runs",
-                        { method: "POST", body: uploadForm },
-                    );
-                    const uploadPayload = await uploadResponse.json();
-
-                    if (!uploadPayload.ok || !uploadPayload.data?.assetId) {
-                        const reason =
-                            uploadPayload.error ??
-                            uploadPayload.errorCode ??
-                            "Workspace artifact storage step failed.";
-                        setNodeStatus(storageNode.id, "failed", reason);
-                        throw new Error(reason);
+                    const uploadPayload = await fetchWorkspaceJson<{
+                        ok: true;
+                        data?: { assetId?: string };
+                    }>({
+                        url: "/api/video-intake/local-runs",
+                        actionLabel: "Store generated artifact",
+                        init: { method: "POST", body: uploadForm },
+                    });
+                    if (!uploadPayload.data?.assetId) {
+                        throw new Error(
+                            "Store generated artifact failed at /api/video-intake/local-runs: assetId missing.",
+                        );
                     }
 
                     const newAssetId = uploadPayload.data.assetId as string;
@@ -1445,8 +1565,8 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         "success",
                         `Asset ${newAssetId}.`,
                     );
-                    summary.push(`Stored dubbed asset ${newAssetId}.`);
-                    advanceProgress(`Stored dubbed asset ${newAssetId}.`);
+                    summary.push(`Stored generated asset ${newAssetId}.`);
+                    advanceProgress(`Stored generated asset ${newAssetId}.`);
                 } else if (step.kind === "publish") {
                     const publishNode = findNode(step.publishNodeId);
                     if (!publishNode) continue;
@@ -1538,9 +1658,17 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         `Publishing via ${socialAccount.label} (${publishType})...`,
                     );
 
-                    const publishResponse = await fetch(
-                        "/api/social/publish-records",
-                        {
+                    const publishPayload = await fetchWorkspaceJson<{
+                        ok: true;
+                        data?: {
+                            _id?: string;
+                            status?: string;
+                            errorDetail?: string;
+                        };
+                    }>({
+                        url: "/api/social/publish-records",
+                        actionLabel: "Publish social",
+                        init: {
                             method: "POST",
                             headers: { "Content-Type": "application/json" },
                             body: JSON.stringify({
@@ -1555,21 +1683,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                                 hashtags,
                             }),
                         },
-                    );
-                    const publishPayload = await publishResponse.json();
-
-                    if (!publishPayload.ok) {
-                        const reason =
-                            publishPayload.error ??
-                            publishPayload.errorCode ??
-                            "Workspace publish step failed.";
-                        setNodeStatus(publishNode.id, "failed", reason);
-                        failedPublishes += 1;
-                        advanceProgress(
-                            `Publish ${publishNode.label} failed: ${reason}.`,
-                        );
-                        continue;
-                    }
+                    });
 
                     const finalStatus = publishPayload.data?.status;
                     if (finalStatus === "failed") {
@@ -1609,6 +1723,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     step.kind === "translate-transcript" ||
                     step.kind === "generate-voice" ||
                     step.kind === "dub-video" ||
+                    step.kind === "mirror-video" ||
                     step.kind === "store-artifact"
                 ) {
                     abortRemaining = true;
@@ -1815,6 +1930,14 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     >
                         <Send className="h-3.5 w-3.5" />
                         Seed Asset Publish
+                    </button>
+                    <button
+                        type="button"
+                        onClick={seedUploadDubbingFlow}
+                        className="inline-flex items-center gap-1.5 border border-main bg-main px-2.5 py-1.5 text-[11px] font-semibold text-main hover:bg-secondary"
+                    >
+                        <Workflow className="h-3.5 w-3.5" />
+                        Seed Dubbing Publish
                     </button>
                 </div>
             </header>
@@ -2314,6 +2437,14 @@ function describeStep(
             subtitle: "Transcribe, translate, generate voice, and mux MP4",
         };
     }
+    if (step.kind === "mirror-video") {
+        return {
+            key: `mirror-${step.mirrorNodeId}`,
+            statusKey: step.mirrorNodeId,
+            label: `Mirror · ${findLabel(step.sourceNodeId)} → ${findLabel(step.mirrorNodeId)}`,
+            subtitle: "Flip video horizontally with ffmpeg",
+        };
+    }
     if (step.kind === "store-artifact") {
         return {
             key: `store-artifact-${step.storageNodeId}`,
@@ -2501,6 +2632,26 @@ function NodeRuntimeConfig({
                             </option>
                         ))}
                     </RuntimeSelect>
+                </div>
+            </InspectorSection>
+        );
+    }
+
+    if (node.templateNodeType === "edit.mirror") {
+        return (
+            <InspectorSection title="Runtime Config">
+                <div className="space-y-2 border border-main bg-secondary/20 p-2">
+                    <RuntimeSelect
+                        label="Axis"
+                        value={getStringConfig(node, "axis", "horizontal")}
+                        disabled={isRunningFlow}
+                        onChange={(value) => setConfig({ axis: value })}
+                    >
+                        <option value="horizontal">horizontal</option>
+                    </RuntimeSelect>
+                    <div className="border border-main bg-main px-3 py-2 text-[10px] leading-4 text-muted">
+                        MVP hiện hỗ trợ lật ngang bằng ffmpeg `hflip`.
+                    </div>
                 </div>
             </InspectorSection>
         );

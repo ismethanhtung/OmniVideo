@@ -40,7 +40,9 @@ describe("navigation registry", () => {
     expect(testGroup?.items.map((item) => item.id)).toContain(
       "piperTtsSandbox",
     );
+    expect(testGroup?.items.map((item) => item.id)).toContain("videoToolsLab");
     expect(getNavItem("piperTtsSandbox")?.description).toContain("CPU");
+    expect(getNavItem("videoToolsLab")?.description).toContain("mirror video");
     expect(navIds).not.toContain("groqTtsSandbox");
   });
 });

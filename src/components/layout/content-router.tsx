@@ -10,6 +10,7 @@ import { StorageLibraryPanel } from "@/features/storage/storage-library-panel";
 import { StorageProvidersPanel } from "@/features/storage/storage-providers-panel";
 import { LocalUploadIntakePanel } from "@/features/video-intake/local-upload-intake-panel";
 import { VideoIntakePanel } from "@/features/video-intake/video-intake-panel";
+import { VideoToolsLabPanel } from "@/features/video-processing/video-tools-lab-panel";
 import { DisplayPreferencesPanel } from "@/features/workspace/display-preferences-panel";
 import { PlaceholderPanel } from "@/features/workspace/placeholder-panel";
 import { WorkspaceCanvasPanel } from "@/features/workspace/workspace-canvas-panel";
@@ -40,6 +41,7 @@ const SECTION_COMPONENTS: Partial<
     publishRecords: PublishRecordsPanel,
     tutorialDocs: TutorialDocsPanel,
     videoIntake: VideoIntakePanel,
+    videoToolsLab: VideoToolsLabPanel,
     workspace: WorkspaceCanvasPanel,
 };
 
