@@ -16,7 +16,9 @@ Hỗ trợ xử lý audio đa ngôn ngữ cho video linh hoạt: phát hiện ng
   chưa tách voice khỏi nhạc nền bằng source-separation model.
 - Bước dịch segment-level đã có trên cùng Audio Transcript flow: Groq chat LLM
   dịch từng segment sang tiếng Việt, giữ nguyên `id/start/end`, có model selector
-  mặc định `llama-3.1-8b-instant`.
+  mặc định `llama-3.1-8b-instant`. Translator xử lý các chunk độc lập song song
+  có giới hạn và retry segment còn sót ký tự CJK để giảm latency mà vẫn giữ đúng
+  timeline.
 - Bước sinh voice-over trên Audio Transcript flow hiện dùng Piper local qua CPU:
   nhận Vietnamese translated segments, cấu hình executable/model/config/speaker
   và các scale của Piper. Default path portable theo repo: UI có thể gửi
@@ -25,6 +27,13 @@ Hỗ trợ xử lý audio đa ngôn ngữ cho video linh hoạt: phát hiện ng
   preview/download trong UI, chưa persist vào storage. Khi bật preserve timestamp
   gaps, server synthesize từng segment, chèn silence theo gap, rồi trim/pad và
   speed-up audio bằng ffmpeg để bám `start/end` segment.
+- Workspace hiện có node `audio.voice-generation` để sinh WAV từ translated
+  transcript và node `audio.video-dubbing` để chạy trọn MVP ZH->VI: transcribe,
+  translate, Piper TTS, duck audio gốc rồi mux MP4 bằng ffmpeg. Node dubbing trả
+  preview/download trong Workspace và có thể nối sang `storage.upload` để persist
+  thành asset trước khi publish. Bước translate trong node dubbing dùng cùng AI
+  Provider Management với Audio Transcript: có thể chọn provider active, load
+  models từ provider đó, hoặc dùng default env `GROQ_API_KEY`.
 
 ## 3. Target Workflow
 
@@ -41,9 +50,10 @@ Hỗ trợ xử lý audio đa ngôn ngữ cho video linh hoạt: phát hiện ng
 1. `audio.detect-language`
 2. `audio.transcribe`
 3. `text.translate`
-4. `audio.tts`
+4. `audio.tts` / `audio.voice-generation`
 5. `audio.duck-or-mute`
 6. `subtitle.align`
+7. `audio.video-dubbing` (MVP composite node cho ZH->VI)
 
 ## 5. Data Requirements
 
@@ -76,3 +86,6 @@ Hỗ trợ xử lý audio đa ngôn ngữ cho video linh hoạt: phát hiện ng
    vượt context/output limit của LLM.
 6. Piper local phù hợp sandbox/máy yếu vì chạy CPU và giữ runtime trong repo,
    nhưng batch job dài vẫn cần provider abstraction/fallback và cơ chế cache.
+7. Composite dubbing node phù hợp MVP thao tác nhanh, nhưng các pipeline cần
+   kiểm soát chất lượng cao vẫn nên tách riêng transcribe, translate, TTS,
+   duck/mux và review thành nhiều node nhỏ.

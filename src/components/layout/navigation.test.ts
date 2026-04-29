@@ -29,15 +29,15 @@ describe("navigation registry", () => {
     expect(getNavItem("chineseTranscription")?.label).toBe("Audio Transcript");
   });
 
-  it("registers Piper TTS sandbox and leaves Groq TTS sandbox removed", () => {
-    const pipelineGroup = LEFTBAR_NAV.find(
-      (group) => group.sectionId === "pipeline",
+  it("registers Piper TTS sandbox in test group and leaves Groq TTS sandbox removed", () => {
+    const testGroup = LEFTBAR_NAV.find(
+      (group) => group.sectionId === "test",
     );
     const navIds = LEFTBAR_NAV.flatMap((group) =>
       group.items.map((item) => item.id),
     );
 
-    expect(pipelineGroup?.items.map((item) => item.id)).toContain(
+    expect(testGroup?.items.map((item) => item.id)).toContain(
       "piperTtsSandbox",
     );
     expect(getNavItem("piperTtsSandbox")?.description).toContain("CPU");

@@ -123,6 +123,22 @@ export type WorkspaceFlowStep =
           kind: "translate-transcript";
           transcriptionNodeId: string;
           translationNodeId: string;
+      }
+    | {
+          kind: "generate-voice";
+          translationNodeId: string;
+          voiceNodeId: string;
+      }
+    | {
+          kind: "dub-video";
+          sourceNodeId: string;
+          dubbingNodeId: string;
+      }
+    | {
+          kind: "store-artifact";
+          artifactNodeId: string;
+          storageNodeId: string;
+          producerNodeId: string;
       };
 
 export type WorkspaceFlowPlan = {
@@ -355,6 +371,164 @@ export const WORKSPACE_NODE_TEMPLATES: WorkspaceNodeTemplate[] = [
         observabilityHooks: ["onStart", "onSuccess", "onError"],
         traceabilityNotes:
             "Voice insertion must record voice profile, provider/model, sync offsets, and audio peak checks.",
+    },
+    {
+        nodeType: "audio.voice-generation",
+        version: "1.0.0",
+        label: "Voice Generation",
+        description:
+            "Sinh voice tiếng Việt từ translated transcript bằng Piper local.",
+        category: "processing",
+        status: "available",
+        inputPorts: [
+            {
+                id: "transcript",
+                label: "Translated transcript",
+                dataType: "transcript",
+            },
+        ],
+        outputPorts: [{ id: "audio", label: "Voice WAV", dataType: "audio" }],
+        configFields: [
+            {
+                key: "ttsBinaryPath",
+                label: "Piper executable",
+                type: "text",
+                required: true,
+                defaultValue: "piper",
+            },
+            {
+                key: "ttsModelPath",
+                label: "ONNX model",
+                type: "text",
+                required: false,
+                defaultValue: "",
+            },
+            {
+                key: "ttsConfigPath",
+                label: "Config JSON",
+                type: "text",
+                required: false,
+                defaultValue: "",
+            },
+            {
+                key: "ttsSpeaker",
+                label: "Speaker",
+                type: "number",
+                required: false,
+                defaultValue: 0,
+            },
+            {
+                key: "ttsLengthScale",
+                label: "Length scale",
+                type: "number",
+                required: false,
+                defaultValue: 1,
+            },
+            {
+                key: "ttsPreserveTimestampGaps",
+                label: "Preserve timestamp gaps",
+                type: "boolean",
+                required: false,
+                defaultValue: true,
+            },
+        ],
+        timeoutMs: 900000,
+        retryPolicy: { maxAttempts: 1, backoff: "none" },
+        idempotencyStrategy: "input-hash",
+        observabilityHooks: ["onStart", "onSuccess", "onError"],
+        traceabilityNotes:
+            "Voice output must preserve translated segment ids/timestamps, Piper model/config, and alignment mode.",
+    },
+    {
+        nodeType: "audio.video-dubbing",
+        version: "1.0.0",
+        label: "Video Dubbing ZH->VI",
+        description:
+            "Transcribe Chinese, translate to Vietnamese, generate voice, duck original audio, and mux MP4.",
+        category: "processing",
+        status: "available",
+        inputPorts: [{ id: "asset", label: "Source video", dataType: "asset" }],
+        outputPorts: [
+            { id: "asset", label: "Dubbed video artifact", dataType: "asset" },
+        ],
+        configFields: [
+            {
+                key: "language",
+                label: "Language hint",
+                type: "select",
+                required: true,
+                defaultValue: "zh",
+            },
+            {
+                key: "targetLanguage",
+                label: "Target language",
+                type: "select",
+                required: true,
+                defaultValue: "vi",
+            },
+            {
+                key: "translationProviderId",
+                label: "AI Provider",
+                type: "account",
+                required: false,
+                defaultValue: "",
+            },
+            {
+                key: "model",
+                label: "Translation model",
+                type: "select",
+                required: true,
+                defaultValue: "llama-3.1-8b-instant",
+            },
+            {
+                key: "originalAudioVolume",
+                label: "Original audio volume",
+                type: "number",
+                required: true,
+                defaultValue: 0.18,
+            },
+            {
+                key: "voiceVolume",
+                label: "Voice volume",
+                type: "number",
+                required: true,
+                defaultValue: 1,
+            },
+            {
+                key: "ttsBinaryPath",
+                label: "Piper executable",
+                type: "text",
+                required: true,
+                defaultValue: "piper",
+            },
+            {
+                key: "ttsModelPath",
+                label: "ONNX model",
+                type: "text",
+                required: false,
+                defaultValue: "",
+            },
+            {
+                key: "ttsConfigPath",
+                label: "Config JSON",
+                type: "text",
+                required: false,
+                defaultValue: "",
+            },
+            {
+                key: "ttsPreserveTimestampGaps",
+                label: "Preserve timestamp gaps",
+                type: "boolean",
+                required: false,
+                defaultValue: true,
+            },
+        ],
+        timeoutMs: 1800000,
+        retryPolicy: { maxAttempts: 1, backoff: "none" },
+        idempotencyStrategy: "input-hash",
+        observabilityHooks: ["onStart", "onSuccess", "onError"],
+        traceabilityNotes:
+            "Dubbed output must record transcript/translation/TTS model settings, mix volumes, source asset/file, and output asset id when persisted.",
     },
     {
         nodeType: "text.translate-transcript",
@@ -870,12 +1044,20 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
     const translationNodes = graph.nodes.filter(
         (node) => node.templateNodeType === "text.translate-transcript",
     );
+    const voiceNodes = graph.nodes.filter(
+        (node) => node.templateNodeType === "audio.voice-generation",
+    );
+    const dubbingNodes = graph.nodes.filter(
+        (node) => node.templateNodeType === "audio.video-dubbing",
+    );
     const publishNodes = graph.nodes.filter(
         (node) => node.templateNodeType === "social.publish",
     );
 
     const consumedStorageByFile = new Map<string, string>();
+    const consumedStorageByArtifact = new Map<string, string>();
     const fileToStorage = new Map<string, string>();
+    const artifactToStorage = new Map<string, string>();
 
     for (const fileNode of fileSourceNodes) {
         const downstreamStorage = graph.edges
@@ -899,13 +1081,24 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
                     node !== undefined &&
                     node.templateNodeType === "audio.chinese-transcribe",
             );
+        const downstreamDubbing = graph.edges
+            .filter((edge) => edge.fromNodeId === fileNode.id)
+            .map((edge) =>
+                graph.nodes.find((node) => node.id === edge.toNodeId),
+            )
+            .filter(
+                (node): node is WorkspaceNodeInstance =>
+                    node !== undefined &&
+                    node.templateNodeType === "audio.video-dubbing",
+            );
 
         if (
             downstreamStorage.length === 0 &&
-            downstreamTranscription.length === 0
+            downstreamTranscription.length === 0 &&
+            downstreamDubbing.length === 0
         ) {
             errors.push(
-                `Upload Video '${fileNode.label}' (${fileNode.id}) cần nối tới Save to Storage hoặc Audio Transcript downstream.`,
+                `Upload Video '${fileNode.label}' (${fileNode.id}) cần nối tới Save to Storage, Audio Transcript hoặc Video Dubbing downstream.`,
             );
             continue;
         }
@@ -927,6 +1120,39 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
         }
         consumedStorageByFile.set(storageNode.id, fileNode.id);
         fileToStorage.set(fileNode.id, storageNode.id);
+    }
+
+    for (const dubbingNode of dubbingNodes) {
+        const downstreamStorage = graph.edges
+            .filter((edge) => edge.fromNodeId === dubbingNode.id)
+            .map((edge) =>
+                graph.nodes.find((node) => node.id === edge.toNodeId),
+            )
+            .filter(
+                (node): node is WorkspaceNodeInstance =>
+                    node !== undefined &&
+                    node.templateNodeType === "storage.upload",
+            );
+
+        if (downstreamStorage.length === 0) continue;
+        if (downstreamStorage.length > 1) {
+            errors.push(
+                `Video Dubbing '${dubbingNode.label}' (${dubbingNode.id}) đang nối tới nhiều Save to Storage; backend hiện chỉ hỗ trợ 1.`,
+            );
+            continue;
+        }
+        const storageNode = downstreamStorage[0];
+        if (
+            consumedStorageByFile.has(storageNode.id) ||
+            consumedStorageByArtifact.has(storageNode.id)
+        ) {
+            errors.push(
+                `Save to Storage '${storageNode.label}' (${storageNode.id}) đang nhận từ nhiều producer; chưa hỗ trợ fan-in.`,
+            );
+            continue;
+        }
+        consumedStorageByArtifact.set(storageNode.id, dubbingNode.id);
+        artifactToStorage.set(dubbingNode.id, storageNode.id);
     }
 
     const producers = new Set<string>();
@@ -987,6 +1213,7 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
     }
 
     const translationSteps: WorkspaceFlowStep[] = [];
+    const translationProducers = new Set<string>();
     for (const translationNode of translationNodes) {
         const upstreamTranscriptions = graph.edges
             .filter((edge) => edge.toNodeId === translationNode.id)
@@ -1022,10 +1249,89 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
             transcriptionNodeId: upstreamTranscriptions[0].id,
             translationNodeId: translationNode.id,
         });
+        translationProducers.add(translationNode.id);
+    }
+
+    const voiceSteps: WorkspaceFlowStep[] = [];
+    for (const voiceNode of voiceNodes) {
+        const upstreamTranslations = graph.edges
+            .filter((edge) => edge.toNodeId === voiceNode.id)
+            .map((edge) =>
+                graph.nodes.find((node) => node.id === edge.fromNodeId),
+            )
+            .filter(
+                (node): node is WorkspaceNodeInstance =>
+                    node !== undefined &&
+                    node.templateNodeType === "text.translate-transcript",
+            );
+
+        if (upstreamTranslations.length === 0) {
+            errors.push(
+                `Voice Generation '${voiceNode.label}' (${voiceNode.id}) cần upstream Translate Transcript.`,
+            );
+            continue;
+        }
+        if (upstreamTranslations.length > 1) {
+            errors.push(
+                `Voice Generation '${voiceNode.label}' (${voiceNode.id}) đang nhận nhiều Translate Transcript; chưa hỗ trợ fan-in.`,
+            );
+            continue;
+        }
+        if (!translationProducers.has(upstreamTranslations[0].id)) {
+            errors.push(
+                `Voice Generation '${voiceNode.label}' (${voiceNode.id}) cần Translate Transcript upstream chạy được.`,
+            );
+            continue;
+        }
+        voiceSteps.push({
+            kind: "generate-voice",
+            translationNodeId: upstreamTranslations[0].id,
+            voiceNodeId: voiceNode.id,
+        });
+    }
+
+    const artifactProducers = new Set<string>();
+    const dubbingSteps: WorkspaceFlowStep[] = [];
+    for (const dubbingNode of dubbingNodes) {
+        const upstreamSources = graph.edges
+            .filter((edge) => edge.toNodeId === dubbingNode.id)
+            .map((edge) =>
+                graph.nodes.find((node) => node.id === edge.fromNodeId),
+            )
+            .filter(
+                (node): node is WorkspaceNodeInstance =>
+                    node !== undefined &&
+                    (node.templateNodeType === "source.file" ||
+                        node.templateNodeType === "source.asset"),
+            );
+
+        if (upstreamSources.length === 0) {
+            errors.push(
+                `Video Dubbing '${dubbingNode.label}' (${dubbingNode.id}) cần upstream Upload Video hoặc Storage Asset.`,
+            );
+            continue;
+        }
+        if (upstreamSources.length > 1) {
+            errors.push(
+                `Video Dubbing '${dubbingNode.label}' (${dubbingNode.id}) đang nhận nhiều source; chưa hỗ trợ fan-in.`,
+            );
+            continue;
+        }
+        dubbingSteps.push({
+            kind: "dub-video",
+            sourceNodeId: upstreamSources[0].id,
+            dubbingNodeId: dubbingNode.id,
+        });
+        artifactProducers.add(dubbingNode.id);
     }
 
     for (const storageNode of storageNodes) {
-        if (consumedStorageByFile.has(storageNode.id)) continue;
+        if (
+            consumedStorageByFile.has(storageNode.id) ||
+            consumedStorageByArtifact.has(storageNode.id)
+        ) {
+            continue;
+        }
         const upstream = graph.edges.filter(
             (edge) => edge.toNodeId === storageNode.id,
         );
@@ -1038,6 +1344,23 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
                 `Save to Storage '${storageNode.label}' (${storageNode.id}) hiện chỉ hỗ trợ upstream là Upload Video.`,
             );
         }
+    }
+
+    const artifactStorageSteps: WorkspaceFlowStep[] = [];
+    for (const [artifactNodeId, storageNodeId] of artifactToStorage.entries()) {
+        if (!artifactProducers.has(artifactNodeId)) {
+            errors.push(
+                `Save to Storage '${storageNodeId}' cần Video Dubbing upstream chạy được.`,
+            );
+            continue;
+        }
+        producers.add(storageNodeId);
+        artifactStorageSteps.push({
+            kind: "store-artifact",
+            artifactNodeId,
+            storageNodeId,
+            producerNodeId: storageNodeId,
+        });
     }
 
     const publishSteps: WorkspaceFlowStep[] = [];
@@ -1060,6 +1383,9 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
         producerSteps.length === 0 &&
         transcriptionSteps.length === 0 &&
         translationSteps.length === 0 &&
+        voiceSteps.length === 0 &&
+        dubbingSteps.length === 0 &&
+        artifactStorageSteps.length === 0 &&
         publishSteps.length === 0 &&
         errors.length === 0
     ) {
@@ -1074,6 +1400,9 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
             ...producerSteps,
             ...transcriptionSteps,
             ...translationSteps,
+            ...voiceSteps,
+            ...dubbingSteps,
+            ...artifactStorageSteps,
             ...publishSteps,
         ],
         errors,

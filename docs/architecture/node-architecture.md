@@ -26,6 +26,7 @@ runtime runner đầy đủ.
 7. Workspace có executable path đầu tiên cho `source.file -> storage.upload -> social.publish`, chạy tuần tự local upload API rồi publish-now API ngay trong Workspace.
 8. Workspace runner không ép một path duy nhất: `source.file -> storage.upload`, `source.asset -> social.publish`, và `source.file -> storage.upload -> social.publish` đều là executable paths.
 9. Runtime config thuộc về node đang chọn trong Inspector, không nằm tách khỏi graph như form global.
+10. Workspace runner hỗ trợ artifact runtime cho audio/video MVP: `audio.voice-generation` tạo WAV preview/download từ translated transcript, còn `audio.video-dubbing` tạo MP4 dubbed artifact từ `source.file` hoặc `source.asset`. Artifact này chỉ trở thành asset/publishable khi nối tiếp sang `storage.upload`.
 
 ## 3. Node Categories
 

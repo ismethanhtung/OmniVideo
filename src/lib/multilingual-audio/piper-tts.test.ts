@@ -254,6 +254,7 @@ describe("Piper TTS adapter", () => {
       extension: "wav",
       byteLength: "aligned-audio".length,
       segmentCount: 2,
+      generationDurationMs: expect.any(Number),
       alignment: {
         mode: "timeline",
         targetDurationSeconds: 1.5,

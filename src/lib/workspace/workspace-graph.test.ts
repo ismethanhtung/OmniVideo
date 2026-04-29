@@ -430,6 +430,131 @@ describe("workspace graph helpers", () => {
         );
     });
 
+    it("plans voice generation after translated transcript", () => {
+        const fileTemplate = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "source.file",
+        )!;
+        const transcriptionTemplate = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "audio.chinese-transcribe",
+        )!;
+        const translationTemplate = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "text.translate-transcript",
+        )!;
+        const voiceTemplate = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "audio.voice-generation",
+        )!;
+
+        let graph: WorkspaceGraph = createEmptyWorkspaceGraph("Voice");
+        graph = addWorkspaceNode(graph, fileTemplate, { x: 0, y: 0 });
+        graph = addWorkspaceNode(graph, transcriptionTemplate, { x: 240, y: 0 });
+        graph = addWorkspaceNode(graph, translationTemplate, { x: 480, y: 0 });
+        graph = addWorkspaceNode(graph, voiceTemplate, { x: 720, y: 0 });
+        graph = connectWorkspaceNodes(
+            graph,
+            "source-file-1",
+            "audio-chinese-transcribe-1",
+        );
+        graph = connectWorkspaceNodes(
+            graph,
+            "audio-chinese-transcribe-1",
+            "text-translate-transcript-1",
+        );
+        graph = connectWorkspaceNodes(
+            graph,
+            "text-translate-transcript-1",
+            "audio-voice-generation-1",
+        );
+
+        const plan = planWorkspaceFlow(graph);
+        expect(plan.ok).toBe(true);
+        expect(plan.steps.at(-1)).toEqual({
+            kind: "generate-voice",
+            translationNodeId: "text-translate-transcript-1",
+            voiceNodeId: "audio-voice-generation-1",
+        });
+    });
+
+    it("rejects voice generation without translated transcript upstream", () => {
+        const fileTemplate = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "source.file",
+        )!;
+        const voiceTemplate = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "audio.voice-generation",
+        )!;
+
+        let graph: WorkspaceGraph = createEmptyWorkspaceGraph("Bad voice");
+        graph = addWorkspaceNode(graph, fileTemplate, { x: 0, y: 0 });
+        graph = addWorkspaceNode(graph, voiceTemplate, { x: 240, y: 0 });
+        graph = connectWorkspaceNodes(
+            graph,
+            "source-file-1",
+            "audio-voice-generation-1",
+        );
+
+        const plan = planWorkspaceFlow(graph);
+        expect(plan.ok).toBe(false);
+        expect(plan.errors.join("\n")).toMatch(
+            /cần upstream Translate Transcript/,
+        );
+    });
+
+    it("plans video dubbing artifact storage and publish", () => {
+        const fileTemplate = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "source.file",
+        )!;
+        const dubbingTemplate = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "audio.video-dubbing",
+        )!;
+        const storageTemplate = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "storage.upload",
+        )!;
+        const publishTemplate = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "social.publish",
+        )!;
+
+        let graph: WorkspaceGraph = createEmptyWorkspaceGraph("Dubbing");
+        graph = addWorkspaceNode(graph, fileTemplate, { x: 0, y: 0 });
+        graph = addWorkspaceNode(graph, dubbingTemplate, { x: 240, y: 0 });
+        graph = addWorkspaceNode(graph, storageTemplate, { x: 480, y: 0 });
+        graph = addWorkspaceNode(graph, publishTemplate, { x: 720, y: 0 });
+        graph = connectWorkspaceNodes(
+            graph,
+            "source-file-1",
+            "audio-video-dubbing-1",
+        );
+        graph = connectWorkspaceNodes(
+            graph,
+            "audio-video-dubbing-1",
+            "storage-upload-1",
+        );
+        graph = connectWorkspaceNodes(
+            graph,
+            "storage-upload-1",
+            "social-publish-1",
+        );
+
+        const plan = planWorkspaceFlow(graph);
+        expect(plan.ok).toBe(true);
+        expect(plan.steps).toEqual([
+            {
+                kind: "dub-video",
+                sourceNodeId: "source-file-1",
+                dubbingNodeId: "audio-video-dubbing-1",
+            },
+            {
+                kind: "store-artifact",
+                artifactNodeId: "audio-video-dubbing-1",
+                storageNodeId: "storage-upload-1",
+                producerNodeId: "storage-upload-1",
+            },
+            {
+                kind: "publish",
+                publishNodeId: "social-publish-1",
+                producerNodeId: "storage-upload-1",
+            },
+        ]);
+    });
+
     it("rejects publish nodes without an upstream producer", () => {
         const publishTemplate = WORKSPACE_NODE_TEMPLATES.find(
             (entry) => entry.nodeType === "social.publish",

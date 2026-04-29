@@ -737,6 +737,7 @@ export async function generateVoiceFromSegments(input: {
   segments: VoiceGenerationSegment[];
   settings?: Partial<VoiceGenerationSettings>;
 }): Promise<VoiceGenerationResult> {
+  const startedAt = Date.now();
   const segments = validateVoiceSegments(input.segments);
   const settings = normalizePiperVoiceSettings(input.settings);
   const workDir = path.join(tmpdir(), `omnivideo-piper-voice-${randomUUID()}`);
@@ -771,6 +772,7 @@ export async function generateVoiceFromSegments(input: {
       fileName: "omnivideo-piper-voice.wav",
       byteLength: audioBytes.byteLength,
       segmentCount: segments.length,
+      generationDurationMs: Date.now() - startedAt,
       alignment: {
         mode: settings.preserveTimestampGaps ? "timeline" : "natural",
         targetDurationSeconds,

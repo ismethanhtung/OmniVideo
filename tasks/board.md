@@ -22,6 +22,9 @@
 
 ## Done
 
+- `FAST-AUDIO-015` - Add AI Provider Selector to Workspace Dubbing.
+- `P2-AUDIO-007` - Workspace Audio Dubbing Nodes.
+- `FAST-AUDIO-014` - Optimize Groq segment translation latency and completeness.
 - `FAST-AUDIO-013` - Replace Audio Transcript Edge TTS with Piper.
 - `FAST-AUDIO-012` - Keep Piper runtime self-contained.
 - `FAST-AUDIO-011` - Harden Piper TTS runtime preflight.

@@ -110,6 +110,7 @@ describe("voice generation API", () => {
         extension: "wav",
         byteLength: "route-audio".length,
         segmentCount: 1,
+        generationDurationMs: expect.any(Number),
         provider: { name: "piper", mode: "local-cli" },
       },
     });

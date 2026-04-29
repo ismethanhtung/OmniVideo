@@ -102,6 +102,7 @@ describe("transcript translation", () => {
     expect(result.model).toBe(DEFAULT_TRANSLATION_MODEL);
     expect(result.provider.requestId).toBe("chat_123");
     expect(result.chunks).toEqual([{ index: 1, segmentCount: 2 }]);
+    expect(result.generationDurationMs).toEqual(expect.any(Number));
     expect(result.translatedSegments[0]).toMatchObject({
       id: 0,
       start: 0,
@@ -262,5 +263,185 @@ describe("transcript translation", () => {
     expect(result.translatedSegments[1].translatedText).toBe(
       "Một container bí ẩn bị giữ lại rất lâu",
     );
+  });
+
+  it("retries translated segments that still contain CJK text", async () => {
+    let callCount = 0;
+    const fetchImpl = vi.fn(async () => {
+      callCount += 1;
+      return new Response(
+        JSON.stringify({
+          id: `chat_${callCount}`,
+          choices: [
+            {
+              message: {
+                content:
+                  callCount === 1
+                    ? JSON.stringify({
+                        segments: [
+                          {
+                            id: 0,
+                            start: 0,
+                            end: 1.34,
+                            sourceText: "你呆呆地看着闹钟",
+                            translatedText:
+                              "Bạn nhìn đồng hồ báo thức một cách ngây呆",
+                          },
+                          {
+                            id: 1,
+                            start: 1.34,
+                            end: 3.72,
+                            sourceText: sourceSegments[1].text,
+                            translatedText:
+                              "Một container bí ẩn bị giữ lại rất lâu",
+                          },
+                        ],
+                      })
+                    : JSON.stringify({
+                        segments: [
+                          {
+                            id: 0,
+                            start: 0,
+                            end: 1.34,
+                            sourceText: "你呆呆地看着闹钟",
+                            translatedText:
+                              "Bạn ngây người nhìn đồng hồ báo thức",
+                          },
+                        ],
+                      }),
+              },
+            },
+          ],
+        }),
+        { status: 200 },
+      );
+    });
+
+    const result = await translateTranscriptSegments({
+      segments: [
+        { id: 0, start: 0, end: 1.34, text: "你呆呆地看着闹钟" },
+        sourceSegments[1],
+      ],
+      apiKey: "secret",
+      fetchImpl,
+    });
+
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(result.translatedSegments[0]).toMatchObject({
+      id: 0,
+      start: 0,
+      end: 1.34,
+      translatedText: "Bạn ngây người nhìn đồng hồ báo thức",
+    });
+    expect(result.translatedSegments[1].translatedText).toBe(
+      "Một container bí ẩn bị giữ lại rất lâu",
+    );
+  });
+
+  it("limits quality retries when provider keeps returning CJK text", async () => {
+    const fetchImpl = vi.fn(async () => {
+      return new Response(
+        JSON.stringify({
+          id: "chat_retry",
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  segments: [
+                    {
+                      id: 0,
+                      start: 0,
+                      end: 1.34,
+                      sourceText: "你呆呆地看着闹钟",
+                      translatedText:
+                        "Bạn nhìn đồng hồ báo thức một cách ngây呆",
+                    },
+                  ],
+                }),
+              },
+            },
+          ],
+        }),
+        { status: 200 },
+      );
+    });
+
+    const result = await translateTranscriptSegments({
+      segments: [{ id: 0, start: 0, end: 1.34, text: "你呆呆地看着闹钟" }],
+      apiKey: "secret",
+      fetchImpl,
+    });
+
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+    expect(result.translatedSegments[0].translatedText).toBe(
+      "Bạn nhìn đồng hồ báo thức một cách ngây呆",
+    );
+  });
+
+  it("translates independent chunks concurrently while preserving order", async () => {
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const manySegments = Array.from({ length: 5 }, (_, index) => ({
+      id: index,
+      start: index,
+      end: index + 0.5,
+      text: `${"片段".repeat(1200)} ${index}`,
+    }));
+    const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
+      inFlight += 1;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      inFlight -= 1;
+
+      const body = JSON.parse(init.body as string);
+      const content = body.messages[1].content as string;
+      const requestSegments = JSON.parse(
+        content.slice(content.indexOf("Segments:\n") + "Segments:\n".length),
+      ) as Array<{ id: number; start: number; end: number; text: string }>;
+
+      return new Response(
+        JSON.stringify({
+          id: `chat_${requestSegments[0].id}`,
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  segments: requestSegments.map((segment) => ({
+                    id: segment.id,
+                    start: segment.start,
+                    end: segment.end,
+                    sourceText: segment.text,
+                    translatedText: `Bản dịch ${segment.id}`,
+                  })),
+                }),
+              },
+            },
+          ],
+        }),
+        { status: 200 },
+      );
+    });
+
+    const result = await translateTranscriptSegments({
+      segments: manySegments,
+      apiKey: "secret",
+      fetchImpl,
+    });
+
+    expect(maxInFlight).toBeGreaterThan(1);
+    expect(result.translatedSegments.map((segment) => segment.id)).toEqual([
+      0,
+      1,
+      2,
+      3,
+      4,
+    ]);
+    expect(result.translatedSegments.map((segment) => segment.translatedText)).toEqual([
+      "Bản dịch 0",
+      "Bản dịch 1",
+      "Bản dịch 2",
+      "Bản dịch 3",
+      "Bản dịch 4",
+    ]);
   });
 });

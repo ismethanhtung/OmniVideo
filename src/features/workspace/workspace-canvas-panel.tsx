@@ -12,6 +12,7 @@ import {
     Captions,
     Trash2,
     UploadCloud,
+    Volume2,
     Workflow,
 } from "lucide-react";
 
@@ -57,7 +58,9 @@ import {
     GROQ_TRANSLATION_MODELS,
     type ChineseTranscriptionResult,
     type TranscriptTranslationResult,
+    type VoiceGenerationResult,
 } from "@/lib/multilingual-audio/types";
+import type { VideoDubbingResult } from "@/lib/multilingual-audio/video-dubbing";
 
 type WorkspaceCanvasPanelProps = {
     section: LeftbarNavItem;
@@ -76,6 +79,18 @@ type WorkspaceSocialAccount = {
     label: string;
     status: "needs_auth" | "connected" | "paused" | "error";
     supportedFormats: WorkspacePublishType[];
+};
+
+type WorkspaceAiProvider = {
+    _id: string;
+    label: string;
+    providerType: string;
+    status: string;
+};
+
+type WorkspaceAiModel = {
+    id: string;
+    name: string;
 };
 
 type WorkspaceAsset = {
@@ -105,6 +120,15 @@ type NodeRunStatus = "idle" | "running" | "success" | "failed" | "skipped";
 
 type NodeRunState = {
     status: NodeRunStatus;
+    detail: string;
+};
+
+type WorkspaceRuntimeArtifact = {
+    fileName: string;
+    mimeType: string;
+    base64: string;
+    byteLength: number;
+    kind: "audio" | "video";
     detail: string;
 };
 
@@ -144,6 +168,25 @@ function formatTimeout(timeoutMs: number) {
     }
 
     return `${Math.round(timeoutMs / 60000)}m`;
+}
+
+function formatBytes(bytes: number) {
+    if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+    if (bytes >= 1024) return `${(bytes / 1024).toFixed(2)} KB`;
+    return `${bytes} B`;
+}
+
+function artifactDataUrl(artifact: WorkspaceRuntimeArtifact) {
+    return `data:${artifact.mimeType};base64,${artifact.base64}`;
+}
+
+function base64ToFile(artifact: WorkspaceRuntimeArtifact) {
+    const binary = atob(artifact.base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+        bytes[index] = binary.charCodeAt(index);
+    }
+    return new File([bytes], artifact.fileName, { type: artifact.mimeType });
 }
 
 function statusClass(status: WorkspaceNodeTemplate["status"]) {
@@ -214,6 +257,17 @@ function getBooleanConfig(
     return fallback;
 }
 
+function getNumberConfig(
+    node: WorkspaceNodeInstance | undefined,
+    key: string,
+    fallback: number,
+): number {
+    if (!node) return fallback;
+    const value = node.config[key];
+    const parsed = typeof value === "number" ? value : Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+}
+
 function getNodePublishType(
     node: WorkspaceNodeInstance | undefined,
 ): WorkspacePublishType {
@@ -268,6 +322,13 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
     const [socialAccounts, setSocialAccounts] = useState<
         WorkspaceSocialAccount[]
     >([]);
+    const [aiProviders, setAiProviders] = useState<WorkspaceAiProvider[]>([]);
+    const [aiModelsByProviderId, setAiModelsByProviderId] = useState<
+        Record<string, WorkspaceAiModel[] | undefined>
+    >({});
+    const [loadingAiModelProviderIds, setLoadingAiModelProviderIds] = useState<
+        Record<string, boolean>
+    >({});
     const [storageAssets, setStorageAssets] = useState<WorkspaceAsset[]>([]);
     const [accountsError, setAccountsError] = useState<string | null>(null);
     const [facebookPagesByAccount, setFacebookPagesByAccount] = useState<
@@ -278,6 +339,9 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
     >({});
     const [runtimeFilesByNodeId, setRuntimeFilesByNodeId] = useState<
         Record<string, File | undefined>
+    >({});
+    const [runtimeArtifactsByNodeId, setRuntimeArtifactsByNodeId] = useState<
+        Record<string, WorkspaceRuntimeArtifact | undefined>
     >({});
     const [nodeRunStatus, setNodeRunStatus] = useState<
         Record<string, NodeRunState>
@@ -347,18 +411,28 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
 
         async function loadRuntimeAccounts() {
             try {
-                const [storageResponse, socialResponse, assetsResponse] =
-                    await Promise.all([
-                        fetch("/api/storage/providers"),
-                        fetch("/api/social/accounts"),
-                        fetch("/api/storage/assets?limit=100"),
-                    ]);
-                const [storagePayload, socialPayload, assetsPayload] =
-                    await Promise.all([
-                        storageResponse.json(),
-                        socialResponse.json(),
-                        assetsResponse.json(),
-                    ]);
+                const [
+                    storageResponse,
+                    socialResponse,
+                    assetsResponse,
+                    aiProvidersResponse,
+                ] = await Promise.all([
+                    fetch("/api/storage/providers"),
+                    fetch("/api/social/accounts"),
+                    fetch("/api/storage/assets?limit=100"),
+                    fetch("/api/ai-providers"),
+                ]);
+                const [
+                    storagePayload,
+                    socialPayload,
+                    assetsPayload,
+                    aiProvidersPayload,
+                ] = await Promise.all([
+                    storageResponse.json(),
+                    socialResponse.json(),
+                    assetsResponse.json(),
+                    aiProvidersResponse.json(),
+                ]);
 
                 if (!isActive) return;
 
@@ -377,6 +451,11 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         assetsPayload.error ?? "Cannot load storage assets.",
                     );
                 }
+                if (!aiProvidersPayload.ok) {
+                    throw new Error(
+                        aiProvidersPayload.error ?? "Cannot load AI providers.",
+                    );
+                }
 
                 const activeStorageAccounts = (
                     storagePayload.data ?? []
@@ -392,9 +471,16 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     (account: WorkspaceSocialAccount) =>
                         account.status === "connected",
                 );
+                const activeAiProviders = (
+                    aiProvidersPayload.data ?? []
+                ).filter(
+                    (provider: WorkspaceAiProvider) =>
+                        provider.status === "active",
+                );
 
                 setStorageAccounts(activeStorageAccounts);
                 setSocialAccounts(connectedSocialAccounts);
+                setAiProviders(activeAiProviders);
                 setStorageAssets(assetsPayload.data ?? []);
                 setAccountsError(null);
             } catch (error) {
@@ -456,6 +542,44 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
             setLoadingFacebookAccountIds((previous) => ({
                 ...previous,
                 [accountId]: false,
+            }));
+        }
+    };
+
+    const ensureAiProviderModels = async (providerId: string) => {
+        if (!providerId) return [];
+        const cachedModels = aiModelsByProviderId[providerId];
+        if (cachedModels) return cachedModels;
+
+        setLoadingAiModelProviderIds((previous) => ({
+            ...previous,
+            [providerId]: true,
+        }));
+
+        try {
+            const response = await fetch(
+                `/api/ai-providers/${providerId}/models`,
+            );
+            const payload = (await response.json()) as {
+                ok: boolean;
+                data?: WorkspaceAiModel[];
+            };
+            const models = payload.ok ? (payload.data ?? []) : [];
+            setAiModelsByProviderId((previous) => ({
+                ...previous,
+                [providerId]: models,
+            }));
+            return models;
+        } catch {
+            setAiModelsByProviderId((previous) => ({
+                ...previous,
+                [providerId]: [],
+            }));
+            return [];
+        } finally {
+            setLoadingAiModelProviderIds((previous) => ({
+                ...previous,
+                [providerId]: false,
             }));
         }
     };
@@ -608,6 +732,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
             initialStatus[node.id] = { status: "idle", detail: "" };
         }
         setNodeRunStatus(initialStatus);
+        setRuntimeArtifactsByNodeId({});
         setRunError(null);
         setRunResult(null);
         setIsRunningFlow(true);
@@ -623,6 +748,11 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
         const assetByProducer: Record<string, string> = {};
         const transcriptByProducer: Record<string, ChineseTranscriptionResult> =
             {};
+        const translationByProducer: Record<
+            string,
+            TranscriptTranslationResult
+        > = {};
+        const artifactByProducer: Record<string, WorkspaceRuntimeArtifact> = {};
         let stepIndex = 0;
         let completedPublishes = 0;
         let failedPublishes = 0;
@@ -964,6 +1094,8 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         throw new Error(reason);
                     }
 
+                    translationByProducer[step.translationNodeId] =
+                        translationPayload.data;
                     setNodeStatus(
                         translationNode.id,
                         "success",
@@ -975,6 +1107,346 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     advanceProgress(
                         `Translation ${translationNode.label} complete.`,
                     );
+                } else if (step.kind === "generate-voice") {
+                    const translationNode = findNode(step.translationNodeId);
+                    const voiceNode = findNode(step.voiceNodeId);
+                    if (!translationNode || !voiceNode) {
+                        throw new Error("Missing voice generation nodes.");
+                    }
+
+                    const translation =
+                        translationByProducer[step.translationNodeId];
+                    if (!translation) {
+                        setNodeStatus(
+                            voiceNode.id,
+                            "skipped",
+                            "Chưa có translated transcript upstream.",
+                        );
+                        throw new Error(
+                            `Voice Generation '${voiceNode.label}' thiếu translated transcript upstream.`,
+                        );
+                    }
+
+                    setNodeStatus(
+                        voiceNode.id,
+                        "running",
+                        "Generating Vietnamese voice with Piper...",
+                    );
+                    const voiceResponse = await fetch(
+                        "/api/audio/voice-generation",
+                        {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                                segments: translation.translatedSegments.map(
+                                    (segment) => ({
+                                        id: segment.id,
+                                        start: segment.start,
+                                        end: segment.end,
+                                        text: segment.translatedText,
+                                    }),
+                                ),
+                                settings: {
+                                    binaryPath: getStringConfig(
+                                        voiceNode,
+                                        "ttsBinaryPath",
+                                        "piper",
+                                    ),
+                                    modelPath: getStringConfig(
+                                        voiceNode,
+                                        "ttsModelPath",
+                                    ),
+                                    configPath: getStringConfig(
+                                        voiceNode,
+                                        "ttsConfigPath",
+                                    ),
+                                    speaker: getNumberConfig(
+                                        voiceNode,
+                                        "ttsSpeaker",
+                                        0,
+                                    ),
+                                    lengthScale: getNumberConfig(
+                                        voiceNode,
+                                        "ttsLengthScale",
+                                        1,
+                                    ),
+                                    preserveTimestampGaps: getBooleanConfig(
+                                        voiceNode,
+                                        "ttsPreserveTimestampGaps",
+                                        true,
+                                    ),
+                                },
+                            }),
+                        },
+                    );
+                    const voicePayload = (await voiceResponse.json()) as
+                        | { ok: true; data: VoiceGenerationResult }
+                        | { ok: false; errorCode?: string; error?: string };
+
+                    if (!voicePayload.ok) {
+                        const reason =
+                            voicePayload.error ??
+                            voicePayload.errorCode ??
+                            "Workspace voice generation step failed.";
+                        setNodeStatus(voiceNode.id, "failed", reason);
+                        throw new Error(reason);
+                    }
+
+                    const artifact: WorkspaceRuntimeArtifact = {
+                        fileName: voicePayload.data.fileName,
+                        mimeType: voicePayload.data.mimeType,
+                        base64: voicePayload.data.audioBase64,
+                        byteLength: voicePayload.data.byteLength,
+                        kind: "audio",
+                        detail: `${voicePayload.data.segmentCount} voice segment(s)`,
+                    };
+                    artifactByProducer[step.voiceNodeId] = artifact;
+                    setRuntimeArtifactsByNodeId((current) => ({
+                        ...current,
+                        [voiceNode.id]: artifact,
+                    }));
+                    setNodeStatus(
+                        voiceNode.id,
+                        "success",
+                        `${formatBytes(voicePayload.data.byteLength)} WAV.`,
+                    );
+                    summary.push(
+                        `Voice ready: ${formatBytes(voicePayload.data.byteLength)}.`,
+                    );
+                    advanceProgress(`Voice ${voiceNode.label} complete.`);
+                } else if (step.kind === "dub-video") {
+                    const sourceNode = findNode(step.sourceNodeId);
+                    const dubbingNode = findNode(step.dubbingNodeId);
+                    if (!sourceNode || !dubbingNode) {
+                        throw new Error("Missing video dubbing nodes.");
+                    }
+
+                    const formData = new FormData();
+                    if (sourceNode.templateNodeType === "source.file") {
+                        const file = runtimeFilesByNodeId[sourceNode.id];
+                        if (!file) {
+                            setNodeStatus(
+                                sourceNode.id,
+                                "failed",
+                                "Chưa chọn file video.",
+                            );
+                            setNodeStatus(
+                                dubbingNode.id,
+                                "skipped",
+                                "Chưa có file để dub.",
+                            );
+                            throw new Error(
+                                `Upload Video '${sourceNode.label}' chưa chọn file.`,
+                            );
+                        }
+                        formData.set("videoFile", file);
+                    } else {
+                        const assetId = getStringConfig(sourceNode, "assetId");
+                        if (!assetId) {
+                            setNodeStatus(
+                                sourceNode.id,
+                                "failed",
+                                "Chưa chọn Storage Library asset.",
+                            );
+                            throw new Error(
+                                `Storage Asset '${sourceNode.label}' chưa chọn asset.`,
+                            );
+                        }
+                        formData.set("assetId", assetId);
+                    }
+
+                    formData.set(
+                        "language",
+                        getStringConfig(dubbingNode, "language", "zh"),
+                    );
+                    formData.set(
+                        "targetLanguage",
+                        getStringConfig(dubbingNode, "targetLanguage", "vi"),
+                    );
+                    formData.set(
+                        "model",
+                        getStringConfig(
+                            dubbingNode,
+                            "model",
+                            DEFAULT_TRANSLATION_MODEL,
+                        ),
+                    );
+                    const translationProviderId = getStringConfig(
+                        dubbingNode,
+                        "translationProviderId",
+                    ).trim();
+                    if (translationProviderId) {
+                        formData.set("providerId", translationProviderId);
+                    }
+                    formData.set(
+                        "originalAudioVolume",
+                        String(
+                            getNumberConfig(
+                                dubbingNode,
+                                "originalAudioVolume",
+                                0.18,
+                            ),
+                        ),
+                    );
+                    formData.set(
+                        "voiceVolume",
+                        String(getNumberConfig(dubbingNode, "voiceVolume", 1)),
+                    );
+                    formData.set(
+                        "ttsBinaryPath",
+                        getStringConfig(dubbingNode, "ttsBinaryPath", "piper"),
+                    );
+                    formData.set(
+                        "ttsModelPath",
+                        getStringConfig(dubbingNode, "ttsModelPath"),
+                    );
+                    formData.set(
+                        "ttsConfigPath",
+                        getStringConfig(dubbingNode, "ttsConfigPath"),
+                    );
+                    formData.set(
+                        "ttsPreserveTimestampGaps",
+                        String(
+                            getBooleanConfig(
+                                dubbingNode,
+                                "ttsPreserveTimestampGaps",
+                                true,
+                            ),
+                        ),
+                    );
+
+                    setNodeStatus(
+                        dubbingNode.id,
+                        "running",
+                        "Transcribing, translating, generating voice and muxing MP4...",
+                    );
+                    const dubbingResponse = await fetch(
+                        "/api/audio/video-dubbing",
+                        { method: "POST", body: formData },
+                    );
+                    const dubbingPayload = (await dubbingResponse.json()) as
+                        | { ok: true; data: VideoDubbingResult }
+                        | { ok: false; errorCode?: string; error?: string };
+
+                    if (!dubbingPayload.ok) {
+                        const reason =
+                            dubbingPayload.error ??
+                            dubbingPayload.errorCode ??
+                            "Workspace video dubbing step failed.";
+                        setNodeStatus(dubbingNode.id, "failed", reason);
+                        throw new Error(reason);
+                    }
+
+                    const artifact: WorkspaceRuntimeArtifact = {
+                        fileName: dubbingPayload.data.fileName,
+                        mimeType: dubbingPayload.data.mimeType,
+                        base64: dubbingPayload.data.videoBase64,
+                        byteLength: dubbingPayload.data.byteLength,
+                        kind: "video",
+                        detail: `${dubbingPayload.data.translation.translatedSegments.length} segment(s) dubbed`,
+                    };
+                    artifactByProducer[step.dubbingNodeId] = artifact;
+                    setRuntimeArtifactsByNodeId((current) => ({
+                        ...current,
+                        [dubbingNode.id]: artifact,
+                    }));
+                    setNodeStatus(
+                        sourceNode.id,
+                        "success",
+                        sourceNode.templateNodeType === "source.file"
+                            ? "Source file used."
+                            : "Storage asset used.",
+                    );
+                    setNodeStatus(
+                        dubbingNode.id,
+                        "success",
+                        `${formatBytes(dubbingPayload.data.byteLength)} MP4.`,
+                    );
+                    summary.push(
+                        `Dubbed video ready: ${formatBytes(dubbingPayload.data.byteLength)}.`,
+                    );
+                    advanceProgress(`Dubbing ${dubbingNode.label} complete.`);
+                } else if (step.kind === "store-artifact") {
+                    const artifactNode = findNode(step.artifactNodeId);
+                    const storageNode = findNode(step.storageNodeId);
+                    if (!artifactNode || !storageNode) {
+                        throw new Error("Missing artifact storage nodes.");
+                    }
+                    const artifact = artifactByProducer[step.artifactNodeId];
+                    if (!artifact) {
+                        setNodeStatus(
+                            storageNode.id,
+                            "skipped",
+                            "Chưa có artifact upstream.",
+                        );
+                        throw new Error(
+                            `Save to Storage '${storageNode.label}' thiếu dubbed artifact upstream.`,
+                        );
+                    }
+                    const storageAccountId = getStringConfig(
+                        storageNode,
+                        "storageAccountId",
+                    );
+                    const storageAccount = storageAccounts.find(
+                        (account) => account._id === storageAccountId,
+                    );
+                    if (!storageAccount) {
+                        setNodeStatus(
+                            storageNode.id,
+                            "failed",
+                            "Storage account không hợp lệ.",
+                        );
+                        throw new Error(
+                            `Save to Storage '${storageNode.label}' cần storage account hợp lệ.`,
+                        );
+                    }
+
+                    setNodeStatus(
+                        storageNode.id,
+                        "running",
+                        `Saving dubbed video to ${storageAccount.label}...`,
+                    );
+                    const uploadForm = new FormData();
+                    uploadForm.set("videoFile", base64ToFile(artifact));
+                    uploadForm.set(
+                        "storageProvider",
+                        storageAccount.providerType === "telegram"
+                            ? "telegram"
+                            : "drive",
+                    );
+                    uploadForm.set(
+                        "storageProviderAccountId",
+                        storageAccount._id,
+                    );
+                    uploadForm.set("tags", "workspace,dubbing");
+                    uploadForm.set("title", artifact.fileName);
+                    uploadForm.set("contentIntent", "other");
+                    uploadForm.set("ownershipStatus", "unknown");
+
+                    const uploadResponse = await fetch(
+                        "/api/video-intake/local-runs",
+                        { method: "POST", body: uploadForm },
+                    );
+                    const uploadPayload = await uploadResponse.json();
+
+                    if (!uploadPayload.ok || !uploadPayload.data?.assetId) {
+                        const reason =
+                            uploadPayload.error ??
+                            uploadPayload.errorCode ??
+                            "Workspace artifact storage step failed.";
+                        setNodeStatus(storageNode.id, "failed", reason);
+                        throw new Error(reason);
+                    }
+
+                    const newAssetId = uploadPayload.data.assetId as string;
+                    assetByProducer[step.producerNodeId] = newAssetId;
+                    setNodeStatus(
+                        storageNode.id,
+                        "success",
+                        `Asset ${newAssetId}.`,
+                    );
+                    summary.push(`Stored dubbed asset ${newAssetId}.`);
+                    advanceProgress(`Stored dubbed asset ${newAssetId}.`);
                 } else if (step.kind === "publish") {
                     const publishNode = findNode(step.publishNodeId);
                     if (!publishNode) continue;
@@ -1134,7 +1606,10 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     step.kind === "use-existing-asset" ||
                     step.kind === "upload-and-store" ||
                     step.kind === "transcribe-chinese" ||
-                    step.kind === "translate-transcript"
+                    step.kind === "translate-transcript" ||
+                    step.kind === "generate-voice" ||
+                    step.kind === "dub-video" ||
+                    step.kind === "store-artifact"
                 ) {
                     abortRemaining = true;
                     setRunError(message);
@@ -1530,14 +2005,23 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     flowPlan={flowPlan}
                     storageAccounts={storageAccounts}
                     socialAccounts={socialAccounts}
+                    aiProviders={aiProviders}
+                    aiModelsByProviderId={aiModelsByProviderId}
                     storageAssets={storageAssets}
                     runtimeFile={
                         selectedNode
                             ? (runtimeFilesByNodeId[selectedNode.id] ?? null)
                             : null
                     }
+                    runtimeArtifact={
+                        selectedNode
+                            ? (runtimeArtifactsByNodeId[selectedNode.id] ??
+                              null)
+                            : null
+                    }
                     facebookPagesByAccount={facebookPagesByAccount}
                     loadingFacebookAccountIds={loadingFacebookAccountIds}
+                    loadingAiModelProviderIds={loadingAiModelProviderIds}
                     isRunningFlow={isRunningFlow}
                     onSetPendingSource={(nodeId) =>
                         setPendingSourceNodeId(nodeId)
@@ -1547,6 +2031,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     onUpdateNodeConfig={updateNodeConfig}
                     onUpdateNodeFile={setNodeFile}
                     onEnsureFacebookPages={ensureFacebookPages}
+                    onEnsureAiProviderModels={ensureAiProviderModels}
                 />
             </div>
         </section>
@@ -1672,8 +2157,7 @@ function WorkspaceRunStatusPanel({
                     </p>
                     <p className="mt-1 text-[10px] leading-4 text-muted">
                         Cấu hình mỗi node trong Inspector bên phải, sau đó chạy
-                        flow. Mỗi Publish Social node giữ social account/publish
-                        type/Page riêng.
+                        flow.
                     </p>
                     <p className="mt-1 text-[10px] leading-4 text-muted">
                         Plan:{" "}
@@ -1814,6 +2298,30 @@ function describeStep(
             subtitle: "Translate timestamped transcript to Vietnamese",
         };
     }
+    if (step.kind === "generate-voice") {
+        return {
+            key: `voice-${step.voiceNodeId}`,
+            statusKey: step.voiceNodeId,
+            label: `Voice · ${findLabel(step.translationNodeId)} → ${findLabel(step.voiceNodeId)}`,
+            subtitle: "Generate Vietnamese voice-over WAV",
+        };
+    }
+    if (step.kind === "dub-video") {
+        return {
+            key: `dub-${step.dubbingNodeId}`,
+            statusKey: step.dubbingNodeId,
+            label: `Dub · ${findLabel(step.sourceNodeId)} → ${findLabel(step.dubbingNodeId)}`,
+            subtitle: "Transcribe, translate, generate voice, and mux MP4",
+        };
+    }
+    if (step.kind === "store-artifact") {
+        return {
+            key: `store-artifact-${step.storageNodeId}`,
+            statusKey: step.storageNodeId,
+            label: `Store · ${findLabel(step.artifactNodeId)} → ${findLabel(step.storageNodeId)}`,
+            subtitle: "Persist generated video artifact to storage",
+        };
+    }
     return {
         key: `publish-${step.publishNodeId}`,
         statusKey: step.publishNodeId,
@@ -1885,22 +2393,31 @@ function NodeRuntimeConfig({
     node,
     storageAccounts,
     socialAccounts,
+    aiProviders,
+    aiModelsByProviderId,
     storageAssets,
     runtimeFile,
+    runtimeArtifact,
     facebookPagesByAccount,
     loadingFacebookAccountIds,
+    loadingAiModelProviderIds,
     isRunningFlow,
     onUpdateNodeConfig,
     onUpdateNodeFile,
     onEnsureFacebookPages,
+    onEnsureAiProviderModels,
 }: {
     node: WorkspaceNodeInstance;
     storageAccounts: WorkspaceStorageAccount[];
     socialAccounts: WorkspaceSocialAccount[];
+    aiProviders: WorkspaceAiProvider[];
+    aiModelsByProviderId: Record<string, WorkspaceAiModel[] | undefined>;
     storageAssets: WorkspaceAsset[];
     runtimeFile: File | null;
+    runtimeArtifact: WorkspaceRuntimeArtifact | null;
     facebookPagesByAccount: Record<string, FacebookPageOption[]>;
     loadingFacebookAccountIds: Record<string, boolean>;
+    loadingAiModelProviderIds: Record<string, boolean>;
     isRunningFlow: boolean;
     onUpdateNodeConfig: (
         nodeId: string,
@@ -1908,6 +2425,9 @@ function NodeRuntimeConfig({
     ) => void;
     onUpdateNodeFile: (nodeId: string, file: File | null) => void;
     onEnsureFacebookPages: (accountId: string) => Promise<FacebookPagesResult>;
+    onEnsureAiProviderModels: (
+        providerId: string,
+    ) => Promise<WorkspaceAiModel[]>;
 }) {
     const setConfig = (patch: WorkspaceNodeInstance["config"]) =>
         onUpdateNodeConfig(node.id, patch);
@@ -2287,6 +2807,252 @@ function NodeRuntimeConfig({
         );
     }
 
+    if (
+        node.templateNodeType === "audio.voice-generation" ||
+        node.templateNodeType === "audio.video-dubbing"
+    ) {
+        const isDubbing = node.templateNodeType === "audio.video-dubbing";
+        const selectedTranslationProviderId = getStringConfig(
+            node,
+            "translationProviderId",
+        );
+        const translationModels = selectedTranslationProviderId
+            ? (aiModelsByProviderId[selectedTranslationProviderId] ?? [])
+            : [];
+        const isLoadingTranslationModels = selectedTranslationProviderId
+            ? Boolean(loadingAiModelProviderIds[selectedTranslationProviderId])
+            : false;
+        return (
+            <InspectorSection title="Runtime Config">
+                <div className="space-y-2 border border-main bg-secondary/20 p-2">
+                    {isDubbing ? (
+                        <>
+                            <RuntimeSelect
+                                label="Language hint"
+                                value={getStringConfig(node, "language", "zh")}
+                                disabled={isRunningFlow}
+                                onChange={(value) =>
+                                    setConfig({ language: value })
+                                }
+                            >
+                                <option value="zh">Chinese (zh)</option>
+                                <option value="en">English (en)</option>
+                                <option value="vi">Vietnamese (vi)</option>
+                            </RuntimeSelect>
+                            <RuntimeSelect
+                                label="AI Provider"
+                                value={selectedTranslationProviderId}
+                                disabled={isRunningFlow}
+                                onChange={async (value) => {
+                                    setConfig({
+                                        translationProviderId: value,
+                                        model: value
+                                            ? ""
+                                            : DEFAULT_TRANSLATION_MODEL,
+                                    });
+                                    if (value) {
+                                        const models =
+                                            await onEnsureAiProviderModels(
+                                                value,
+                                            );
+                                        if (models[0]) {
+                                            setConfig({
+                                                translationProviderId: value,
+                                                model: models[0].id,
+                                            });
+                                        }
+                                    }
+                                }}
+                            >
+                                <option value="">
+                                    Default (env GROQ_API_KEY)
+                                </option>
+                                {aiProviders.map((provider) => (
+                                    <option
+                                        key={provider._id}
+                                        value={provider._id}
+                                    >
+                                        {provider.label} (
+                                        {provider.providerType})
+                                    </option>
+                                ))}
+                            </RuntimeSelect>
+                            {selectedTranslationProviderId &&
+                            translationModels.length > 0 ? (
+                                <RuntimeSelect
+                                    label={`Model${isLoadingTranslationModels ? " (loading...)" : ""}`}
+                                    value={getStringConfig(node, "model")}
+                                    disabled={
+                                        isRunningFlow ||
+                                        isLoadingTranslationModels
+                                    }
+                                    onChange={(value) =>
+                                        setConfig({ model: value })
+                                    }
+                                >
+                                    {translationModels.map((model) => (
+                                        <option key={model.id} value={model.id}>
+                                            {model.name}
+                                        </option>
+                                    ))}
+                                </RuntimeSelect>
+                            ) : (
+                                <RuntimeTextInput
+                                    label={`Model${isLoadingTranslationModels ? " (loading...)" : ""}`}
+                                    value={getStringConfig(
+                                        node,
+                                        "model",
+                                        DEFAULT_TRANSLATION_MODEL,
+                                    )}
+                                    disabled={isRunningFlow}
+                                    placeholder="llama-3.1-8b-instant"
+                                    onChange={(value) =>
+                                        setConfig({ model: value })
+                                    }
+                                />
+                            )}
+                            <RuntimeSelect
+                                label="Target language"
+                                value={getStringConfig(
+                                    node,
+                                    "targetLanguage",
+                                    "vi",
+                                )}
+                                disabled={isRunningFlow}
+                                onChange={(value) =>
+                                    setConfig({ targetLanguage: value })
+                                }
+                            >
+                                <option value="vi">Vietnamese (vi)</option>
+                                <option value="en">English (en)</option>
+                            </RuntimeSelect>
+                            <div className="grid gap-2 sm:grid-cols-2">
+                                <RuntimeTextInput
+                                    label="Original volume"
+                                    value={String(
+                                        getNumberConfig(
+                                            node,
+                                            "originalAudioVolume",
+                                            0.18,
+                                        ),
+                                    )}
+                                    disabled={isRunningFlow}
+                                    placeholder="0.18"
+                                    onChange={(value) =>
+                                        setConfig({
+                                            originalAudioVolume: Number(value),
+                                        })
+                                    }
+                                />
+                                <RuntimeTextInput
+                                    label="Voice volume"
+                                    value={String(
+                                        getNumberConfig(node, "voiceVolume", 1),
+                                    )}
+                                    disabled={isRunningFlow}
+                                    placeholder="1"
+                                    onChange={(value) =>
+                                        setConfig({
+                                            voiceVolume: Number(value),
+                                        })
+                                    }
+                                />
+                            </div>
+                        </>
+                    ) : null}
+                    <RuntimeTextInput
+                        label="Piper executable"
+                        value={getStringConfig(node, "ttsBinaryPath", "piper")}
+                        disabled={isRunningFlow}
+                        placeholder="piper"
+                        onChange={(value) =>
+                            setConfig({ ttsBinaryPath: value })
+                        }
+                    />
+                    <RuntimeTextInput
+                        label="ONNX model"
+                        value={getStringConfig(node, "ttsModelPath")}
+                        disabled={isRunningFlow}
+                        placeholder="auto: piper/model.onnx"
+                        onChange={(value) => setConfig({ ttsModelPath: value })}
+                    />
+                    <RuntimeTextInput
+                        label="Config JSON"
+                        value={getStringConfig(node, "ttsConfigPath")}
+                        disabled={isRunningFlow}
+                        placeholder="auto: piper/model.onnx.json"
+                        onChange={(value) =>
+                            setConfig({ ttsConfigPath: value })
+                        }
+                    />
+                    <label className="flex items-center justify-between gap-3 border border-main bg-main px-3 py-2">
+                        <span>
+                            <span className="block text-[11px] font-semibold text-main">
+                                Preserve timestamp gaps
+                            </span>
+                            <span className="block text-[10px] text-muted">
+                                Giữ silence/segment timing cho voice-over.
+                            </span>
+                        </span>
+                        <input
+                            type="checkbox"
+                            checked={getBooleanConfig(
+                                node,
+                                "ttsPreserveTimestampGaps",
+                                true,
+                            )}
+                            disabled={isRunningFlow}
+                            onChange={(event) =>
+                                setConfig({
+                                    ttsPreserveTimestampGaps:
+                                        event.currentTarget.checked,
+                                })
+                            }
+                            className="h-4 w-4 accent-[var(--color-accent)]"
+                        />
+                    </label>
+                    {runtimeArtifact ? (
+                        <div className="space-y-2 border border-emerald-500/30 bg-emerald-500/10 p-3">
+                            <p className="text-[11px] font-semibold text-emerald-700">
+                                {runtimeArtifact.detail} ·{" "}
+                                {formatBytes(runtimeArtifact.byteLength)}
+                            </p>
+                            {runtimeArtifact.kind === "audio" ? (
+                                <audio
+                                    controls
+                                    src={artifactDataUrl(runtimeArtifact)}
+                                    className="w-full"
+                                />
+                            ) : (
+                                <video
+                                    controls
+                                    src={artifactDataUrl(runtimeArtifact)}
+                                    className="max-h-56 w-full bg-black"
+                                />
+                            )}
+                            <a
+                                href={artifactDataUrl(runtimeArtifact)}
+                                download={runtimeArtifact.fileName}
+                                className="inline-flex border border-main bg-main px-2 py-1 text-[10px] font-semibold text-main hover:bg-secondary"
+                            >
+                                Download {runtimeArtifact.fileName}
+                            </a>
+                        </div>
+                    ) : (
+                        <div className="flex items-start gap-2 border border-main bg-main px-3 py-2">
+                            <Volume2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted" />
+                            <p className="text-[10px] leading-4 text-muted">
+                                {isDubbing
+                                    ? "Node này tự chạy transcript, translate, voice generation và mux MP4. Nối sang Save to Storage để persist artifact."
+                                    : "Node này cần translated transcript upstream và tạo WAV preview/download trong Workspace."}
+                            </p>
+                        </div>
+                    )}
+                </div>
+            </InspectorSection>
+        );
+    }
+
     return null;
 }
 
@@ -2298,10 +3064,14 @@ function InspectorPanel({
     flowPlan,
     storageAccounts,
     socialAccounts,
+    aiProviders,
+    aiModelsByProviderId,
     storageAssets,
     runtimeFile,
+    runtimeArtifact,
     facebookPagesByAccount,
     loadingFacebookAccountIds,
+    loadingAiModelProviderIds,
     isRunningFlow,
     onSetPendingSource,
     onCancelPendingSource,
@@ -2309,6 +3079,7 @@ function InspectorPanel({
     onUpdateNodeConfig,
     onUpdateNodeFile,
     onEnsureFacebookPages,
+    onEnsureAiProviderModels,
 }: {
     node: WorkspaceNodeInstance | undefined;
     template: WorkspaceNodeTemplate | undefined;
@@ -2317,10 +3088,14 @@ function InspectorPanel({
     flowPlan: WorkspaceFlowPlan;
     storageAccounts: WorkspaceStorageAccount[];
     socialAccounts: WorkspaceSocialAccount[];
+    aiProviders: WorkspaceAiProvider[];
+    aiModelsByProviderId: Record<string, WorkspaceAiModel[] | undefined>;
     storageAssets: WorkspaceAsset[];
     runtimeFile: File | null;
+    runtimeArtifact: WorkspaceRuntimeArtifact | null;
     facebookPagesByAccount: Record<string, FacebookPageOption[]>;
     loadingFacebookAccountIds: Record<string, boolean>;
+    loadingAiModelProviderIds: Record<string, boolean>;
     isRunningFlow: boolean;
     onSetPendingSource: (nodeId: string) => void;
     onCancelPendingSource: () => void;
@@ -2331,6 +3106,9 @@ function InspectorPanel({
     ) => void;
     onUpdateNodeFile: (nodeId: string, file: File | null) => void;
     onEnsureFacebookPages: (accountId: string) => Promise<FacebookPagesResult>;
+    onEnsureAiProviderModels: (
+        providerId: string,
+    ) => Promise<WorkspaceAiModel[]>;
 }) {
     return (
         <aside className="thin-scrollbar min-h-0 overflow-y-auto border-t border-main bg-main p-4 lg:border-l lg:border-t-0 lg:border-[var(--border-color)]">
@@ -2414,14 +3192,19 @@ function InspectorPanel({
                         node={node}
                         storageAccounts={storageAccounts}
                         socialAccounts={socialAccounts}
+                        aiProviders={aiProviders}
+                        aiModelsByProviderId={aiModelsByProviderId}
                         storageAssets={storageAssets}
                         runtimeFile={runtimeFile}
+                        runtimeArtifact={runtimeArtifact}
                         facebookPagesByAccount={facebookPagesByAccount}
                         loadingFacebookAccountIds={loadingFacebookAccountIds}
+                        loadingAiModelProviderIds={loadingAiModelProviderIds}
                         isRunningFlow={isRunningFlow}
                         onUpdateNodeConfig={onUpdateNodeConfig}
                         onUpdateNodeFile={onUpdateNodeFile}
                         onEnsureFacebookPages={onEnsureFacebookPages}
+                        onEnsureAiProviderModels={onEnsureAiProviderModels}
                     />
 
                     <InspectorSection title="Ports">

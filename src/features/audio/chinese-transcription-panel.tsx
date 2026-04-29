@@ -17,11 +17,19 @@ import type {
     TranscriptTranslationResult,
     VoiceGenerationResult,
 } from "@/lib/multilingual-audio/types";
-import {
-    DEFAULT_PIPER_TTS_SETTINGS,
-    DEFAULT_TRANSLATION_MODEL,
-    GROQ_TRANSLATION_MODELS,
-} from "@/lib/multilingual-audio/types";
+import { DEFAULT_PIPER_TTS_SETTINGS } from "@/lib/multilingual-audio/types";
+
+type AiProviderOption = {
+    _id: string;
+    label: string;
+    providerType: string;
+    status: string;
+};
+
+type AiModelOption = {
+    id: string;
+    name: string;
+};
 
 type ChineseTranscriptionPanelProps = {
     section: LeftbarNavItem;
@@ -75,6 +83,14 @@ function formatBytes(bytes: number) {
     if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
     if (bytes >= 1024) return `${(bytes / 1024).toFixed(2)} KB`;
     return `${bytes} B`;
+}
+
+function formatDurationMs(ms: number) {
+    if (!Number.isFinite(ms) || ms < 0) return "n/a";
+    if (ms < 1000) return `${ms.toFixed(0)} ms`;
+    const seconds = ms / 1000;
+    if (seconds < 10) return `${seconds.toFixed(2)} s`;
+    return `${seconds.toFixed(1)} s`;
 }
 
 function stepTone(status: AudioTranscriptionStep["status"]) {
@@ -143,9 +159,12 @@ export function ChineseTranscriptionPanel({
     const [language, setLanguage] = useState("zh");
     const [prompt, setPrompt] = useState("");
     const [includeWordTimestamps, setIncludeWordTimestamps] = useState(true);
-    const [translationModel, setTranslationModel] = useState(
-        DEFAULT_TRANSLATION_MODEL,
-    );
+
+    const [aiProviders, setAiProviders] = useState<AiProviderOption[]>([]);
+    const [selectedProviderId, setSelectedProviderId] = useState("");
+    const [aiModels, setAiModels] = useState<AiModelOption[]>([]);
+    const [translationModel, setTranslationModel] = useState("");
+    const [isLoadingModels, setIsLoadingModels] = useState(false);
     const [ttsBinaryPath, setTtsBinaryPath] = useState<string>(
         DEFAULT_PIPER_TTS_SETTINGS.binaryPath,
     );
@@ -191,6 +210,60 @@ export function ChineseTranscriptionPanel({
     const [voiceResult, setVoiceResult] =
         useState<VoiceGenerationResult | null>(null);
     const [steps, setSteps] = useState<AudioTranscriptionStep[]>([]);
+
+    useState(() => {
+        fetch("/api/ai-providers")
+            .then((res) => res.json())
+            .then((payload: { ok: boolean; data?: AiProviderOption[] }) => {
+                if (payload.ok && payload.data) {
+                    const active = payload.data.filter(
+                        (p) => p.status === "active",
+                    );
+                    setAiProviders(active);
+                    if (active.length > 0 && !selectedProviderId) {
+                        setSelectedProviderId(active[0]._id);
+                    }
+                }
+            })
+            .catch(() => {});
+    });
+
+    const fetchModelsForProvider = async (providerId: string) => {
+        if (!providerId) {
+            setAiModels([]);
+            setTranslationModel("");
+            return;
+        }
+        setIsLoadingModels(true);
+        try {
+            const res = await fetch(`/api/ai-providers/${providerId}/models`);
+            const payload = (await res.json()) as {
+                ok: boolean;
+                data?: AiModelOption[];
+            };
+            if (payload.ok && payload.data) {
+                setAiModels(payload.data);
+                if (payload.data.length > 0) {
+                    setTranslationModel(payload.data[0].id);
+                }
+            } else {
+                setAiModels([]);
+            }
+        } catch {
+            setAiModels([]);
+        } finally {
+            setIsLoadingModels(false);
+        }
+    };
+
+    const handleProviderChange = (providerId: string) => {
+        setSelectedProviderId(providerId);
+        setTranslationModel("");
+        setAiModels([]);
+        if (providerId) {
+            fetchModelsForProvider(providerId);
+        }
+    };
 
     const runTranscription = async () => {
         if (!file) {
@@ -268,6 +341,7 @@ export function ChineseTranscriptionPanel({
                     sourceLanguage: result.language || language,
                     targetLanguage: "vi",
                     model: translationModel,
+                    providerId: selectedProviderId || undefined,
                 }),
             });
             const payload = (await response.json()) as TranslationApiPayload;
@@ -448,7 +522,7 @@ export function ChineseTranscriptionPanel({
                             <textarea
                                 value={prompt}
                                 disabled={isRunning}
-                                rows={3}
+                                rows={2}
                                 placeholder="Tên riêng, thuật ngữ, ngữ cảnh nội dung..."
                                 onChange={(event) =>
                                     setPrompt(event.currentTarget.value)
@@ -510,7 +584,6 @@ export function ChineseTranscriptionPanel({
                                     </p>
                                     <p className="mt-1 text-[10px] leading-4 text-muted">
                                         Dịch segment sang tiếng Việt.
-                                        (llama-4-scout)
                                     </p>
                                 </div>
                                 <button
@@ -533,24 +606,73 @@ export function ChineseTranscriptionPanel({
 
                             <label className="block">
                                 <span className="mb-1 block text-[10px] font-semibold text-muted">
-                                    Model
+                                    AI Provider
                                 </span>
                                 <select
-                                    value={translationModel}
+                                    value={selectedProviderId}
                                     disabled={isTranslating}
                                     onChange={(event) =>
-                                        setTranslationModel(
+                                        handleProviderChange(
                                             event.currentTarget.value,
                                         )
                                     }
                                     className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main"
                                 >
-                                    {GROQ_TRANSLATION_MODELS.map((model) => (
-                                        <option key={model.id} value={model.id}>
-                                            {model.label}
+                                    <option value="">
+                                        Default (env GROQ_API_KEY)
+                                    </option>
+                                    {aiProviders.map((provider) => (
+                                        <option
+                                            key={provider._id}
+                                            value={provider._id}
+                                        >
+                                            {provider.label} (
+                                            {provider.providerType})
                                         </option>
                                     ))}
                                 </select>
+                            </label>
+
+                            <label className="block">
+                                <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                    Model
+                                    {isLoadingModels ? " (loading...)" : ""}
+                                </span>
+                                {selectedProviderId && aiModels.length > 0 ? (
+                                    <select
+                                        value={translationModel}
+                                        disabled={
+                                            isTranslating || isLoadingModels
+                                        }
+                                        onChange={(event) =>
+                                            setTranslationModel(
+                                                event.currentTarget.value,
+                                            )
+                                        }
+                                        className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main"
+                                    >
+                                        {aiModels.map((model) => (
+                                            <option
+                                                key={model.id}
+                                                value={model.id}
+                                            >
+                                                {model.name}
+                                            </option>
+                                        ))}
+                                    </select>
+                                ) : (
+                                    <input
+                                        value={translationModel}
+                                        disabled={isTranslating}
+                                        onChange={(event) =>
+                                            setTranslationModel(
+                                                event.currentTarget.value,
+                                            )
+                                        }
+                                        placeholder="llama-3.1-8b-instant"
+                                        className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main placeholder:text-muted/60"
+                                    />
+                                )}
                             </label>
 
                             <button
@@ -586,7 +708,11 @@ export function ChineseTranscriptionPanel({
                                     </p>
                                     <p className="mt-1 text-[10px] leading-4 text-emerald-700">
                                         {translation.model} ·{" "}
-                                        {translation.chunks.length} chunk(s)
+                                        {translation.chunks.length} chunk(s) ·{" "}
+                                        Created in{" "}
+                                        {formatDurationMs(
+                                            translation.generationDurationMs,
+                                        )}
                                     </p>
                                 </div>
                             ) : null}
@@ -770,11 +896,15 @@ export function ChineseTranscriptionPanel({
                                 <div className="space-y-2 border border-emerald-500/30 bg-emerald-500/10 p-3">
                                     <p className="text-[11px] font-semibold text-emerald-700">
                                         Voice ready ·{" "}
-                                        {formatBytes(voiceResult.byteLength)}
+                                        {formatBytes(voiceResult.byteLength)} ·
+                                        Created in{" "}
+                                        {formatDurationMs(
+                                            voiceResult.generationDurationMs,
+                                        )}
                                     </p>
                                     <p className="text-[10px] leading-4 text-emerald-700">
-                                        Piper ·{" "}
-                                        {voiceResult.segmentCount} segment(s) ·{" "}
+                                        Piper · {voiceResult.segmentCount}{" "}
+                                        segment(s) ·{" "}
                                         {voiceResult.alignment.mode}
                                         {voiceResult.alignment
                                             .targetDurationSeconds

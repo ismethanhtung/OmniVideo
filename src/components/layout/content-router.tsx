@@ -2,6 +2,7 @@ import type { ComponentType } from "react";
 
 import { getNavItem } from "@/components/layout/navigation";
 import type { AppSectionId, LeftbarNavItem } from "@/components/layout/types";
+import { AiProvidersPanel } from "@/features/ai-providers/ai-providers-panel";
 import { ConnectionTestPanel } from "@/features/connections/connection-test-panel";
 import { ChineseTranscriptionPanel } from "@/features/audio/chinese-transcription-panel";
 import { PiperTtsSandboxPanel } from "@/features/audio/piper-tts-sandbox-panel";
@@ -26,6 +27,7 @@ type SectionComponentProps = {
 const SECTION_COMPONENTS: Partial<
     Record<AppSectionId, ComponentType<SectionComponentProps>>
 > = {
+    aiProviders: AiProvidersPanel,
     connectionTest: ConnectionTestPanel,
     storageLibrary: StorageLibraryPanel,
     chineseTranscription: ChineseTranscriptionPanel,

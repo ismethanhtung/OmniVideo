@@ -4,6 +4,7 @@ export type AppSectionId =
   | "workspace"
   | "profile"
   | "ai"
+  | "aiProviders"
   | "display"
   | "notif"
   | "videoIntake"

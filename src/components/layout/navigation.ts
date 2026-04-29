@@ -1,4 +1,5 @@
 import {
+    BrainCircuit,
     Cable,
     DownloadCloud,
     HardDrive,
@@ -15,6 +16,7 @@ import {
     ListVideo,
     Mic2,
     RadioTower,
+    TestTubes,
 } from "lucide-react";
 
 import type { AppSectionId, LeftbarNavGroup, LeftbarNavItem } from "./types";
@@ -47,6 +49,13 @@ export const LEFTBAR_NAV: LeftbarNavGroup[] = [
                 label: "Display",
                 description: "Typography + Appearance: fonts và themes.",
             },
+            {
+                id: "aiProviders",
+                icon: BrainCircuit,
+                label: "AI Providers",
+                description:
+                    "Quản lý kết nối AI providers (Groq, OpenRouter, custom) với quota và usage tracking.",
+            },
         ],
     },
     {
@@ -75,13 +84,7 @@ export const LEFTBAR_NAV: LeftbarNavGroup[] = [
                 description:
                     "Extract audio từ video/audio và gọi Groq Whisper Large v3 Turbo để lấy text + timestamp.",
             },
-            {
-                id: "piperTtsSandbox",
-                icon: RadioTower,
-                label: "Piper TTS Sandbox",
-                description:
-                    "Test local Piper voice model ONNX bằng CPU, không cần GPU.",
-            },
+
             {
                 id: "storageProviders",
                 icon: HardDrive,
@@ -150,6 +153,20 @@ export const LEFTBAR_NAV: LeftbarNavGroup[] = [
                 icon: Cable,
                 label: "Connection Test",
                 description: "Kiểm tra trạng thái kết nối MongoDB và service.",
+            },
+        ],
+    },
+    {
+        sectionId: "test",
+        sectionIcon: TestTubes,
+        groupLabel: "Test",
+        items: [
+            {
+                id: "piperTtsSandbox",
+                icon: RadioTower,
+                label: "Piper TTS Sandbox",
+                description:
+                    "Test local Piper voice model ONNX bằng CPU, không cần GPU.",
             },
         ],
     },
