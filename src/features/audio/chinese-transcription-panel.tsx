@@ -14,15 +14,12 @@ import type { LeftbarNavItem } from "@/components/layout/types";
 import type {
     AudioTranscriptionStep,
     ChineseTranscriptionResult,
-    EdgeTtsOutputFormat,
     TranscriptTranslationResult,
     VoiceGenerationResult,
 } from "@/lib/multilingual-audio/types";
 import {
-    DEFAULT_EDGE_TTS_SETTINGS,
+    DEFAULT_PIPER_TTS_SETTINGS,
     DEFAULT_TRANSLATION_MODEL,
-    EDGE_TTS_OUTPUT_FORMATS,
-    EDGE_TTS_VOICES,
     GROQ_TRANSLATION_MODELS,
 } from "@/lib/multilingual-audio/types";
 
@@ -149,23 +146,32 @@ export function ChineseTranscriptionPanel({
     const [translationModel, setTranslationModel] = useState(
         DEFAULT_TRANSLATION_MODEL,
     );
-    const [ttsVoice, setTtsVoice] = useState<string>(
-        DEFAULT_EDGE_TTS_SETTINGS.voice,
+    const [ttsBinaryPath, setTtsBinaryPath] = useState<string>(
+        DEFAULT_PIPER_TTS_SETTINGS.binaryPath,
     );
-    const [ttsRate, setTtsRate] = useState<number>(
-        DEFAULT_EDGE_TTS_SETTINGS.rate,
+    const [ttsModelPath, setTtsModelPath] = useState<string>(
+        DEFAULT_PIPER_TTS_SETTINGS.modelPath,
     );
-    const [ttsPitch, setTtsPitch] = useState<number>(
-        DEFAULT_EDGE_TTS_SETTINGS.pitch,
+    const [ttsConfigPath, setTtsConfigPath] = useState<string>(
+        DEFAULT_PIPER_TTS_SETTINGS.configPath,
     );
-    const [ttsVolume, setTtsVolume] = useState<number>(
-        DEFAULT_EDGE_TTS_SETTINGS.volume,
+    const [ttsSpeaker, setTtsSpeaker] = useState<number>(
+        DEFAULT_PIPER_TTS_SETTINGS.speaker,
     );
-    const [ttsOutputFormat, setTtsOutputFormat] = useState<EdgeTtsOutputFormat>(
-        DEFAULT_EDGE_TTS_SETTINGS.outputFormat,
+    const [ttsLengthScale, setTtsLengthScale] = useState<number>(
+        DEFAULT_PIPER_TTS_SETTINGS.lengthScale,
+    );
+    const [ttsNoiseScale, setTtsNoiseScale] = useState<number>(
+        DEFAULT_PIPER_TTS_SETTINGS.noiseScale,
+    );
+    const [ttsNoiseW, setTtsNoiseW] = useState<number>(
+        DEFAULT_PIPER_TTS_SETTINGS.noiseW,
+    );
+    const [ttsSentenceSilence, setTtsSentenceSilence] = useState<number>(
+        DEFAULT_PIPER_TTS_SETTINGS.sentenceSilence,
     );
     const [ttsPreserveTimestampGaps, setTtsPreserveTimestampGaps] =
-        useState<boolean>(DEFAULT_EDGE_TTS_SETTINGS.preserveTimestampGaps);
+        useState<boolean>(DEFAULT_PIPER_TTS_SETTINGS.preserveTimestampGaps);
     const [segmentView, setSegmentView] = useState<"source" | "translation">(
         "translation",
     );
@@ -309,11 +315,14 @@ export function ChineseTranscriptionPanel({
                         text: segment.translatedText,
                     })),
                     settings: {
-                        voice: ttsVoice,
-                        rate: ttsRate,
-                        pitch: ttsPitch,
-                        volume: ttsVolume,
-                        outputFormat: ttsOutputFormat,
+                        binaryPath: ttsBinaryPath,
+                        modelPath: ttsModelPath,
+                        configPath: ttsConfigPath,
+                        speaker: ttsSpeaker,
+                        lengthScale: ttsLengthScale,
+                        noiseScale: ttsNoiseScale,
+                        noiseW: ttsNoiseW,
+                        sentenceSilence: ttsSentenceSilence,
                         preserveTimestampGaps: ttsPreserveTimestampGaps,
                     },
                 }),
@@ -594,91 +603,102 @@ export function ChineseTranscriptionPanel({
                                     </p>
                                     <p className="mt-1 text-[10px] leading-4 text-muted">
                                         Sinh voice tiếng Việt từ translated
-                                        segments bằng Edge-TTS.
+                                        segments bằng Piper local.
                                     </p>
                                 </div>
                             </div>
 
                             <label className="block">
                                 <span className="mb-1 block text-[10px] font-semibold text-muted">
-                                    Voice
+                                    Piper executable
                                 </span>
-                                <select
-                                    value={ttsVoice}
+                                <input
+                                    value={ttsBinaryPath}
                                     disabled={isGeneratingVoice}
                                     onChange={(event) =>
-                                        setTtsVoice(event.currentTarget.value)
+                                        setTtsBinaryPath(
+                                            event.currentTarget.value,
+                                        )
                                     }
                                     className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main"
-                                >
-                                    {EDGE_TTS_VOICES.map((voice) => (
-                                        <option key={voice.id} value={voice.id}>
-                                            {voice.label}
-                                        </option>
-                                    ))}
-                                </select>
+                                    placeholder="piper"
+                                />
                             </label>
 
                             <label className="block">
                                 <span className="mb-1 block text-[10px] font-semibold text-muted">
-                                    Output format
+                                    ONNX model
                                 </span>
-                                <select
-                                    value={ttsOutputFormat}
+                                <input
+                                    value={ttsModelPath}
                                     disabled={isGeneratingVoice}
                                     onChange={(event) =>
-                                        setTtsOutputFormat(
-                                            event.currentTarget
-                                                .value as EdgeTtsOutputFormat,
+                                        setTtsModelPath(
+                                            event.currentTarget.value,
                                         )
                                     }
                                     className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main"
-                                >
-                                    {EDGE_TTS_OUTPUT_FORMATS.map((format) => (
-                                        <option
-                                            key={format.id}
-                                            value={format.id}
-                                        >
-                                            {format.label}
-                                        </option>
-                                    ))}
-                                </select>
+                                    placeholder="auto: piper/model.onnx"
+                                />
                             </label>
 
-                            <div className="grid gap-2">
+                            <label className="block">
+                                <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                    Config JSON
+                                </span>
+                                <input
+                                    value={ttsConfigPath}
+                                    disabled={isGeneratingVoice}
+                                    onChange={(event) =>
+                                        setTtsConfigPath(
+                                            event.currentTarget.value,
+                                        )
+                                    }
+                                    className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main"
+                                    placeholder="auto: piper/model.onnx.json"
+                                />
+                            </label>
+
+                            <div className="grid gap-2 sm:grid-cols-2">
                                 {[
                                     {
-                                        label: "Rate",
-                                        value: ttsRate,
-                                        setter: setTtsRate,
+                                        label: "Speaker",
+                                        value: ttsSpeaker,
+                                        setter: setTtsSpeaker,
+                                        step: 1,
                                     },
                                     {
-                                        label: "Pitch",
-                                        value: ttsPitch,
-                                        setter: setTtsPitch,
+                                        label: "Length scale",
+                                        value: ttsLengthScale,
+                                        setter: setTtsLengthScale,
+                                        step: 0.05,
                                     },
                                     {
-                                        label: "Volume",
-                                        value: ttsVolume,
-                                        setter: setTtsVolume,
+                                        label: "Noise scale",
+                                        value: ttsNoiseScale,
+                                        setter: setTtsNoiseScale,
+                                        step: 0.01,
+                                    },
+                                    {
+                                        label: "Noise W",
+                                        value: ttsNoiseW,
+                                        setter: setTtsNoiseW,
+                                        step: 0.01,
+                                    },
+                                    {
+                                        label: "Sentence silence",
+                                        value: ttsSentenceSilence,
+                                        setter: setTtsSentenceSilence,
+                                        step: 0.05,
                                     },
                                 ].map((control) => (
                                     <label
                                         key={control.label}
                                         className="block border border-main bg-main px-3 py-2"
                                     >
-                                        <span className="flex items-center justify-between gap-3 text-[10px] font-semibold text-muted">
-                                            <span>{control.label}</span>
-                                            <span className="text-main">
-                                                {control.value > 0 ? "+" : ""}
-                                                {control.value}%
-                                            </span>
-                                        </span>
                                         <input
-                                            type="range"
-                                            min={-100}
-                                            max={100}
-                                            step={5}
+                                            type="number"
+                                            step={control.step}
                                             value={control.value}
                                             disabled={isGeneratingVoice}
                                             onChange={(event) =>
@@ -689,8 +709,11 @@ export function ChineseTranscriptionPanel({
                                                     ),
                                                 )
                                             }
-                                            className="mt-2 w-full accent-[var(--color-accent)]"
+                                            className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main"
                                         />
+                                        <span className="mt-1 block text-[10px] font-semibold text-muted">
+                                            {control.label}
+                                        </span>
                                     </label>
                                 ))}
                             </div>
@@ -750,7 +773,7 @@ export function ChineseTranscriptionPanel({
                                         {formatBytes(voiceResult.byteLength)}
                                     </p>
                                     <p className="text-[10px] leading-4 text-emerald-700">
-                                        {voiceResult.settings.voice} ·{" "}
+                                        Piper ·{" "}
                                         {voiceResult.segmentCount} segment(s) ·{" "}
                                         {voiceResult.alignment.mode}
                                         {voiceResult.alignment

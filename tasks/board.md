@@ -22,6 +22,10 @@
 
 ## Done
 
+- `FAST-AUDIO-013` - Replace Audio Transcript Edge TTS with Piper.
+- `FAST-AUDIO-012` - Keep Piper runtime self-contained.
+- `FAST-AUDIO-011` - Harden Piper TTS runtime preflight.
+- `FAST-AUDIO-010` - Add local Piper TTS sandbox page.
 - `FAST-AUDIO-007` - Chunk Edge TTS SSML requests.
 - `FAST-AUDIO-006` - Sanitize Edge TTS SSML text.
 - `FAST-AUDIO-005` - Fix Edge TTS websocket runtime failure.

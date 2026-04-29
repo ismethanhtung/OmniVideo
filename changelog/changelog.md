@@ -1,5 +1,33 @@
 # OmniVideo Changelog
 
+## 2026-04-29
+
+### Added
+
+- Thêm trang `Piper TTS Sandbox` trong Video Pipeline để test local Piper voice model `.onnx` bằng CPU, có cấu hình executable/model/config/speaker/scale và audio preview/download WAV.
+- Thêm API `POST /api/audio/piper-tts` và adapter `src/lib/multilingual-audio/piper-tts.ts` để spawn Piper CLI local qua stdin và nhận WAV qua stdout.
+- Thêm tests cho Piper adapter, Piper API route và navigation registry; đồng thời xoá phần Groq TTS sandbox còn sót khỏi navigation/task board.
+- Thêm Piper voice generation cho Audio Transcript: sinh WAV từ translated segments, có chế độ bám segment timestamps bằng silence/trim/pad/speed-up qua ffmpeg.
+
+### Changed
+
+- Thay Edge-TTS ở Audio Transcript bằng Piper local; controls chuyển sang binary/model/config/speaker/scale và default path portable theo repo (`piper`, auto `piper/model.onnx`, auto `piper/model.onnx.json`).
+
+### Fixed
+
+- Sửa Piper sandbox không còn chờ timeout khi thiếu runtime dylib/model/config: adapter preflight các file bắt buộc trước khi spawn và UI mặc định trỏ vào `piper/model.onnx` + `piper/model.onnx.json` trong repo.
+- Chuyển Piper runtime sang package self-contained trong `piper/.venv`, app dùng `piper/.venv/bin/piper`, ghi WAV qua temp output file rồi đọc lại thay vì phụ thuộc stdout streaming; lỗi ONNX không tương thích được rút gọn thành message rõ.
+- Xoá runtime/test Edge-TTS khỏi source Audio Transcript; generated WAV chỉ dùng temp server file trong request rồi xoá, không persist vào storage.
+
+### Notes
+
+- Task IDs: FAST-AUDIO-010, FAST-AUDIO-011, FAST-AUDIO-012, FAST-AUDIO-013
+- Verification (FAST-AUDIO-013): `rg -n "edge-tts|Edge-TTS|EDGE_TTS|EdgeTts|vi-VN-HoaiMyNeural|PRV_EDGE_TTS_FAILED" src` không còn match; `npm run test -- --run src/lib/multilingual-audio/piper-tts.test.ts src/app/api/audio/piper-tts/route.test.ts src/app/api/audio/voice-generation/route.test.ts src/components/layout/navigation.test.ts` pass (19 tests / 4 files); `npm run build` pass với warning cũ ngoài scope (`src/features/workspace/display-preferences-panel.tsx` import `Image` chưa dùng).
+- Verification (FAST-AUDIO-012): `.vendor` runtime thử nghiệm đã được xoá; `piper-tts` cài trong repo-local `piper/.venv` bằng `--no-cache-dir`; `piper/.venv/bin/piper --help` pass; API smoke local đi tới Piper runtime và trả lỗi model không tương thích rõ ràng (`char_inputs/diac_inputs` vs Piper VITS `input/input_lengths/scales`); `npm run test -- --run src/lib/multilingual-audio/piper-tts.test.ts src/app/api/audio/piper-tts/route.test.ts` pass (9 tests / 2 files); `npm run build` pass với warning cũ ngoài scope.
+- Verification (FAST-AUDIO-011): direct Piper smoke command fail-fast vì thiếu `libespeak-ng.1.dylib`, xác nhận lỗi runtime dependency thay vì synthesize chậm; `npm run test -- --run src/lib/multilingual-audio/piper-tts.test.ts src/app/api/audio/piper-tts/route.test.ts` pass (8 tests / 2 files); `npm run build` pass với warning cũ ngoài scope (`src/features/workspace/display-preferences-panel.tsx` import `Image` chưa dùng).
+- Verification (FAST-AUDIO-010): `npm run test -- --run src/lib/multilingual-audio/piper-tts.test.ts src/app/api/audio/piper-tts/route.test.ts src/components/layout/navigation.test.ts` pass (10 tests / 3 files); `npm run build` pass với warning cũ ngoài scope (`src/features/workspace/display-preferences-panel.tsx` import `Image` chưa dùng); dev server chạy tại `http://localhost:3002`.
+- Piper research note: OHF Piper hiện là repo kế nhiệm của `rhasspy/piper`; CLI phù hợp test nhanh nhưng docs khuyến nghị web server cho dùng lặp lại vì CLI phải load model mỗi lần. Voice cần cặp `.onnx` + `.onnx.json`; các voice chất lượng thấp dùng sample rate/model nhỏ hơn, hợp hơn với máy yếu.
+
 ## 2026-04-27
 
 ### Added

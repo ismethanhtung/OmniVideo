@@ -28,4 +28,19 @@ describe("navigation registry", () => {
     expect(getNavItem("chineseTranscription")?.description).toContain("Groq");
     expect(getNavItem("chineseTranscription")?.label).toBe("Audio Transcript");
   });
+
+  it("registers Piper TTS sandbox and leaves Groq TTS sandbox removed", () => {
+    const pipelineGroup = LEFTBAR_NAV.find(
+      (group) => group.sectionId === "pipeline",
+    );
+    const navIds = LEFTBAR_NAV.flatMap((group) =>
+      group.items.map((item) => item.id),
+    );
+
+    expect(pipelineGroup?.items.map((item) => item.id)).toContain(
+      "piperTtsSandbox",
+    );
+    expect(getNavItem("piperTtsSandbox")?.description).toContain("CPU");
+    expect(navIds).not.toContain("groqTtsSandbox");
+  });
 });

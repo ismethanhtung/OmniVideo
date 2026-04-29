@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { generateVoiceFromSegments } from "@/lib/multilingual-audio/edge-tts";
+import { generateVoiceFromSegments } from "@/lib/multilingual-audio/piper-tts";
 import {
   ChineseTranscriptionError,
   type VoiceGenerationSegment,
@@ -37,7 +37,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         ok: false,
-        errorCode: "PRV_EDGE_TTS_FAILED",
+        errorCode: "PRV_PIPER_TTS_FAILED",
         error:
           error instanceof Error
             ? error.message

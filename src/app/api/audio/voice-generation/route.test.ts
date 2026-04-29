@@ -1,52 +1,41 @@
+import { EventEmitter } from "node:events";
+import { PassThrough } from "node:stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { setEdgeTtsWebSocketConstructorForTest } from "@/lib/multilingual-audio/edge-tts";
+import {
+  setPiperFfmpegRunnerForTest,
+  setPiperFileExistsForTest,
+  setPiperReadFileForTest,
+  setPiperSpawnForTest,
+} from "@/lib/multilingual-audio/piper-tts";
 
 import { POST } from "./route";
 
-class MockEdgeWebSocket {
-  binaryType: BinaryType = "arraybuffer";
-  readyState = 1;
-  onopen: ((event: Event) => void) | null = null;
-  onmessage: ((event: MessageEvent) => void) | null = null;
-  onerror: ((event: Event) => void) | null = null;
-  onclose: ((event: CloseEvent) => void) | null = null;
+function mockPiperSpawn() {
+  return vi.fn(() => {
+    const child = new EventEmitter() as EventEmitter & {
+      stdin: PassThrough;
+      stdout: PassThrough;
+      stderr: PassThrough;
+      kill: ReturnType<typeof vi.fn>;
+    };
+    child.stdin = new PassThrough();
+    child.stdout = new PassThrough();
+    child.stderr = new PassThrough();
+    child.kill = vi.fn();
 
-  constructor() {
-    setTimeout(() => this.onopen?.(new Event("open")), 0);
-  }
+    setTimeout(() => child.emit("close", 0), 0);
 
-  send(data: string) {
-    if (!data.includes("Path:ssml")) return;
-    setTimeout(() => {
-      this.onmessage?.({
-        data: createAudioFrame(Buffer.from("route-audio")),
-      } as MessageEvent);
-      setTimeout(() => {
-        this.onmessage?.({
-          data: "Path:turn.end\r\n\r\n",
-        } as MessageEvent);
-      }, 0);
-    }, 0);
-  }
-
-  close() {
-    this.readyState = 3;
-    this.onclose?.({ code: 1000, reason: "done" } as CloseEvent);
-  }
-}
-
-function createAudioFrame(audio: Buffer) {
-  const header = Buffer.from("Path:audio\r\nContent-Type:audio/mpeg\r\n", "utf8");
-  const prefix = Buffer.alloc(2);
-  prefix.writeUInt16BE(header.length, 0);
-  const frame = Buffer.concat([prefix, header, audio]);
-  return frame.buffer.slice(frame.byteOffset, frame.byteOffset + frame.byteLength);
+    return child;
+  });
 }
 
 describe("voice generation API", () => {
   afterEach(() => {
-    setEdgeTtsWebSocketConstructorForTest(null);
+    setPiperSpawnForTest(null);
+    setPiperFileExistsForTest(null);
+    setPiperReadFileForTest(null);
+    setPiperFfmpegRunnerForTest(null);
     vi.unstubAllGlobals();
   });
 
@@ -66,14 +55,17 @@ describe("voice generation API", () => {
     });
   });
 
-  it("rejects unsupported output formats", async () => {
+  it("rejects missing Piper model config", async () => {
+    setPiperFileExistsForTest((filePath) => !filePath.includes("missing"));
+
     const response = await POST(
       new Request("http://localhost/api/audio/voice-generation", {
         method: "POST",
         body: JSON.stringify({
           segments: [{ id: 0, start: 0, end: 1, text: "Xin chào" }],
           settings: {
-            outputFormat: "riff-24khz-16bit-mono-pcm",
+            binaryPath: "piper",
+            modelPath: "/missing/voice.onnx",
           },
         }),
       }),
@@ -83,12 +75,17 @@ describe("voice generation API", () => {
     expect(response.status).toBe(400);
     expect(payload).toMatchObject({
       ok: false,
-      errorCode: "VAL_TTS_CONFIG_INVALID",
+      errorCode: "VAL_PIPER_TTS_MODEL_REQUIRED",
     });
   });
 
-  it("returns synthesized Edge-TTS audio", async () => {
-    setEdgeTtsWebSocketConstructorForTest(MockEdgeWebSocket);
+  it("returns synthesized Piper WAV audio", async () => {
+    setPiperSpawnForTest(mockPiperSpawn() as never);
+    setPiperFileExistsForTest(() => true);
+    setPiperReadFileForTest(async () => Buffer.from("route-audio"));
+    setPiperFfmpegRunnerForTest(async () => ({
+      stderr: "Duration: 00:00:01.000",
+    }));
 
     const response = await POST(
       new Request("http://localhost/api/audio/voice-generation", {
@@ -96,8 +93,8 @@ describe("voice generation API", () => {
         body: JSON.stringify({
           segments: [{ id: 0, start: 0, end: 1, text: "Xin chào" }],
           settings: {
-            voice: "vi-VN-HoaiMyNeural",
-            outputFormat: "audio-24khz-48kbitrate-mono-mp3",
+            binaryPath: "piper",
+            modelPath: "/models/voice.onnx",
             preserveTimestampGaps: false,
           },
         }),
@@ -109,10 +106,11 @@ describe("voice generation API", () => {
     expect(payload).toMatchObject({
       ok: true,
       data: {
-        mimeType: "audio/mpeg",
-        extension: "mp3",
+        mimeType: "audio/wav",
+        extension: "wav",
         byteLength: "route-audio".length,
         segmentCount: 1,
+        provider: { name: "piper", mode: "local-cli" },
       },
     });
     expect(Buffer.from(payload.data.audioBase64, "base64").toString()).toBe(

@@ -29,66 +29,15 @@ export const GROQ_TRANSLATION_MODELS = [
   },
 ];
 
-export const EDGE_TTS_VOICES = [
-  {
-    id: "vi-VN-HoaiMyNeural",
-    label: "Vietnamese - HoaiMy",
-    locale: "vi-VN",
-    gender: "Female",
-  },
-  {
-    id: "vi-VN-NamMinhNeural",
-    label: "Vietnamese - Nam Minh",
-    locale: "vi-VN",
-    gender: "Male",
-  },
-  {
-    id: "en-US-JennyNeural",
-    label: "English - Jenny",
-    locale: "en-US",
-    gender: "Female",
-  },
-  {
-    id: "en-US-GuyNeural",
-    label: "English - Guy",
-    locale: "en-US",
-    gender: "Male",
-  },
-] as const;
-
-export const EDGE_TTS_OUTPUT_FORMATS = [
-  {
-    id: "audio-24khz-48kbitrate-mono-mp3",
-    label: "MP3 24kHz 48kbps mono",
-    mimeType: "audio/mpeg",
-    extension: "mp3",
-  },
-  {
-    id: "audio-24khz-96kbitrate-mono-mp3",
-    label: "MP3 24kHz 96kbps mono",
-    mimeType: "audio/mpeg",
-    extension: "mp3",
-  },
-  {
-    id: "audio-48khz-192kbitrate-mono-mp3",
-    label: "MP3 48kHz 192kbps mono",
-    mimeType: "audio/mpeg",
-    extension: "mp3",
-  },
-  {
-    id: "webm-24khz-16bit-mono-opus",
-    label: "WebM Opus 24kHz mono",
-    mimeType: "audio/webm",
-    extension: "webm",
-  },
-] as const;
-
-export const DEFAULT_EDGE_TTS_SETTINGS = {
-  voice: "vi-VN-HoaiMyNeural",
-  rate: 0,
-  pitch: 0,
-  volume: 0,
-  outputFormat: "audio-24khz-48kbitrate-mono-mp3",
+export const DEFAULT_PIPER_TTS_SETTINGS = {
+  binaryPath: "piper",
+  modelPath: "",
+  configPath: "",
+  speaker: 0,
+  lengthScale: 1,
+  noiseScale: 0.667,
+  noiseW: 0.8,
+  sentenceSilence: 0.2,
   preserveTimestampGaps: true,
 } as const;
 
@@ -146,16 +95,15 @@ export type TranscriptTranslationResult = {
   };
 };
 
-export type EdgeTtsVoiceId = (typeof EDGE_TTS_VOICES)[number]["id"] | string;
-export type EdgeTtsOutputFormat =
-  (typeof EDGE_TTS_OUTPUT_FORMATS)[number]["id"];
-
 export type VoiceGenerationSettings = {
-  voice: EdgeTtsVoiceId;
-  rate: number;
-  pitch: number;
-  volume: number;
-  outputFormat: EdgeTtsOutputFormat;
+  binaryPath: string;
+  modelPath: string;
+  configPath?: string;
+  speaker?: number;
+  lengthScale?: number;
+  noiseScale?: number;
+  noiseW?: number;
+  sentenceSilence?: number;
   preserveTimestampGaps: boolean;
 };
 
@@ -180,8 +128,8 @@ export type VoiceGenerationResult = {
   };
   settings: VoiceGenerationSettings;
   provider: {
-    name: "edge-tts";
-    connectionId: string;
+    name: "piper";
+    mode: "local-cli";
   };
 };
 
@@ -220,8 +168,12 @@ export type ChineseTranscriptionErrorCode =
   | "VAL_TRANSLATION_SEGMENTS_REQUIRED"
   | "PRV_GROQ_TRANSLATION_FAILED"
   | "VAL_TTS_SEGMENTS_REQUIRED"
-  | "VAL_TTS_CONFIG_INVALID"
-  | "PRV_EDGE_TTS_FAILED";
+  | "VAL_PIPER_TTS_TEXT_REQUIRED"
+  | "VAL_PIPER_TTS_BINARY_REQUIRED"
+  | "VAL_PIPER_TTS_MODEL_REQUIRED"
+  | "VAL_PIPER_TTS_CONFIG_NOT_FOUND"
+  | "CFG_PIPER_TTS_RUNTIME_MISSING"
+  | "PRV_PIPER_TTS_FAILED";
 
 export class ChineseTranscriptionError extends Error {
   constructor(

@@ -9,6 +9,7 @@ export type AppSectionId =
   | "videoIntake"
   | "localUploadIntake"
   | "chineseTranscription"
+  | "piperTtsSandbox"
   | "storageProviders"
   | "storageLibrary"
   | "socialAccounts"

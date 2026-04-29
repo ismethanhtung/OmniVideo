@@ -14,6 +14,7 @@ import {
     BookOpen,
     ListVideo,
     Mic2,
+    RadioTower,
 } from "lucide-react";
 
 import type { AppSectionId, LeftbarNavGroup, LeftbarNavItem } from "./types";
@@ -73,6 +74,13 @@ export const LEFTBAR_NAV: LeftbarNavGroup[] = [
                 label: "Audio Transcript",
                 description:
                     "Extract audio từ video/audio và gọi Groq Whisper Large v3 Turbo để lấy text + timestamp.",
+            },
+            {
+                id: "piperTtsSandbox",
+                icon: RadioTower,
+                label: "Piper TTS Sandbox",
+                description:
+                    "Test local Piper voice model ONNX bằng CPU, không cần GPU.",
             },
             {
                 id: "storageProviders",
