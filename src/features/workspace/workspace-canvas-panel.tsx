@@ -3,15 +3,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent, ReactNode } from "react";
 import {
-    CheckCircle2,
     GitBranch,
     Layers,
     Link2,
-    Send,
     Plus,
     Captions,
     Trash2,
-    UploadCloud,
     Volume2,
     Workflow,
 } from "lucide-react";
@@ -33,10 +30,7 @@ import {
     connectWorkspaceNodes,
     createDouyinReworkSampleGraph,
     createEmptyWorkspaceGraph,
-    createAssetToSocialSampleGraph,
-    createUploadDubbingToSocialSampleGraph,
-    createUploadToStorageSampleGraph,
-    createUploadToSocialSampleGraph,
+    createUploadVietnameseMaskPublishSampleGraph,
     deleteWorkspaceNode,
     getWorkspaceNodeTemplate,
     moveWorkspaceNode,
@@ -56,13 +50,11 @@ import {
 } from "@/lib/workspace/workspace-graph";
 import {
     DEFAULT_TRANSLATION_MODEL,
-    GROQ_TRANSLATION_MODELS,
     type ChineseTranscriptionResult,
     type TranscriptTranslationResult,
     type VoiceGenerationResult,
 } from "@/lib/multilingual-audio/types";
 import type { VideoDubbingResult } from "@/lib/multilingual-audio/video-dubbing";
-import type { VideoEditResult } from "@/lib/video-processing/video-edit-pipeline";
 
 type WorkspaceCanvasPanelProps = {
     section: LeftbarNavItem;
@@ -128,7 +120,9 @@ type NodeRunState = {
 type WorkspaceRuntimeArtifact = {
     fileName: string;
     mimeType: string;
-    base64: string;
+    base64?: string;
+    file?: File;
+    objectUrl?: string;
     byteLength: number;
     kind: "audio" | "video";
     detail: string;
@@ -179,10 +173,28 @@ function formatBytes(bytes: number) {
 }
 
 function artifactDataUrl(artifact: WorkspaceRuntimeArtifact) {
+    if (artifact.objectUrl) return artifact.objectUrl;
+    if (!artifact.base64) return "";
     return `data:${artifact.mimeType};base64,${artifact.base64}`;
 }
 
+function revokeRuntimeArtifactUrls(
+    artifacts: Record<string, WorkspaceRuntimeArtifact | undefined>,
+) {
+    for (const artifact of Object.values(artifacts)) {
+        if (artifact?.objectUrl) {
+            URL.revokeObjectURL(artifact.objectUrl);
+        }
+    }
+}
+
 function base64ToFile(artifact: WorkspaceRuntimeArtifact) {
+    if (artifact.file) return artifact.file;
+    if (!artifact.base64) {
+        throw new Error(
+            `Runtime artifact '${artifact.fileName}' không có file/base64 để upload.`,
+        );
+    }
     const binary = atob(artifact.base64);
     const bytes = new Uint8Array(binary.length);
     for (let index = 0; index < binary.length; index += 1) {
@@ -254,6 +266,59 @@ async function fetchWorkspaceJson<T>(input: {
     }
 
     return payload as T;
+}
+
+async function fetchWorkspaceFile(input: {
+    url: string;
+    actionLabel: string;
+    init?: RequestInit;
+}) {
+    let response: Response;
+    try {
+        response = await fetch(input.url, input.init);
+    } catch (error) {
+        const detail =
+            error instanceof Error && error.message
+                ? error.message
+                : "network error";
+        throw new Error(
+            `${input.actionLabel} failed at ${input.url}: ${detail}`,
+        );
+    }
+
+    if (!response.ok) {
+        let payload: unknown = null;
+        try {
+            payload = await response.json();
+        } catch {
+            payload = null;
+        }
+        throw new Error(
+            `${input.actionLabel} failed at ${input.url}: ${getWorkspaceApiErrorMessage(
+                payload,
+                "Unexpected API error.",
+                response.status,
+            )}`,
+        );
+    }
+
+    const blob = await response.blob();
+    const fileName = decodeURIComponent(
+        response.headers.get("X-OmniVideo-File-Name") || "workspace-output.mp4",
+    );
+    const mimeType =
+        response.headers.get("Content-Type") || blob.type || "video/mp4";
+    const file = new File([blob], fileName, { type: mimeType });
+    const byteLength = Number(response.headers.get("X-OmniVideo-Byte-Length"));
+
+    return {
+        file,
+        fileName,
+        mimeType,
+        byteLength: Number.isFinite(byteLength) ? byteLength : file.size,
+        objectUrl: URL.createObjectURL(file),
+        transformHeader: response.headers.get("X-OmniVideo-Transform"),
+    };
 }
 
 function statusClass(status: WorkspaceNodeTemplate["status"]) {
@@ -410,6 +475,13 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
     const [runtimeArtifactsByNodeId, setRuntimeArtifactsByNodeId] = useState<
         Record<string, WorkspaceRuntimeArtifact | undefined>
     >({});
+    const [runtimeAssetIdsByNodeId, setRuntimeAssetIdsByNodeId] = useState<
+        Record<string, string | undefined>
+    >({});
+    const [runtimeTranscriptsByNodeId, setRuntimeTranscriptsByNodeId] =
+        useState<Record<string, ChineseTranscriptionResult | undefined>>({});
+    const [runtimeTranslationsByNodeId, setRuntimeTranslationsByNodeId] =
+        useState<Record<string, TranscriptTranslationResult | undefined>>({});
     const [nodeRunStatus, setNodeRunStatus] = useState<
         Record<string, NodeRunState>
     >({});
@@ -444,6 +516,52 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
         () => planWorkspaceFlow(graph),
         [graph],
     );
+    const hasResumeCheckpoint = useMemo(() => {
+        if (!flowPlan.ok) return false;
+        return flowPlan.steps.some((step) => {
+            if (step.kind === "use-existing-asset") {
+                return Boolean(runtimeAssetIdsByNodeId[step.producerNodeId]);
+            }
+            if (step.kind === "upload-and-store") {
+                return Boolean(runtimeAssetIdsByNodeId[step.producerNodeId]);
+            }
+            if (step.kind === "transcribe-chinese") {
+                return Boolean(
+                    runtimeTranscriptsByNodeId[step.transcriptionNodeId],
+                );
+            }
+            if (step.kind === "translate-transcript") {
+                return Boolean(
+                    runtimeTranslationsByNodeId[step.translationNodeId],
+                );
+            }
+            if (step.kind === "generate-voice") {
+                return Boolean(runtimeArtifactsByNodeId[step.voiceNodeId]);
+            }
+            if (step.kind === "dub-video") {
+                return Boolean(
+                    runtimeArtifactsByNodeId[step.dubbingNodeId] &&
+                        runtimeTranslationsByNodeId[step.dubbingNodeId],
+                );
+            }
+            if (step.kind === "mirror-video") {
+                return Boolean(runtimeArtifactsByNodeId[step.mirrorNodeId]);
+            }
+            if (step.kind === "edit-video") {
+                return Boolean(runtimeArtifactsByNodeId[step.editNodeId]);
+            }
+            if (step.kind === "store-artifact") {
+                return Boolean(runtimeAssetIdsByNodeId[step.producerNodeId]);
+            }
+            return false;
+        });
+    }, [
+        flowPlan,
+        runtimeArtifactsByNodeId,
+        runtimeAssetIdsByNodeId,
+        runtimeTranscriptsByNodeId,
+        runtimeTranslationsByNodeId,
+    ]);
 
     const groupedTemplates = useMemo(
         () =>
@@ -656,6 +774,11 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
         setRunResult(null);
         if (clearFiles) {
             setRuntimeFilesByNodeId({});
+            revokeRuntimeArtifactUrls(runtimeArtifactsByNodeId);
+            setRuntimeArtifactsByNodeId({});
+            setRuntimeAssetIdsByNodeId({});
+            setRuntimeTranscriptsByNodeId({});
+            setRuntimeTranslationsByNodeId({});
         }
         const target = nextGraph ?? graph;
         const initial: Record<string, NodeRunState> = {};
@@ -684,34 +807,10 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
         resetRunState(next, true);
     };
 
-    const seedExecutableFlow = () => {
+    const seedVietnameseMaskPublishFlow = () => {
         setPendingSourceNodeId(null);
         setConnectionError(null);
-        const next = createUploadToSocialSampleGraph();
-        setGraph(next);
-        resetRunState(next, true);
-    };
-
-    const seedUploadOnlyFlow = () => {
-        setPendingSourceNodeId(null);
-        setConnectionError(null);
-        const next = createUploadToStorageSampleGraph();
-        setGraph(next);
-        resetRunState(next, true);
-    };
-
-    const seedAssetPublishFlow = () => {
-        setPendingSourceNodeId(null);
-        setConnectionError(null);
-        const next = createAssetToSocialSampleGraph();
-        setGraph(next);
-        resetRunState(next, true);
-    };
-
-    const seedUploadDubbingFlow = () => {
-        setPendingSourceNodeId(null);
-        setConnectionError(null);
-        const next = createUploadDubbingToSocialSampleGraph();
+        const next = createUploadVietnameseMaskPublishSampleGraph();
         setGraph(next);
         resetRunState(next, true);
     };
@@ -791,7 +890,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
         };
     }, []);
 
-    const runWorkspaceFlow = async () => {
+    const runWorkspaceFlow = async (mode: "fresh" | "resume" = "fresh") => {
         const plan = planWorkspaceFlow(graph);
         if (!plan.ok) {
             setRunError(plan.errors.join("\n"));
@@ -802,12 +901,18 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
             return;
         }
 
-        const initialStatus: Record<string, NodeRunState> = {};
-        for (const node of graph.nodes) {
-            initialStatus[node.id] = { status: "idle", detail: "" };
+        if (mode === "fresh") {
+            const initialStatus: Record<string, NodeRunState> = {};
+            for (const node of graph.nodes) {
+                initialStatus[node.id] = { status: "idle", detail: "" };
+            }
+            setNodeRunStatus(initialStatus);
+            revokeRuntimeArtifactUrls(runtimeArtifactsByNodeId);
+            setRuntimeArtifactsByNodeId({});
+            setRuntimeAssetIdsByNodeId({});
+            setRuntimeTranscriptsByNodeId({});
+            setRuntimeTranslationsByNodeId({});
         }
-        setNodeRunStatus(initialStatus);
-        setRuntimeArtifactsByNodeId({});
         setRunError(null);
         setRunResult(null);
         setIsRunningFlow(true);
@@ -820,14 +925,51 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
             progress: 0,
         });
 
-        const assetByProducer: Record<string, string> = {};
+        const assetByProducer: Record<string, string> =
+            mode === "resume"
+                ? Object.fromEntries(
+                      Object.entries(runtimeAssetIdsByNodeId).filter(
+                          (entry): entry is [string, string] =>
+                              typeof entry[1] === "string",
+                      ),
+                  )
+                : {};
         const transcriptByProducer: Record<string, ChineseTranscriptionResult> =
-            {};
+            mode === "resume"
+                ? Object.fromEntries(
+                      Object.entries(runtimeTranscriptsByNodeId).filter(
+                          (
+                              entry,
+                          ): entry is [string, ChineseTranscriptionResult] =>
+                              entry[1] !== undefined,
+                      ),
+                  )
+                : {};
         const translationByProducer: Record<
             string,
             TranscriptTranslationResult
-        > = {};
-        const artifactByProducer: Record<string, WorkspaceRuntimeArtifact> = {};
+        > =
+            mode === "resume"
+                ? Object.fromEntries(
+                      Object.entries(runtimeTranslationsByNodeId).filter(
+                          (
+                              entry,
+                          ): entry is [string, TranscriptTranslationResult] =>
+                              entry[1] !== undefined,
+                      ),
+                  )
+                : {};
+        const artifactByProducer: Record<string, WorkspaceRuntimeArtifact> =
+            mode === "resume"
+                ? Object.fromEntries(
+                      Object.entries(runtimeArtifactsByNodeId).filter(
+                          (
+                              entry,
+                          ): entry is [string, WorkspaceRuntimeArtifact] =>
+                              entry[1] !== undefined,
+                      ),
+                  )
+                : {};
         let stepIndex = 0;
         let completedPublishes = 0;
         let failedPublishes = 0;
@@ -847,6 +989,87 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
         const findNode = (nodeId: string) =>
             graph.nodes.find((node) => node.id === nodeId);
 
+        const getResumeCheckpoint = (step: WorkspaceFlowStep) => {
+            if (step.kind === "use-existing-asset") {
+                return assetByProducer[step.producerNodeId]
+                    ? "Asset đã sẵn sàng từ lần chạy trước."
+                    : null;
+            }
+            if (step.kind === "upload-and-store") {
+                return assetByProducer[step.producerNodeId]
+                    ? "Storage asset đã được tạo từ lần chạy trước."
+                    : null;
+            }
+            if (step.kind === "transcribe-chinese") {
+                return transcriptByProducer[step.transcriptionNodeId]
+                    ? "Transcript đã có từ lần chạy trước."
+                    : null;
+            }
+            if (step.kind === "translate-transcript") {
+                return translationByProducer[step.translationNodeId]
+                    ? "Translation đã có từ lần chạy trước."
+                    : null;
+            }
+            if (step.kind === "generate-voice") {
+                return artifactByProducer[step.voiceNodeId]
+                    ? "Voice artifact đã có từ lần chạy trước."
+                    : null;
+            }
+            if (step.kind === "dub-video") {
+                return artifactByProducer[step.dubbingNodeId] &&
+                    translationByProducer[step.dubbingNodeId]
+                    ? "Dubbed video và translation đã có từ lần chạy trước."
+                    : null;
+            }
+            if (step.kind === "mirror-video") {
+                return artifactByProducer[step.mirrorNodeId]
+                    ? "Mirror artifact đã có từ lần chạy trước."
+                    : null;
+            }
+            if (step.kind === "edit-video") {
+                return artifactByProducer[step.editNodeId]
+                    ? "Edited video đã có từ lần chạy trước."
+                    : null;
+            }
+            if (step.kind === "store-artifact") {
+                return assetByProducer[step.producerNodeId]
+                    ? "Storage asset đã có từ lần chạy trước."
+                    : null;
+            }
+            return null;
+        };
+
+        const markResumeCheckpoint = (
+            step: WorkspaceFlowStep,
+            detail: string,
+        ) => {
+            if (step.kind === "use-existing-asset") {
+                setNodeStatus(step.nodeId, "success", detail);
+            } else if (step.kind === "upload-and-store") {
+                setNodeStatus(step.sourceFileNodeId, "success", detail);
+                setNodeStatus(step.storageNodeId, "success", detail);
+            } else if (step.kind === "transcribe-chinese") {
+                setNodeStatus(step.sourceFileNodeId, "success", detail);
+                setNodeStatus(step.transcriptionNodeId, "success", detail);
+            } else if (step.kind === "translate-transcript") {
+                setNodeStatus(step.translationNodeId, "success", detail);
+            } else if (step.kind === "generate-voice") {
+                setNodeStatus(step.voiceNodeId, "success", detail);
+            } else if (step.kind === "dub-video") {
+                setNodeStatus(step.sourceNodeId, "success", detail);
+                setNodeStatus(step.dubbingNodeId, "success", detail);
+            } else if (step.kind === "mirror-video") {
+                setNodeStatus(step.sourceNodeId, "success", detail);
+                setNodeStatus(step.mirrorNodeId, "success", detail);
+            } else if (step.kind === "edit-video") {
+                setNodeStatus(step.sourceNodeId, "success", detail);
+                setNodeStatus(step.translationNodeId, "success", detail);
+                setNodeStatus(step.editNodeId, "success", detail);
+            } else if (step.kind === "store-artifact") {
+                setNodeStatus(step.storageNodeId, "success", detail);
+            }
+        };
+
         let abortRemaining = false;
 
         for (const step of plan.steps) {
@@ -854,6 +1077,15 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                 // publishes can fail individually without aborting siblings
             } else if (abortRemaining) {
                 continue;
+            }
+
+            if (mode === "resume") {
+                const checkpoint = getResumeCheckpoint(step);
+                if (checkpoint) {
+                    markResumeCheckpoint(step, checkpoint);
+                    advanceProgress(checkpoint);
+                    continue;
+                }
             }
 
             try {
@@ -872,6 +1104,10 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         );
                     }
                     assetByProducer[step.producerNodeId] = assetId;
+                    setRuntimeAssetIdsByNodeId((current) => ({
+                        ...current,
+                        [step.producerNodeId]: assetId,
+                    }));
                     setNodeStatus(node.id, "success", `Using ${assetId}.`);
                     advanceProgress(`Using existing asset ${assetId}.`);
                 } else if (step.kind === "upload-and-store") {
@@ -985,6 +1221,10 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
 
                     const newAssetId = uploadPayload.data.assetId as string;
                     assetByProducer[step.producerNodeId] = newAssetId;
+                    setRuntimeAssetIdsByNodeId((current) => ({
+                        ...current,
+                        [step.producerNodeId]: newAssetId,
+                    }));
                     setNodeStatus(
                         fileNode.id,
                         "success",
@@ -1069,6 +1309,10 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
 
                     transcriptByProducer[step.transcriptionNodeId] =
                         transcriptionPayload.data;
+                    setRuntimeTranscriptsByNodeId((current) => ({
+                        ...current,
+                        [step.transcriptionNodeId]: transcriptionPayload.data,
+                    }));
                     setNodeStatus(fileNode.id, "success", file.name);
                     setNodeStatus(
                         transcriptionNode.id,
@@ -1102,6 +1346,10 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                             `Translate Transcript '${translationNode.label}' thiếu transcript upstream.`,
                         );
                     }
+                    const translationProviderId = getStringConfig(
+                        translationNode,
+                        "translationProviderId",
+                    ).trim();
 
                     setNodeStatus(
                         translationNode.id,
@@ -1131,12 +1379,17 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                                     "model",
                                     DEFAULT_TRANSLATION_MODEL,
                                 ),
+                                providerId: translationProviderId || undefined,
                             }),
                         },
                     });
 
                     translationByProducer[step.translationNodeId] =
                         translationPayload.data;
+                    setRuntimeTranslationsByNodeId((current) => ({
+                        ...current,
+                        [step.translationNodeId]: translationPayload.data,
+                    }));
                     setNodeStatus(
                         translationNode.id,
                         "success",
@@ -1371,6 +1624,12 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         detail: `${dubbingPayload.data.translation.translatedSegments.length} segment(s) dubbed`,
                     };
                     artifactByProducer[step.dubbingNodeId] = artifact;
+                    translationByProducer[step.dubbingNodeId] =
+                        dubbingPayload.data.translation;
+                    setRuntimeTranslationsByNodeId((current) => ({
+                        ...current,
+                        [step.dubbingNodeId]: dubbingPayload.data.translation,
+                    }));
                     setRuntimeArtifactsByNodeId((current) => ({
                         ...current,
                         [dubbingNode.id]: artifact,
@@ -1562,7 +1821,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     );
                     formData.set(
                         "regionY",
-                        String(getNumberConfig(editNode, "regionY", 78)),
+                        String(getNumberConfig(editNode, "regionY", 84)),
                     );
                     formData.set(
                         "regionWidth",
@@ -1597,7 +1856,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     formData.set(
                         "subtitleFontSize",
                         String(
-                            getNumberConfig(editNode, "subtitleFontSize", 64),
+                            getNumberConfig(editNode, "subtitleFontSize", 100),
                         ),
                     );
                     formData.set(
@@ -1606,7 +1865,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                             getNumberConfig(
                                 editNode,
                                 "subtitleMarginBottom",
-                                280,
+                                150,
                             ),
                         ),
                     );
@@ -1614,28 +1873,27 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         "translatedSegmentsJson",
                         JSON.stringify(translation.translatedSegments),
                     );
+                    formData.set("responseMode", "binary");
 
                     setNodeStatus(
                         editNode.id,
                         "running",
                         "Blurring region and burning Vietnamese subtitles...",
                     );
-                    const editPayload = await fetchWorkspaceJson<{
-                        ok: true;
-                        data: VideoEditResult;
-                    }>({
+                    const editFile = await fetchWorkspaceFile({
                         url: "/api/video-processing/edit",
                         actionLabel: "Video edit",
                         init: { method: "POST", body: formData },
                     });
 
                     const artifact: WorkspaceRuntimeArtifact = {
-                        fileName: editPayload.data.fileName,
-                        mimeType: editPayload.data.mimeType,
-                        base64: editPayload.data.videoBase64,
-                        byteLength: editPayload.data.byteLength,
+                        fileName: editFile.fileName,
+                        mimeType: editFile.mimeType,
+                        file: editFile.file,
+                        objectUrl: editFile.objectUrl,
+                        byteLength: editFile.byteLength,
                         kind: "video",
-                        detail: `Blur + subtitles (${editPayload.data.transform.segmentCount} segment(s))`,
+                        detail: `Blur + subtitles (${translation.translatedSegments.length} segment(s))`,
                     };
                     artifactByProducer[step.editNodeId] = artifact;
                     setRuntimeArtifactsByNodeId((current) => ({
@@ -1657,10 +1915,10 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     setNodeStatus(
                         editNode.id,
                         "success",
-                        `${formatBytes(editPayload.data.byteLength)} MP4.`,
+                        `${formatBytes(editFile.byteLength)} MP4.`,
                     );
                     summary.push(
-                        `Edited video ready: ${formatBytes(editPayload.data.byteLength)}.`,
+                        `Edited video ready: ${formatBytes(editFile.byteLength)}.`,
                     );
                     advanceProgress(`Video edit ${editNode.label} complete.`);
                 } else if (step.kind === "store-artifact") {
@@ -1741,6 +1999,10 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
 
                     const newAssetId = uploadPayload.data.assetId as string;
                     assetByProducer[step.producerNodeId] = newAssetId;
+                    setRuntimeAssetIdsByNodeId((current) => ({
+                        ...current,
+                        [step.producerNodeId]: newAssetId,
+                    }));
                     setNodeStatus(
                         storageNode.id,
                         "success",
@@ -2091,35 +2353,11 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     </button>
                     <button
                         type="button"
-                        onClick={seedExecutableFlow}
-                        className="inline-flex items-center gap-1.5 border border-main bg-main px-2.5 py-1.5 text-[11px] font-semibold text-main hover:bg-secondary"
-                    >
-                        <CheckCircle2 className="h-3.5 w-3.5" />
-                        Seed Upload Social
-                    </button>
-                    <button
-                        type="button"
-                        onClick={seedUploadOnlyFlow}
-                        className="inline-flex items-center gap-1.5 border border-main bg-main px-2.5 py-1.5 text-[11px] font-semibold text-main hover:bg-secondary"
-                    >
-                        <UploadCloud className="h-3.5 w-3.5" />
-                        Seed Upload Only
-                    </button>
-                    <button
-                        type="button"
-                        onClick={seedAssetPublishFlow}
-                        className="inline-flex items-center gap-1.5 border border-main bg-main px-2.5 py-1.5 text-[11px] font-semibold text-main hover:bg-secondary"
-                    >
-                        <Send className="h-3.5 w-3.5" />
-                        Seed Asset Publish
-                    </button>
-                    <button
-                        type="button"
-                        onClick={seedUploadDubbingFlow}
+                        onClick={seedVietnameseMaskPublishFlow}
                         className="inline-flex items-center gap-1.5 border border-main bg-main px-2.5 py-1.5 text-[11px] font-semibold text-main hover:bg-secondary"
                     >
                         <Workflow className="h-3.5 w-3.5" />
-                        Seed Dubbing Publish
+                        Seed VI Voice Mask Publish
                     </button>
                 </div>
             </header>
@@ -2189,7 +2427,9 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         isRunningFlow={isRunningFlow}
                         runError={runError}
                         runResult={runResult}
-                        onRun={runWorkspaceFlow}
+                        canResume={Boolean(runError) && hasResumeCheckpoint}
+                        onRun={() => runWorkspaceFlow("fresh")}
+                        onResume={() => runWorkspaceFlow("resume")}
                         onClear={clearDraft}
                     />
 
@@ -2436,7 +2676,9 @@ function WorkspaceRunStatusPanel({
     isRunningFlow,
     runError,
     runResult,
+    canResume,
     onRun,
+    onResume,
     onClear,
 }: {
     accountsError: string | null;
@@ -2446,7 +2688,9 @@ function WorkspaceRunStatusPanel({
     isRunningFlow: boolean;
     runError: string | null;
     runResult: string | null;
+    canResume: boolean;
     onRun: () => void;
+    onResume: () => void;
     onClear: () => void;
 }) {
     const stepDescriptors = flowPlan.steps.map((step) =>
@@ -2491,6 +2735,16 @@ function WorkspaceRunStatusPanel({
                             {isRunningFlow
                                 ? "Running Flow..."
                                 : "Run Workspace Flow"}
+                        </button>
+                        <button
+                            type="button"
+                            disabled={isRunningFlow || !flowPlan.ok || !canResume}
+                            onClick={onResume}
+                            className="inline-flex items-center gap-1.5 border border-emerald-500/35 bg-emerald-500/10 px-3 py-1.5 text-[11px] font-semibold text-emerald-700 transition-colors hover:bg-emerald-500/15 disabled:cursor-not-allowed disabled:opacity-60"
+                            title="Bỏ qua các step đã có output trong lần chạy trước và chạy tiếp từ step lỗi."
+                        >
+                            <Workflow className="h-3.5 w-3.5" />
+                            Continue Failed Flow
                         </button>
                         <button
                             type="button"
@@ -2837,7 +3091,7 @@ function NodeRuntimeConfig({
                                 Mirror before blur
                             </span>
                             <span className="block text-[10px] text-muted">
-                                Ket hop hflip trong cung edit request.
+                                Kết hợp hflip trong cùng edit request.
                             </span>
                         </span>
                         <input
@@ -2868,9 +3122,9 @@ function NodeRuntimeConfig({
                         />
                         <RuntimeTextInput
                             label="Region Y %"
-                            value={String(getNumberConfig(node, "regionY", 78))}
+                            value={String(getNumberConfig(node, "regionY", 84))}
                             disabled={isRunningFlow}
-                            placeholder="78"
+                            placeholder="84"
                             onChange={(value) =>
                                 setConfig({ regionY: Number(value) })
                             }
@@ -2946,10 +3200,10 @@ function NodeRuntimeConfig({
                         <RuntimeTextInput
                             label="Subtitle size"
                             value={String(
-                                getNumberConfig(node, "subtitleFontSize", 64),
+                                getNumberConfig(node, "subtitleFontSize", 100),
                             )}
                             disabled={isRunningFlow}
-                            placeholder="64"
+                            placeholder="100"
                             onChange={(value) =>
                                 setConfig({ subtitleFontSize: Number(value) })
                             }
@@ -2960,7 +3214,7 @@ function NodeRuntimeConfig({
                                 getNumberConfig(
                                     node,
                                     "subtitleMarginBottom",
-                                    280,
+                                    150,
                                 ),
                             )}
                             disabled={isRunningFlow}
@@ -3284,25 +3538,76 @@ function NodeRuntimeConfig({
     }
 
     if (node.templateNodeType === "text.translate-transcript") {
+        const selectedTranslationProviderId = getStringConfig(
+            node,
+            "translationProviderId",
+        );
+        const translationModels = selectedTranslationProviderId
+            ? (aiModelsByProviderId[selectedTranslationProviderId] ?? [])
+            : [];
+        const isLoadingTranslationModels = selectedTranslationProviderId
+            ? Boolean(loadingAiModelProviderIds[selectedTranslationProviderId])
+            : false;
         return (
             <InspectorSection title="Runtime Config">
                 <div className="space-y-2 border border-main bg-secondary/20 p-2">
                     <RuntimeSelect
-                        label="Groq model"
-                        value={getStringConfig(
-                            node,
-                            "model",
-                            DEFAULT_TRANSLATION_MODEL,
-                        )}
+                        label="AI Provider"
+                        value={selectedTranslationProviderId}
                         disabled={isRunningFlow}
-                        onChange={(value) => setConfig({ model: value })}
+                        onChange={async (value) => {
+                            setConfig({
+                                translationProviderId: value,
+                                model: value ? "" : DEFAULT_TRANSLATION_MODEL,
+                            });
+                            if (value) {
+                                const models =
+                                    await onEnsureAiProviderModels(value);
+                                if (models[0]) {
+                                    setConfig({
+                                        translationProviderId: value,
+                                        model: models[0].id,
+                                    });
+                                }
+                            }
+                        }}
                     >
-                        {GROQ_TRANSLATION_MODELS.map((model) => (
-                            <option key={model.id} value={model.id}>
-                                {model.label}
+                        <option value="">Default (env GROQ_API_KEY)</option>
+                        {aiProviders.map((provider) => (
+                            <option key={provider._id} value={provider._id}>
+                                {provider.label} ({provider.providerType})
                             </option>
                         ))}
                     </RuntimeSelect>
+                    {selectedTranslationProviderId &&
+                    translationModels.length > 0 ? (
+                        <RuntimeSelect
+                            label={`Model${isLoadingTranslationModels ? " (loading...)" : ""}`}
+                            value={getStringConfig(node, "model")}
+                            disabled={
+                                isRunningFlow || isLoadingTranslationModels
+                            }
+                            onChange={(value) => setConfig({ model: value })}
+                        >
+                            {translationModels.map((model) => (
+                                <option key={model.id} value={model.id}>
+                                    {model.name}
+                                </option>
+                            ))}
+                        </RuntimeSelect>
+                    ) : (
+                        <RuntimeTextInput
+                            label={`Model${isLoadingTranslationModels ? " (loading...)" : ""}`}
+                            value={getStringConfig(
+                                node,
+                                "model",
+                                DEFAULT_TRANSLATION_MODEL,
+                            )}
+                            disabled={isRunningFlow}
+                            placeholder="llama-3.1-8b-instant"
+                            onChange={(value) => setConfig({ model: value })}
+                        />
+                    )}
                     <RuntimeSelect
                         label="Target language"
                         value={getStringConfig(node, "targetLanguage", "vi")}

@@ -1,8 +1,16 @@
 import { NextResponse } from "next/server";
+import { createWriteStream } from "node:fs";
+import { mkdir, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { randomUUID } from "node:crypto";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 
 import {
     VideoEditError,
     runVideoEditPipeline,
+    runVideoEditPipelineFromPath,
     type VideoEditRegionPercent,
     type VideoEditTimelineSeconds,
 } from "@/lib/video-processing/video-edit-pipeline";
@@ -74,7 +82,32 @@ function readTranslatedSegments(formData: FormData) {
     }
 }
 
+async function writeUploadedFile(file: File, outputPath: string) {
+    await pipeline(
+        Readable.fromWeb(
+            file.stream() as Parameters<typeof Readable.fromWeb>[0],
+        ),
+        createWriteStream(outputPath),
+    );
+}
+
+function buildBinaryHeaders(result: Awaited<ReturnType<typeof runVideoEditPipelineFromPath>>) {
+    return {
+        "Content-Type": result.mimeType,
+        "Content-Disposition": `attachment; filename="${result.fileName}"`,
+        "X-OmniVideo-File-Name": encodeURIComponent(result.fileName),
+        "X-OmniVideo-Byte-Length": String(result.byteLength),
+        "X-OmniVideo-Generation-Duration-Ms": String(
+            result.generationDurationMs,
+        ),
+        "X-OmniVideo-Transform": encodeURIComponent(
+            JSON.stringify(result.transform),
+        ),
+    };
+}
+
 export async function POST(request: Request) {
+    let uploadedWorkDir = "";
     try {
         const formData = await request.formData();
         const file = formData.get("videoFile");
@@ -94,7 +127,7 @@ export async function POST(request: Request) {
         );
         const region: VideoEditRegionPercent = {
             x: readNumber(formData, "regionX", 0),
-            y: readNumber(formData, "regionY", 78),
+            y: readNumber(formData, "regionY", 84),
             width: readNumber(formData, "regionWidth", 100),
             height: readNumber(formData, "regionHeight", 16),
         };
@@ -102,12 +135,10 @@ export async function POST(request: Request) {
             start: readNumber(formData, "timelineStart", 0),
             end: readNumber(formData, "timelineEnd", 999999),
         };
-
-        const result = await runVideoEditPipeline({
+        const input = {
             fileName: file.name || "source.mp4",
             mimeType: file.type || undefined,
             fileSizeBytes: file.size,
-            fileBytes: new Uint8Array(await file.arrayBuffer()),
             mirror: readBoolean(formData, "mirrorEnabled"),
             blur: blurEnabled
                 ? {
@@ -128,16 +159,44 @@ export async function POST(request: Request) {
                           fontSize: readNumber(
                               formData,
                               "subtitleFontSize",
-                              64,
+                              100,
                           ),
                           marginBottom: readNumber(
                               formData,
                               "subtitleMarginBottom",
-                              280,
+                              150,
                           ),
                       },
                   }
                 : undefined,
+        };
+
+        if (readFormValue(formData, "responseMode") === "binary") {
+            uploadedWorkDir = path.join(
+                tmpdir(),
+                `omnivideo-edit-upload-${randomUUID()}`,
+            );
+            await mkdir(uploadedWorkDir, { recursive: true });
+            const uploadedPath = path.join(
+                uploadedWorkDir,
+                file.name || "source.mp4",
+            );
+            await writeUploadedFile(file, uploadedPath);
+
+            const result = await runVideoEditPipelineFromPath({
+                ...input,
+                inputPath: uploadedPath,
+            });
+
+            return new Response(new Uint8Array(result.videoBytes), {
+                status: 200,
+                headers: buildBinaryHeaders(result),
+            });
+        }
+
+        const result = await runVideoEditPipeline({
+            ...input,
+            fileBytes: new Uint8Array(await file.arrayBuffer()),
         });
 
         return NextResponse.json({ ok: true, data: result });
@@ -164,5 +223,9 @@ export async function POST(request: Request) {
             },
             { status: 500 },
         );
+    } finally {
+        if (uploadedWorkDir) {
+            await rm(uploadedWorkDir, { recursive: true, force: true });
+        }
     }
 }

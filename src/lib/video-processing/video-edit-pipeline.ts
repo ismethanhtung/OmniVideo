@@ -29,7 +29,7 @@ export type VideoEditInput = {
     fileName: string;
     mimeType?: string;
     fileSizeBytes: number;
-    fileBytes: Uint8Array;
+    fileBytes?: Uint8Array;
     mirror?: boolean;
     blur?: {
         enabled: boolean;
@@ -48,8 +48,7 @@ export type VideoEditInput = {
     };
 };
 
-export type VideoEditResult = {
-    videoBase64: string;
+export type VideoEditMetadata = {
     mimeType: "video/mp4";
     extension: "mp4";
     fileName: string;
@@ -61,6 +60,14 @@ export type VideoEditResult = {
         subtitleOverlay: boolean;
         segmentCount: number;
     };
+};
+
+export type VideoEditBufferResult = VideoEditMetadata & {
+    videoBytes: Buffer;
+};
+
+export type VideoEditResult = VideoEditMetadata & {
+    videoBase64: string;
 };
 
 export class VideoEditError extends Error {
@@ -184,6 +191,13 @@ export function validateVideoEditInput(input: VideoEditInput) {
     }
 }
 
+function validateVideoEditTransforms(input: Omit<VideoEditInput, "fileBytes">) {
+    validateVideoEditInput({
+        ...input,
+        fileBytes: new Uint8Array([1]),
+    });
+}
+
 function roundFilterNumber(value: number) {
     return Number(value.toFixed(4)).toString();
 }
@@ -227,11 +241,11 @@ export function buildSubtitleAssContent(
         .replace(/,/g, "")
         .trim();
     const subtitleFontSize = Number.isFinite(style?.fontSize)
-        ? Math.min(96, Math.max(20, Math.round(style?.fontSize ?? 64)))
-        : 64;
+        ? Math.min(160, Math.max(20, Math.round(style?.fontSize ?? 100)))
+        : 100;
     const subtitleMarginBottom = Number.isFinite(style?.marginBottom)
-        ? Math.min(520, Math.max(20, Math.round(style?.marginBottom ?? 280)))
-        : 280;
+        ? Math.min(520, Math.max(20, Math.round(style?.marginBottom ?? 150)))
+        : 150;
     const events = segments
         .filter(
             (segment) =>
@@ -374,9 +388,9 @@ export function buildVideoEditFfmpegArgs(input: {
         "-c:v",
         "libx264",
         "-preset",
-        "medium",
+        "veryfast",
         "-crf",
-        "18",
+        "22",
         "-c:a",
         "copy",
         "-movflags",
@@ -413,32 +427,71 @@ async function runFfmpeg(args: string[]) {
 export async function runVideoEditPipeline(
     input: VideoEditInput,
 ): Promise<VideoEditResult> {
-    const startedAt = Date.now();
     validateVideoEditInput(input);
+    if (!input.fileBytes) {
+        throw new VideoEditError(
+            "VAL_VIDEO_EDIT_VIDEO_REQUIRED",
+            "A source video file is required for video edit processing.",
+            400,
+        );
+    }
+
+    const workDir = path.join(tmpdir(), `omnivideo-edit-${randomUUID()}`);
+    const inputPath = path.join(workDir, input.fileName || "source.mp4");
+
+    try {
+        await mkdir(workDir, { recursive: true });
+        await writeFile(inputPath, input.fileBytes);
+        const result = await runVideoEditPipelineFromPath({
+            ...input,
+            inputPath,
+        });
+        return {
+            ...result,
+            videoBase64: result.videoBytes.toString("base64"),
+        };
+    } catch (error) {
+        if (error instanceof VideoEditError) throw error;
+        throw new VideoEditError(
+            "SYS_VIDEO_EDIT_FAILED",
+            error instanceof Error ? error.message : "Video edit failed.",
+            500,
+        );
+    } finally {
+        await rm(workDir, { recursive: true, force: true });
+    }
+}
+
+export async function runVideoEditPipelineFromPath(
+    input: Omit<VideoEditInput, "fileBytes"> & { inputPath: string },
+): Promise<VideoEditBufferResult> {
+    const startedAt = Date.now();
+    validateVideoEditTransforms(input);
 
     const mirror = input.mirror === true;
     const blur = input.blur?.enabled ? input.blur : undefined;
     const subtitleSegments =
         input.subtitles?.enabled === true ? input.subtitles.segments : [];
     const workDir = path.join(tmpdir(), `omnivideo-edit-${randomUUID()}`);
-    const inputPath = path.join(workDir, input.fileName || "source.mp4");
     const outputPath = path.join(workDir, "edited.mp4");
     const assPath =
         subtitleSegments.length > 0 ? path.join(workDir, "subtitles.ass") : "";
 
     try {
         await mkdir(workDir, { recursive: true });
-        await writeFile(inputPath, input.fileBytes);
         if (assPath) {
             await writeFile(
                 assPath,
-                buildSubtitleAssContent(subtitleSegments, input.subtitles?.style),
+                buildSubtitleAssContent(
+                    subtitleSegments,
+                    input.subtitles?.style,
+                ),
             );
         }
 
         await runFfmpeg(
             buildVideoEditFfmpegArgs({
-                videoPath: inputPath,
+                videoPath: input.inputPath,
                 outputPath,
                 mirror,
                 blur,
@@ -451,7 +504,7 @@ export async function runVideoEditPipeline(
             : await readFile(outputPath);
 
         return {
-            videoBase64: outputBytes.toString("base64"),
+            videoBytes: outputBytes,
             mimeType: "video/mp4",
             extension: "mp4",
             fileName: sanitizeOutputName(input.fileName),

@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { runVideoEditPipeline } from "@/lib/video-processing/video-edit-pipeline";
+import {
+    runVideoEditPipeline,
+    runVideoEditPipelineFromPath,
+} from "@/lib/video-processing/video-edit-pipeline";
 
 import { POST } from "./route";
 
@@ -12,10 +15,12 @@ vi.mock("@/lib/video-processing/video-edit-pipeline", async (importOriginal) => 
     return {
         ...actual,
         runVideoEditPipeline: vi.fn(),
+        runVideoEditPipelineFromPath: vi.fn(),
     };
 });
 
 const mockedRunVideoEditPipeline = vi.mocked(runVideoEditPipeline);
+const mockedRunVideoEditPipelineFromPath = vi.mocked(runVideoEditPipelineFromPath);
 
 function createFormData(fields?: Record<string, string>) {
     const formData = new FormData();
@@ -28,6 +33,7 @@ function createFormData(fields?: Record<string, string>) {
 describe("video edit API", () => {
     beforeEach(() => {
         mockedRunVideoEditPipeline.mockReset();
+        mockedRunVideoEditPipelineFromPath.mockReset();
     });
 
     it("rejects missing video file", async () => {
@@ -133,6 +139,67 @@ describe("video edit API", () => {
                         }),
                     ],
                 }),
+            }),
+        );
+    });
+
+    it("returns binary video when requested by Workspace", async () => {
+        mockedRunVideoEditPipelineFromPath.mockResolvedValueOnce({
+            videoBytes: Buffer.from("edited"),
+            mimeType: "video/mp4",
+            extension: "mp4",
+            fileName: "source-edit.mp4",
+            byteLength: 6,
+            generationDurationMs: 12,
+            transform: {
+                mirror: false,
+                partialBlur: true,
+                subtitleOverlay: true,
+                segmentCount: 1,
+            },
+        });
+        const formData = createFormData({
+            responseMode: "binary",
+            blurEnabled: "true",
+            subtitleOverlayEnabled: "true",
+            translatedSegmentsJson: JSON.stringify([
+                {
+                    id: 1,
+                    start: 0,
+                    end: 2,
+                    sourceText: "source",
+                    translatedText: "Xin chao",
+                },
+            ]),
+        });
+        formData.set(
+            "videoFile",
+            new File([new Uint8Array([1, 2, 3])], "source.mp4", {
+                type: "video/mp4",
+            }),
+        );
+
+        const response = await POST(
+            new Request("http://localhost/api/video-processing/edit", {
+                method: "POST",
+                body: formData,
+            }),
+        );
+        const bytes = Buffer.from(await response.arrayBuffer());
+
+        expect(response.status).toBe(200);
+        expect(response.headers.get("Content-Type")).toBe("video/mp4");
+        expect(response.headers.get("X-OmniVideo-File-Name")).toBe(
+            "source-edit.mp4",
+        );
+        expect(bytes.toString("utf8")).toBe("edited");
+        expect(mockedRunVideoEditPipeline).not.toHaveBeenCalled();
+        expect(mockedRunVideoEditPipelineFromPath).toHaveBeenCalledWith(
+            expect.objectContaining({
+                fileName: "source.mp4",
+                fileSizeBytes: 3,
+                inputPath: expect.stringContaining("source.mp4"),
+                blur: expect.objectContaining({ enabled: true }),
             }),
         );
     });

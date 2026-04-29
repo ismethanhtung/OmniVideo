@@ -26,8 +26,13 @@
 - Mở rộng Workspace artifact flow để `edit.mirror` có thể nhận `source.file` hoặc video artifact upstream rồi nối tiếp sang `Save to Storage`.
 - Mở rộng Workspace connection helper để node nhiều input tự chọn port còn trống theo data type, phục vụ flow video + transcript cho `edit.mask-region`.
 - Chuẩn hoá copy/UX text tiếng Việt có dấu trong Video Tools Lab và thêm cấu hình subtitle ngay tại lab (`font`, `cỡ chữ`, `vị trí dọc`) với mặc định mới to hơn/cao hơn (`64`, `180`).
-- Nâng subtitle rendering cho video edit: default `WrapStyle: 0` để xuống hàng khi text dài, style viền/shadow sắc hơn, encode `crf=18` để giảm cảm giác mờ, và tăng mặc định vị trí subtitle cao hơn (`margin=280`) để không nằm trong vùng blur.
+- Điều chỉnh video edit theo preset cân bằng cho máy CPU yếu nhưng vẫn ưu tiên phụ đề rõ hơn: `preset=veryfast`, `crf=22`; đồng bộ default blur/subtitle mới cho Lab và Workspace (`Y=84`, `Height=16`, `Font size=100`, `margin=150`).
+- Tinh gọn Workspace seed buttons: bỏ `Seed Upload Social`, `Seed Upload Only`, `Seed Asset Publish`; thêm seed end-to-end `Upload -> VI Voice -> Mask Logo/Subtitles -> Save to Storage -> Publish Social`.
+- Thêm AI Provider/model selector cho Workspace node `Translate Transcript`, dùng cùng provider model loading pattern với `Video Dubbing` và truyền `providerId` vào API dịch transcript.
 - Mở rộng Workspace `edit.mask-region` với config subtitle (`font`, `size`, `y margin`) và truyền xuống API giống Video Tools Lab.
+- Tinh gọn seed `Upload -> VI Voice -> Mask -> Storage -> Social`: bỏ nhánh `Audio Transcript -> Translate Transcript`, `Mask Logo/Subtitles` dùng lại translation do `Video Dubbing` tạo ra.
+- Thêm nút `Continue Failed Flow` trong Workspace Runtime để tiếp tục flow lỗi bằng cách bỏ qua các step đã có output runtime.
+- Thêm binary response mode cho `POST /api/video-processing/edit` để Workspace nhận MP4 trực tiếp thay vì JSON base64 khi xử lý video lớn.
 
 ### Fixed
 
@@ -36,6 +41,9 @@
 - Xoá runtime/test Edge-TTS khỏi source Audio Transcript; generated WAV chỉ dùng temp server file trong request rồi xoá, không persist vào storage.
 - Sửa bước dịch transcript đôi khi còn sót chữ Hán/CJK trong câu tiếng Việt, ví dụ `ngây呆`, bằng retry quality gate theo segment nhỏ hơn và có giới hạn.
 - Sửa Workspace flow lỗi mơ hồ `fetch failed`: runner giờ hiển thị rõ action + endpoint + API error/errorCode (hoặc HTTP status) để debug nhanh step thất bại.
+- Sửa seed VI Voice Mask Publish dịch dư một lần: planner/executor giờ cho `edit.mask-region` lấy `translatedSegments` trực tiếp từ upstream `audio.video-dubbing` khi video đầu vào là dubbed MP4.
+- Sửa trải nghiệm flow dài bị lỗi giữa chừng: Workspace runner lưu lại asset id/transcript/translation/artifact đã tạo trong phiên hiện tại để chạy tiếp từ bước lỗi, tránh render lại dubbing/edit đã thành công.
+- Sửa lỗi Node OOM ở bước Mask Logo/Subtitles với video lớn: Workspace không còn ép output edit MP4 thành `videoBase64` rồi `JSON.stringify`; artifact runtime giữ `File`/object URL và Save to Storage upload lại file đó trực tiếp.
 
 ### Notes
 
@@ -43,6 +51,13 @@
 - Verification (P2-VIDEO-002): `npm run test -- --run src/lib/video-processing/video-edit-pipeline.test.ts src/app/api/video-processing/edit/route.test.ts src/lib/workspace/workspace-graph.test.ts` pass (37 tests / 3 files); `npm run build` pass với warning cũ `src/features/workspace/display-preferences-panel.tsx` import `Image` chưa dùng và log DNS Mongo `querySrv ECONNREFUSED` trong static generation nhưng exit code 0. Copy button follow-up also verified with `npm run build` pass under the same known warnings/logs.
 - Verification (P2-VIDEO-002 subtitle style/locale follow-up): `npm run test -- --run src/lib/video-processing/video-edit-pipeline.test.ts src/app/api/video-processing/edit/route.test.ts` pass (10 tests / 2 files).
 - Verification (P2-VIDEO-002 workspace subtitle parity + wrap follow-up): `npm run test -- --run src/lib/video-processing/video-edit-pipeline.test.ts src/app/api/video-processing/edit/route.test.ts src/lib/workspace/workspace-graph.test.ts` pass (38 tests / 3 files).
+- Verification (P2-VIDEO-002 CPU/size default follow-up): `npm run test -- --run src/lib/video-processing/video-edit-pipeline.test.ts src/app/api/video-processing/edit/route.test.ts src/lib/workspace/workspace-graph.test.ts` pass (38 tests / 3 files).
+- Verification (P2-VIDEO-002 balanced quality follow-up): `npm run test -- --run src/lib/video-processing/video-edit-pipeline.test.ts src/app/api/video-processing/edit/route.test.ts src/lib/workspace/workspace-graph.test.ts` pass (38 tests / 3 files).
+- Verification (P2-VIDEO-002 Workspace seed follow-up): `npm run test -- --run src/lib/workspace/workspace-graph.test.ts` pass (29 tests / 1 file).
+- Verification (P2-VIDEO-002 Workspace Translate Provider follow-up): `npm run test -- --run src/lib/workspace/workspace-graph.test.ts` pass (29 tests / 1 file).
+- Verification (P2-VIDEO-002 duplicate translation follow-up): `npm run test -- --run src/lib/workspace/workspace-graph.test.ts` pass (29 tests / 1 file).
+- Verification (P2-VIDEO-002 Workspace resume follow-up): `npm run build` pass với warning cũ ngoài scope (`src/features/video-processing/video-tools-lab-panel.tsx` unused `Download`, `src/features/workspace/display-preferences-panel.tsx` unused `Image`) và log DNS Mongo `querySrv ECONNREFUSED` trong static generation nhưng exit code 0.
+- Verification (P2-VIDEO-002 video edit OOM follow-up): `npm run test -- --run src/lib/video-processing/video-edit-pipeline.test.ts src/app/api/video-processing/edit/route.test.ts` pass (12 tests / 2 files); `npm run build` pass với warning cũ ngoài scope (`src/features/video-processing/video-tools-lab-panel.tsx` unused `Download`, `src/features/workspace/display-preferences-panel.tsx` unused `Image`) và log DNS Mongo `querySrv ECONNREFUSED` trong static generation nhưng exit code 0.
 - Verification (P2-VIDEO-001): `npm run test -- --run src/lib/video-processing/mirror-video.test.ts src/app/api/video-processing/mirror/route.test.ts src/lib/workspace/workspace-graph.test.ts src/components/layout/navigation.test.ts` pass (37 tests / 4 files); `npm run build` pass với warning cũ `src/features/workspace/display-preferences-panel.tsx` import `Image` chưa dùng và log DNS Mongo `querySrv ECONNREFUSED` trong static generation nhưng exit code 0.
 - Verification (FAST-AUDIO-016): `npm run build` pass; Workspace runner errors include action + endpoint + API reason; existing unrelated warning remains (`src/features/workspace/display-preferences-panel.tsx` import `Image` chưa dùng).
 - Verification (FAST-AUDIO-015): `npm run test -- --run src/app/api/audio/video-dubbing/route.test.ts src/lib/workspace/workspace-graph.test.ts` pass (26 tests / 2 files); `npm run build` pass với warning cũ ngoài scope (`src/features/workspace/display-preferences-panel.tsx` import `Image` chưa dùng).

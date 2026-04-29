@@ -104,8 +104,8 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
     const [timelineEnd, setTimelineEnd] = useState(999999);
     const [blurStrength, setBlurStrength] = useState(18);
     const [subtitleFontFamily, setSubtitleFontFamily] = useState("Arial");
-    const [subtitleFontSize, setSubtitleFontSize] = useState(64);
-    const [subtitleMarginBottom, setSubtitleMarginBottom] = useState(280);
+    const [subtitleFontSize, setSubtitleFontSize] = useState(100);
+    const [subtitleMarginBottom, setSubtitleMarginBottom] = useState(150);
     const [translatedSegmentsJson, setTranslatedSegmentsJson] = useState("");
     const [isRunningEdit, setIsRunningEdit] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -508,7 +508,7 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                                         <input
                                             type="number"
                                             min={20}
-                                            max={96}
+                                            max={160}
                                             value={subtitleFontSize}
                                             disabled={isRunningEdit}
                                             onChange={(event) =>

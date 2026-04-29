@@ -6,6 +6,7 @@ import {
     buildSubtitleAssContent,
     buildVideoEditFfmpegArgs,
     runVideoEditPipeline,
+    runVideoEditPipelineFromPath,
     setVideoEditFfmpegSpawnForTest,
     setVideoEditReadFileForTest,
     validateVideoEditInput,
@@ -65,6 +66,8 @@ describe("video edit pipeline", () => {
                 "0:a?",
                 "-c:v",
                 "libx264",
+                "-preset",
+                "veryfast",
                 "-c:a",
                 "copy",
             ]),
@@ -74,7 +77,7 @@ describe("video edit pipeline", () => {
         expect(filter).toContain("boxblur=22:1");
         expect(filter).toContain("enable='between(t,1,5)'");
         expect(filter).toContain("ass='/tmp/subtitles.ass'");
-        expect(args).toEqual(expect.arrayContaining(["-crf", "18"]));
+        expect(args).toEqual(expect.arrayContaining(["-crf", "22"]));
         expect(args.at(-1)).toBe("/tmp/out.mp4");
     });
 
@@ -92,8 +95,8 @@ describe("video edit pipeline", () => {
         expect(ass).toContain("Dialogue: 0,0:01:02.12,0:01:04.50");
         expect(ass).toContain("Dong 1\\NDong 2");
         expect(ass).toContain("WrapStyle: 0");
-        expect(ass).toContain("Style: Default,Arial,64");
-        expect(ass).toContain(",60,60,280,1");
+        expect(ass).toContain("Style: Default,Arial,100");
+        expect(ass).toContain(",60,60,150,1");
     });
 
     it("applies custom subtitle style overrides", () => {
@@ -176,6 +179,35 @@ describe("video edit pipeline", () => {
             transform: {
                 mirror: true,
                 partialBlur: true,
+                subtitleOverlay: true,
+                segmentCount: 1,
+            },
+        });
+    });
+
+    it("runs ffmpeg from an existing input path without base64 encoding", async () => {
+        setVideoEditFfmpegSpawnForTest(createMockFfmpegSpawn(0) as never);
+        setVideoEditReadFileForTest(
+            vi.fn(async () => Buffer.from("edited-video")),
+        );
+
+        const result = await runVideoEditPipelineFromPath({
+            fileName: "source clip.mp4",
+            fileSizeBytes: 3,
+            inputPath: "/tmp/source clip.mp4",
+            mirror: true,
+            subtitles: { enabled: true, segments: translatedSegments },
+        });
+
+        expect(result).toMatchObject({
+            videoBytes: Buffer.from("edited-video"),
+            mimeType: "video/mp4",
+            extension: "mp4",
+            fileName: "source-clip-edit.mp4",
+            byteLength: 12,
+            transform: {
+                mirror: true,
+                partialBlur: false,
                 subtitleOverlay: true,
                 segmentCount: 1,
             },

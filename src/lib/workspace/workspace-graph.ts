@@ -272,7 +272,7 @@ export const WORKSPACE_NODE_TEMPLATES: WorkspaceNodeTemplate[] = [
                 label: "Region Y %",
                 type: "number",
                 required: true,
-                defaultValue: 78,
+                defaultValue: 84,
             },
             {
                 key: "regionWidth",
@@ -328,14 +328,14 @@ export const WORKSPACE_NODE_TEMPLATES: WorkspaceNodeTemplate[] = [
                 label: "Subtitle font size",
                 type: "number",
                 required: false,
-                defaultValue: 64,
+                defaultValue: 100,
             },
             {
                 key: "subtitleMarginBottom",
                 label: "Subtitle bottom margin",
                 type: "number",
                 required: false,
-                defaultValue: 280,
+                defaultValue: 150,
             },
             {
                 key: "mirrorEnabled",
@@ -643,8 +643,15 @@ export const WORKSPACE_NODE_TEMPLATES: WorkspaceNodeTemplate[] = [
         ],
         configFields: [
             {
+                key: "translationProviderId",
+                label: "AI Provider",
+                type: "account",
+                required: false,
+                defaultValue: "",
+            },
+            {
                 key: "model",
-                label: "Groq model",
+                label: "Translation model",
                 type: "select",
                 required: true,
                 defaultValue: "llama-3.1-8b-instant",
@@ -1664,12 +1671,6 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
             );
             continue;
         }
-        if (upstreamTranslations.length === 0) {
-            errors.push(
-                `Mask Logo/Subtitles '${editNode.label}' (${editNode.id}) cần upstream Translate Transcript để đè phụ đề tiếng Việt.`,
-            );
-            continue;
-        }
         if (upstreamTranslations.length > 1) {
             errors.push(
                 `Mask Logo/Subtitles '${editNode.label}' (${editNode.id}) đang nhận nhiều Translate Transcript; chưa hỗ trợ fan-in.`,
@@ -1678,7 +1679,6 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
         }
 
         const upstreamVideo = upstreamVideos[0];
-        const upstreamTranslation = upstreamTranslations[0];
         if (
             upstreamVideo.templateNodeType !== "source.file" &&
             !artifactProducers.has(upstreamVideo.id)
@@ -1688,7 +1688,21 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
             );
             continue;
         }
-        if (!translationProducers.has(upstreamTranslation.id)) {
+
+        const upstreamTranslation = upstreamTranslations[0] ?? upstreamVideo;
+        if (
+            upstreamTranslations.length === 0 &&
+            upstreamVideo.templateNodeType !== "audio.video-dubbing"
+        ) {
+            errors.push(
+                `Mask Logo/Subtitles '${editNode.label}' (${editNode.id}) cần upstream Translate Transcript hoặc Video Dubbing có translation để đè phụ đề tiếng Việt.`,
+            );
+            continue;
+        }
+        if (
+            upstreamTranslations.length > 0 &&
+            !translationProducers.has(upstreamTranslation.id)
+        ) {
             errors.push(
                 `Mask Logo/Subtitles '${editNode.label}' (${editNode.id}) cần Translate Transcript upstream chạy được.`,
             );
@@ -2140,6 +2154,103 @@ export function createUploadDubbingToSocialSampleGraph(): WorkspaceGraph {
                 id: "audio-video-dubbing-1:asset->storage-upload-1:asset",
                 fromNodeId: "audio-video-dubbing-1",
                 fromPortId: "asset",
+                toNodeId: "storage-upload-1",
+                toPortId: "asset",
+            },
+            {
+                id: "storage-upload-1:asset->social-publish-1:asset",
+                fromNodeId: "storage-upload-1",
+                fromPortId: "asset",
+                toNodeId: "social-publish-1",
+                toPortId: "asset",
+            },
+        ],
+    };
+}
+
+export function createUploadVietnameseMaskPublishSampleGraph(): WorkspaceGraph {
+    const now = new Date().toISOString();
+    return {
+        version: 1,
+        draftId: "upload-vi-mask-publish-sample",
+        title: "Upload -> VI Voice -> Mask -> Storage -> Social",
+        updatedAt: now,
+        selectedNodeId: "source-file-1",
+        nodes: [
+            {
+                id: "source-file-1",
+                templateNodeType: "source.file",
+                label: "Upload source video",
+                position: { x: 80, y: 160 },
+                config: {},
+            },
+            {
+                id: "audio-video-dubbing-1",
+                templateNodeType: "audio.video-dubbing",
+                label: "Vietnamese Voice Dubbing",
+                position: { x: 360, y: 240 },
+                config: {
+                    language: "zh",
+                    targetLanguage: "vi",
+                    model: "llama-3.1-8b-instant",
+                    originalAudioVolume: 0.18,
+                    voiceVolume: 1,
+                },
+            },
+            {
+                id: "edit-mask-region-1",
+                templateNodeType: "edit.mask-region",
+                label: "Mask Logo/Subtitles",
+                position: { x: 680, y: 160 },
+                config: {
+                    regionX: 0,
+                    regionY: 84,
+                    regionWidth: 100,
+                    regionHeight: 16,
+                    timelineStart: 0,
+                    timelineEnd: 999999,
+                    blurStrength: 18,
+                    subtitleOverlayEnabled: true,
+                    subtitleFontFamily: "Arial",
+                    subtitleFontSize: 100,
+                    subtitleMarginBottom: 150,
+                    mirrorEnabled: false,
+                },
+            },
+            {
+                id: "storage-upload-1",
+                templateNodeType: "storage.upload",
+                label: "Save final video",
+                position: { x: 1000, y: 160 },
+                config: {},
+            },
+            {
+                id: "social-publish-1",
+                templateNodeType: "social.publish",
+                label: "Publish final video",
+                position: { x: 1320, y: 160 },
+                config: {},
+            },
+        ],
+        edges: [
+            {
+                id: "source-file-1:asset->audio-video-dubbing-1:asset",
+                fromNodeId: "source-file-1",
+                fromPortId: "asset",
+                toNodeId: "audio-video-dubbing-1",
+                toPortId: "asset",
+            },
+            {
+                id: "audio-video-dubbing-1:asset->edit-mask-region-1:video",
+                fromNodeId: "audio-video-dubbing-1",
+                fromPortId: "asset",
+                toNodeId: "edit-mask-region-1",
+                toPortId: "video",
+            },
+            {
+                id: "edit-mask-region-1:video->storage-upload-1:asset",
+                fromNodeId: "edit-mask-region-1",
+                fromPortId: "video",
                 toNodeId: "storage-upload-1",
                 toPortId: "asset",
             },
