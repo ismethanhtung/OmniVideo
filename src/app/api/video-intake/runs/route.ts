@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 
-import { getIntakeDb, listIntakeJobRuns } from "@/lib/video-intake/repository";
+import {
+  deleteFailedUrlIntakeJobRuns,
+  getIntakeDb,
+  listIntakeJobRuns,
+} from "@/lib/video-intake/repository";
 import { runUrlIntakePipeline } from "@/lib/video-intake/runner";
 import type { IntakeInput } from "@/lib/video-intake/types";
 
@@ -28,6 +32,33 @@ export async function GET(request: Request) {
         sourceRefs: Array.isArray(run.sourceRefs)
           ? run.sourceRefs.map((sourceRef) => sourceRef.toString())
           : [],
+        outputSummary: run.outputSummary
+          ? {
+              ...run.outputSummary,
+              assetId:
+                run.outputSummary.assetId &&
+                typeof run.outputSummary.assetId === "object"
+                  ? run.outputSummary.assetId.toString()
+                  : run.outputSummary.assetId,
+            }
+          : run.outputSummary,
+        assetSummary: run.assetSummary
+          ? {
+              ...run.assetSummary,
+              _id: run.assetSummary._id.toString(),
+              createdFrom: run.assetSummary.createdFrom
+                ? {
+                    ...run.assetSummary.createdFrom,
+                    sourceId:
+                      run.assetSummary.createdFrom.sourceId?.toString?.() ??
+                      run.assetSummary.createdFrom.sourceId,
+                    jobRunId:
+                      run.assetSummary.createdFrom.jobRunId?.toString?.() ??
+                      run.assetSummary.createdFrom.jobRunId,
+                  }
+                : run.assetSummary.createdFrom,
+            }
+          : null,
       })),
       pagination: {
         page: result.page,
@@ -45,6 +76,43 @@ export async function GET(request: Request) {
           error instanceof Error
             ? error.message
             : "Video intake history API failed.",
+      },
+      { status: 500 },
+    );
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const url = new URL(request.url);
+
+    if (url.searchParams.get("status") !== "failed") {
+      return NextResponse.json(
+        {
+          ok: false,
+          errorCode: "VAL_VIDEO_INTAKE_DELETE_STATUS_INVALID",
+          error: "Only failed URL intake runs can be deleted in bulk.",
+        },
+        { status: 400 },
+      );
+    }
+
+    const db = await getIntakeDb();
+    const result = await deleteFailedUrlIntakeJobRuns({ db });
+
+    return NextResponse.json({
+      ok: true,
+      data: result,
+    });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        ok: false,
+        errorCode: "SYS_VIDEO_INTAKE_DELETE_FAILED",
+        error:
+          error instanceof Error
+            ? error.message
+            : "Video intake failed-run cleanup failed.",
       },
       { status: 500 },
     );

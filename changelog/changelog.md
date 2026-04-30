@@ -1,5 +1,12 @@
 # OmniVideo Changelog
 
+## FAST-INTAKE-003 - Improve Video Intake run history detail and failed cleanup
+
+- Cập nhật Video Intake Run History theo hướng giống Storage Library: thêm preview video khi run có asset, thêm detail modal chứa Created và metadata chính, đồng thời bỏ cột Created khỏi bảng chính.
+- Thêm nút `Delete Failed` cạnh `Refresh` để xoá các URL intake run failed cùng `step_runs` và `run_events` liên quan.
+- Verification (FAST-INTAKE-003): `npm run test -- --run src/app/api/video-intake/runs/route.test.ts` pass (1 file / 2 tests); `npm run build` pass (còn 2 warning cũ ngoài scope: unused `Download` và `Image`).
+
+
 ## 2026-04-30
 
 ### Changed

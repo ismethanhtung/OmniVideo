@@ -1,10 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, Trash2 } from "lucide-react";
 
 import type { LeftbarNavItem } from "@/components/layout/types";
 import { StatusText } from "@/components/ui/status-text";
+import { getTelegramDownloadBlockedReason } from "@/lib/storage/telegram-download";
 
 type UploadProviderType = "telegram" | "drive";
 type IntakeQualityPreference = "best" | "1080p" | "720p" | "480p" | "360p";
@@ -60,6 +61,40 @@ type IntakeRunHistory = {
         errorCode?: string;
         errorMessage?: string;
         storageProviderLabel?: string | null;
+    } | null;
+    assetSummary?: {
+        _id: string;
+        status?: string;
+        storageProvider: string;
+        storagePointer?: Record<string, unknown>;
+        publicUrl?: string | null;
+        providerAssetId?: string | null;
+        mimeType?: string | null;
+        sizeBytes?: number | null;
+        durationMs?: number | null;
+        metadata?: {
+            sourceUrl?: string;
+            originPlatform?: string;
+            title?: string | null;
+            resolver?: string;
+            requestedQuality?: string;
+            actualQuality?: string | null;
+            formatId?: string | null;
+            formatNote?: string | null;
+            resolution?: string | null;
+            height?: number | null;
+            width?: number | null;
+            ext?: string | null;
+            vcodec?: string | null;
+            acodec?: string | null;
+        };
+        createdFrom?: {
+            sourceId?: string;
+            jobRunId?: string;
+            storageProviderAccountId?: string | null;
+            storageProviderLabel?: string | null;
+        };
+        createdAt?: string;
     } | null;
     durationMs?: number | null;
     createdAt?: string;
@@ -122,6 +157,45 @@ function formatDate(value?: string) {
     }).format(new Date(value));
 }
 
+function formatBytes(size?: number | null) {
+    if (!size || size <= 0) {
+        return "-";
+    }
+
+    const units = ["B", "KB", "MB", "GB", "TB"];
+    let value = size;
+    let unitIndex = 0;
+
+    while (value >= 1024 && unitIndex < units.length - 1) {
+        value /= 1024;
+        unitIndex += 1;
+    }
+
+    const precision = value >= 100 ? 0 : value >= 10 ? 1 : 2;
+    return `${value.toFixed(precision)} ${units[unitIndex]}`;
+}
+
+function formatDuration(durationMs?: number | null) {
+    if (!durationMs || durationMs <= 0) {
+        return "-";
+    }
+
+    const totalSeconds = Math.floor(durationMs / 1000);
+    const seconds = totalSeconds % 60;
+    const minutes = Math.floor(totalSeconds / 60) % 60;
+    const hours = Math.floor(totalSeconds / 3600);
+
+    if (hours > 0) {
+        return `${hours}h ${minutes}m ${seconds}s`;
+    }
+
+    if (minutes > 0) {
+        return `${minutes}m ${seconds}s`;
+    }
+
+    return `${seconds}s`;
+}
+
 const DEFAULT_PAGINATION: Pagination = {
     page: 1,
     pageSize: 10,
@@ -167,6 +241,9 @@ export function VideoIntakePanel({ section }: VideoIntakePanelProps) {
     const [historyError, setHistoryError] = useState<string | null>(null);
     const [runDetail, setRunDetail] = useState<RunDetailResponse | null>(null);
     const [runDetailLoading, setRunDetailLoading] = useState(false);
+    const [selectedRun, setSelectedRun] = useState<IntakeRunHistory | null>(
+        null,
+    );
     const [state, setState] = useState<SubmitState>({
         status: "idle",
         message: "Ready.",
@@ -346,6 +423,72 @@ export function VideoIntakePanel({ section }: VideoIntakePanelProps) {
                         ? error.message
                         : "Video intake failed.",
             });
+        }
+    };
+
+    const deleteFailedRuns = async () => {
+        if (!confirm("Delete all failed URL intake runs and their traces?")) {
+            return;
+        }
+
+        setHistoryLoading(true);
+        setHistoryError(null);
+
+        try {
+            const response = await fetch(
+                "/api/video-intake/runs?status=failed",
+                {
+                    method: "DELETE",
+                },
+            );
+            const payload = (await response.json()) as ApiResponse<{
+                deletedRuns: number;
+            }>;
+
+            if (!response.ok || !payload.ok) {
+                setHistoryError(
+                    payload.error ?? "Could not delete failed intake runs.",
+                );
+                return;
+            }
+
+            setSelectedRun(null);
+            await loadHistory(1);
+        } catch {
+            setHistoryError("Could not delete failed intake runs.");
+        } finally {
+            setHistoryLoading(false);
+        }
+    };
+
+    const deleteRun = async (run: IntakeRunHistory) => {
+        if (!confirm(`Delete run "${run._id}"?`)) {
+            return;
+        }
+
+        setHistoryLoading(true);
+        setHistoryError(null);
+        try {
+            const response = await fetch(`/api/video-intake/runs/${run._id}`, {
+                method: "DELETE",
+            });
+            const payload = (await response.json()) as ApiResponse<{
+                deletedRuns: number;
+            }>;
+
+            if (!response.ok || !payload.ok) {
+                setHistoryError(payload.error ?? "Could not delete run.");
+                return;
+            }
+
+            if (selectedRun?._id === run._id) {
+                setSelectedRun(null);
+            }
+            await loadHistory(historyPagination.page);
+        } catch {
+            setHistoryError("Could not delete run.");
+        } finally {
+            setHistoryLoading(false);
         }
     };
 
@@ -632,19 +775,32 @@ export function VideoIntakePanel({ section }: VideoIntakePanelProps) {
                             Recent pipeline runs from `job_runs`.
                         </p>
                     </div>
-                    <button
-                        type="button"
-                        onClick={() => {
-                            void loadHistory(historyPagination.page);
-                        }}
-                        disabled={historyLoading}
-                        className="inline-flex items-center gap-2 border border-main bg-secondary px-3 py-1.5 text-[12px] font-semibold text-main transition-colors hover:bg-secondary/75 disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                        <RefreshCw
-                            className={`h-3.5 w-3.5 ${historyLoading ? "animate-spin" : ""}`}
-                        />
-                        {historyLoading ? "Refreshing..." : "Refresh"}
-                    </button>
+                    <div className="flex gap-2">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                void deleteFailedRuns();
+                            }}
+                            disabled={historyLoading}
+                            className="btn-danger inline-flex items-center gap-2 border px-3 py-1.5 text-[12px] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                            <Trash2 className="h-3.5 w-3.5" />
+                            Delete Failed
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                void loadHistory(historyPagination.page);
+                            }}
+                            disabled={historyLoading}
+                            className="inline-flex items-center gap-2 border border-main bg-secondary px-3 py-1.5 text-[12px] font-semibold text-main transition-colors hover:bg-secondary/75 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                            <RefreshCw
+                                className={`h-3.5 w-3.5 ${historyLoading ? "animate-spin" : ""}`}
+                            />
+                            {historyLoading ? "Refreshing..." : "Refresh"}
+                        </button>
+                    </div>
                 </div>
 
                 {historyError ? (
@@ -658,7 +814,7 @@ export function VideoIntakePanel({ section }: VideoIntakePanelProps) {
                         <thead className="border-b border-main bg-secondary/45 text-muted">
                             <tr>
                                 <th className="px-4 py-2 font-semibold">
-                                    Created
+                                    Video
                                 </th>
                                 <th className="px-4 py-2 font-semibold">
                                     Status
@@ -670,7 +826,16 @@ export function VideoIntakePanel({ section }: VideoIntakePanelProps) {
                                     Storage
                                 </th>
                                 <th className="px-4 py-2 font-semibold">
-                                    Result
+                                    Quality
+                                </th>
+                                <th className="px-4 py-2 font-semibold">
+                                    Size
+                                </th>
+                                <th className="px-4 py-2 font-semibold">
+                                    Duration
+                                </th>
+                                <th className="px-4 py-2 font-semibold">
+                                    Detail
                                 </th>
                             </tr>
                         </thead>
@@ -679,60 +844,133 @@ export function VideoIntakePanel({ section }: VideoIntakePanelProps) {
                                 <tr>
                                     <td
                                         className="px-4 py-6 text-muted"
-                                        colSpan={5}
+                                        colSpan={8}
                                     >
                                         Chưa có intake run nào.
                                     </td>
                                 </tr>
                             ) : (
-                                history.map((run) => (
-                                    <tr
-                                        key={run._id}
-                                        className="border-b border-main last:border-b-0"
-                                    >
-                                        <td className="whitespace-nowrap px-4 py-3 text-muted">
-                                            {formatDate(run.createdAt)}
-                                        </td>
-                                        <td className="px-4 py-3 font-mono text-[11px]">
-                                            <StatusText status={run.status} />
-                                        </td>
-                                        <td className="max-w-[360px] px-4 py-3">
-                                            <p className="truncate text-main">
-                                                {run.inputSnapshot?.title ??
-                                                    run.inputSnapshot
-                                                        ?.sourceUrl ??
-                                                    "-"}
-                                            </p>
-                                            <p className="mt-1 truncate font-mono text-[11px] text-muted">
-                                                {run.inputSnapshot?.sourceUrl ??
-                                                    "-"}
-                                            </p>
-                                        </td>
-                                        <td className="px-4 py-3 text-muted">
-                                            {run.outputSummary
-                                                ?.storageProviderLabel ??
-                                                run.inputSnapshot
-                                                    ?.storageProvider ??
-                                                "-"}
-                                        </td>
-                                        <td className="max-w-[320px] px-4 py-3">
-                                            <p className="truncate font-mono text-[11px] text-muted">
-                                                {run.outputSummary?.assetId ??
-                                                    run.outputSummary
-                                                        ?.errorCode ??
-                                                    "-"}
-                                            </p>
-                                            {run.outputSummary?.errorMessage ? (
-                                                <p className="mt-1 truncate text-[11px] text-muted">
-                                                    {
-                                                        run.outputSummary
-                                                            .errorMessage
-                                                    }
+                                history.map((run) => {
+                                    const downloadBlockedReason =
+                                        run.assetSummary
+                                            ? getTelegramDownloadBlockedReason({
+                                                  storageProvider:
+                                                      run.assetSummary
+                                                          .storageProvider,
+                                                  sizeBytes:
+                                                      run.assetSummary
+                                                          .sizeBytes,
+                                              })
+                                            : "No asset preview.";
+
+                                    return (
+                                        <tr
+                                            key={run._id}
+                                            className="border-b border-main last:border-b-0"
+                                        >
+                                            <td className="w-[150px] p-0">
+                                                {run.assetSummary &&
+                                                !downloadBlockedReason ? (
+                                                    <video
+                                                        preload="metadata"
+                                                        muted
+                                                        className="h-20 w-full bg-black object-cover"
+                                                        src={`/api/storage/assets/${run.assetSummary._id}/download?disposition=inline`}
+                                                    />
+                                                ) : (
+                                                    <div className="flex h-20 w-full items-center justify-center bg-secondary text-[10px] text-muted">
+                                                        No preview
+                                                    </div>
+                                                )}
+                                            </td>
+                                            <td className="px-4 py-3 font-mono text-[11px]">
+                                                <StatusText
+                                                    status={run.status}
+                                                />
+                                            </td>
+                                            <td className="max-w-[360px] px-4 py-3">
+                                                <p className="truncate text-main">
+                                                    {run.inputSnapshot?.title ??
+                                                        run.inputSnapshot
+                                                            ?.sourceUrl ??
+                                                        "-"}
                                                 </p>
-                                            ) : null}
-                                        </td>
-                                    </tr>
-                                ))
+                                                <p className="mt-1 truncate font-mono text-[11px] text-muted">
+                                                    {run.inputSnapshot
+                                                        ?.sourceUrl ?? "-"}
+                                                </p>
+                                            </td>
+                                            <td className="px-4 py-3 text-muted">
+                                                {run.outputSummary
+                                                    ?.storageProviderLabel ??
+                                                    run.assetSummary
+                                                        ?.createdFrom
+                                                        ?.storageProviderLabel ??
+                                                    run.inputSnapshot
+                                                        ?.storageProvider ??
+                                                    "-"}
+                                            </td>
+                                            <td className="px-4 py-3 text-muted">
+                                                <p className="text-main">
+                                                    {run.assetSummary?.metadata
+                                                        ?.actualQuality ?? "-"}
+                                                </p>
+                                                <p className="mt-1 text-[11px] text-muted">
+                                                    {run.assetSummary?.metadata
+                                                        ?.requestedQuality ??
+                                                        ""}
+                                                </p>
+                                            </td>
+                                            <td className="px-4 py-3 text-muted">
+                                                {formatBytes(
+                                                    run.assetSummary?.sizeBytes,
+                                                )}
+                                            </td>
+                                            <td className="px-4 py-3 text-muted">
+                                                {formatDuration(
+                                                    run.assetSummary
+                                                        ?.durationMs ??
+                                                        run.durationMs,
+                                                )}
+                                            </td>
+                                            <td className="max-w-[320px] px-4 py-3">
+                                                {run.outputSummary
+                                                    ?.errorMessage ? (
+                                                    <p className="mt-1 truncate text-[11px] text-muted">
+                                                        {
+                                                            run.outputSummary
+                                                                .errorMessage
+                                                        }
+                                                    </p>
+                                                ) : null}
+                                                <div className="mt-2 flex gap-2">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() =>
+                                                            setSelectedRun(run)
+                                                        }
+                                                        className="border border-main bg-secondary px-2 py-1 text-[11px] font-semibold text-main transition-colors hover:bg-secondary/75"
+                                                    >
+                                                        Detail
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            void deleteRun(run);
+                                                        }}
+                                                        disabled={
+                                                            historyLoading
+                                                        }
+                                                        className="btn-danger inline-flex items-center gap-1 border px-2 py-1 text-[11px] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+                                                    >
+                                                        <Trash2 className="h-3 w-3" />
+                                                        Delete
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    );
+                                })
                             )}
                         </tbody>
                     </table>
@@ -774,6 +1012,196 @@ export function VideoIntakePanel({ section }: VideoIntakePanelProps) {
                     </div>
                 </div>
             </div>
+
+            {selectedRun ? (
+                <IntakeRunDetailModal
+                    run={selectedRun}
+                    onClose={() => setSelectedRun(null)}
+                />
+            ) : null}
         </section>
+    );
+}
+
+function IntakeRunDetailModal({
+    run,
+    onClose,
+}: {
+    run: IntakeRunHistory;
+    onClose: () => void;
+}) {
+    const asset = run.assetSummary;
+    const downloadBlockedReason = asset
+        ? getTelegramDownloadBlockedReason({
+              storageProvider: asset.storageProvider,
+              sizeBytes: asset.sizeBytes,
+          })
+        : "No stored asset is linked to this run.";
+
+    return (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/35 px-4 py-6">
+            <div className="max-h-[90vh] w-full max-w-4xl overflow-y-auto border border-main bg-main shadow-xl">
+                <div className="flex items-start justify-between gap-4 border-b border-main bg-secondary/35 px-4 py-3">
+                    <div className="min-w-0">
+                        <p className="truncate text-[13px] font-semibold text-main">
+                            {run.inputSnapshot?.title ??
+                                asset?.metadata?.title ??
+                                run._id}
+                        </p>
+                        <p className="mt-1 truncate font-mono text-[11px] text-muted">
+                            {run.inputSnapshot?.sourceUrl ??
+                                asset?.metadata?.sourceUrl ??
+                                "-"}
+                        </p>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="border border-main bg-main px-2.5 py-1 text-[11px] font-semibold text-main transition-colors hover:bg-secondary"
+                    >
+                        Close
+                    </button>
+                </div>
+
+                <div className="space-y-3 px-4 py-4">
+                    {asset && !downloadBlockedReason ? (
+                        <div className="border border-main bg-secondary/20 p-3">
+                            <p className="text-[10px] font-bold uppercase tracking-wide text-muted">
+                                Inline Video Preview
+                            </p>
+                            <video
+                                controls
+                                preload="metadata"
+                                className="mt-2 w-full border border-main bg-black"
+                                src={`/api/storage/assets/${asset._id}/download?disposition=inline`}
+                            />
+                        </div>
+                    ) : (
+                        <div className="border border-main bg-secondary/20 p-3">
+                            <p className="text-[10px] font-bold uppercase tracking-wide text-muted">
+                                Inline Video Preview
+                            </p>
+                            <p className="mt-2 text-[11px] text-muted">
+                                {downloadBlockedReason}
+                            </p>
+                        </div>
+                    )}
+
+                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                        <DetailCell label="Run Status" value={run.status} />
+                        <DetailCell
+                            label="Provider"
+                            value={
+                                asset?.storageProvider ??
+                                run.inputSnapshot?.storageProvider
+                            }
+                        />
+                        <DetailCell
+                            label="Account"
+                            value={
+                                run.outputSummary?.storageProviderLabel ??
+                                asset?.createdFrom?.storageProviderLabel
+                            }
+                        />
+                        <DetailCell
+                            label="Requested Quality"
+                            value={asset?.metadata?.requestedQuality}
+                        />
+                        <DetailCell
+                            label="Actual Quality"
+                            value={asset?.metadata?.actualQuality}
+                        />
+                        <DetailCell
+                            label="Resolution"
+                            value={asset?.metadata?.resolution}
+                        />
+                        <DetailCell
+                            label="Size"
+                            value={formatBytes(asset?.sizeBytes)}
+                        />
+                        <DetailCell
+                            label="Duration"
+                            value={formatDuration(
+                                asset?.durationMs ?? run.durationMs,
+                            )}
+                        />
+                        <DetailCell
+                            label="Error Code"
+                            value={run.outputSummary?.errorCode}
+                            mono
+                        />
+                        <DetailCell
+                            label="Provider Asset ID"
+                            value={asset?.providerAssetId}
+                            mono
+                        />
+                        <DetailCell label="Run ID" value={run._id} mono />
+                        <DetailCell
+                            label="Asset ID"
+                            value={run.outputSummary?.assetId ?? asset?._id}
+                            mono
+                        />
+                        <DetailCell
+                            label="Source ID"
+                            value={asset?.createdFrom?.sourceId}
+                            mono
+                        />
+                        <DetailCell
+                            label="Created"
+                            value={formatDate(run.createdAt)}
+                        />
+                    </div>
+
+                    {run.outputSummary?.errorMessage ? (
+                        <div className="border border-main bg-main px-3 py-2">
+                            <p className="text-[10px] font-bold uppercase tracking-wide text-muted">
+                                Error Message
+                            </p>
+                            <p className="mt-1 text-[12px] leading-5 text-main">
+                                {run.outputSummary.errorMessage}
+                            </p>
+                        </div>
+                    ) : null}
+
+                    <div className="border border-main bg-main px-3 py-2">
+                        <p className="text-[10px] font-bold uppercase tracking-wide text-muted">
+                            Storage Pointer
+                        </p>
+                        <pre className="mt-1 overflow-x-auto whitespace-pre-wrap font-mono text-[11px] leading-5 text-main">
+                            {JSON.stringify(
+                                asset?.storagePointer ?? {},
+                                null,
+                                2,
+                            )}
+                        </pre>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function DetailCell({
+    label,
+    value,
+    mono = false,
+}: {
+    label: string;
+    value?: string | number | null;
+    mono?: boolean;
+}) {
+    return (
+        <div className="border border-main bg-secondary/20 px-3 py-2">
+            <p className="text-[10px] font-bold uppercase tracking-wide text-muted">
+                {label}
+            </p>
+            <p
+                className={`mt-1 truncate text-[12px] text-main ${
+                    mono ? "font-mono text-[11px]" : ""
+                }`}
+            >
+                {value ?? "-"}
+            </p>
+        </div>
     );
 }

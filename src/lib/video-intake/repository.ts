@@ -583,13 +583,124 @@ export async function listIntakeJobRuns({
       .toArray(),
     db.collection("job_runs").countDocuments(query),
   ]);
+  const assetIds = items
+    .map((item) => item.outputSummary?.assetId)
+    .filter((assetId): assetId is ObjectId => assetId instanceof ObjectId);
+  const assets =
+    assetIds.length > 0
+      ? await db
+          .collection("assets")
+          .find({ _id: { $in: assetIds }, assetType: "video" })
+          .project({
+            status: 1,
+            storageProvider: 1,
+            storagePointer: 1,
+            publicUrl: 1,
+            providerAssetId: 1,
+            mimeType: 1,
+            sizeBytes: 1,
+            durationMs: 1,
+            metadata: 1,
+            createdFrom: 1,
+            createdAt: 1,
+          })
+          .toArray()
+      : [];
+  const assetsById = new Map(
+    assets.map((asset) => [asset._id.toString(), asset]),
+  );
+  const enrichedItems = items.map((item) => {
+    const assetId = item.outputSummary?.assetId;
+    const asset =
+      assetId instanceof ObjectId ? assetsById.get(assetId.toString()) : null;
+
+    return asset
+      ? {
+          ...item,
+          assetSummary: asset,
+        }
+      : item;
+  });
 
   return {
-    items,
+    items: enrichedItems,
     total,
     page,
     pageSize,
     totalPages: Math.max(1, Math.ceil(total / pageSize)),
+  };
+}
+
+export async function deleteFailedUrlIntakeJobRuns({ db }: { db: Db }) {
+  const failedRuns = await db
+    .collection("job_runs")
+    .find({
+      pipelineId: "mvp-url-intake-to-storage",
+      status: "failed",
+    })
+    .project({ _id: 1 })
+    .toArray();
+  const runIds = failedRuns.map((run) => run._id);
+
+  if (runIds.length === 0) {
+    return {
+      deletedRuns: 0,
+      deletedStepRuns: 0,
+      deletedRunEvents: 0,
+    };
+  }
+
+  const [stepResult, eventResult, runResult] = await Promise.all([
+    db.collection("step_runs").deleteMany({ jobRunId: { $in: runIds } }),
+    db.collection("run_events").deleteMany({ jobRunId: { $in: runIds } }),
+    db.collection("job_runs").deleteMany({ _id: { $in: runIds } }),
+  ]);
+
+  return {
+    deletedRuns: runResult.deletedCount,
+    deletedStepRuns: stepResult.deletedCount,
+    deletedRunEvents: eventResult.deletedCount,
+  };
+}
+
+export async function deleteUrlIntakeJobRunById({
+  db,
+  runId,
+}: {
+  db: Db;
+  runId: string;
+}) {
+  if (!ObjectId.isValid(runId)) {
+    return {
+      ok: false as const,
+      reason: "invalid-id" as const,
+    };
+  }
+
+  const objectId = new ObjectId(runId);
+  const run = await db.collection("job_runs").findOne({
+    _id: objectId,
+    pipelineId: "mvp-url-intake-to-storage",
+  });
+
+  if (!run) {
+    return {
+      ok: false as const,
+      reason: "not-found" as const,
+    };
+  }
+
+  const [stepResult, eventResult, runResult] = await Promise.all([
+    db.collection("step_runs").deleteMany({ jobRunId: objectId }),
+    db.collection("run_events").deleteMany({ jobRunId: objectId }),
+    db.collection("job_runs").deleteOne({ _id: objectId }),
+  ]);
+
+  return {
+    ok: true as const,
+    deletedRuns: runResult.deletedCount,
+    deletedStepRuns: stepResult.deletedCount,
+    deletedRunEvents: eventResult.deletedCount,
   };
 }
 
