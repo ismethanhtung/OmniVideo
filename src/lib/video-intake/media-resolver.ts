@@ -10,6 +10,11 @@ import {
 
 type ResolverResponse = {
   directMediaUrl?: string;
+  downloadMode?: "direct-url" | "yt-dlp-file";
+  resolverProfile?: string;
+  formatSelector?: string;
+  hasAudio?: boolean;
+  hasVideo?: boolean;
   title?: string;
   mimeType?: string;
   sizeBytes?: number;
@@ -40,13 +45,18 @@ function mapResolvedMedia({
 }): ResolvedMedia {
   return {
     originalUrl: input.canonicalUrl,
-    directMediaUrl: payload.directMediaUrl as string,
+    directMediaUrl: payload.directMediaUrl,
     originPlatform: input.originPlatform,
     title: payload.title ?? input.title,
     mimeType: payload.mimeType,
     sizeBytes: payload.sizeBytes,
     durationMs: payload.durationMs,
     requestedQuality: normalizeResolverQuality(input.qualityPreference ?? "best"),
+    downloadMode: payload.downloadMode ?? "direct-url",
+    resolverProfile: payload.resolverProfile,
+    formatSelector: payload.formatSelector ?? input.formatSelector,
+    hasAudio: payload.hasAudio,
+    hasVideo: payload.hasVideo,
     formatId: payload.formatId,
     formatNote: payload.formatNote,
     height: payload.height,
@@ -103,6 +113,7 @@ export async function resolveMediaUrl(
       originPlatform: input.originPlatform,
       title: input.title,
       requestedQuality: input.qualityPreference ?? "best",
+      downloadMode: "direct-url",
       resolver: "direct-url",
     };
   }
@@ -120,6 +131,7 @@ export async function resolveMediaUrl(
   const payload = await resolveMediaUrlInternal(
     input.canonicalUrl,
     input.qualityPreference ?? "best",
+    input.formatSelector,
   );
 
   return mapResolvedMedia({

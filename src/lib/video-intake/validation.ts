@@ -15,6 +15,7 @@ const SUPPORTED_QUALITY_PREFERENCES = new Set([
   "360p",
 ]);
 const OBJECT_ID_PATTERN = /^[a-f\d]{24}$/i;
+const FORMAT_SELECTOR_MAX_LENGTH = 240;
 
 export function validateIntakeInput(input: unknown): ValidatedIntakeInput {
   if (!input || typeof input !== "object") {
@@ -100,6 +101,21 @@ export function validateIntakeInput(input: unknown): ValidatedIntakeInput {
     });
   }
 
+  const formatSelector = payload.formatSelector?.trim();
+
+  if (
+    formatSelector &&
+    (formatSelector.length > FORMAT_SELECTOR_MAX_LENGTH ||
+      /[\r\n\u0000-\u001f]/u.test(formatSelector))
+  ) {
+    throw new IntakeError({
+      errorCode: "VAL_FORMAT_SELECTOR_INVALID",
+      message:
+        "formatSelector must be a single-line yt-dlp format selector under 240 characters.",
+      category: "validation",
+    });
+  }
+
   return {
     sourceUrl: payload.sourceUrl,
     canonicalUrl,
@@ -108,6 +124,7 @@ export function validateIntakeInput(input: unknown): ValidatedIntakeInput {
     storageProviderAccountId,
     tags,
     qualityPreference,
+    formatSelector: formatSelector || undefined,
     title: payload.title?.trim() || undefined,
     languageHint: payload.languageHint?.trim() || undefined,
     contentIntent: payload.contentIntent?.trim() || "other",

@@ -1,8 +1,17 @@
+import { createReadStream, createWriteStream, openAsBlob } from "node:fs";
+import { mkdtemp, rm, stat } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
+
 import { getAppEnv } from "@/lib/config/env";
 import type { StorageProviderSecretMap } from "@/lib/storage-providers/types";
 
+import { downloadResolvedMediaToTempFile } from "./internal-resolver";
 import {
   IntakeError,
+  type IntakeQualityPreference,
   type ResolvedMedia,
   type StorageProvider,
   type StorageUploadResult,
@@ -42,6 +51,14 @@ type TelegramResponse = {
       file_size?: number;
     };
   };
+};
+
+type TempMediaFile = {
+  filePath: string;
+  filename: string;
+  mimeType?: string;
+  sizeBytes?: number;
+  cleanup: () => Promise<void>;
 };
 
 function buildSourceFetchHeaders(
@@ -98,8 +115,151 @@ async function fetchSourceMedia(
   });
 }
 
+async function fetchSourceMediaToTempFile(
+  media: ResolvedMedia,
+): Promise<TempMediaFile> {
+  if (!media.directMediaUrl) {
+    throw new IntakeError({
+      errorCode: "VID_DIRECT_MEDIA_URL_MISSING",
+      message: "Resolved media does not include a direct media URL.",
+      category: "dependency",
+      retryable: false,
+    });
+  }
+
+  const mediaResponse = await fetchSourceMedia(
+    media.directMediaUrl,
+    media.requestHeaders,
+  );
+
+  if (!mediaResponse.ok || !mediaResponse.body) {
+    throw new IntakeError({
+      errorCode: "STG_SOURCE_STREAM_FAILED",
+      message: `Could not open source media stream. Status ${mediaResponse.status}.`,
+      category: "dependency",
+      retryable: mediaResponse.status >= 500,
+    });
+  }
+
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), "omnivideo-source-"));
+  const extension = media.ext?.trim() || "mp4";
+  const filePath = path.join(tmpDir, `${Date.now()}-omnivideo-intake.${extension}`);
+
+  try {
+    await pipeline(
+      Readable.fromWeb(
+        mediaResponse.body as unknown as Parameters<typeof Readable.fromWeb>[0],
+      ),
+      createWriteStream(filePath),
+    );
+    const fileStat = await stat(filePath);
+    return {
+      filePath,
+      filename: path.basename(filePath),
+      mimeType:
+        mediaResponse.headers.get("content-type") ?? media.mimeType ?? "video/mp4",
+      sizeBytes: fileStat.size,
+      cleanup: () => rm(tmpDir, { recursive: true, force: true }),
+    };
+  } catch (error) {
+    await rm(tmpDir, { recursive: true, force: true });
+    throw error;
+  }
+}
+
+async function materializeMediaFile(media: ResolvedMedia): Promise<TempMediaFile> {
+  if (media.downloadMode === "yt-dlp-file") {
+    return downloadResolvedMediaToTempFile({
+      originalUrl: media.originalUrl,
+      requestedQuality: (media.requestedQuality ?? "best") as IntakeQualityPreference,
+      formatSelector: media.formatSelector,
+    });
+  }
+
+  return fetchSourceMediaToTempFile(media);
+}
+
 function normalizeTelegramError(payload: TelegramResponse, fallbackMessage: string) {
   return payload.description ?? fallbackMessage;
+}
+
+async function uploadToTelegramByFile({
+  file,
+  botToken,
+  chatId,
+  account,
+}: {
+  file: TempMediaFile;
+  botToken: string;
+  chatId: string;
+  account?: StorageUploadAccount;
+}): Promise<StorageUploadResult> {
+  const fileBlob = await openAsBlob(file.filePath, {
+    type: file.mimeType ?? "video/mp4",
+  });
+  const formData = new FormData();
+  formData.append("chat_id", chatId);
+  formData.append("supports_streaming", "true");
+  formData.append("caption", "OmniVideo intake");
+  formData.append("video", fileBlob, file.filename);
+
+  const response = await fetch(
+    `https://api.telegram.org/bot${botToken}/sendVideo`,
+    {
+      method: "POST",
+      body: formData,
+    },
+  );
+  const payload = (await response.json()) as TelegramResponse;
+
+  if (!response.ok || !payload.ok) {
+    throw new IntakeError({
+      errorCode: "STG_TELEGRAM_UPLOAD_FAILED",
+      message: normalizeTelegramError(payload, "Telegram upload failed."),
+      category: "provider",
+      retryable: response.status >= 500,
+    });
+  }
+
+  return {
+    storageProvider: "telegram",
+    storageProviderAccountId: account?.accountId,
+    storageProviderLabel: account?.label,
+    providerAssetId: payload.result?.video?.file_id,
+    mimeType: payload.result?.video?.mime_type ?? file.mimeType,
+    sizeBytes: payload.result?.video?.file_size ?? file.sizeBytes,
+    storagePointer: {
+      chatId,
+      messageId: payload.result?.message_id,
+      fileId: payload.result?.video?.file_id,
+      fileUniqueId: payload.result?.video?.file_unique_id,
+      uploadMode: "file-stream",
+    },
+  };
+}
+
+async function uploadToTelegramByResolvedFile({
+  media,
+  botToken,
+  chatId,
+  account,
+}: {
+  media: ResolvedMedia;
+  botToken: string;
+  chatId: string;
+  account?: StorageUploadAccount;
+}): Promise<StorageUploadResult> {
+  const file = await materializeMediaFile(media);
+  try {
+    return await uploadToTelegramByFile({
+      file,
+      botToken,
+      chatId,
+      account,
+    });
+  } finally {
+    await file.cleanup();
+  }
 }
 
 async function uploadToTelegramByBinary({
@@ -113,31 +273,10 @@ async function uploadToTelegramByBinary({
   chatId: string;
   account?: StorageUploadAccount;
 }): Promise<StorageUploadResult> {
-  const mediaResponse = await fetchSourceMedia(
-    media.directMediaUrl,
-    media.requestHeaders,
-  );
-
-  if (!mediaResponse.ok) {
-    throw new IntakeError({
-      errorCode: "STG_TELEGRAM_SOURCE_STREAM_FAILED",
-      message: `Could not open source media URL. Status ${mediaResponse.status}.`,
-      category: "dependency",
-      retryable: mediaResponse.status >= 500,
-    });
-  }
-
-  const arrayBuffer = await mediaResponse.arrayBuffer();
-  const mimeType =
-    mediaResponse.headers.get("content-type") ?? media.mimeType ?? "video/mp4";
-  return uploadToTelegramByBytes({
+  return uploadToTelegramByResolvedFile({
+    media,
     botToken,
     chatId,
-    bytes: new Uint8Array(arrayBuffer),
-    mimeType,
-    filename: `${Date.now()}-omnivideo-intake.mp4`,
-    title: media.title,
-    sizeBytes: media.sizeBytes,
     account,
   });
 }
@@ -222,6 +361,24 @@ async function uploadToTelegram(
       errorCode: "STG_TELEGRAM_ENV_MISSING",
       message: "Missing Telegram botToken or chatId.",
       category: "provider",
+      retryable: false,
+    });
+  }
+
+  if (media.downloadMode === "yt-dlp-file") {
+    return uploadToTelegramByResolvedFile({
+      media,
+      botToken,
+      chatId,
+      account,
+    });
+  }
+
+  if (!media.directMediaUrl) {
+    throw new IntakeError({
+      errorCode: "VID_DIRECT_MEDIA_URL_MISSING",
+      message: "Resolved media does not include a direct media URL.",
+      category: "dependency",
       retryable: false,
     });
   }
@@ -331,6 +488,8 @@ async function uploadToDrive(
   const accessToken = await resolveDriveUploadAccessToken(account);
   const folderId =
     account?.secrets?.folderId?.trim() ?? GOOGLE_DRIVE_FOLDER_ID?.trim();
+  const materializedFile =
+    media.downloadMode === "yt-dlp-file" ? await materializeMediaFile(media) : null;
 
   const filename = `${Date.now()}-omnivideo-intake.mp4`;
   const metadata = {
@@ -345,7 +504,8 @@ async function uploadToDrive(
       headers: {
         authorization: `Bearer ${accessToken}`,
         "content-type": "application/json; charset=UTF-8",
-        "x-upload-content-type": media.mimeType ?? "video/mp4",
+        "x-upload-content-type":
+          materializedFile?.mimeType ?? media.mimeType ?? "video/mp4",
       },
       body: JSON.stringify(metadata),
     },
@@ -358,46 +518,79 @@ async function uploadToDrive(
       sessionResponse,
       `Google Drive resumable session failed with status ${sessionResponse.status}.`,
     );
-    throw new IntakeError({
-      errorCode: "STG_DRIVE_SESSION_FAILED",
-      message: withGoogleDrivePermissionHint(message),
-      category: "provider",
-      retryable: sessionResponse.status >= 500,
-    });
+    try {
+      throw new IntakeError({
+        errorCode: "STG_DRIVE_SESSION_FAILED",
+        message: withGoogleDrivePermissionHint(message),
+        category: "provider",
+        retryable: sessionResponse.status >= 500,
+      });
+    } finally {
+      await materializedFile?.cleanup();
+    }
   }
 
-  const mediaResponse = await fetchSourceMedia(
-    media.directMediaUrl,
-    media.requestHeaders,
-  );
+  let uploadResponse: Response;
 
-  if (!mediaResponse.ok || !mediaResponse.body) {
-    throw new IntakeError({
-      errorCode: "STG_DRIVE_SOURCE_STREAM_FAILED",
-      message: `Could not open source media stream. Status ${mediaResponse.status}.`,
-      category: "dependency",
-      retryable: mediaResponse.status >= 500,
-    });
+  try {
+    if (materializedFile) {
+      const headers = new Headers({
+        "content-type": materializedFile.mimeType ?? media.mimeType ?? "video/mp4",
+        "content-length": String(materializedFile.sizeBytes ?? 0),
+      });
+      const uploadRequest: RequestInit & { duplex: "half" } = {
+        method: "PUT",
+        headers,
+        body: createReadStream(materializedFile.filePath) as unknown as BodyInit,
+        duplex: "half",
+      };
+      uploadResponse = await fetch(uploadUrl, uploadRequest);
+    } else {
+      if (!media.directMediaUrl) {
+        throw new IntakeError({
+          errorCode: "VID_DIRECT_MEDIA_URL_MISSING",
+          message: "Resolved media does not include a direct media URL.",
+          category: "dependency",
+          retryable: false,
+        });
+      }
+
+      const mediaResponse = await fetchSourceMedia(
+        media.directMediaUrl,
+        media.requestHeaders,
+      );
+
+      if (!mediaResponse.ok || !mediaResponse.body) {
+        throw new IntakeError({
+          errorCode: "STG_DRIVE_SOURCE_STREAM_FAILED",
+          message: `Could not open source media stream. Status ${mediaResponse.status}.`,
+          category: "dependency",
+          retryable: mediaResponse.status >= 500,
+        });
+      }
+
+      const headers = new Headers({
+        "content-type":
+          mediaResponse.headers.get("content-type") ?? media.mimeType ?? "video/mp4",
+      });
+      const contentLength = mediaResponse.headers.get("content-length");
+
+      if (contentLength) {
+        headers.set("content-length", contentLength);
+      }
+
+      const uploadRequest: RequestInit & { duplex: "half" } = {
+        method: "PUT",
+        headers,
+        body: mediaResponse.body,
+        duplex: "half",
+      };
+
+      uploadResponse = await fetch(uploadUrl, uploadRequest);
+    }
+  } finally {
+    await materializedFile?.cleanup();
   }
-
-  const headers = new Headers({
-    "content-type":
-      mediaResponse.headers.get("content-type") ?? media.mimeType ?? "video/mp4",
-  });
-  const contentLength = mediaResponse.headers.get("content-length");
-
-  if (contentLength) {
-    headers.set("content-length", contentLength);
-  }
-
-  const uploadRequest: RequestInit & { duplex: "half" } = {
-    method: "PUT",
-    headers,
-    body: mediaResponse.body,
-    duplex: "half",
-  };
-
-  const uploadResponse = await fetch(uploadUrl, uploadRequest);
 
   if (!uploadResponse.ok) {
     const message = await readGoogleDriveErrorMessage(
@@ -420,12 +613,15 @@ async function uploadToDrive(
     storageProviderLabel: account?.label,
     providerAssetId: payload.id,
     publicUrl: payload.webViewLink,
-    mimeType: payload.mimeType ?? media.mimeType,
-    sizeBytes: payload.size ? Number(payload.size) : media.sizeBytes,
+    mimeType: payload.mimeType ?? materializedFile?.mimeType ?? media.mimeType,
+    sizeBytes: payload.size
+      ? Number(payload.size)
+      : (materializedFile?.sizeBytes ?? media.sizeBytes),
     storagePointer: {
       fileId: payload.id,
       name: payload.name,
       webViewLink: payload.webViewLink,
+      uploadMode: materializedFile ? "yt-dlp-file-stream" : "remote-stream",
     },
   };
 }

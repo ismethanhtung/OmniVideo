@@ -68,6 +68,7 @@ describe("resolveMediaUrl", () => {
     expect(resolveMediaUrlInternalMock).toHaveBeenCalledWith(
       "https://www.youtube.com/watch?v=demo",
       "best",
+      undefined,
     );
   });
 });

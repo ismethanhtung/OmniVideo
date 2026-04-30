@@ -83,6 +83,28 @@ describe("validateIntakeInput", () => {
     expect(result.qualityPreference).toBe("720p");
   });
 
+  it("accepts a single-line yt-dlp format selector", () => {
+    const result = validateIntakeInput({
+      sourceUrl: "https://www.bilibili.com/video/BV1W2oSBWEYw/",
+      storageProvider: "drive",
+      tags: ["intake", "raw"],
+      formatSelector: "30080+30280",
+    });
+
+    expect(result.formatSelector).toBe("30080+30280");
+  });
+
+  it("rejects multiline yt-dlp format selectors", () => {
+    expect(() =>
+      validateIntakeInput({
+        sourceUrl: "https://www.bilibili.com/video/BV1W2oSBWEYw/",
+        storageProvider: "drive",
+        tags: ["intake", "raw"],
+        formatSelector: "30080+30280\n--cookies-from-browser chrome",
+      }),
+    ).toThrow("formatSelector must be a single-line yt-dlp format selector");
+  });
+
   it("rejects invalid quality preference values", () => {
     expect(() =>
       validateIntakeInput({

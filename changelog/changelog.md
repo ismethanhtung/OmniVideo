@@ -1,5 +1,13 @@
 # OmniVideo Changelog
 
+## P1-INTAKE-013 - Harden yt-dlp format selection and streaming downloads
+
+- Sửa root cause Bilibili tải về mất tiếng: resolver không còn fallback sang video-only direct URL; khi nguồn tách audio/video, default selector dùng `bv*+ba/...` và chuyển sang `yt-dlp-file` để merge bằng ffmpeg.
+- Thêm API `POST /api/video-intake/formats` và UI `Load Formats` ở Video Intake để list đầy đủ format từ yt-dlp, gồm audio-only/video-only codec, resolution, size và selector đề xuất.
+- Giữ Bilibili public ở no-cookie path; cookie/browser fallback vẫn chỉ dành cho TikTok/Douyin để tránh lỗi cookie không cần thiết với video công khai.
+- Giảm rủi ro ăn RAM ở path URL video: Drive upload stream trực tiếp từ upstream hoặc từ temp file yt-dlp, Telegram fallback dùng file stream, và `resolve-file` trả streaming response thay vì `arrayBuffer()` toàn bộ video.
+- Verification (P1-INTAKE-013): `PYTHONPATH=.vendor/python python3 src/lib/video-intake/internal-resolver-py.test.py` pass (14 tests); `npm test` pass (63 files / 296 tests); `npm run build` pass (3 warning cũ ngoài scope). Network smoke với `https://www.bilibili.com/video/BV1W2oSBWEYw/`: format list trả audio formats `30216/30232/30280` và video-only formats; resolver trả `downloadMode=yt-dlp-file`, `formatId=100026+30280`; yt-dlp download tạo MP4 7,081,086 bytes và ffmpeg probe xác nhận có `Video: av1` + `Audio: aac`.
+
 ## FAST-OPS-001 - Local intake history parity and lightweight system snapshot modal
 
 - Cập nhật Local Intake Run History: thêm preview video, cặp action `Detail` + `Delete` theo từng run, và detail modal có thông tin Created/Run/Asset/Storage để quan sát nhanh.

@@ -1,12 +1,19 @@
 import { execFile } from "node:child_process";
+import { mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
 import { promisify } from "node:util";
 import path from "node:path";
 
 import { IntakeError } from "./types";
-import type { IntakeQualityPreference } from "./types";
+import type { IntakeQualityPreference, YtDlpFormatSummary } from "./types";
 
 type InternalResolverPayload = {
   directMediaUrl?: string;
+  downloadMode?: "direct-url" | "yt-dlp-file";
+  resolverProfile?: string;
+  formatSelector?: string;
+  hasAudio?: boolean;
+  hasVideo?: boolean;
   title?: string;
   mimeType?: string;
   sizeBytes?: number;
@@ -20,6 +27,31 @@ type InternalResolverPayload = {
   vcodec?: string;
   acodec?: string;
   requestHeaders?: Record<string, string>;
+};
+
+export type InternalResolverFormatList = {
+  sourceUrl: string;
+  title?: string;
+  durationMs?: number;
+  originPlatform?: string;
+  resolverProfile?: string;
+  recommendedFormatSelector?: string;
+  formats: YtDlpFormatSummary[];
+};
+
+export type InternalResolverDownloadedFile = {
+  filePath: string;
+  filename: string;
+  mimeType?: string;
+  sizeBytes?: number;
+  title?: string;
+  durationMs?: number;
+  formatId?: string;
+  formatSelector?: string;
+  resolverProfile?: string;
+  hasAudio?: boolean;
+  hasVideo?: boolean;
+  cleanup: () => Promise<void>;
 };
 
 const execFileAsync = promisify(execFile);
@@ -57,7 +89,7 @@ export function cleanInternalResolverErrorMessage(message: string) {
 
 export function parseInternalResolverStdout(
   stdout: string,
-): Required<Pick<InternalResolverPayload, "directMediaUrl">> & InternalResolverPayload {
+): InternalResolverPayload & { downloadMode: "direct-url" | "yt-dlp-file" } {
   let payload: InternalResolverPayload;
 
   try {
@@ -70,7 +102,9 @@ export function parseInternalResolverStdout(
     });
   }
 
-  if (!payload.directMediaUrl) {
+  const downloadMode = payload.downloadMode ?? "direct-url";
+
+  if (downloadMode === "direct-url" && !payload.directMediaUrl) {
     throw new IntakeError({
       errorCode: "VID_RESOLVER_EMPTY_DIRECT_URL",
       message: "Internal resolver did not return directMediaUrl.",
@@ -78,13 +112,21 @@ export function parseInternalResolverStdout(
     });
   }
 
-  return payload as Required<Pick<InternalResolverPayload, "directMediaUrl">> &
-    InternalResolverPayload;
+  if (downloadMode === "yt-dlp-file" && !payload.formatSelector) {
+    throw new IntakeError({
+      errorCode: "VID_RESOLVER_EMPTY_FORMAT_SELECTOR",
+      message: "Internal resolver did not return formatSelector.",
+      category: "dependency",
+    });
+  }
+
+  return { ...payload, downloadMode };
 }
 
 export async function resolveMediaUrlInternal(
   url: string,
   qualityPreference: IntakeQualityPreference,
+  formatSelector?: string,
 ) {
   const pythonPath = path.join(process.cwd(), ".vendor/python");
   const scriptPath = path.join(
@@ -96,7 +138,13 @@ export async function resolveMediaUrlInternal(
   try {
     const { stdout } = await execFileAsync(
       "python3",
-      [scriptPath, normalizeExtractorUrl(url), qualityPreference],
+      [
+        scriptPath,
+        "resolve",
+        normalizeExtractorUrl(url),
+        qualityPreference,
+        formatSelector ?? "",
+      ],
       {
         env: {
           ...process.env,
@@ -131,6 +179,115 @@ export async function resolveMediaUrlInternal(
     throw new IntakeError({
       errorCode: "VID_RESOLVER_FAILED",
       message,
+      category: "dependency",
+      retryable: false,
+    });
+  }
+}
+
+export async function listMediaFormatsInternal(
+  url: string,
+  qualityPreference: IntakeQualityPreference,
+): Promise<InternalResolverFormatList> {
+  const pythonPath = path.join(process.cwd(), ".vendor/python");
+  const scriptPath = path.join(
+    process.cwd(),
+    "src/lib/video-intake/internal-resolver.py",
+  );
+  const inheritedPythonPath = process.env.PYTHONPATH;
+
+  try {
+    const { stdout } = await execFileAsync(
+      "python3",
+      [scriptPath, "formats", normalizeExtractorUrl(url), qualityPreference],
+      {
+        env: {
+          ...process.env,
+          PYTHONPATH: inheritedPythonPath
+            ? `${pythonPath}${path.delimiter}${inheritedPythonPath}`
+            : pythonPath,
+        },
+        timeout: 120_000,
+        maxBuffer: 20 * 1024 * 1024,
+      },
+    );
+
+    const payload = JSON.parse(stdout) as InternalResolverFormatList;
+    return {
+      ...payload,
+      formats: Array.isArray(payload.formats) ? payload.formats : [],
+    };
+  } catch (error) {
+    const errorWithStderr = error as Error & { stderr?: string };
+    const rawMessage =
+      errorWithStderr.stderr?.trim() ||
+      (error instanceof Error ? error.message : "Internal resolver failed.");
+    throw new IntakeError({
+      errorCode: "VID_FORMAT_LIST_FAILED",
+      message: cleanInternalResolverErrorMessage(rawMessage),
+      category: "dependency",
+      retryable: false,
+    });
+  }
+}
+
+export async function downloadResolvedMediaToTempFile({
+  originalUrl,
+  requestedQuality,
+  formatSelector,
+}: {
+  originalUrl: string;
+  requestedQuality: IntakeQualityPreference;
+  formatSelector?: string;
+}): Promise<InternalResolverDownloadedFile> {
+  const pythonPath = path.join(process.cwd(), ".vendor/python");
+  const scriptPath = path.join(
+    process.cwd(),
+    "src/lib/video-intake/internal-resolver.py",
+  );
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), "omnivideo-ytdlp-"));
+  const inheritedPythonPath = process.env.PYTHONPATH;
+
+  try {
+    const { stdout } = await execFileAsync(
+      "python3",
+      [
+        scriptPath,
+        "download",
+        normalizeExtractorUrl(originalUrl),
+        requestedQuality,
+        formatSelector ?? "",
+        tmpDir,
+      ],
+      {
+        env: {
+          ...process.env,
+          PYTHONPATH: inheritedPythonPath
+            ? `${pythonPath}${path.delimiter}${inheritedPythonPath}`
+            : pythonPath,
+        },
+        timeout: 15 * 60_000,
+        maxBuffer: 20 * 1024 * 1024,
+      },
+    );
+    const payload = JSON.parse(stdout) as Omit<
+      InternalResolverDownloadedFile,
+      "cleanup"
+    >;
+
+    return {
+      ...payload,
+      cleanup: () => rm(tmpDir, { recursive: true, force: true }),
+    };
+  } catch (error) {
+    await rm(tmpDir, { recursive: true, force: true });
+    const errorWithStderr = error as Error & { stderr?: string };
+    const rawMessage =
+      errorWithStderr.stderr?.trim() ||
+      (error instanceof Error ? error.message : "yt-dlp download failed.");
+    throw new IntakeError({
+      errorCode: "VID_YTDLP_DOWNLOAD_FAILED",
+      message: cleanInternalResolverErrorMessage(rawMessage),
       category: "dependency",
       retryable: false,
     });

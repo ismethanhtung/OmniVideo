@@ -18,6 +18,7 @@
 
 ## Review
 
+- `P1-INTAKE-013` - Harden yt-dlp format selection and streaming downloads.
 - `FAST-OPS-001` - Local intake history parity and lightweight system snapshot modal.
 - `FAST-INTAKE-003` - Improve Video Intake run history detail and failed cleanup.
 - `P2-VIDEO-002` - Partial Blur and Subtitle Overlay Pipeline.

@@ -10,6 +10,32 @@ import { getTelegramDownloadBlockedReason } from "@/lib/storage/telegram-downloa
 type UploadProviderType = "telegram" | "drive";
 type IntakeQualityPreference = "best" | "1080p" | "720p" | "480p" | "360p";
 
+type YtDlpFormatSummary = {
+    formatId: string;
+    ext?: string;
+    formatNote?: string;
+    resolution?: string;
+    width?: number;
+    height?: number;
+    fps?: number;
+    filesize?: number;
+    filesizeApprox?: number;
+    protocol?: string;
+    tbr?: number;
+    vbr?: number;
+    abr?: number;
+    vcodec?: string;
+    acodec?: string;
+    hasAudio: boolean;
+    hasVideo: boolean;
+};
+
+type FormatListState =
+    | { status: "idle"; message: string; formats: YtDlpFormatSummary[]; recommended?: string }
+    | { status: "loading"; message: string; formats: YtDlpFormatSummary[]; recommended?: string }
+    | { status: "success"; message: string; formats: YtDlpFormatSummary[]; recommended?: string }
+    | { status: "failed"; message: string; formats: YtDlpFormatSummary[]; recommended?: string };
+
 type IntakeApiResult = {
     ok: boolean;
     data?: {
@@ -196,6 +222,23 @@ function formatDuration(durationMs?: number | null) {
     return `${seconds}s`;
 }
 
+function formatFormatSize(format: YtDlpFormatSummary) {
+    return formatBytes(format.filesize ?? format.filesizeApprox);
+}
+
+function formatCodecSummary(format: YtDlpFormatSummary) {
+    if (format.hasAudio && format.hasVideo) {
+        return `${format.vcodec ?? "video"} + ${format.acodec ?? "audio"}`;
+    }
+    if (format.hasAudio) {
+        return format.acodec ?? "audio only";
+    }
+    if (format.hasVideo) {
+        return format.vcodec ?? "video only";
+    }
+    return "-";
+}
+
 const DEFAULT_PAGINATION: Pagination = {
     page: 1,
     pageSize: 10,
@@ -229,6 +272,12 @@ export function VideoIntakePanel({ section }: VideoIntakePanelProps) {
     const [tags, setTags] = useState("intake, raw");
     const [qualityPreference, setQualityPreference] =
         useState<IntakeQualityPreference>("best");
+    const [formatSelector, setFormatSelector] = useState("");
+    const [formatList, setFormatList] = useState<FormatListState>({
+        status: "idle",
+        message: "Load formats to inspect yt-dlp options.",
+        formats: [],
+    });
     const [storageProviderAccountId, setStorageProviderAccountId] =
         useState("");
     const [storageAccounts, setStorageAccounts] = useState<
@@ -354,6 +403,67 @@ export function VideoIntakePanel({ section }: VideoIntakePanelProps) {
         }
     }, []);
 
+    const loadFormats = async () => {
+        const trimmedUrl = sourceUrl.trim();
+        if (!trimmedUrl) {
+            setFormatList({
+                status: "failed",
+                message: "Enter a video URL before loading formats.",
+                formats: [],
+            });
+            return;
+        }
+
+        setFormatList((current) => ({
+            ...current,
+            status: "loading",
+            message: "Loading yt-dlp formats...",
+        }));
+
+        try {
+            const response = await fetch("/api/video-intake/formats", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({
+                    sourceUrl: trimmedUrl,
+                    qualityPreference,
+                }),
+            });
+            const payload = (await response.json()) as ApiResponse<{
+                formats: YtDlpFormatSummary[];
+                recommendedFormatSelector?: string;
+            }>;
+
+            if (!response.ok || !payload.ok || !payload.data) {
+                setFormatList({
+                    status: "failed",
+                    message: payload.error ?? "Could not load yt-dlp formats.",
+                    formats: [],
+                });
+                return;
+            }
+
+            setFormatList({
+                status: "success",
+                message: `${payload.data.formats.length} formats available.`,
+                formats: payload.data.formats,
+                recommended: payload.data.recommendedFormatSelector,
+            });
+            if (!formatSelector.trim() && payload.data.recommendedFormatSelector) {
+                setFormatSelector(payload.data.recommendedFormatSelector);
+            }
+        } catch (error) {
+            setFormatList({
+                status: "failed",
+                message:
+                    error instanceof Error
+                        ? error.message
+                        : "Could not load yt-dlp formats.",
+                formats: [],
+            });
+        }
+    };
+
     const runIntake = async () => {
         if (!selectedAccount) {
             setState({
@@ -386,6 +496,7 @@ export function VideoIntakePanel({ section }: VideoIntakePanelProps) {
                         .map((tag) => tag.trim())
                         .filter(Boolean),
                     qualityPreference,
+                    formatSelector: formatSelector.trim() || undefined,
                     contentIntent: "other",
                     ownershipStatus: "unknown",
                 }),
@@ -652,6 +763,130 @@ export function VideoIntakePanel({ section }: VideoIntakePanelProps) {
                                     className="mt-1 w-full border border-main bg-main px-3 py-2 text-[12px] text-main outline-none transition-colors focus:border-accent"
                                 />
                             </label>
+                        </div>
+
+                        <div className="border border-main bg-secondary/20 p-3">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                                <span className="text-[12px] font-medium text-main">
+                                    yt-dlp Format Selector
+                                </span>
+                                <button
+                                    type="button"
+                                    onClick={() => void loadFormats()}
+                                    disabled={formatList.status === "loading"}
+                                    className="border border-main bg-main px-2 py-1 text-[11px] font-semibold text-main transition-colors hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                    {formatList.status === "loading"
+                                        ? "Loading..."
+                                        : "Load Formats"}
+                                </button>
+                            </div>
+                            <input
+                                value={formatSelector}
+                                onChange={(event) =>
+                                    setFormatSelector(event.target.value)
+                                }
+                                placeholder="bv*+ba/best with audio"
+                                className="mt-2 w-full border border-main bg-main px-3 py-2 font-mono text-[11px] text-main outline-none transition-colors placeholder:text-muted/60 focus:border-accent"
+                            />
+                            <p className="mt-2 text-[11px] leading-5 text-muted">
+                                {formatList.message}
+                            </p>
+                            {formatList.recommended ? (
+                                <button
+                                    type="button"
+                                    onClick={() =>
+                                        setFormatSelector(
+                                            formatList.recommended ?? "",
+                                        )
+                                    }
+                                    className="mt-2 border border-main bg-main px-2 py-1 font-mono text-[10px] text-main transition-colors hover:bg-secondary"
+                                >
+                                    Use recommended: {formatList.recommended}
+                                </button>
+                            ) : null}
+                            {formatList.formats.length > 0 ? (
+                                <div className="mt-3 max-h-64 overflow-auto border border-main bg-main">
+                                    <table className="w-full min-w-[680px] text-left text-[11px]">
+                                        <thead className="sticky top-0 bg-secondary text-muted">
+                                            <tr>
+                                                <th className="px-2 py-2 font-medium">
+                                                    ID
+                                                </th>
+                                                <th className="px-2 py-2 font-medium">
+                                                    Type
+                                                </th>
+                                                <th className="px-2 py-2 font-medium">
+                                                    Resolution
+                                                </th>
+                                                <th className="px-2 py-2 font-medium">
+                                                    Codec
+                                                </th>
+                                                <th className="px-2 py-2 font-medium">
+                                                    Size
+                                                </th>
+                                                <th className="px-2 py-2 font-medium">
+                                                    Select
+                                                </th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {formatList.formats.map((format) => {
+                                                const type = format.hasAudio
+                                                    ? format.hasVideo
+                                                        ? "A+V"
+                                                        : "Audio"
+                                                    : format.hasVideo
+                                                      ? "Video"
+                                                      : "-";
+
+                                                return (
+                                                    <tr
+                                                        key={format.formatId}
+                                                        className="border-t border-main"
+                                                    >
+                                                        <td className="px-2 py-2 font-mono text-main">
+                                                            {format.formatId}
+                                                        </td>
+                                                        <td className="px-2 py-2 text-muted">
+                                                            {type}
+                                                        </td>
+                                                        <td className="px-2 py-2 text-muted">
+                                                            {format.resolution ??
+                                                                (format.height
+                                                                    ? `${format.height}p`
+                                                                    : "-")}
+                                                        </td>
+                                                        <td className="px-2 py-2 text-muted">
+                                                            {formatCodecSummary(
+                                                                format,
+                                                            )}
+                                                        </td>
+                                                        <td className="px-2 py-2 text-muted">
+                                                            {formatFormatSize(
+                                                                format,
+                                                            )}
+                                                        </td>
+                                                        <td className="px-2 py-2">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() =>
+                                                                    setFormatSelector(
+                                                                        format.formatId,
+                                                                    )
+                                                                }
+                                                                className="border border-main px-2 py-1 font-mono text-[10px] text-main transition-colors hover:bg-secondary"
+                                                            >
+                                                                {format.formatId}
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            ) : null}
                         </div>
 
                         <button

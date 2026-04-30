@@ -99,6 +99,7 @@ export async function runUrlIntakePipeline(
       storageProvider: rawInput.storageProvider,
       storageProviderAccountId: rawInput.storageProviderAccountId ?? null,
       qualityPreference: rawInput.qualityPreference ?? "best",
+      formatSelector: rawInput.formatSelector ?? null,
       tags: rawInput.tags,
       title: rawInput.title ?? null,
     },

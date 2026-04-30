@@ -26,6 +26,7 @@ export type IntakeInput = {
   storageProviderAccountId?: string;
   tags: string[];
   qualityPreference?: IntakeQualityPreference;
+  formatSelector?: string;
   title?: string;
   languageHint?: string;
   contentIntent?: string;
@@ -39,13 +40,18 @@ export type ValidatedIntakeInput = IntakeInput & {
 
 export type ResolvedMedia = {
   originalUrl: string;
-  directMediaUrl: string;
+  directMediaUrl?: string;
   originPlatform: OriginPlatform;
   title?: string;
   mimeType?: string;
   sizeBytes?: number;
   durationMs?: number;
   requestedQuality?: IntakeQualityPreference;
+  downloadMode?: "direct-url" | "yt-dlp-file";
+  resolverProfile?: string;
+  formatSelector?: string;
+  hasAudio?: boolean;
+  hasVideo?: boolean;
   formatId?: string;
   formatNote?: string;
   height?: number;
@@ -60,6 +66,26 @@ export type ResolvedMedia = {
     | "external-resolver"
     | "internal-resolver"
     | "local-file";
+};
+
+export type YtDlpFormatSummary = {
+  formatId: string;
+  ext?: string;
+  formatNote?: string;
+  resolution?: string;
+  width?: number;
+  height?: number;
+  fps?: number;
+  filesize?: number;
+  filesizeApprox?: number;
+  protocol?: string;
+  tbr?: number;
+  vbr?: number;
+  abr?: number;
+  vcodec?: string;
+  acodec?: string;
+  hasAudio: boolean;
+  hasVideo: boolean;
 };
 
 export type LocalIntakeInput = {

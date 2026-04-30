@@ -1,5 +1,9 @@
+import { createReadStream } from "node:fs";
+import { Readable } from "node:stream";
+
 import { NextResponse } from "next/server";
 
+import { downloadResolvedMediaToTempFile } from "@/lib/video-intake/internal-resolver";
 import { resolveMediaUrl } from "@/lib/video-intake/media-resolver";
 import { detectOriginPlatform, normalizeUrl } from "@/lib/video-intake/platform";
 import type { IntakeQualityPreference, ValidatedIntakeInput } from "@/lib/video-intake/types";
@@ -40,6 +44,7 @@ function readBody(payload: unknown) {
         sourceUrl?: unknown;
         title?: unknown;
         qualityPreference?: unknown;
+        formatSelector?: unknown;
     };
     const sourceUrl =
         typeof body.sourceUrl === "string" ? body.sourceUrl.trim() : "";
@@ -55,11 +60,30 @@ function readBody(payload: unknown) {
     )
         ? (qualityPreferenceRaw as IntakeQualityPreference)
         : "best";
+    const formatSelector =
+        typeof body.formatSelector === "string"
+            ? body.formatSelector.trim()
+            : "";
+    if (formatSelector && /[\r\n\u0000-\u001f]/u.test(formatSelector)) {
+        throw new Error("formatSelector must be a single-line yt-dlp format selector.");
+    }
     return {
         sourceUrl,
         title: typeof body.title === "string" ? body.title.trim() : "",
         qualityPreference,
+        formatSelector,
     };
+}
+
+function streamFileWithCleanup(filePath: string, cleanup: () => Promise<void>) {
+    const nodeStream = createReadStream(filePath);
+    nodeStream.on("close", () => {
+        void cleanup();
+    });
+    nodeStream.on("error", () => {
+        void cleanup();
+    });
+    return Readable.toWeb(nodeStream) as ReadableStream<Uint8Array>;
 }
 
 export async function POST(request: Request) {
@@ -74,9 +98,43 @@ export async function POST(request: Request) {
             storageProvider: "drive",
             tags: ["workspace", "url"],
             qualityPreference: body.qualityPreference,
+            formatSelector: body.formatSelector || undefined,
             title: body.title || undefined,
         };
         const media = await resolveMediaUrl(input);
+
+        if (media.downloadMode === "yt-dlp-file") {
+            const file = await downloadResolvedMediaToTempFile({
+                originalUrl: media.originalUrl,
+                requestedQuality: media.requestedQuality ?? "best",
+                formatSelector: media.formatSelector,
+            });
+            const contentType = file.mimeType ?? media.mimeType ?? "video/mp4";
+            const extension = inferExtension(contentType, media.ext);
+            const fileStem = sanitizeFileName(
+                body.title || file.title || media.title || "workspace-url-video",
+            );
+
+            return new NextResponse(
+                streamFileWithCleanup(file.filePath, file.cleanup),
+                {
+                    status: 200,
+                    headers: {
+                        "content-type": contentType,
+                        "cache-control": "no-store",
+                        "x-omnivideo-file-name": encodeURIComponent(
+                            `${fileStem}.${extension}`,
+                        ),
+                        "x-omnivideo-byte-length": String(file.sizeBytes ?? 0),
+                    },
+                },
+            );
+        }
+
+        if (!media.directMediaUrl) {
+            throw new Error("Resolver did not return a direct media URL.");
+        }
+
         const upstreamResponse = await fetch(media.directMediaUrl, {
             cache: "no-store",
             headers: media.requestHeaders,
@@ -88,7 +146,6 @@ export async function POST(request: Request) {
             );
         }
 
-        const arrayBuffer = await upstreamResponse.arrayBuffer();
         const contentType =
             upstreamResponse.headers.get("content-type") ??
             media.mimeType ??
@@ -98,16 +155,22 @@ export async function POST(request: Request) {
             body.title || media.title || "workspace-url-video",
         );
 
-        return new NextResponse(arrayBuffer, {
+        const responseHeaders: Record<string, string> = {
+            "content-type": contentType,
+            "cache-control": "no-store",
+            "x-omnivideo-file-name": encodeURIComponent(
+                `${fileStem}.${extension}`,
+            ),
+        };
+        const contentLength = upstreamResponse.headers.get("content-length");
+        if (contentLength) {
+            responseHeaders["content-length"] = contentLength;
+            responseHeaders["x-omnivideo-byte-length"] = contentLength;
+        }
+
+        return new NextResponse(upstreamResponse.body, {
             status: 200,
-            headers: {
-                "content-type": contentType,
-                "cache-control": "no-store",
-                "x-omnivideo-file-name": encodeURIComponent(
-                    `${fileStem}.${extension}`,
-                ),
-                "x-omnivideo-byte-length": String(arrayBuffer.byteLength),
-            },
+            headers: responseHeaders,
         });
     } catch (error) {
         return NextResponse.json(

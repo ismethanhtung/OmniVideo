@@ -1,9 +1,14 @@
 import importlib.util
 import pathlib
+import sys
 import unittest
 
 
 def _load_module():
+    repo_root = pathlib.Path(__file__).resolve().parents[3]
+    vendor_python = repo_root / ".vendor" / "python"
+    if vendor_python.exists():
+        sys.path.insert(0, str(vendor_python))
     module_path = pathlib.Path(__file__).with_name("internal-resolver.py")
     spec = importlib.util.spec_from_file_location("internal_resolver_runtime", module_path)
     module = importlib.util.module_from_spec(spec)
@@ -97,12 +102,18 @@ sec-ch-ua
         variants = resolver.build_cookie_variants("bilibili", None, "chrome")
         self.assertEqual(variants, [("no-cookie", {})])
 
-    def test_build_format_variants_include_relaxed_public_fallback(self):
+    def test_build_format_variants_include_merged_audio_video_fallback(self):
         variants = resolver.build_format_variants("best")
-        names = [name for name, _ in variants]
+        variant_map = dict(variants)
 
-        self.assertEqual(names[0], "single-media")
-        self.assertIn("relaxed-public", names)
+        self.assertEqual(variants[0][0], "single-media")
+        self.assertIn("merged-media", variant_map)
+        self.assertIn("bv*+ba", variant_map["merged-media"])
+        self.assertNotIn("bestvideo", variant_map["merged-media"])
+
+    def test_build_format_variants_accept_custom_selector(self):
+        variants = resolver.build_format_variants("720p", "30080+30280")
+        self.assertEqual(variants, [("custom-format", "30080+30280")])
 
     def test_build_extraction_profiles_for_youtube_includes_android(self):
         normalized_url, profiles = resolver.build_extraction_profiles(
@@ -116,7 +127,7 @@ sec-ch-ua
         self.assertEqual(normalized_url, "https://www.youtube.com/watch?v=abc")
         self.assertIn("default:no-cookie", profile_names)
         self.assertIn("youtube-android:no-cookie", profile_names)
-        self.assertIn("default:no-cookie:relaxed-public", profile_names)
+        self.assertIn("default:no-cookie:merged-media", profile_names)
 
     def test_build_extraction_profiles_for_douyin_excludes_youtube_android(self):
         normalized_url, profiles = resolver.build_extraction_profiles(
@@ -144,9 +155,60 @@ sec-ch-ua
             normalized_url, "https://www.bilibili.com/video/BV1W2oSBWEYw/"
         )
         self.assertEqual(profile_names[0], "default:no-cookie")
-        self.assertIn("default:no-cookie:relaxed-public", profile_names)
+        self.assertIn("default:no-cookie:merged-media", profile_names)
         self.assertTrue(all("cookie-browser" not in name for name in profile_names))
         self.assertTrue(all("cookie-file" not in name for name in profile_names))
+
+    def test_build_payload_marks_requested_formats_as_ytdlp_file_with_audio(self):
+        payload = resolver.build_payload(
+            {
+                "title": "Demo",
+                "duration": 10,
+                "requested_formats": [
+                    {
+                        "format_id": "30080",
+                        "height": 1080,
+                        "width": 1920,
+                        "vcodec": "avc1",
+                        "acodec": "none",
+                        "filesize": 100,
+                    },
+                    {
+                        "format_id": "30280",
+                        "vcodec": "none",
+                        "acodec": "mp4a",
+                        "filesize": 20,
+                    },
+                ],
+            },
+            "default:no-cookie:merged-media",
+            "bv*+ba/b",
+        )
+
+        self.assertIsNone(payload["directMediaUrl"])
+        self.assertEqual(payload["downloadMode"], "yt-dlp-file")
+        self.assertEqual(payload["formatId"], "30080+30280")
+        self.assertTrue(payload["hasAudio"])
+        self.assertTrue(payload["hasVideo"])
+        self.assertEqual(payload["sizeBytes"], 120)
+
+    def test_build_payload_marks_video_only_direct_format_without_audio(self):
+        payload = resolver.build_payload(
+            {
+                "url": "https://cdn.example.com/video.m4s",
+                "format_id": "100026",
+                "height": 1080,
+                "width": 1920,
+                "vcodec": "av01",
+                "acodec": "none",
+            },
+            "default:no-cookie",
+            "best",
+        )
+
+        self.assertEqual(payload["downloadMode"], "direct-url")
+        self.assertFalse(payload["hasAudio"])
+        self.assertTrue(payload["hasVideo"])
 
 
 if __name__ == "__main__":

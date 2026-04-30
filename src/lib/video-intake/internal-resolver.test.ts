@@ -12,6 +12,7 @@ describe("internal resolver parser", () => {
     const result = parseInternalResolverStdout(
       JSON.stringify({
         directMediaUrl: "https://cdn.example.com/video.mp4",
+        downloadMode: "direct-url",
         title: "Demo",
         durationMs: 1234,
         formatId: "18",
@@ -25,6 +26,7 @@ describe("internal resolver parser", () => {
     );
 
     expect(result.directMediaUrl).toBe("https://cdn.example.com/video.mp4");
+    expect(result.downloadMode).toBe("direct-url");
     expect(result.title).toBe("Demo");
     expect(result.durationMs).toBe(1234);
     expect(result.formatId).toBe("18");
@@ -33,6 +35,33 @@ describe("internal resolver parser", () => {
     expect(result.requestHeaders).toEqual({
       "User-Agent": "yt-dlp-test",
     });
+  });
+
+  it("parses yt-dlp file payloads without a direct URL", () => {
+    const result = parseInternalResolverStdout(
+      JSON.stringify({
+        downloadMode: "yt-dlp-file",
+        formatSelector: "bv*+ba/b",
+        formatId: "30080+30280",
+        hasAudio: true,
+        hasVideo: true,
+      }),
+    );
+
+    expect(result.directMediaUrl).toBeUndefined();
+    expect(result.downloadMode).toBe("yt-dlp-file");
+    expect(result.formatSelector).toBe("bv*+ba/b");
+    expect(result.hasAudio).toBe(true);
+  });
+
+  it("rejects yt-dlp file payloads without a format selector", () => {
+    expect(() =>
+      parseInternalResolverStdout(
+        JSON.stringify({
+          downloadMode: "yt-dlp-file",
+        }),
+      ),
+    ).toThrow("Internal resolver did not return formatSelector.");
   });
 
   it("rejects payloads without directMediaUrl", () => {
