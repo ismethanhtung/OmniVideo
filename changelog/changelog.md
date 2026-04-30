@@ -1,5 +1,27 @@
 # OmniVideo Changelog
 
+## 2026-04-30
+
+### Changed
+
+- Workspace Canvas: bỏ seed `Douyin Flow`, chỉ giữ seed `VI Voice Mask Publish`; đồng thời generalize copy liên quan transcript/dubbing để không hard-code Chinese/ZH.
+- Mở executable flow mới `URL Video -> Save to Storage` trong Workspace, dùng URL intake API `/api/video-intake/runs` để resolve URL và persist thành asset vào storage account đã chọn.
+- Mở rộng `URL Video` để hoạt động gần như `Upload Video` trong Workspace processing flows: có thể làm upstream cho transcript/dubbing/mirror/edit bằng cách resolve+tải URL video thành runtime file qua route server-side mới.
+
+### Fixed
+
+- Khôi phục runtime `yt-dlp` repo-local cho Video Intake bằng `.vendor/python` và thêm `npm run setup:resolver` để bootstrap lại runtime mà không cài global vào máy.
+- Cập nhật lỗi missing resolver runtime để hướng dẫn chạy `npm run setup:resolver`.
+- Ưu tiên resolver public no-cookie cho Video Intake, không còn dùng Chrome/browser-cookie fallback cho Bilibili/public platform, và thêm fallback format relaxed khi format progressive không có.
+
+### Notes
+
+- Task IDs: FAST-INTAKE-001, FAST-INTAKE-002, FAST-WORKSPACE-008, FAST-WORKSPACE-009
+- Verification (FAST-INTAKE-001): `npm run setup:resolver` pass; `npm run test -- --run src/lib/video-intake/internal-resolver.test.ts src/lib/video-intake/media-resolver.test.ts` pass (2 files / 6 tests); `PYTHONPATH=.vendor/python python3 src/lib/video-intake/internal-resolver-py.test.py` pass (8 tests); runtime smoke imports `yt-dlp 2025.10.14` from `.vendor/python`.
+- Verification (FAST-INTAKE-002): `PYTHONPATH=.vendor/python python3 src/lib/video-intake/internal-resolver-py.test.py` pass (11 tests); `npm run test -- --run src/lib/video-intake/internal-resolver.test.ts src/lib/video-intake/media-resolver.test.ts` pass (2 files / 6 tests); full-network smoke for `https://www.bilibili.com/video/BV1W2oSBWEYw/` with `VIDEO_RESOLVER_COOKIES_FROM_BROWSER=chrome` returned direct media JSON via no-cookie profiles.
+- Verification (FAST-WORKSPACE-008): `npm run test -- --run src/lib/workspace/workspace-graph.test.ts` pass (30 tests / 1 file); `npm run build` pass (warnings cũ ngoài scope: unused `Download` trong Video Tools Lab và unused `Image` trong Display Preferences).
+- Verification (FAST-WORKSPACE-009): `npm run test -- --run src/lib/workspace/workspace-graph.test.ts src/app/api/video-intake/resolve-file/route.test.ts` pass; `npm run build` pass (warnings cũ ngoài scope: unused `Download` trong Video Tools Lab và unused `Image` trong Display Preferences).
+
 ## 2026-04-29
 
 ### Added

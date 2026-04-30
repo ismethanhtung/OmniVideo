@@ -21,7 +21,8 @@ import {
 type FfmpegSpawn = typeof spawn;
 
 let dubbingFfmpegSpawnForTest: FfmpegSpawn | null = null;
-let dubbingReadFileForTest: ((filePath: string) => Promise<Buffer>) | null = null;
+let dubbingReadFileForTest: ((filePath: string) => Promise<Buffer>) | null =
+    null;
 
 export type VideoDubbingInput = {
     fileName: string;
@@ -59,7 +60,9 @@ export type VideoDubbingResult = {
     };
 };
 
-export function setVideoDubbingFfmpegSpawnForTest(spawnImpl: FfmpegSpawn | null) {
+export function setVideoDubbingFfmpegSpawnForTest(
+    spawnImpl: FfmpegSpawn | null,
+) {
     dubbingFfmpegSpawnForTest = spawnImpl;
 }
 
@@ -71,10 +74,12 @@ export function setVideoDubbingReadFileForTest(
 
 function sanitizeOutputName(fileName: string) {
     const base = fileName.replace(/\.[^.]+$/u, "") || "omnivideo-dubbed";
-    return `${base
-        .replace(/[^a-zA-Z0-9._-]+/g, "-")
-        .replace(/^-+|-+$/g, "")
-        .slice(0, 90) || "omnivideo-dubbed"}-vi-dub.mp4`;
+    return `${
+        base
+            .replace(/[^a-zA-Z0-9._-]+/g, "-")
+            .replace(/^-+|-+$/g, "")
+            .slice(0, 90) || "omnivideo-dubbed"
+    }-vi-dub.mp4`;
 }
 
 function normalizeVolume(value: number | undefined, fallback: number) {
@@ -155,7 +160,9 @@ async function runFfmpeg(args: string[]) {
                 resolve();
                 return;
             }
-            reject(new Error(stderr.trim() || `ffmpeg exited with code ${code}`));
+            reject(
+                new Error(stderr.trim() || `ffmpeg exited with code ${code}`),
+            );
         });
     });
 }
@@ -192,7 +199,9 @@ export async function muxDubbedVideo(input: {
     } catch (error) {
         throw new ChineseTranscriptionError(
             "SYS_DUBBING_MUX_FAILED",
-            error instanceof Error ? error.message : "Video dubbing mux failed.",
+            error instanceof Error
+                ? error.message
+                : "Video dubbing mux failed.",
             500,
         );
     } finally {
@@ -245,7 +254,10 @@ export async function runVideoDubbing(
                 DEFAULT_PIPER_TTS_SETTINGS.preserveTimestampGaps,
         },
     });
-    const originalAudioVolume = normalizeVolume(input.originalAudioVolume, 0.18);
+    const originalAudioVolume = normalizeVolume(
+        input.originalAudioVolume,
+        0.18,
+    );
     const voiceVolume = normalizeVolume(input.voiceVolume, 1);
     const videoBytes = await muxDubbedVideo({
         videoBytes: input.fileBytes,

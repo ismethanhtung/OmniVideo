@@ -10,6 +10,7 @@ from yt_dlp import YoutubeDL
 SUPPORTED_QUALITY = {"best", "1080p", "720p", "480p", "360p"}
 SUPPORTED_COOKIE_BROWSERS = {"chrome", "chromium", "edge", "firefox", "safari"}
 AUTO_COOKIE_BROWSERS = ("chrome", "chromium", "edge", "firefox", "safari")
+COOKIE_FALLBACK_PLATFORMS = {"tiktok", "douyin"}
 RESOLVER_RAW_HEADERS_ENV_KEYS = (
     "VIDEO_RESOLVER_COOKIES_HEADER",
     "VIDEO_RESOLVER_COOKIE_HEADER",
@@ -63,6 +64,30 @@ def build_format_for_quality(quality_preference):
     )
 
 
+def build_relaxed_format_for_quality(quality_preference):
+    if quality_preference == "1080p":
+        return "best[height<=1080]/bestvideo[height<=1080]/best"
+    if quality_preference == "720p":
+        return "best[height<=720]/bestvideo[height<=720]/best"
+    if quality_preference == "480p":
+        return "best[height<=480]/bestvideo[height<=480]/best"
+    if quality_preference == "360p":
+        return "best[height<=360]/bestvideo[height<=360]/best"
+
+    return "best/bestvideo"
+
+
+def build_format_variants(quality_preference):
+    strict_format = build_format_for_quality(quality_preference)
+    relaxed_format = build_relaxed_format_for_quality(quality_preference)
+
+    variants = [("single-media", strict_format)]
+    if relaxed_format != strict_format:
+        variants.append(("relaxed-public", relaxed_format))
+
+    return variants
+
+
 def normalize_url_for_extractor(url):
     parsed = urlparse(url)
 
@@ -95,6 +120,8 @@ def detect_extractor_platform(url):
         return "tiktok"
     if hostname.endswith("douyin.com"):
         return "douyin"
+    if hostname.endswith("bilibili.com"):
+        return "bilibili"
 
     return "other"
 
@@ -230,22 +257,23 @@ def read_resolver_headers_from_env():
 
 
 def build_cookie_variants(platform, cookie_file, cookie_browser):
-    variants = []
+    variants = [("no-cookie", {})]
+    if platform not in COOKIE_FALLBACK_PLATFORMS:
+        return variants
+
     has_valid_cookie_browser = (
         bool(cookie_browser) and cookie_browser in SUPPORTED_COOKIE_BROWSERS
     )
 
     if cookie_file:
         variants.append(("cookie-file", {"cookiefile": cookie_file}))
-    elif has_valid_cookie_browser:
+    if has_valid_cookie_browser:
         variants.append(
             (
                 f"cookie-browser-{cookie_browser}",
                 {"cookiesfrombrowser": (cookie_browser,)},
             )
         )
-
-    variants.append(("no-cookie", {}))
 
     if platform in {"tiktok", "douyin"} and not cookie_file and not has_valid_cookie_browser:
         for browser in AUTO_COOKIE_BROWSERS:
@@ -278,16 +306,22 @@ def build_extraction_profiles(url, base_options, cookie_file, cookie_browser):
     platform = detect_extractor_platform(normalized_url)
     extractor_variants = build_extractor_variants(platform)
     cookie_variants = build_cookie_variants(platform, cookie_file, cookie_browser)
+    format_variants = build_format_variants(base_options.get("quality_preference", "best"))
 
     profiles = []
 
     for extractor_name, extractor_options in extractor_variants:
         for cookie_name, cookie_options in cookie_variants:
-            profile_name = f"{extractor_name}:{cookie_name}"
-            options = merge_options(
-                merge_options(base_options, extractor_options), cookie_options
-            )
-            profiles.append((profile_name, options))
+            for format_name, format_selector in format_variants:
+                profile_name = f"{extractor_name}:{cookie_name}"
+                if format_name != "single-media":
+                    profile_name = f"{profile_name}:{format_name}"
+                options = merge_options(
+                    merge_options(base_options, extractor_options), cookie_options
+                )
+                options["format"] = format_selector
+                options.pop("quality_preference", None)
+                profiles.append((profile_name, options))
 
     return normalized_url, profiles
 
@@ -366,19 +400,25 @@ def is_fetchable_direct_url(direct_url, request_headers):
 def resolve_info(url, quality_preference):
     cookie_file = os.environ.get("VIDEO_RESOLVER_COOKIES_FILE")
     cookie_browser = os.environ.get("VIDEO_RESOLVER_COOKIES_FROM_BROWSER")
-    raw_headers = read_resolver_headers_from_env()
+    normalized_url = normalize_url_for_extractor(url)
+    platform = detect_extractor_platform(normalized_url)
+    raw_headers = (
+        read_resolver_headers_from_env()
+        if platform in COOKIE_FALLBACK_PLATFORMS
+        else {}
+    )
     base_options = {
         "quiet": True,
         "no_warnings": True,
         "skip_download": True,
         "noplaylist": True,
-        "format": build_format_for_quality(quality_preference),
+        "quality_preference": quality_preference,
     }
     if raw_headers:
         base_options["http_headers"] = raw_headers
 
     normalized_url, extraction_profiles = build_extraction_profiles(
-        url, base_options, cookie_file, cookie_browser
+        normalized_url, base_options, cookie_file, cookie_browser
     )
 
     errors = []

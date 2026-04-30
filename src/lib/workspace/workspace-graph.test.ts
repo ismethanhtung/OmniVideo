@@ -324,6 +324,31 @@ describe("workspace graph helpers", () => {
         expect(plan.errors.join("\n")).toMatch(/cần nối tới Save to Storage/);
     });
 
+    it("plans URL Video intake flow when connected to Save to Storage", () => {
+        const urlTemplate = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "source.url",
+        )!;
+        const storageTemplate = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "storage.upload",
+        )!;
+
+        let graph: WorkspaceGraph = createEmptyWorkspaceGraph("URL intake");
+        graph = addWorkspaceNode(graph, urlTemplate, { x: 0, y: 0 });
+        graph = addWorkspaceNode(graph, storageTemplate, { x: 220, y: 0 });
+        graph = connectWorkspaceNodes(graph, "source-url-1", "storage-upload-1");
+
+        const plan = planWorkspaceFlow(graph);
+        expect(plan.ok).toBe(true);
+        expect(plan.steps).toEqual([
+            {
+                kind: "intake-url-and-store",
+                sourceUrlNodeId: "source-url-1",
+                storageNodeId: "storage-upload-1",
+                producerNodeId: "storage-upload-1",
+            },
+        ]);
+    });
+
     it("plans audio transcription directly from an Upload Video node", () => {
         const fileTemplate = WORKSPACE_NODE_TEMPLATES.find(
             (entry) => entry.nodeType === "source.file",
@@ -426,9 +451,7 @@ describe("workspace graph helpers", () => {
 
         const plan = planWorkspaceFlow(graph);
         expect(plan.ok).toBe(false);
-        expect(plan.errors.join("\n")).toMatch(
-            /cần upstream Audio Transcript/,
-        );
+        expect(plan.errors.join("\n")).toMatch(/cần upstream Audio Transcript/);
     });
 
     it("plans voice generation after translated transcript", () => {
@@ -447,7 +470,10 @@ describe("workspace graph helpers", () => {
 
         let graph: WorkspaceGraph = createEmptyWorkspaceGraph("Voice");
         graph = addWorkspaceNode(graph, fileTemplate, { x: 0, y: 0 });
-        graph = addWorkspaceNode(graph, transcriptionTemplate, { x: 240, y: 0 });
+        graph = addWorkspaceNode(graph, transcriptionTemplate, {
+            x: 240,
+            y: 0,
+        });
         graph = addWorkspaceNode(graph, translationTemplate, { x: 480, y: 0 });
         graph = addWorkspaceNode(graph, voiceTemplate, { x: 720, y: 0 });
         graph = connectWorkspaceNodes(
@@ -595,6 +621,59 @@ describe("workspace graph helpers", () => {
         ]);
     });
 
+    it("plans mirror video artifact storage and publish from URL Video", () => {
+        const urlTemplate = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "source.url",
+        )!;
+        const mirrorTemplate = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "edit.mirror",
+        )!;
+        const storageTemplate = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "storage.upload",
+        )!;
+        const publishTemplate = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "social.publish",
+        )!;
+
+        let graph: WorkspaceGraph = createEmptyWorkspaceGraph("URL mirror");
+        graph = addWorkspaceNode(graph, urlTemplate, { x: 0, y: 0 });
+        graph = addWorkspaceNode(graph, mirrorTemplate, { x: 240, y: 0 });
+        graph = addWorkspaceNode(graph, storageTemplate, { x: 480, y: 0 });
+        graph = addWorkspaceNode(graph, publishTemplate, { x: 720, y: 0 });
+        graph = connectWorkspaceNodes(graph, "source-url-1", "edit-mirror-1");
+        graph = connectWorkspaceNodes(
+            graph,
+            "edit-mirror-1",
+            "storage-upload-1",
+        );
+        graph = connectWorkspaceNodes(
+            graph,
+            "storage-upload-1",
+            "social-publish-1",
+        );
+
+        const plan = planWorkspaceFlow(graph);
+        expect(plan.ok).toBe(true);
+        expect(plan.steps).toEqual([
+            {
+                kind: "mirror-video",
+                sourceNodeId: "source-url-1",
+                mirrorNodeId: "edit-mirror-1",
+            },
+            {
+                kind: "store-artifact",
+                artifactNodeId: "edit-mirror-1",
+                storageNodeId: "storage-upload-1",
+                producerNodeId: "storage-upload-1",
+            },
+            {
+                kind: "publish",
+                publishNodeId: "social-publish-1",
+                producerNodeId: "storage-upload-1",
+            },
+        ]);
+    });
+
     it("plans mirror after video dubbing before storage", () => {
         const fileTemplate = WORKSPACE_NODE_TEMPLATES.find(
             (entry) => entry.nodeType === "source.file",
@@ -609,7 +688,8 @@ describe("workspace graph helpers", () => {
             (entry) => entry.nodeType === "storage.upload",
         )!;
 
-        let graph: WorkspaceGraph = createEmptyWorkspaceGraph("Dub then mirror");
+        let graph: WorkspaceGraph =
+            createEmptyWorkspaceGraph("Dub then mirror");
         graph = addWorkspaceNode(graph, fileTemplate, { x: 0, y: 0 });
         graph = addWorkspaceNode(graph, dubbingTemplate, { x: 240, y: 0 });
         graph = addWorkspaceNode(graph, mirrorTemplate, { x: 480, y: 0 });
@@ -671,7 +751,10 @@ describe("workspace graph helpers", () => {
 
         let graph: WorkspaceGraph = createEmptyWorkspaceGraph("Blur subtitles");
         graph = addWorkspaceNode(graph, fileTemplate, { x: 0, y: 0 });
-        graph = addWorkspaceNode(graph, transcriptionTemplate, { x: 240, y: 0 });
+        graph = addWorkspaceNode(graph, transcriptionTemplate, {
+            x: 240,
+            y: 0,
+        });
         graph = addWorkspaceNode(graph, translationTemplate, { x: 480, y: 0 });
         graph = addWorkspaceNode(graph, editTemplate, { x: 720, y: 0 });
         graph = addWorkspaceNode(graph, storageTemplate, { x: 960, y: 0 });
@@ -802,7 +885,7 @@ describe("workspace graph helpers", () => {
         const plan = planWorkspaceFlow(graph);
         expect(plan.ok).toBe(false);
         expect(plan.errors.join("\n")).toMatch(
-            /cần upstream Upload Video hoặc Video Dubbing/,
+            /cần upstream Upload Video, URL Video hoặc Video Dubbing/,
         );
     });
 

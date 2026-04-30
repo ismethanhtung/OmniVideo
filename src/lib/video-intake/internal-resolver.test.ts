@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  INTERNAL_RESOLVER_RUNTIME_MISSING_MESSAGE,
   cleanInternalResolverErrorMessage,
   normalizeExtractorUrl,
   parseInternalResolverStdout,
@@ -56,5 +57,12 @@ describe("internal resolver parser", () => {
     ).toBe(
       "ERROR: [Douyin] 123: Fresh cookies (not necessarily logged in) are needed Automatic browser-cookie fallback was attempted. Configure VIDEO_RESOLVER_COOKIES_HEADER (raw cookie/header text), VIDEO_RESOLVER_COOKIES_FILE, or VIDEO_RESOLVER_COOKIES_FROM_BROWSER for deterministic extraction on this platform.",
     );
+  });
+
+  it("points missing runtime errors to the repo-local setup command", () => {
+    expect(INTERNAL_RESOLVER_RUNTIME_MISSING_MESSAGE).toContain(
+      "npm run setup:resolver",
+    );
+    expect(INTERNAL_RESOLVER_RUNTIME_MISSING_MESSAGE).toContain(".vendor/python");
   });
 });

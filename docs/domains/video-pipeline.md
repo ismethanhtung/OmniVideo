@@ -30,7 +30,7 @@ Luồng URL intake hiện tại dùng storage account thật từ `storage_provi
 4. `job_runs.inputSnapshot` lưu source URL, storage provider và storage account id.
 5. `job_runs.outputSummary` lưu lỗi hoặc storage output để hiển thị history.
 
-Page URL như YouTube/TikTok/Facebook không phải direct media URL. OmniVideo ưu tiên built-in resolver nội bộ để đổi page URL thành direct media URL; nếu có `VIDEO_RESOLVER_ENDPOINT` thì có thể dùng như nguồn fallback/override ngoài. Khi cả hai đường đều không resolve được, pipeline fail với lỗi resolver tương ứng.
+Page URL như YouTube/TikTok/Facebook/Bilibili không phải direct media URL. OmniVideo ưu tiên built-in resolver nội bộ để đổi page URL thành direct media URL; nếu có `VIDEO_RESOLVER_ENDPOINT` thì có thể dùng như nguồn fallback/override ngoài. Runtime nội bộ dùng `yt-dlp` trong `.vendor/python`; chạy `npm run setup:resolver` để bootstrap runtime này trong repo mà không cài global vào máy. Resolver luôn thử public no-cookie path trước và không dùng browser-cookie fallback cho Bilibili/public platform; cookie fallback chỉ áp dụng cho TikTok/Douyin khi cần. Khi cả hai đường đều không resolve được, pipeline fail với lỗi resolver tương ứng.
 
 ## 4. Edit Capabilities (MVP -> Extend)
 

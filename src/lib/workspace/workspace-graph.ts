@@ -110,6 +110,12 @@ export type WorkspaceFlowStep =
           producerNodeId: string;
       }
     | {
+          kind: "intake-url-and-store";
+          sourceUrlNodeId: string;
+          storageNodeId: string;
+          producerNodeId: string;
+      }
+    | {
           kind: "publish";
           publishNodeId: string;
           producerNodeId: string;
@@ -166,7 +172,7 @@ export const WORKSPACE_NODE_TEMPLATES: WorkspaceNodeTemplate[] = [
         version: "1.0.0",
         label: "URL Video",
         description:
-            "Nhận URL Douyin/TikTok/YouTube/Facebook và giữ source trace.",
+            "Nhận URL video nguồn và giữ source trace cho intake flow.",
         category: "input",
         status: "available",
         inputPorts: [],
@@ -175,6 +181,26 @@ export const WORKSPACE_NODE_TEMPLATES: WorkspaceNodeTemplate[] = [
         ],
         configFields: [
             { key: "url", label: "Source URL", type: "text", required: true },
+            {
+                key: "title",
+                label: "Title",
+                type: "text",
+                required: false,
+            },
+            {
+                key: "tags",
+                label: "Trace tags",
+                type: "text",
+                required: false,
+                defaultValue: "workspace,url",
+            },
+            {
+                key: "qualityPreference",
+                label: "Quality preference",
+                type: "select",
+                required: true,
+                defaultValue: "best",
+            },
             {
                 key: "ownershipStatus",
                 label: "Ownership status",
@@ -385,7 +411,7 @@ export const WORKSPACE_NODE_TEMPLATES: WorkspaceNodeTemplate[] = [
         version: "1.0.0",
         label: "Audio Transcript",
         description:
-            "Extract speech-ready audio and transcribe Chinese with Groq Whisper timestamps.",
+            "Extract speech-ready audio and transcribe with Groq Whisper timestamps.",
         category: "processing",
         status: "available",
         inputPorts: [{ id: "asset", label: "Video file", dataType: "asset" }],
@@ -531,9 +557,9 @@ export const WORKSPACE_NODE_TEMPLATES: WorkspaceNodeTemplate[] = [
     {
         nodeType: "audio.video-dubbing",
         version: "1.0.0",
-        label: "Video Dubbing ZH->VI",
+        label: "Video Dubbing",
         description:
-            "Transcribe Chinese, translate to Vietnamese, generate voice, duck original audio, and mux MP4.",
+            "Transcribe source speech, translate to target language, generate voice, duck original audio, and mux MP4.",
         category: "processing",
         status: "available",
         inputPorts: [{ id: "asset", label: "Source video", dataType: "asset" }],
@@ -758,7 +784,7 @@ export const WORKSPACE_NODE_TEMPLATES: WorkspaceNodeTemplate[] = [
         description:
             "Đăng hoặc lập kế hoạch đăng video sang platform đã cấu hình.",
         category: "output",
-        status: "planned",
+        status: "available",
         inputPorts: [{ id: "asset", label: "Asset", dataType: "asset" }],
         outputPorts: [
             { id: "publish", label: "Publish record", dataType: "publish" },
@@ -1202,6 +1228,9 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
     const fileSourceNodes = graph.nodes.filter(
         (node) => node.templateNodeType === "source.file",
     );
+    const urlSourceNodes = graph.nodes.filter(
+        (node) => node.templateNodeType === "source.url",
+    );
     const assetSourceNodes = graph.nodes.filter(
         (node) => node.templateNodeType === "source.asset",
     );
@@ -1233,6 +1262,7 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
     const consumedStorageByFile = new Map<string, string>();
     const consumedStorageByArtifact = new Map<string, string>();
     const fileToStorage = new Map<string, string>();
+    const urlToStorage = new Map<string, string>();
     const artifactToStorage = new Map<string, string>();
 
     for (const fileNode of fileSourceNodes) {
@@ -1318,6 +1348,89 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
         }
         consumedStorageByFile.set(storageNode.id, fileNode.id);
         fileToStorage.set(fileNode.id, storageNode.id);
+    }
+
+    for (const urlNode of urlSourceNodes) {
+        const downstreamStorage = graph.edges
+            .filter((edge) => edge.fromNodeId === urlNode.id)
+            .map((edge) =>
+                graph.nodes.find((node) => node.id === edge.toNodeId),
+            )
+            .filter(
+                (node): node is WorkspaceNodeInstance =>
+                    node !== undefined &&
+                    node.templateNodeType === "storage.upload",
+            );
+        const downstreamTranscription = graph.edges
+            .filter((edge) => edge.fromNodeId === urlNode.id)
+            .map((edge) =>
+                graph.nodes.find((node) => node.id === edge.toNodeId),
+            )
+            .filter(
+                (node): node is WorkspaceNodeInstance =>
+                    node !== undefined &&
+                    node.templateNodeType === "audio.chinese-transcribe",
+            );
+        const downstreamDubbing = graph.edges
+            .filter((edge) => edge.fromNodeId === urlNode.id)
+            .map((edge) =>
+                graph.nodes.find((node) => node.id === edge.toNodeId),
+            )
+            .filter(
+                (node): node is WorkspaceNodeInstance =>
+                    node !== undefined &&
+                    node.templateNodeType === "audio.video-dubbing",
+            );
+        const downstreamMirror = graph.edges
+            .filter((edge) => edge.fromNodeId === urlNode.id)
+            .map((edge) =>
+                graph.nodes.find((node) => node.id === edge.toNodeId),
+            )
+            .filter(
+                (node): node is WorkspaceNodeInstance =>
+                    node !== undefined &&
+                    node.templateNodeType === "edit.mirror",
+            );
+        const downstreamEdit = graph.edges
+            .filter((edge) => edge.fromNodeId === urlNode.id)
+            .map((edge) =>
+                graph.nodes.find((node) => node.id === edge.toNodeId),
+            )
+            .filter(
+                (node): node is WorkspaceNodeInstance =>
+                    node !== undefined &&
+                    node.templateNodeType === "edit.mask-region",
+            );
+        if (
+            downstreamStorage.length === 0 &&
+            downstreamTranscription.length === 0 &&
+            downstreamDubbing.length === 0 &&
+            downstreamMirror.length === 0 &&
+            downstreamEdit.length === 0
+        ) {
+            errors.push(
+                `URL Video '${urlNode.label}' (${urlNode.id}) cần nối tới Save to Storage, Audio Transcript, Video Dubbing, Mirror Video hoặc Mask Logo/Subtitles downstream.`,
+            );
+            continue;
+        }
+        if (downstreamStorage.length === 0) {
+            continue;
+        }
+        if (downstreamStorage.length > 1) {
+            errors.push(
+                `URL Video '${urlNode.label}' (${urlNode.id}) đang nối tới nhiều Save to Storage; backend hiện chỉ hỗ trợ 1.`,
+            );
+            continue;
+        }
+        const storageNode = downstreamStorage[0];
+        if (consumedStorageByFile.has(storageNode.id)) {
+            errors.push(
+                `Save to Storage '${storageNode.label}' (${storageNode.id}) đang nhận từ nhiều source node; chưa hỗ trợ fan-in.`,
+            );
+            continue;
+        }
+        consumedStorageByFile.set(storageNode.id, urlNode.id);
+        urlToStorage.set(urlNode.id, storageNode.id);
     }
 
     for (const dubbingNode of dubbingNodes) {
@@ -1433,6 +1546,17 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
             producerNodeId: storageId,
         });
     }
+    for (const urlNode of urlSourceNodes) {
+        const storageId = urlToStorage.get(urlNode.id);
+        if (!storageId) continue;
+        producers.add(storageId);
+        producerSteps.push({
+            kind: "intake-url-and-store",
+            sourceUrlNodeId: urlNode.id,
+            storageNodeId: storageId,
+            producerNodeId: storageId,
+        });
+    }
 
     for (const assetNode of assetSourceNodes) {
         producers.add(assetNode.id);
@@ -1454,18 +1578,19 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
             .filter(
                 (node): node is WorkspaceNodeInstance =>
                     node !== undefined &&
-                    node.templateNodeType === "source.file",
+                    (node.templateNodeType === "source.file" ||
+                        node.templateNodeType === "source.url"),
             );
 
         if (upstreamFiles.length === 0) {
             errors.push(
-                `Audio Transcript '${transcriptionNode.label}' (${transcriptionNode.id}) cần upstream Upload Video.`,
+                `Audio Transcript '${transcriptionNode.label}' (${transcriptionNode.id}) cần upstream Upload Video hoặc URL Video.`,
             );
             continue;
         }
         if (upstreamFiles.length > 1) {
             errors.push(
-                `Audio Transcript '${transcriptionNode.label}' (${transcriptionNode.id}) đang nhận nhiều Upload Video; chưa hỗ trợ fan-in.`,
+                `Audio Transcript '${transcriptionNode.label}' (${transcriptionNode.id}) đang nhận nhiều source video; chưa hỗ trợ fan-in.`,
             );
             continue;
         }
@@ -1567,12 +1692,13 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
                 (node): node is WorkspaceNodeInstance =>
                     node !== undefined &&
                     (node.templateNodeType === "source.file" ||
+                        node.templateNodeType === "source.url" ||
                         node.templateNodeType === "source.asset"),
             );
 
         if (upstreamSources.length === 0) {
             errors.push(
-                `Video Dubbing '${dubbingNode.label}' (${dubbingNode.id}) cần upstream Upload Video hoặc Storage Asset.`,
+                `Video Dubbing '${dubbingNode.label}' (${dubbingNode.id}) cần upstream Upload Video, URL Video hoặc Storage Asset.`,
             );
             continue;
         }
@@ -1601,12 +1727,13 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
                 (node): node is WorkspaceNodeInstance =>
                     node !== undefined &&
                     (node.templateNodeType === "source.file" ||
+                        node.templateNodeType === "source.url" ||
                         node.templateNodeType === "audio.video-dubbing"),
             );
 
         if (upstreamSources.length === 0) {
             errors.push(
-                `Mirror Video '${mirrorNode.label}' (${mirrorNode.id}) cần upstream Upload Video hoặc Video Dubbing.`,
+                `Mirror Video '${mirrorNode.label}' (${mirrorNode.id}) cần upstream Upload Video, URL Video hoặc Video Dubbing.`,
             );
             continue;
         }
@@ -1645,6 +1772,7 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
                 (node): node is WorkspaceNodeInstance =>
                     node !== undefined &&
                     (node.templateNodeType === "source.file" ||
+                        node.templateNodeType === "source.url" ||
                         node.templateNodeType === "audio.video-dubbing" ||
                         node.templateNodeType === "edit.mirror"),
             );
@@ -1661,7 +1789,7 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
 
         if (upstreamVideos.length === 0) {
             errors.push(
-                `Mask Logo/Subtitles '${editNode.label}' (${editNode.id}) cần upstream Upload Video, Video Dubbing hoặc Mirror Video.`,
+                `Mask Logo/Subtitles '${editNode.label}' (${editNode.id}) cần upstream Upload Video, URL Video, Video Dubbing hoặc Mirror Video.`,
             );
             continue;
         }
@@ -1681,6 +1809,7 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
         const upstreamVideo = upstreamVideos[0];
         if (
             upstreamVideo.templateNodeType !== "source.file" &&
+            upstreamVideo.templateNodeType !== "source.url" &&
             !artifactProducers.has(upstreamVideo.id)
         ) {
             errors.push(

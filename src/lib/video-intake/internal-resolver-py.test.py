@@ -64,6 +64,10 @@ sec-ch-ua
             "youtube",
         )
         self.assertEqual(
+            resolver.detect_extractor_platform("https://www.bilibili.com/video/BV1x"),
+            "bilibili",
+        )
+        self.assertEqual(
             resolver.detect_extractor_platform("https://example.com/demo"),
             "other",
         )
@@ -72,22 +76,33 @@ sec-ch-ua
         variants = resolver.build_cookie_variants("douyin", None, None)
         names = [name for name, _ in variants]
 
-        self.assertIn("no-cookie", names)
+        self.assertEqual(names[0], "no-cookie")
         self.assertIn("auto-cookie-browser-chrome", names)
         self.assertIn("auto-cookie-browser-chromium", names)
         self.assertIn("auto-cookie-browser-edge", names)
         self.assertIn("auto-cookie-browser-firefox", names)
         self.assertIn("auto-cookie-browser-safari", names)
 
-    def test_build_cookie_variants_prioritize_cookie_file(self):
+    def test_build_cookie_variants_keep_no_cookie_first_with_cookie_file(self):
         variants = resolver.build_cookie_variants(
             "tiktok", "/tmp/cookies.txt", None
         )
         names = [name for name, _ in variants]
 
-        self.assertEqual(names[0], "cookie-file")
-        self.assertIn("no-cookie", names)
+        self.assertEqual(names[0], "no-cookie")
+        self.assertEqual(names[1], "cookie-file")
         self.assertNotIn("auto-cookie-browser-chrome", names)
+
+    def test_build_cookie_variants_ignores_browser_env_for_public_platforms(self):
+        variants = resolver.build_cookie_variants("bilibili", None, "chrome")
+        self.assertEqual(variants, [("no-cookie", {})])
+
+    def test_build_format_variants_include_relaxed_public_fallback(self):
+        variants = resolver.build_format_variants("best")
+        names = [name for name, _ in variants]
+
+        self.assertEqual(names[0], "single-media")
+        self.assertIn("relaxed-public", names)
 
     def test_build_extraction_profiles_for_youtube_includes_android(self):
         normalized_url, profiles = resolver.build_extraction_profiles(
@@ -101,11 +116,12 @@ sec-ch-ua
         self.assertEqual(normalized_url, "https://www.youtube.com/watch?v=abc")
         self.assertIn("default:no-cookie", profile_names)
         self.assertIn("youtube-android:no-cookie", profile_names)
+        self.assertIn("default:no-cookie:relaxed-public", profile_names)
 
     def test_build_extraction_profiles_for_douyin_excludes_youtube_android(self):
         normalized_url, profiles = resolver.build_extraction_profiles(
             "https://www.douyin.com/jingxuan?modal_id=123456789",
-            {"format": "best"},
+            {"quality_preference": "best"},
             None,
             None,
         )
@@ -114,6 +130,23 @@ sec-ch-ua
         self.assertEqual(normalized_url, "https://www.douyin.com/video/123456789")
         self.assertIn("default:auto-cookie-browser-chrome", profile_names)
         self.assertTrue(all("youtube-android" not in name for name in profile_names))
+
+    def test_build_extraction_profiles_for_bilibili_are_public_no_cookie_only(self):
+        normalized_url, profiles = resolver.build_extraction_profiles(
+            "https://www.bilibili.com/video/BV1W2oSBWEYw/",
+            {"quality_preference": "best"},
+            "/tmp/cookies.txt",
+            "chrome",
+        )
+        profile_names = [name for name, _ in profiles]
+
+        self.assertEqual(
+            normalized_url, "https://www.bilibili.com/video/BV1W2oSBWEYw/"
+        )
+        self.assertEqual(profile_names[0], "default:no-cookie")
+        self.assertIn("default:no-cookie:relaxed-public", profile_names)
+        self.assertTrue(all("cookie-browser" not in name for name in profile_names))
+        self.assertTrue(all("cookie-file" not in name for name in profile_names))
 
 
 if __name__ == "__main__":

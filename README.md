@@ -18,12 +18,15 @@ Repo đang ở **Phase Setup**: ưu tiên hoàn thiện tài liệu, rules, task
     - `MONGODB_URI`
     - `MONGODB_DB_NAME`
     - (khuyến nghị cho TikTok/Douyin) `VIDEO_RESOLVER_COOKIES_FILE` hoặc `VIDEO_RESOLVER_COOKIES_FROM_BROWSER`
-3. Khi có source code app hoàn chỉnh, chạy:
+3. Cài dependencies và runtime resolver repo-local:
 
 ```bash
 npm install
+npm run setup:resolver
 npm run dev
 ```
+
+`npm run setup:resolver` cài `yt-dlp` vào `.vendor/python` trong repo, không cài global vào máy. Video Intake dùng runtime này để resolve page URL như YouTube/TikTok/Douyin/Bilibili trước khi upload.
 
 ## Documentation
 

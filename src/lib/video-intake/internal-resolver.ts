@@ -24,6 +24,9 @@ type InternalResolverPayload = {
 
 const execFileAsync = promisify(execFile);
 
+export const INTERNAL_RESOLVER_RUNTIME_MISSING_MESSAGE =
+  "Internal resolver runtime is missing yt-dlp. Run `npm run setup:resolver` from the repo root to install it into `.vendor/python`.";
+
 export function normalizeExtractorUrl(url: string) {
   const parsed = new URL(url);
 
@@ -95,14 +98,14 @@ export async function resolveMediaUrlInternal(
       "python3",
       [scriptPath, normalizeExtractorUrl(url), qualityPreference],
       {
-      env: {
-        ...process.env,
-        PYTHONPATH: inheritedPythonPath
-          ? `${pythonPath}${path.delimiter}${inheritedPythonPath}`
-          : pythonPath,
-      },
-      timeout: 120_000,
-      maxBuffer: 10 * 1024 * 1024,
+        env: {
+          ...process.env,
+          PYTHONPATH: inheritedPythonPath
+            ? `${pythonPath}${path.delimiter}${inheritedPythonPath}`
+            : pythonPath,
+        },
+        timeout: 120_000,
+        maxBuffer: 10 * 1024 * 1024,
       },
     );
 
@@ -120,8 +123,7 @@ export async function resolveMediaUrlInternal(
     ) {
       throw new IntakeError({
         errorCode: "VID_RESOLVER_RUNTIME_MISSING",
-        message:
-          "Internal resolver runtime is missing yt-dlp.",
+        message: INTERNAL_RESOLVER_RUNTIME_MISSING_MESSAGE,
         category: "dependency",
       });
     }

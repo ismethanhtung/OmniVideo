@@ -22,6 +22,10 @@
 
 ## Done
 
+- `FAST-WORKSPACE-009` - Make URL Video behave like Upload Video for processing flows.
+- `FAST-WORKSPACE-008` - Remove Douyin seed, generalize workspace language copy, and enable URL intake to storage flow.
+- `FAST-INTAKE-002` - Prefer public no-cookie video resolver path.
+- `FAST-INTAKE-001` - Restore repo-local yt-dlp resolver runtime.
 - `P2-VIDEO-001` - Mirror Video Node and Video Tools Lab.
 - `FAST-AUDIO-016` - Improve Workspace Flow Error Detail.
 - `FAST-AUDIO-015` - Add AI Provider Selector to Workspace Dubbing.

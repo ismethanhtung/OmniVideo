@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent, ReactNode } from "react";
 import {
-    GitBranch,
     Layers,
     Link2,
     Plus,
@@ -28,7 +27,6 @@ import {
     WORKSPACE_NODE_TEMPLATES,
     addWorkspaceNode,
     connectWorkspaceNodes,
-    createDouyinReworkSampleGraph,
     createEmptyWorkspaceGraph,
     createUploadVietnameseMaskPublishSampleGraph,
     deleteWorkspaceNode,
@@ -541,7 +539,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
             if (step.kind === "dub-video") {
                 return Boolean(
                     runtimeArtifactsByNodeId[step.dubbingNodeId] &&
-                        runtimeTranslationsByNodeId[step.dubbingNodeId],
+                    runtimeTranslationsByNodeId[step.dubbingNodeId],
                 );
             }
             if (step.kind === "mirror-video") {
@@ -799,14 +797,6 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
         });
     };
 
-    const seedSample = () => {
-        setPendingSourceNodeId(null);
-        setConnectionError(null);
-        const next = createDouyinReworkSampleGraph();
-        setGraph(next);
-        resetRunState(next, true);
-    };
-
     const seedVietnameseMaskPublishFlow = () => {
         setPendingSourceNodeId(null);
         setConnectionError(null);
@@ -974,6 +964,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
         let completedPublishes = 0;
         let failedPublishes = 0;
         const summary: string[] = [];
+        const resolvedUrlFilesByNodeId: Record<string, File> = {};
 
         const advanceProgress = (description: string) => {
             stepIndex += 1;
@@ -996,6 +987,11 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     : null;
             }
             if (step.kind === "upload-and-store") {
+                return assetByProducer[step.producerNodeId]
+                    ? "Storage asset đã được tạo từ lần chạy trước."
+                    : null;
+            }
+            if (step.kind === "intake-url-and-store") {
                 return assetByProducer[step.producerNodeId]
                     ? "Storage asset đã được tạo từ lần chạy trước."
                     : null;
@@ -1048,6 +1044,9 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
             } else if (step.kind === "upload-and-store") {
                 setNodeStatus(step.sourceFileNodeId, "success", detail);
                 setNodeStatus(step.storageNodeId, "success", detail);
+            } else if (step.kind === "intake-url-and-store") {
+                setNodeStatus(step.sourceUrlNodeId, "success", detail);
+                setNodeStatus(step.storageNodeId, "success", detail);
             } else if (step.kind === "transcribe-chinese") {
                 setNodeStatus(step.sourceFileNodeId, "success", detail);
                 setNodeStatus(step.transcriptionNodeId, "success", detail);
@@ -1068,6 +1067,48 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
             } else if (step.kind === "store-artifact") {
                 setNodeStatus(step.storageNodeId, "success", detail);
             }
+        };
+
+        const resolveUrlSourceFile = async (
+            sourceNode: WorkspaceNodeInstance,
+        ) => {
+            const cached = resolvedUrlFilesByNodeId[sourceNode.id];
+            if (cached) {
+                return cached;
+            }
+            const sourceUrl = getStringConfig(sourceNode, "url").trim();
+            if (!sourceUrl) {
+                setNodeStatus(sourceNode.id, "failed", "Chưa nhập source URL.");
+                throw new Error(
+                    `URL Video '${sourceNode.label}' chưa nhập source URL.`,
+                );
+            }
+
+            setNodeStatus(sourceNode.id, "running", "Resolving source URL...");
+            const resolvedFile = await fetchWorkspaceFile({
+                url: "/api/video-intake/resolve-file",
+                actionLabel: "Resolve URL video",
+                init: {
+                    method: "POST",
+                    headers: { "content-type": "application/json" },
+                    body: JSON.stringify({
+                        sourceUrl,
+                        title: getStringConfig(sourceNode, "title").trim(),
+                        qualityPreference: getStringConfig(
+                            sourceNode,
+                            "qualityPreference",
+                            "best",
+                        ),
+                    }),
+                },
+            });
+            resolvedUrlFilesByNodeId[sourceNode.id] = resolvedFile.file;
+            setNodeStatus(
+                sourceNode.id,
+                "success",
+                `${resolvedFile.fileName} · ${formatBytes(resolvedFile.byteLength)}.`,
+            );
+            return resolvedFile.file;
         };
 
         let abortRemaining = false;
@@ -1237,6 +1278,117 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     );
                     summary.push(`Created asset ${newAssetId}.`);
                     advanceProgress(`Created asset ${newAssetId}.`);
+                } else if (step.kind === "intake-url-and-store") {
+                    const urlNode = findNode(step.sourceUrlNodeId);
+                    const storageNode = findNode(step.storageNodeId);
+                    if (!urlNode || !storageNode) {
+                        throw new Error("Missing URL intake nodes.");
+                    }
+                    const sourceUrl = getStringConfig(urlNode, "url").trim();
+                    const storageAccountId = getStringConfig(
+                        storageNode,
+                        "storageAccountId",
+                    );
+                    const storageAccount = storageAccounts.find(
+                        (account) => account._id === storageAccountId,
+                    );
+                    const tagsRaw = getStringConfig(
+                        urlNode,
+                        "tags",
+                        "workspace,url",
+                    );
+                    const tags = parseCommaList(tagsRaw);
+
+                    if (!sourceUrl) {
+                        setNodeStatus(urlNode.id, "failed", "Chưa nhập source URL.");
+                        setNodeStatus(
+                            storageNode.id,
+                            "skipped",
+                            "Chưa có URL để intake.",
+                        );
+                        throw new Error(
+                            `URL Video '${urlNode.label}' chưa nhập source URL.`,
+                        );
+                    }
+                    if (!storageAccount) {
+                        setNodeStatus(urlNode.id, "failed", "Chưa chọn storage account.");
+                        setNodeStatus(
+                            storageNode.id,
+                            "failed",
+                            "Storage account không hợp lệ.",
+                        );
+                        throw new Error(
+                            `Save to Storage '${storageNode.label}' cần storage account hợp lệ.`,
+                        );
+                    }
+                    if (tags.length < 2) {
+                        setNodeStatus(urlNode.id, "failed", "Cần >= 2 trace tag.");
+                        throw new Error(
+                            `URL Video '${urlNode.label}' cần ít nhất 2 tag (cách nhau bằng dấu phẩy).`,
+                        );
+                    }
+
+                    setNodeStatus(urlNode.id, "running", "Resolving source URL...");
+                    setNodeStatus(
+                        storageNode.id,
+                        "running",
+                        `Saving to ${storageAccount.label}...`,
+                    );
+
+                    const payload = {
+                        sourceUrl,
+                        storageProvider:
+                            storageAccount.providerType === "telegram"
+                                ? "telegram"
+                                : "drive",
+                        storageProviderAccountId: storageAccount._id,
+                        tags,
+                        title: getStringConfig(urlNode, "title").trim() || undefined,
+                        qualityPreference: getStringConfig(
+                            urlNode,
+                            "qualityPreference",
+                            "best",
+                        ),
+                        contentIntent: "other",
+                        ownershipStatus: getStringConfig(
+                            urlNode,
+                            "ownershipStatus",
+                            "unknown",
+                        ),
+                    };
+
+                    const intakePayload = await fetchWorkspaceJson<{
+                        ok: true;
+                        data?: { assetId?: string; runId?: string };
+                    }>({
+                        url: "/api/video-intake/runs",
+                        actionLabel: "URL intake to storage",
+                        init: {
+                            method: "POST",
+                            headers: { "content-type": "application/json" },
+                            body: JSON.stringify(payload),
+                        },
+                    });
+                    if (!intakePayload.data?.assetId) {
+                        throw new Error(
+                            "URL intake to storage failed at /api/video-intake/runs: assetId missing.",
+                        );
+                    }
+
+                    const newAssetId = intakePayload.data.assetId as string;
+                    assetByProducer[step.producerNodeId] = newAssetId;
+                    setRuntimeAssetIdsByNodeId((current) => ({
+                        ...current,
+                        [step.producerNodeId]: newAssetId,
+                    }));
+                    setNodeStatus(
+                        urlNode.id,
+                        "success",
+                        `Run ${intakePayload.data.runId ?? ""}.`,
+                    );
+                    setNodeStatus(storageNode.id, "success", `Asset ${newAssetId}.`);
+                    summary.push(`Created asset ${newAssetId}.`);
+                    advanceProgress(`Created asset ${newAssetId}.`);
                 } else if (step.kind === "transcribe-chinese") {
                     const fileNode = findNode(step.sourceFileNodeId);
                     const transcriptionNode = findNode(
@@ -1246,12 +1398,17 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         throw new Error("Missing transcription nodes.");
                     }
 
-                    const file = runtimeFilesByNodeId[fileNode.id];
+                    const file =
+                        fileNode.templateNodeType === "source.file"
+                            ? runtimeFilesByNodeId[fileNode.id]
+                            : await resolveUrlSourceFile(fileNode);
                     if (!file) {
                         setNodeStatus(
                             fileNode.id,
                             "failed",
-                            "Chưa chọn file video.",
+                            fileNode.templateNodeType === "source.file"
+                                ? "Chưa chọn file video."
+                                : "Chưa resolve được URL video.",
                         );
                         setNodeStatus(
                             transcriptionNode.id,
@@ -1259,7 +1416,9 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                             "Chưa có file để transcribe.",
                         );
                         throw new Error(
-                            `Upload Video '${fileNode.label}' chưa chọn file.`,
+                            fileNode.templateNodeType === "source.file"
+                                ? `Upload Video '${fileNode.label}' chưa chọn file.`
+                                : `URL Video '${fileNode.label}' chưa resolve được source video.`,
                         );
                     }
 
@@ -1303,7 +1462,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         data: ChineseTranscriptionResult;
                     }>({
                         url: "/api/audio/chinese-transcription",
-                        actionLabel: "Chinese transcription",
+                        actionLabel: "Audio transcription",
                         init: { method: "POST", body: formData },
                     });
 
@@ -1526,6 +1685,11 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                             );
                         }
                         formData.set("videoFile", file);
+                    } else if (sourceNode.templateNodeType === "source.url") {
+                        formData.set(
+                            "videoFile",
+                            await resolveUrlSourceFile(sourceNode),
+                        );
                     } else {
                         const assetId = getStringConfig(sourceNode, "assetId");
                         if (!assetId) {
@@ -1639,6 +1803,8 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         "success",
                         sourceNode.templateNodeType === "source.file"
                             ? "Source file used."
+                            : sourceNode.templateNodeType === "source.url"
+                              ? "Resolved URL video used."
                             : "Storage asset used.",
                     );
                     setNodeStatus(
@@ -1676,6 +1842,11 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                             );
                         }
                         formData.set("videoFile", file);
+                    } else if (sourceNode.templateNodeType === "source.url") {
+                        formData.set(
+                            "videoFile",
+                            await resolveUrlSourceFile(sourceNode),
+                        );
                     } else {
                         const upstreamArtifact =
                             artifactByProducer[sourceNode.id];
@@ -1737,6 +1908,8 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         "success",
                         sourceNode.templateNodeType === "source.file"
                             ? "Source file used."
+                            : sourceNode.templateNodeType === "source.url"
+                              ? "Resolved URL video used."
                             : "Video artifact used.",
                     );
                     setNodeStatus(
@@ -1788,6 +1961,11 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                             );
                         }
                         formData.set("videoFile", file);
+                    } else if (sourceNode.templateNodeType === "source.url") {
+                        formData.set(
+                            "videoFile",
+                            await resolveUrlSourceFile(sourceNode),
+                        );
                     } else {
                         const upstreamArtifact =
                             artifactByProducer[sourceNode.id];
@@ -1905,6 +2083,8 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         "success",
                         sourceNode.templateNodeType === "source.file"
                             ? "Source file used."
+                            : sourceNode.templateNodeType === "source.url"
+                              ? "Resolved URL video used."
                             : "Video artifact used.",
                     );
                     setNodeStatus(
@@ -2345,14 +2525,6 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                 <div className="flex shrink-0 flex-wrap gap-2">
                     <button
                         type="button"
-                        onClick={seedSample}
-                        className="inline-flex items-center gap-1.5 border border-main bg-main px-2.5 py-1.5 text-[11px] font-semibold text-main hover:bg-secondary"
-                    >
-                        <GitBranch className="h-3.5 w-3.5" />
-                        Seed Douyin Flow
-                    </button>
-                    <button
-                        type="button"
                         onClick={seedVietnameseMaskPublishFlow}
                         className="inline-flex items-center gap-1.5 border border-main bg-main px-2.5 py-1.5 text-[11px] font-semibold text-main hover:bg-secondary"
                     >
@@ -2738,7 +2910,9 @@ function WorkspaceRunStatusPanel({
                         </button>
                         <button
                             type="button"
-                            disabled={isRunningFlow || !flowPlan.ok || !canResume}
+                            disabled={
+                                isRunningFlow || !flowPlan.ok || !canResume
+                            }
                             onClick={onResume}
                             className="inline-flex items-center gap-1.5 border border-emerald-500/35 bg-emerald-500/10 px-3 py-1.5 text-[11px] font-semibold text-emerald-700 transition-colors hover:bg-emerald-500/15 disabled:cursor-not-allowed disabled:opacity-60"
                             title="Bỏ qua các step đã có output trong lần chạy trước và chạy tiếp từ step lỗi."
@@ -2841,6 +3015,14 @@ function describeStep(
             subtitle: "Upload local file and persist to storage",
         };
     }
+    if (step.kind === "intake-url-and-store") {
+        return {
+            key: `url-intake-${step.storageNodeId}`,
+            statusKey: step.storageNodeId,
+            label: `URL Intake · ${findLabel(step.sourceUrlNodeId)} → ${findLabel(step.storageNodeId)}`,
+            subtitle: "Resolve source URL and persist video to storage",
+        };
+    }
     if (step.kind === "transcribe-chinese") {
         return {
             key: `transcribe-${step.transcriptionNodeId}`,
@@ -2897,11 +3079,20 @@ function describeStep(
             subtitle: "Persist generated video artifact to storage",
         };
     }
+    if (step.kind === "publish") {
+        return {
+            key: `publish-${step.publishNodeId}`,
+            statusKey: step.publishNodeId,
+            label: `Publish · ${findLabel(step.publishNodeId)}`,
+            subtitle: `Publish from ${findLabel(step.producerNodeId)}`,
+        };
+    }
+
     return {
-        key: `publish-${step.publishNodeId}`,
-        statusKey: step.publishNodeId,
-        label: `Publish · ${findLabel(step.publishNodeId)}`,
-        subtitle: `Publish from ${findLabel(step.producerNodeId)}`,
+        key: "unknown-step",
+        statusKey: "",
+        label: "Unknown step",
+        subtitle: "",
     };
 }
 
@@ -3051,6 +3242,50 @@ function NodeRuntimeConfig({
                         placeholder="workspace,upload"
                         onChange={(value) => setConfig({ tags: value })}
                     />
+                </div>
+            </InspectorSection>
+        );
+    }
+
+    if (node.templateNodeType === "source.url") {
+        return (
+            <InspectorSection title="Runtime Config">
+                <div className="space-y-2 border border-main bg-secondary/20 p-2">
+                    <RuntimeTextInput
+                        label="Source URL"
+                        value={getStringConfig(node, "url")}
+                        disabled={isRunningFlow}
+                        placeholder="https://..."
+                        onChange={(value) => setConfig({ url: value })}
+                    />
+                    <RuntimeTextInput
+                        label="Title"
+                        value={getStringConfig(node, "title")}
+                        disabled={isRunningFlow}
+                        placeholder="Optional title"
+                        onChange={(value) => setConfig({ title: value })}
+                    />
+                    <RuntimeTextInput
+                        label="Trace tags"
+                        value={getStringConfig(node, "tags", "workspace,url")}
+                        disabled={isRunningFlow}
+                        placeholder="workspace,url"
+                        onChange={(value) => setConfig({ tags: value })}
+                    />
+                    <RuntimeSelect
+                        label="Quality preference"
+                        value={getStringConfig(node, "qualityPreference", "best")}
+                        disabled={isRunningFlow}
+                        onChange={(value) =>
+                            setConfig({ qualityPreference: value })
+                        }
+                    >
+                        <option value="best">best</option>
+                        <option value="1080p">1080p</option>
+                        <option value="720p">720p</option>
+                        <option value="480p">480p</option>
+                        <option value="360p">360p</option>
+                    </RuntimeSelect>
                 </div>
             </InspectorSection>
         );
@@ -3486,7 +3721,7 @@ function NodeRuntimeConfig({
                         disabled={isRunningFlow}
                         onChange={(value) => setConfig({ language: value })}
                     >
-                        <option value="zh">Chinese (zh)</option>
+                        <option value="zh">Mandarin (zh)</option>
                         <option value="vi">Vietnamese (vi)</option>
                         <option value="en">English (en)</option>
                         <option value="ja">Japanese (ja)</option>
@@ -3522,7 +3757,7 @@ function NodeRuntimeConfig({
                         label="Prompt"
                         value={getStringConfig(node, "prompt")}
                         disabled={isRunningFlow}
-                        placeholder="Names, terms, Chinese context..."
+                        placeholder="Names, terms, source context..."
                         onChange={(value) => setConfig({ prompt: value })}
                     />
                     <div className="flex items-start gap-2 border border-main bg-main px-3 py-2">
@@ -3618,7 +3853,7 @@ function NodeRuntimeConfig({
                     >
                         <option value="vi">Vietnamese (vi)</option>
                         <option value="en">English (en)</option>
-                        <option value="zh">Chinese (zh)</option>
+                                <option value="zh">Mandarin (zh)</option>
                     </RuntimeSelect>
                     <div className="flex items-start gap-2 border border-main bg-main px-3 py-2">
                         <Captions className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted" />
@@ -3660,7 +3895,7 @@ function NodeRuntimeConfig({
                                     setConfig({ language: value })
                                 }
                             >
-                                <option value="zh">Chinese (zh)</option>
+                                <option value="zh">Mandarin (zh)</option>
                                 <option value="en">English (en)</option>
                                 <option value="vi">Vietnamese (vi)</option>
                             </RuntimeSelect>

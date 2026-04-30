@@ -531,8 +531,7 @@ export function VideoIntakePanel({ section }: VideoIntakePanelProps) {
                             Run Status
                         </p>
                         <p className="mt-1 text-[11px] text-muted">
-                            Node trace được lưu trong `job_runs`, `step_runs`,
-                            `run_events`.
+                            Node trace được lưu trong MongoDB.
                         </p>
                     </div>
 
@@ -545,12 +544,11 @@ export function VideoIntakePanel({ section }: VideoIntakePanelProps) {
                         </p>
                         {isResolverFailure ? (
                             <p className="border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-5 text-amber-800">
-                                YouTube/TikTok/Facebook page URLs need a
-                                resolver service that extracts a direct media
-                                URL. OmniVideo now tries the built-in resolver
-                                first; if resolution still fails, the source
-                                platform is blocking extraction or the local
-                                resolver runtime is unhealthy.
+                                Public page URLs use the built-in resolver first
+                                without browser cookies. If resolution still
+                                fails, the platform may be blocking extraction
+                                or may require a format that cannot be streamed
+                                as one direct media URL.
                             </p>
                         ) : null}
                         {state.status === "failed" && state.errorCode ? (
@@ -596,7 +594,9 @@ export function VideoIntakePanel({ section }: VideoIntakePanelProps) {
                                                 {step.label}
                                             </span>
                                             <span className="font-mono">
-                                                <StatusText status={step.status} />
+                                                <StatusText
+                                                    status={step.status}
+                                                />
                                             </span>
                                         </div>
                                         {step.errorCode ? (
