@@ -1,5 +1,14 @@
 # OmniVideo Changelog
 
+## FAST-OPS-001 - Local intake history parity and lightweight system snapshot modal
+
+- Cập nhật Local Intake Run History: thêm preview video, cặp action `Detail` + `Delete` theo từng run, và detail modal có thông tin Created/Run/Asset/Storage để quan sát nhanh.
+- Mở rộng API `GET /api/video-intake/local-runs` để trả `assetSummary` và serialize `outputSummary.assetId` nhất quán với URL Intake history.
+- Thêm nút `System` cạnh `Progress` trên topbar để mở modal System Snapshot; snapshot chỉ fetch 1 lần ban đầu và chỉ reload khi user bấm `Reload` (không polling).
+- Thêm API `GET /api/system/snapshot` (nhẹ) để hiển thị process/system metrics cơ bản: memory, CPU cores/model/usage xấp xỉ, load average, network interfaces, uptime, pid/threadpool.
+- Verification (FAST-OPS-001): `npm run test -- --run src/app/api/system/snapshot/route.test.ts src/app/api/video-intake/runs/route.test.ts src/app/api/video-intake/runs/[runId]/route.test.ts` pass (3 files/5 tests); `npm run build` pass (warnings cũ ngoài scope).
+
+
 ## FAST-INTAKE-003 - Improve Video Intake run history detail and failed cleanup
 
 - Cập nhật Video Intake Run History theo hướng giống Storage Library: thêm preview video khi run có asset, thêm detail modal chứa Created và metadata chính, đồng thời bỏ cột Created khỏi bảng chính.

@@ -3,11 +3,11 @@
 ## 0. Progress Stamp
 - [x] DoR checklist completed
 - [x] Scope locked
-- [ ] Implementation completed
-- [ ] Tests added/updated (if code changed)
-- [ ] Docs updated (if impacted)
-- [ ] Changelog updated
-- [ ] Ready for review
+- [x] Implementation completed
+- [x] Tests added/updated (if code changed)
+- [x] Docs updated (if impacted)
+- [x] Changelog updated
+- [x] Ready for review
 - [ ] Done
 
 ## 1. Metadata
@@ -20,7 +20,7 @@
 - Size: S
 - Owner: AI Agent
 - Reviewer: User
-- Status: In Progress
+- Status: Review
 
 ## 2. Context
 - Lý do: Local Intake Run History chưa có mức hiển thị/controls tương đương URL Intake; topbar thiếu quick observability snapshot nhẹ cho runtime.
@@ -42,9 +42,9 @@
 2. `npm run build`
 
 ## 6. Execution Notes
-- Verification evidence: Pending.
+- Verification evidence: `npm run test -- --run src/app/api/system/snapshot/route.test.ts src/app/api/video-intake/runs/route.test.ts src/app/api/video-intake/runs/[runId]/route.test.ts` pass; `npm run build` pass.
 
 ## 7. Test Evidence
-- Test files added/updated: Pending.
-- Test commands executed: Pending.
-- Test results summary: Pending.
+- Test files added/updated: `src/app/api/system/snapshot/route.ts`, `src/app/api/system/snapshot/route.test.ts`, `src/features/video-intake/local-upload-intake-panel.tsx`, `src/components/layout/topbar.tsx`, `src/app/api/video-intake/local-runs/route.ts`
+- Test commands executed: `npm run test -- --run src/app/api/system/snapshot/route.test.ts src/app/api/video-intake/runs/route.test.ts src/app/api/video-intake/runs/[runId]/route.test.ts`; `npm run build`
+- Test results summary: tests pass (3 files/5 tests); build pass (2 existing warnings outside scope).

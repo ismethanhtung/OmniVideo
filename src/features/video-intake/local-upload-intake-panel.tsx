@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { RefreshCw, Upload } from "lucide-react";
+import { RefreshCw, Trash2, Upload } from "lucide-react";
 
 import type { LeftbarNavItem } from "@/components/layout/types";
 import { StatusText } from "@/components/ui/status-text";
@@ -57,6 +57,25 @@ type IntakeRunHistory = {
         errorCode?: string;
         errorMessage?: string;
         storageProviderLabel?: string | null;
+    } | null;
+    assetSummary?: {
+        _id: string;
+        storageProvider: string;
+        storagePointer?: Record<string, unknown>;
+        providerAssetId?: string | null;
+        sizeBytes?: number | null;
+        durationMs?: number | null;
+        metadata?: {
+            sourceUrl?: string;
+            title?: string | null;
+            requestedQuality?: string;
+            actualQuality?: string | null;
+            resolution?: string | null;
+        };
+        createdFrom?: {
+            sourceId?: string;
+            storageProviderLabel?: string | null;
+        };
     } | null;
     createdAt?: string;
 };
@@ -193,6 +212,9 @@ export function LocalUploadIntakePanel({
     const [historyError, setHistoryError] = useState<string | null>(null);
     const [runDetail, setRunDetail] = useState<RunDetailResponse | null>(null);
     const [runDetailLoading, setRunDetailLoading] = useState(false);
+    const [selectedRun, setSelectedRun] = useState<IntakeRunHistory | null>(
+        null,
+    );
     const [state, setState] = useState<SubmitState>({
         status: "idle",
         message: "Ready.",
@@ -474,6 +496,34 @@ export function LocalUploadIntakePanel({
             fromAccount: selectedAccount,
             targetDriveAccount: fallbackDrive,
         });
+    };
+
+    const deleteRun = async (run: IntakeRunHistory) => {
+        if (!confirm(`Delete run "${run._id}"?`)) {
+            return;
+        }
+        setHistoryLoading(true);
+        setHistoryError(null);
+        try {
+            const response = await fetch(`/api/video-intake/runs/${run._id}`, {
+                method: "DELETE",
+            });
+            const payload = (await response.json()) as ApiResponse<{
+                deletedRuns: number;
+            }>;
+            if (!response.ok || !payload.ok) {
+                setHistoryError(payload.error ?? "Could not delete run.");
+                return;
+            }
+            if (selectedRun?._id === run._id) {
+                setSelectedRun(null);
+            }
+            await loadHistory(historyPagination.page);
+        } catch {
+            setHistoryError("Could not delete run.");
+        } finally {
+            setHistoryLoading(false);
+        }
     };
 
     return (
@@ -818,9 +868,7 @@ export function LocalUploadIntakePanel({
                     <table className="w-full border-collapse text-left text-[12px]">
                         <thead className="border-b border-main bg-secondary/45 text-muted">
                             <tr>
-                                <th className="px-4 py-2 font-semibold">
-                                    Created
-                                </th>
+                                <th className="px-4 py-2 font-semibold">Video</th>
                                 <th className="px-4 py-2 font-semibold">
                                     Status
                                 </th>
@@ -830,9 +878,8 @@ export function LocalUploadIntakePanel({
                                 <th className="px-4 py-2 font-semibold">
                                     Storage
                                 </th>
-                                <th className="px-4 py-2 font-semibold">
-                                    Result
-                                </th>
+                                <th className="px-4 py-2 font-semibold">Result</th>
+                                <th className="px-4 py-2 font-semibold">Detail</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -840,7 +887,7 @@ export function LocalUploadIntakePanel({
                                 <tr>
                                     <td
                                         className="px-4 py-6 text-muted"
-                                        colSpan={5}
+                                        colSpan={6}
                                     >
                                         Chưa có local upload run nào.
                                     </td>
@@ -851,8 +898,19 @@ export function LocalUploadIntakePanel({
                                         key={run._id}
                                         className="border-b border-main last:border-b-0"
                                     >
-                                        <td className="whitespace-nowrap px-4 py-3 text-muted">
-                                            {formatDate(run.createdAt)}
+                                        <td className="w-[150px] p-0">
+                                            {run.assetSummary ? (
+                                                <video
+                                                    preload="metadata"
+                                                    muted
+                                                    className="h-20 w-full bg-black object-cover"
+                                                    src={`/api/storage/assets/${run.assetSummary._id}/download?disposition=inline`}
+                                                />
+                                            ) : (
+                                                <div className="flex h-20 w-full items-center justify-center bg-secondary text-[10px] text-muted">
+                                                    No preview
+                                                </div>
+                                            )}
                                         </td>
                                         <td className="px-4 py-3 font-mono text-[11px]">
                                             <StatusText status={run.status} />
@@ -897,6 +955,30 @@ export function LocalUploadIntakePanel({
                                                 </p>
                                             ) : null}
                                         </td>
+                                        <td className="px-4 py-3">
+                                            <div className="flex gap-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                        setSelectedRun(run)
+                                                    }
+                                                    className="border border-main bg-secondary px-2 py-1 text-[11px] font-semibold text-main transition-colors hover:bg-secondary/75"
+                                                >
+                                                    Detail
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        void deleteRun(run);
+                                                    }}
+                                                    disabled={historyLoading}
+                                                    className="btn-danger inline-flex items-center gap-1 border px-2 py-1 text-[11px] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+                                                >
+                                                    <Trash2 className="h-3 w-3" />
+                                                    Delete
+                                                </button>
+                                            </div>
+                                        </td>
                                     </tr>
                                 ))
                             )}
@@ -940,6 +1022,82 @@ export function LocalUploadIntakePanel({
                     </div>
                 </div>
             </div>
+            {selectedRun ? (
+                <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/35 px-4 py-6">
+                    <div className="max-h-[90vh] w-full max-w-4xl overflow-y-auto border border-main bg-main shadow-xl">
+                        <div className="flex items-start justify-between gap-4 border-b border-main bg-secondary/35 px-4 py-3">
+                            <div className="min-w-0">
+                                <p className="truncate text-[13px] font-semibold text-main">
+                                    {selectedRun.inputSnapshot?.title ??
+                                        selectedRun.inputSnapshot?.fileName ??
+                                        selectedRun._id}
+                                </p>
+                                <p className="mt-1 truncate font-mono text-[11px] text-muted">
+                                    {selectedRun.inputSnapshot?.fileName ?? "-"}
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setSelectedRun(null)}
+                                className="border border-main bg-main px-2.5 py-1 text-[11px] font-semibold text-main transition-colors hover:bg-secondary"
+                            >
+                                Close
+                            </button>
+                        </div>
+                        <div className="space-y-3 px-4 py-4">
+                            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                                <InfoCell label="Run ID" value={selectedRun._id} mono />
+                                <InfoCell label="Status" value={selectedRun.status} />
+                                <InfoCell
+                                    label="Created"
+                                    value={formatDate(selectedRun.createdAt)}
+                                />
+                                <InfoCell
+                                    label="Asset ID"
+                                    value={selectedRun.outputSummary?.assetId}
+                                    mono
+                                />
+                                <InfoCell
+                                    label="Storage"
+                                    value={
+                                        selectedRun.outputSummary
+                                            ?.storageProviderLabel ??
+                                        selectedRun.inputSnapshot
+                                            ?.storageProvider
+                                    }
+                                />
+                                <InfoCell
+                                    label="File Size"
+                                    value={formatBytes(
+                                        selectedRun.inputSnapshot?.fileSizeBytes,
+                                    )}
+                                />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            ) : null}
         </section>
+    );
+}
+
+function InfoCell({
+    label,
+    value,
+    mono = false,
+}: {
+    label: string;
+    value?: string | number | null;
+    mono?: boolean;
+}) {
+    return (
+        <div className="border border-main bg-secondary/20 px-3 py-2">
+            <p className="text-[10px] font-bold uppercase tracking-wide text-muted">
+                {label}
+            </p>
+            <p className={`mt-1 truncate text-[12px] text-main ${mono ? "font-mono text-[11px]" : ""}`}>
+                {value ?? "-"}
+            </p>
+        </div>
     );
 }

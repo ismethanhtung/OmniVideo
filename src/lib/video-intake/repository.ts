@@ -680,7 +680,6 @@ export async function deleteUrlIntakeJobRunById({
   const objectId = new ObjectId(runId);
   const run = await db.collection("job_runs").findOne({
     _id: objectId,
-    pipelineId: "mvp-url-intake-to-storage",
   });
 
   if (!run) {

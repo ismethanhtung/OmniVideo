@@ -11,7 +11,6 @@
 ## In Progress
 
 - `FAST-AUDIO-008` - Align Edge TTS voice to segment timestamps.
-- `FAST-OPS-001` - Local intake history parity and lightweight system snapshot modal.
 
 ## Blocked
 
@@ -19,6 +18,7 @@
 
 ## Review
 
+- `FAST-OPS-001` - Local intake history parity and lightweight system snapshot modal.
 - `FAST-INTAKE-003` - Improve Video Intake run history detail and failed cleanup.
 - `P2-VIDEO-002` - Partial Blur and Subtitle Overlay Pipeline.
 

@@ -1,11 +1,18 @@
 "use client";
 
-import { useMemo, useState, useSyncExternalStore } from "react";
+import {
+    useCallback,
+    useEffect,
+    useMemo,
+    useState,
+    useSyncExternalStore,
+} from "react";
 import {
     Activity,
     AlertTriangle,
     CheckCircle2,
     Moon,
+    ScanHeart,
     RefreshCw,
     Sun,
     X,
@@ -36,6 +43,7 @@ export function Topbar({
 }: TopbarProps) {
     const currentSection = getNavItem(activeSection);
     const [showProgress, setShowProgress] = useState(false);
+    const [showSystemSnapshot, setShowSystemSnapshot] = useState(false);
     const progressTasks = useSyncExternalStore(
         subscribeProgressTasks,
         getProgressTasksSnapshot,
@@ -75,6 +83,15 @@ export function Topbar({
                 </button>
                 <button
                     type="button"
+                    onClick={() => setShowSystemSnapshot(true)}
+                    className="inline-flex shrink-0 items-center gap-1.5 border border-main bg-main px-2.5 py-1 text-[11px] font-semibold text-main transition-colors hover:bg-secondary"
+                    aria-label="Open system snapshot"
+                >
+                    <ScanHeart className="h-3.5 w-3.5" />
+                    System
+                </button>
+                <button
+                    type="button"
                     onClick={onRefreshView}
                     className="inline-flex shrink-0 items-center gap-1.5 border border-main bg-main px-2.5 py-1 text-[11px] font-semibold text-main transition-colors hover:bg-secondary"
                 >
@@ -102,8 +119,319 @@ export function Topbar({
                     onClose={() => setShowProgress(false)}
                 />
             ) : null}
+            {showSystemSnapshot ? (
+                <SystemSnapshotModal
+                    onClose={() => setShowSystemSnapshot(false)}
+                />
+            ) : null}
         </header>
     );
+}
+
+type SystemSnapshot = {
+    capturedAt: string;
+    process: {
+        pid: number;
+        nodeVersion: string;
+        uptimeSec: number;
+        memory: Record<string, number>;
+        cpuUsage: Record<string, number>;
+        threadpoolSize: number;
+        platform: string;
+        arch: string;
+    };
+    system: {
+        hostname: string;
+        uptimeSec: number;
+        loadAvg: number[];
+        cpu: {
+            model: string;
+            cores: number;
+            usagePercentApprox: number | null;
+        };
+        memory: {
+            totalBytes: number;
+            freeBytes: number;
+            usedBytes: number;
+            usedPercent: number;
+        };
+        networkInterfaces: Array<{
+            name: string;
+            addresses: Array<{
+                family: string | number;
+                internal: boolean;
+                address: string;
+                mac: string;
+            }>;
+        }>;
+    };
+};
+
+let cachedSystemSnapshot: SystemSnapshot | null = null;
+
+function SystemSnapshotModal({ onClose }: { onClose: () => void }) {
+    const [snapshot, setSnapshot] = useState<SystemSnapshot | null>(
+        cachedSystemSnapshot,
+    );
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    const load = useCallback(
+        async (force = false) => {
+            if (snapshot && !force) {
+                return;
+            }
+            setLoading(true);
+            setError(null);
+            try {
+                const response = await fetch("/api/system/snapshot", {
+                    method: "GET",
+                    cache: "no-store",
+                });
+                const payload = (await response.json()) as {
+                    ok: boolean;
+                    data?: SystemSnapshot;
+                    error?: string;
+                };
+                if (!response.ok || !payload.ok || !payload.data) {
+                    setError(
+                        payload.error ?? "Could not load system snapshot.",
+                    );
+                    return;
+                }
+                cachedSystemSnapshot = payload.data;
+                setSnapshot(payload.data);
+            } catch {
+                setError("Could not load system snapshot.");
+            } finally {
+                setLoading(false);
+            }
+        },
+        [snapshot],
+    );
+
+    useEffect(() => {
+        if (!cachedSystemSnapshot) {
+            void load(false);
+        }
+    }, [load]);
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-4 md:p-6">
+            <section className="flex max-h-[90vh] w-full max-w-5xl flex-col border border-main bg-main shadow-xl">
+                <header className="flex items-start justify-between gap-3 border-b border-main bg-secondary/35 px-4 py-3">
+                    <div>
+                        <p className="text-[14px] font-semibold text-main">
+                            System Snapshot
+                        </p>
+                        <p className="mt-1 text-[11px] text-muted">
+                            Load-once overview of app/runtime resource usage.
+                        </p>
+                    </div>
+                    <div className="flex gap-2">
+                        <button
+                            type="button"
+                            onClick={() => void load(true)}
+                            className="border border-main bg-main px-2.5 py-1 text-[11px] font-semibold text-main hover:bg-secondary"
+                        >
+                            Reload
+                        </button>
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            className="inline-flex items-center border border-main bg-main p-1.5 text-main hover:bg-secondary"
+                            aria-label="Close system snapshot modal"
+                        >
+                            <X className="h-3.5 w-3.5" />
+                        </button>
+                    </div>
+                </header>
+                <div className="min-h-0 overflow-y-auto px-4 py-4 text-[12px]">
+                    {error ? <p className="text-amber-700">{error}</p> : null}
+                    {snapshot ? (
+                        <div className="space-y-4">
+                            <div className="grid gap-3 lg:grid-cols-2">
+                                <section className="border border-main bg-main">
+                                    <div className="border-b border-main bg-secondary/25 px-3 py-2">
+                                        <p className="text-[11px] font-semibold text-main">
+                                            Overview
+                                        </p>
+                                    </div>
+                                    <table className="w-full border-collapse text-[12px]">
+                                        <tbody>
+                                            <TableRow
+                                                label="Captured"
+                                                value={formatProgressTime(
+                                                    new Date(
+                                                        snapshot.capturedAt,
+                                                    ).getTime(),
+                                                )}
+                                            />
+                                            <TableRow
+                                                label="Host"
+                                                value={snapshot.system.hostname}
+                                            />
+                                            <TableRow
+                                                label="Node / PID"
+                                                value={`${snapshot.process.nodeVersion} / ${snapshot.process.pid}`}
+                                            />
+                                            <TableRow
+                                                label="App Uptime"
+                                                value={formatSeconds(
+                                                    snapshot.process.uptimeSec,
+                                                )}
+                                            />
+                                            <TableRow
+                                                label="System Uptime"
+                                                value={formatSeconds(
+                                                    snapshot.system.uptimeSec,
+                                                )}
+                                            />
+                                        </tbody>
+                                    </table>
+                                </section>
+
+                                <section className="border border-main bg-main">
+                                    <div className="border-b border-main bg-secondary/25 px-3 py-2">
+                                        <p className="text-[11px] font-semibold text-main">
+                                            Resources
+                                        </p>
+                                    </div>
+                                    <table className="w-full border-collapse text-[12px]">
+                                        <tbody>
+                                            <TableRow
+                                                label="CPU"
+                                                value={`${snapshot.system.cpu.usagePercentApprox ?? "-"}% · ${snapshot.system.cpu.cores} cores`}
+                                            />
+                                            <TableRow
+                                                label="Memory"
+                                                value={`${formatBytes(snapshot.system.memory.usedBytes)} / ${formatBytes(snapshot.system.memory.totalBytes)} (${snapshot.system.memory.usedPercent}%)`}
+                                                tone={
+                                                    snapshot.system.memory
+                                                        .usedPercent >= 95
+                                                        ? "warn"
+                                                        : "normal"
+                                                }
+                                            />
+                                            <TableRow
+                                                label="App RSS"
+                                                value={formatBytes(
+                                                    snapshot.process.memory.rss,
+                                                )}
+                                            />
+                                            <TableRow
+                                                label="Load Avg"
+                                                value={snapshot.system.loadAvg
+                                                    .map((v) => v.toFixed(2))
+                                                    .join(" / ")}
+                                            />
+                                            <TableRow
+                                                label="Threadpool"
+                                                value={String(
+                                                    snapshot.process
+                                                        .threadpoolSize,
+                                                )}
+                                            />
+                                        </tbody>
+                                    </table>
+                                </section>
+                            </div>
+
+                            <section className="border border-main bg-main">
+                                <div className="border-b border-main bg-secondary/25 px-3 py-2">
+                                    <p className="text-[11px] font-semibold text-main">
+                                        Network
+                                    </p>
+                                </div>
+                                <div className="px-3 py-2">
+                                    {snapshot.system.networkInterfaces
+                                        .length === 0 ? (
+                                        <p className="text-[11px] text-muted">
+                                            No network interface data.
+                                        </p>
+                                    ) : (
+                                        <div className="space-y-2">
+                                            {snapshot.system.networkInterfaces.map(
+                                                (net) => (
+                                                    <div
+                                                        key={net.name}
+                                                        className="rounded-sm bg-secondary/20 px-2 py-1.5"
+                                                    >
+                                                        <p className="text-[11px] font-medium text-main">
+                                                            {net.name}
+                                                        </p>
+                                                        <p className="mt-0.5 text-[10px] text-muted">
+                                                            {net.addresses
+                                                                .map(
+                                                                    (addr) =>
+                                                                        `${addr.family}: ${addr.address}${addr.internal ? " (internal)" : ""}`,
+                                                                )
+                                                                .join(" | ")}
+                                                        </p>
+                                                    </div>
+                                                ),
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            </section>
+                        </div>
+                    ) : null}
+                </div>
+            </section>
+        </div>
+    );
+}
+
+function TableRow({
+    label,
+    value,
+    tone = "normal",
+}: {
+    label: string;
+    value: string;
+    tone?: "normal" | "warn";
+}) {
+    return (
+        <tr className="border-b border-main last:border-b-0">
+            <th className="w-[35%] px-3 py-2 text-left text-[10px] font-bold uppercase tracking-wide text-muted">
+                {label}
+            </th>
+            <td
+                className={`px-3 py-2 text-right text-[12px] ${
+                    tone === "warn" ? "text-amber-700" : "text-main"
+                }`}
+            >
+                {value}
+            </td>
+        </tr>
+    );
+}
+
+function formatBytes(size: number) {
+    if (!Number.isFinite(size) || size <= 0) {
+        return "-";
+    }
+    const units = ["B", "KB", "MB", "GB", "TB"];
+    let value = size;
+    let unitIndex = 0;
+    while (value >= 1024 && unitIndex < units.length - 1) {
+        value /= 1024;
+        unitIndex += 1;
+    }
+    return `${value.toFixed(value >= 100 ? 0 : value >= 10 ? 1 : 2)} ${units[unitIndex]}`;
+}
+
+function formatSeconds(seconds: number) {
+    const total = Math.max(0, Math.floor(seconds));
+    const d = Math.floor(total / 86400);
+    const h = Math.floor((total % 86400) / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    const s = total % 60;
+    if (d > 0) return `${d}d ${h}h ${m}m`;
+    if (h > 0) return `${h}h ${m}m ${s}s`;
+    if (m > 0) return `${m}m ${s}s`;
+    return `${s}s`;
 }
 
 function formatProgressTime(value: number) {
