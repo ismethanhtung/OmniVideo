@@ -16,6 +16,7 @@ describe("Audio transcription API", () => {
     expect(payload).toMatchObject({
       ok: false,
       errorCode: "VAL_AUDIO_FILE_REQUIRED",
+      error: "videoFile or assetId is required.",
     });
   });
 });

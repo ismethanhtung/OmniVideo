@@ -46,7 +46,6 @@ export async function runChineseVideoTranscription(
             metrics: {
                 fileName: input.fileName,
                 mimeType: input.mimeType ?? "unknown",
-                sourceSizeBytes: input.fileSizeBytes,
                 sourceSize: formatBytes(input.fileSizeBytes),
             },
         });
@@ -85,7 +84,6 @@ export async function runChineseVideoTranscription(
                 sampleRate: 16000,
                 channels: 1,
                 bitrateKbps: 64,
-                audioSizeBytes: audioBytes.byteLength,
                 audioSize: formatBytes(audioBytes.byteLength),
             },
         });
@@ -188,6 +186,7 @@ export async function runChineseVideoTranscription(
             channels: 1,
             bitrateKbps: 64,
             fileSizeBytes: audioBytes.byteLength,
+            audioPreviewBase64: Buffer.from(audioBytes).toString("base64"),
         },
         steps,
         provider: {

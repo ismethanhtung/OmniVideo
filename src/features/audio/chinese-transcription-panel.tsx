@@ -1,7 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
+    ChevronDown,
+    ChevronUp,
     Captions,
     Copy,
     Download,
@@ -19,6 +21,11 @@ import type {
     VoiceGenerationResult,
 } from "@/lib/multilingual-audio/types";
 import { DEFAULT_PIPER_TTS_SETTINGS } from "@/lib/multilingual-audio/types";
+import {
+    parseTranscriptSession,
+    serializeTranscriptSession,
+    TRANSCRIPT_SESSION_STORAGE_KEY,
+} from "@/lib/multilingual-audio/transcript-session";
 
 type AiProviderOption = {
     _id: string;
@@ -34,6 +41,20 @@ type AiModelOption = {
 
 type ChineseTranscriptionPanelProps = {
     section: LeftbarNavItem;
+};
+
+type StoredVideoAsset = {
+    _id: string;
+    sizeBytes?: number | null;
+    metadata?: {
+        title?: string | null;
+        originPlatform?: string | null;
+        actualQuality?: string | null;
+    };
+    createdFrom?: {
+        storageProviderLabel?: string | null;
+    };
+    storageProvider: string;
 };
 
 type ApiPayload =
@@ -101,53 +122,73 @@ function stepTone(status: AudioTranscriptionStep["status"]) {
 }
 
 function StepTracePanel({ steps }: { steps: AudioTranscriptionStep[] }) {
+    const [collapsed, setCollapsed] = useState(false);
     if (steps.length === 0) return null;
 
     return (
         <div className="border border-main bg-main">
-            <div className="border-b border-main bg-secondary/30 px-4 py-2">
+            <div className="flex items-center justify-between border-b border-main bg-secondary/30 px-4 py-2">
                 <p className="text-[12px] font-semibold text-main">Run steps</p>
+                <button
+                    type="button"
+                    onClick={() => setCollapsed((previous) => !previous)}
+                    className="inline-flex items-center gap-1 border border-main bg-main px-2 py-1 text-[10px] font-semibold text-main hover:bg-secondary"
+                >
+                    {collapsed ? (
+                        <>
+                            <ChevronDown className="h-3.5 w-3.5" />
+                            Show
+                        </>
+                    ) : (
+                        <>
+                            <ChevronUp className="h-3.5 w-3.5" />
+                            Hide
+                        </>
+                    )}
+                </button>
             </div>
-            <div className="divide-y divide-[var(--border-color)]">
-                {steps.map((step, index) => (
-                    <div
-                        key={`${step.id}-${index}`}
-                        className="grid gap-2 px-4 py-3 lg:grid-cols-[150px_minmax(0,1fr)]"
-                    >
-                        <div>
-                            <p className="text-[11px] font-semibold text-main">
-                                {index + 1}. {step.label}
-                            </p>
-                            <p
-                                className={`mt-0.5 text-[10px] font-bold uppercase ${stepTone(
-                                    step.status,
-                                )}`}
-                            >
-                                {step.status}
-                            </p>
+            {!collapsed ? (
+                <div className="divide-y divide-[var(--border-color)]">
+                    {steps.map((step, index) => (
+                        <div
+                            key={`${step.id}-${index}`}
+                            className="grid gap-2 px-4 py-3 lg:grid-cols-[150px_minmax(0,1fr)]"
+                        >
+                            <div>
+                                <p className="text-[11px] font-semibold text-main">
+                                    {index + 1}. {step.label}
+                                </p>
+                                <p
+                                    className={`mt-0.5 text-[10px] font-bold uppercase ${stepTone(
+                                        step.status,
+                                    )}`}
+                                >
+                                    {step.status}
+                                </p>
+                            </div>
+                            <div className="min-w-0">
+                                <p className="text-[11px] leading-5 text-muted">
+                                    {step.detail}
+                                </p>
+                                {step.metrics ? (
+                                    <div className="mt-2 flex flex-wrap gap-1.5">
+                                        {Object.entries(step.metrics).map(
+                                            ([key, value]) => (
+                                                <span
+                                                    key={key}
+                                                    className="border border-main bg-secondary/25 px-2 py-1 text-[10px] text-main"
+                                                >
+                                                    {key}: {String(value)}
+                                                </span>
+                                            ),
+                                        )}
+                                    </div>
+                                ) : null}
+                            </div>
                         </div>
-                        <div className="min-w-0">
-                            <p className="text-[11px] leading-5 text-muted">
-                                {step.detail}
-                            </p>
-                            {step.metrics ? (
-                                <div className="mt-2 flex flex-wrap gap-1.5">
-                                    {Object.entries(step.metrics).map(
-                                        ([key, value]) => (
-                                            <span
-                                                key={key}
-                                                className="border border-main bg-secondary/25 px-2 py-1 text-[10px] text-main"
-                                            >
-                                                {key}: {String(value)}
-                                            </span>
-                                        ),
-                                    )}
-                                </div>
-                            ) : null}
-                        </div>
-                    </div>
-                ))}
-            </div>
+                    ))}
+                </div>
+            ) : null}
         </div>
     );
 }
@@ -157,6 +198,9 @@ export function ChineseTranscriptionPanel({
 }: ChineseTranscriptionPanelProps) {
     const Icon = section.icon;
     const [file, setFile] = useState<File | null>(null);
+    const [assets, setAssets] = useState<StoredVideoAsset[]>([]);
+    const [selectedAssetId, setSelectedAssetId] = useState("");
+    const [showAssetPicker, setShowAssetPicker] = useState(false);
     const [language, setLanguage] = useState("zh");
     const [prompt, setPrompt] = useState("");
     const [includeWordTimestamps, setIncludeWordTimestamps] = useState(true);
@@ -193,7 +237,7 @@ export function ChineseTranscriptionPanel({
     const [ttsPreserveTimestampGaps, setTtsPreserveTimestampGaps] =
         useState<boolean>(DEFAULT_PIPER_TTS_SETTINGS.preserveTimestampGaps);
     const [segmentView, setSegmentView] = useState<"source" | "translation">(
-        "translation",
+        "source",
     );
     const [isRunning, setIsRunning] = useState(false);
     const [isTranslating, setIsTranslating] = useState(false);
@@ -214,8 +258,12 @@ export function ChineseTranscriptionPanel({
     const [copiedSegmentsLabel, setCopiedSegmentsLabel] = useState<
         "json" | "text" | null
     >(null);
+    const [isHydrated, setIsHydrated] = useState(false);
+    const [isTranscriptCollapsed, setIsTranscriptCollapsed] = useState(false);
+    const videoPreviewRef = useRef<HTMLVideoElement | null>(null);
+    const voicePreviewRef = useRef<HTMLAudioElement | null>(null);
 
-    useState(() => {
+    useEffect(() => {
         fetch("/api/ai-providers")
             .then((res) => res.json())
             .then((payload: { ok: boolean; data?: AiProviderOption[] }) => {
@@ -230,7 +278,75 @@ export function ChineseTranscriptionPanel({
                 }
             })
             .catch(() => {});
-    });
+    }, []);
+
+    useEffect(() => {
+        fetch("/api/storage/assets?limit=100", {
+            method: "GET",
+            cache: "no-store",
+        })
+            .then((res) => res.json())
+            .then((payload: { ok: boolean; data?: StoredVideoAsset[] }) => {
+                if (payload.ok && payload.data) {
+                    setAssets(payload.data);
+                }
+            })
+            .catch(() => {});
+    }, []);
+
+    useEffect(() => {
+        const saved = parseTranscriptSession(
+            window.localStorage.getItem(TRANSCRIPT_SESSION_STORAGE_KEY),
+        );
+        if (saved) {
+            setLanguage(saved.language);
+            setPrompt(saved.prompt);
+            setIncludeWordTimestamps(saved.includeWordTimestamps);
+            setSelectedProviderId(saved.selectedProviderId);
+            setTranslationModel(saved.translationModel);
+            setSelectedAssetId(saved.selectedAssetId);
+            setSegmentView(saved.segmentView);
+            setSteps(saved.steps);
+            setResult(saved.result);
+            setTranslation(saved.translation);
+        }
+        setIsHydrated(true);
+    }, []);
+
+    useEffect(() => {
+        if (!isHydrated) return;
+        try {
+            window.localStorage.setItem(
+                TRANSCRIPT_SESSION_STORAGE_KEY,
+                serializeTranscriptSession({
+                    language,
+                    prompt,
+                    includeWordTimestamps,
+                    selectedProviderId,
+                    translationModel,
+                    selectedAssetId,
+                    segmentView,
+                    steps,
+                    result,
+                    translation,
+                }),
+            );
+        } catch {
+            // Keep page usable even when browser storage quota is exceeded.
+        }
+    }, [
+        includeWordTimestamps,
+        isHydrated,
+        language,
+        prompt,
+        result,
+        segmentView,
+        selectedAssetId,
+        selectedProviderId,
+        steps,
+        translation,
+        translationModel,
+    ]);
 
     const fetchModelsForProvider = async (providerId: string) => {
         if (!providerId) {
@@ -270,11 +386,15 @@ export function ChineseTranscriptionPanel({
     };
 
     const runTranscription = async () => {
-        if (!file) {
-            setError("Chọn video/audio trước khi chạy transcription.");
+        if (!file && !selectedAssetId) {
+            setError(
+                "Chọn video/audio upload hoặc Storage Library asset trước khi chạy transcription.",
+            );
             return;
         }
 
+        // New extract/transcribe run should start from a clean session.
+        window.localStorage.removeItem(TRANSCRIPT_SESSION_STORAGE_KEY);
         setIsRunning(true);
         setError(null);
         setTranslationError(null);
@@ -286,7 +406,11 @@ export function ChineseTranscriptionPanel({
 
         try {
             const formData = new FormData();
-            formData.set("videoFile", file);
+            if (file) {
+                formData.set("videoFile", file);
+            } else if (selectedAssetId) {
+                formData.set("assetId", selectedAssetId);
+            }
             formData.set("language", language);
             formData.set(
                 "includeWordTimestamps",
@@ -437,6 +561,46 @@ export function ChineseTranscriptionPanel({
     const voiceAudioUrl = voiceResult
         ? `data:${voiceResult.mimeType};base64,${voiceResult.audioBase64}`
         : null;
+    const extractedAudioUrl = result?.audio.audioPreviewBase64
+        ? `data:audio/mpeg;base64,${result.audio.audioPreviewBase64}`
+        : null;
+    const sourceVideoPreviewUrl = useMemo(() => {
+        if (file) {
+            return URL.createObjectURL(file);
+        }
+        if (selectedAssetId) {
+            return `/api/storage/assets/${selectedAssetId}/download?disposition=inline`;
+        }
+        return null;
+    }, [file, selectedAssetId]);
+
+    useEffect(() => {
+        if (!file || !sourceVideoPreviewUrl) return;
+        return () => URL.revokeObjectURL(sourceVideoPreviewUrl);
+    }, [file, sourceVideoPreviewUrl]);
+
+    const playDubPreview = async () => {
+        const video = videoPreviewRef.current;
+        const audio = voicePreviewRef.current;
+        if (!video || !audio) return;
+        video.muted = true;
+        video.currentTime = 0;
+        audio.currentTime = 0;
+        await Promise.all([video.play(), audio.play()]);
+    };
+
+    const pauseDubPreview = () => {
+        videoPreviewRef.current?.pause();
+        voicePreviewRef.current?.pause();
+    };
+
+    const resetDubPreview = () => {
+        pauseDubPreview();
+        if (videoPreviewRef.current) videoPreviewRef.current.currentTime = 0;
+        if (voicePreviewRef.current) voicePreviewRef.current.currentTime = 0;
+    };
+    const selectedAsset =
+        assets.find((asset) => asset._id === selectedAssetId) ?? null;
     const copySegmentsToClipboard = async (mode: "json" | "text") => {
         if (!result) return;
 
@@ -499,7 +663,6 @@ export function ChineseTranscriptionPanel({
                 <aside className="space-y-3">
                     <div className="border border-main bg-secondary/20 p-4">
                         <div className="flex items-center gap-2">
-                            <FileAudio className="h-4 w-4 text-muted" />
                             <p className="text-[12px] font-semibold text-main">
                                 Source Video
                             </p>
@@ -512,11 +675,15 @@ export function ChineseTranscriptionPanel({
                                 type="file"
                                 accept="video/*,audio/*,.mp4,.mov,.webm,.mp3,.m4a,.wav,.ogg"
                                 disabled={isRunning}
-                                onChange={(event) =>
-                                    setFile(
-                                        event.currentTarget.files?.[0] ?? null,
-                                    )
-                                }
+                                onChange={(event) => {
+                                    const pickedFile =
+                                        event.currentTarget.files?.[0] ?? null;
+                                    setFile(pickedFile);
+                                    if (pickedFile) {
+                                        setSelectedAssetId("");
+                                        setShowAssetPicker(false);
+                                    }
+                                }}
                                 className="block w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main file:mr-2 file:border-0 file:bg-secondary file:px-2 file:py-1 file:text-[10px] file:font-semibold file:text-main"
                             />
                         </label>
@@ -526,6 +693,77 @@ export function ChineseTranscriptionPanel({
                                 {(file.size / 1024 / 1024).toFixed(2)} MB
                             </p>
                         ) : null}
+                        <div className="mt-3">
+                            <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                Video Asset
+                            </span>
+                            <button
+                                type="button"
+                                onClick={() =>
+                                    setShowAssetPicker((previous) => !previous)
+                                }
+                                disabled={isRunning}
+                                className="flex w-full items-center justify-between border border-main bg-main px-3 py-2 text-left text-[12px] text-main"
+                            >
+                                <span className="truncate">
+                                    {selectedAsset?.metadata?.title ??
+                                        selectedAsset?._id ??
+                                        "Select asset"}
+                                </span>
+                                <span className="ml-2 text-[11px] text-muted">
+                                    {showAssetPicker ? "Close" : "Browse"}
+                                </span>
+                            </button>
+                            {showAssetPicker ? (
+                                <div className="mt-2 max-h-56 overflow-y-auto border border-main bg-main">
+                                    {assets.length === 0 ? (
+                                        <p className="px-3 py-4 text-[11px] text-muted">
+                                            No asset available.
+                                        </p>
+                                    ) : (
+                                        <div className="space-y-2 p-2">
+                                            {assets.map((asset) => {
+                                                const isSelected =
+                                                    selectedAssetId ===
+                                                    asset._id;
+                                                return (
+                                                    <button
+                                                        key={asset._id}
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setSelectedAssetId(
+                                                                asset._id,
+                                                            );
+                                                            setFile(null);
+                                                            setShowAssetPicker(
+                                                                false,
+                                                            );
+                                                        }}
+                                                        className={`w-full border p-2 text-left ${isSelected ? "border-accent bg-secondary/35" : "border-main bg-main hover:bg-secondary/20"}`}
+                                                    >
+                                                        <p className="truncate text-[12px] font-semibold text-main">
+                                                            {asset.metadata
+                                                                ?.title ??
+                                                                asset._id}
+                                                        </p>
+                                                        <p className="mt-1 truncate text-[10px] text-muted">
+                                                            {asset.createdFrom
+                                                                ?.storageProviderLabel ??
+                                                                asset.storageProvider}{" "}
+                                                            ·{" "}
+                                                            {formatBytes(
+                                                                asset.sizeBytes ??
+                                                                    0,
+                                                            )}
+                                                        </p>
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                </div>
+                            ) : null}
+                        </div>
                     </div>
 
                     <div className="space-y-3 border border-main bg-secondary/20 p-4">
@@ -585,7 +823,7 @@ export function ChineseTranscriptionPanel({
                         </label>
                         <button
                             type="button"
-                            disabled={isRunning || !file}
+                            disabled={isRunning || (!file && !selectedAssetId)}
                             onClick={runTranscription}
                             className="inline-flex w-full items-center justify-center gap-2 border border-accent/35 bg-accent/10 px-3 py-2 text-[12px] font-semibold text-accent transition-colors hover:bg-accent/15 disabled:cursor-not-allowed disabled:opacity-60"
                         >
@@ -948,8 +1186,54 @@ export function ChineseTranscriptionPanel({
                                     <audio
                                         controls
                                         src={voiceAudioUrl}
+                                        ref={voicePreviewRef}
                                         className="w-full"
                                     />
+                                    {sourceVideoPreviewUrl ? (
+                                        <div className="space-y-2 border border-main bg-main p-3">
+                                            <p className="text-[11px] font-semibold text-main">
+                                                Dub preview (source video +
+                                                generated voice)
+                                            </p>
+                                            <video
+                                                ref={videoPreviewRef}
+                                                controls
+                                                muted
+                                                src={sourceVideoPreviewUrl}
+                                                className="w-full border border-main bg-black"
+                                            />
+                                            <div className="flex flex-wrap gap-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        void playDubPreview();
+                                                    }}
+                                                    className="border border-main bg-main px-2 py-1 text-[10px] font-semibold text-main hover:bg-secondary"
+                                                >
+                                                    Play sync preview
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={pauseDubPreview}
+                                                    className="border border-main bg-main px-2 py-1 text-[10px] font-semibold text-main hover:bg-secondary"
+                                                >
+                                                    Pause
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={resetDubPreview}
+                                                    className="border border-main bg-main px-2 py-1 text-[10px] font-semibold text-main hover:bg-secondary"
+                                                >
+                                                    Reset
+                                                </button>
+                                            </div>
+                                            <p className="text-[10px] leading-4 text-muted">
+                                                Video gốc được mute để nghe
+                                                voice mới rõ hơn; dùng Play sync
+                                                preview để canh timing nhanh.
+                                            </p>
+                                        </div>
+                                    ) : null}
                                     <a
                                         href={voiceAudioUrl}
                                         download={voiceResult.fileName}
@@ -969,7 +1253,6 @@ export function ChineseTranscriptionPanel({
                     {!result ? (
                         <div className="border border-dashed border-main bg-secondary/20 px-5 py-8">
                             <div className="flex items-center gap-2">
-                                <Captions className="h-4 w-4 text-muted" />
                                 <p className="text-[13px] font-semibold text-main">
                                     Transcript output
                                 </p>
@@ -1006,13 +1289,50 @@ export function ChineseTranscriptionPanel({
                                             {result.audio.bitrateKbps}kbps
                                         </p>
                                     </div>
-                                    <span className="border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-[10px] font-bold uppercase text-emerald-700">
-                                        {result.segments.length} segments
-                                    </span>
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() =>
+                                                setIsTranscriptCollapsed(
+                                                    (previous) => !previous,
+                                                )
+                                            }
+                                            className="inline-flex items-center gap-1 border border-main bg-main px-2 py-1 text-[10px] font-semibold text-main hover:bg-secondary"
+                                        >
+                                            {isTranscriptCollapsed ? (
+                                                <>
+                                                    <ChevronDown className="h-3.5 w-3.5" />
+                                                    Show
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <ChevronUp className="h-3.5 w-3.5" />
+                                                    Hide
+                                                </>
+                                            )}
+                                        </button>
+                                        <span className="border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-[10px] font-bold uppercase text-emerald-700">
+                                            {result.segments.length} segments
+                                        </span>
+                                    </div>
                                 </div>
-                                <p className="mt-3 whitespace-pre-wrap text-[13px] leading-6 text-main">
-                                    {result.text || "(empty transcript)"}
-                                </p>
+                                {!isTranscriptCollapsed ? (
+                                    <p className="mt-3 whitespace-pre-wrap text-[13px] leading-6 text-main">
+                                        {result.text || "(empty transcript)"}
+                                    </p>
+                                ) : null}
+                                {extractedAudioUrl ? (
+                                    <div className="mt-3 border border-main bg-main p-3">
+                                        <p className="mb-2 text-[11px] font-semibold text-main">
+                                            Extracted audio preview
+                                        </p>
+                                        <audio
+                                            controls
+                                            src={extractedAudioUrl}
+                                            className="w-full"
+                                        />
+                                    </div>
+                                ) : null}
                             </div>
 
                             <div className="border border-main bg-main">
@@ -1081,9 +1401,53 @@ export function ChineseTranscriptionPanel({
                                                         )}
                                                     </p>
                                                     <div className="min-w-0">
-                                                        <p className="text-[12px] leading-5 text-main">
-                                                            {displayText}
-                                                        </p>
+                                                        {segmentView ===
+                                                            "translation" &&
+                                                        translated ? (
+                                                            <textarea
+                                                                value={
+                                                                    translated.translatedText
+                                                                }
+                                                                rows={2}
+                                                                onChange={(
+                                                                    event,
+                                                                ) => {
+                                                                    if (
+                                                                        !translation ||
+                                                                        !translated
+                                                                    )
+                                                                        return;
+                                                                    const next =
+                                                                        translation.translatedSegments.map(
+                                                                            (
+                                                                                item,
+                                                                            ) =>
+                                                                                item.id ===
+                                                                                segment.id
+                                                                                    ? {
+                                                                                          ...item,
+                                                                                          translatedText:
+                                                                                              event
+                                                                                                  .currentTarget
+                                                                                                  .value,
+                                                                                      }
+                                                                                    : item,
+                                                                        );
+                                                                    setTranslation(
+                                                                        {
+                                                                            ...translation,
+                                                                            translatedSegments:
+                                                                                next,
+                                                                        },
+                                                                    );
+                                                                }}
+                                                                className="w-full resize-y border border-main bg-main px-2 py-1.5 text-[12px] leading-5 text-main"
+                                                            />
+                                                        ) : (
+                                                            <p className="text-[12px] leading-5 text-main">
+                                                                {displayText}
+                                                            </p>
+                                                        )}
                                                         {translated &&
                                                         segmentView ===
                                                             "translation" ? (

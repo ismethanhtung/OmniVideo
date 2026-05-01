@@ -18,6 +18,8 @@
 
 ## Review
 
+- `FAST-AUDIO-018` - Editable translated segments and Audio Transcript session persistence.
+- `FAST-AUDIO-017` - Add Storage Asset picker to Audio Transcript Source.
 - `P1-INTAKE-013` - Harden yt-dlp format selection and streaming downloads.
 - `FAST-OPS-001` - Local intake history parity and lightweight system snapshot modal.
 - `FAST-INTAKE-003` - Improve Video Intake run history detail and failed cleanup.

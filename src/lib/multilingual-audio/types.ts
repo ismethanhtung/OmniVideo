@@ -163,6 +163,7 @@ export type ChineseTranscriptionResult = {
         channels: 1;
         bitrateKbps: 64;
         fileSizeBytes: number;
+        audioPreviewBase64?: string;
     };
     steps: AudioTranscriptionStep[];
     provider: {

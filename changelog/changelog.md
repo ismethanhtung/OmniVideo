@@ -482,3 +482,24 @@
 
 - Task IDs: SETUP-DOC-001, SETUP-GOV-001, SETUP-ARCH-001
 - Risks: Cần duy trì cập nhật docs đồng bộ với code trong các phase triển khai tiếp theo.
+## 2026-05-01
+
+### Added
+
+- Audio Transcript Source Video hỗ trợ chọn trực tiếp từ Storage Library qua UI `Video Asset` (`Select asset`/`Browse`) thay vì chỉ upload local file.
+
+### Changed
+
+- Cập nhật API `POST /api/audio/chinese-transcription` để nhận nguồn từ `videoFile` hoặc `assetId`.
+
+### Fixed
+
+- Sửa giới hạn flow Audio Transcript không dùng được video đã lưu trong storage.
+
+### Notes
+
+- Task IDs: FAST-AUDIO-017
+- Risks: Download asset từ provider vẫn phụ thuộc vào tính hợp lệ của pointer/token storage hiện có.
+- Audio Transcript: thêm chỉnh sửa inline `translatedText` trực tiếp trong panel `Segments` sau khi Translate to VI, để sửa lỗi nhẹ mà không cần chạy dịch lại.
+- Audio Transcript: thêm session persistence qua local storage để giữ transcript/translation/steps và cấu hình chính khi user chuyển trang rồi quay lại.
+- Verification (FAST-AUDIO-018): `npm run test -- src/lib/multilingual-audio/transcript-session.test.ts` pass (1 file / 2 tests).
