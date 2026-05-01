@@ -135,6 +135,8 @@
   - Root cause confirmed on `https://www.bilibili.com/video/BV1W2oSBWEYw/`: yt-dlp lists audio-only formats `30216/30232/30280` and video-only formats such as `100026`; old resolver selected `100026` direct URL with `acodec=none`.
   - New resolver returns `downloadMode=yt-dlp-file`, `formatId=100026+30280`, `hasAudio=true`, `hasVideo=true` for the same public URL.
   - Download smoke created merged MP4 `7,081,086` bytes; bundled ffmpeg probe shows both `Video: av1` and `Audio: aac`.
+  - Reopened after user reported repeated `/api/storage/assets/:id/download?disposition=inline` `206` requests followed by one `500` and laptop RAM/network instability. Root cause under investigation: table-level `<video preload="metadata">` fan-out in Video Intake / Local Intake / Storage Library.
+  - Fixed table/picker preview fan-out: Video Intake, Local Intake, Storage Library, and Publish Records now show inert preview placeholders in lists; only detail modals create an inline video request.
 
 ## 15. Test Evidence (Mandatory if code changed)
 
@@ -146,11 +148,13 @@
   - `src/lib/video-intake/storage-adapters.test.ts`
   - `src/app/api/video-intake/resolve-file/route.test.ts`
   - `src/app/api/video-intake/formats/route.test.ts`
+  - `src/app/api/storage/assets/[assetId]/download/route.test.ts`
 - Test commands executed:
   - `PYTHONPATH=.vendor/python python3 src/lib/video-intake/internal-resolver-py.test.py`
   - `npm test -- --run src/lib/video-intake/internal-resolver.test.ts src/lib/video-intake/validation.test.ts src/lib/video-intake/storage-adapters.test.ts src/app/api/video-intake/resolve-file/route.test.ts src/app/api/video-intake/formats/route.test.ts`
   - `npm test`
   - `npm run build`
+  - `npm test -- --run src/app/api/storage/assets/[assetId]/download/route.test.ts src/lib/video-intake/storage-adapters.test.ts src/app/api/video-intake/resolve-file/route.test.ts src/app/api/video-intake/formats/route.test.ts`
   - Network smoke: `PYTHONPATH=.vendor/python python3 src/lib/video-intake/internal-resolver.py formats https://www.bilibili.com/video/BV1W2oSBWEYw/ best`
   - Network smoke: `PYTHONPATH=.vendor/python python3 src/lib/video-intake/internal-resolver.py resolve https://www.bilibili.com/video/BV1W2oSBWEYw/ best`
   - Network smoke: `PYTHONPATH=.vendor/python python3 src/lib/video-intake/internal-resolver.py download https://www.bilibili.com/video/BV1W2oSBWEYw/ best "" /private/tmp/omnivideo-bili-test-2`
@@ -158,5 +162,5 @@
 - Test results summary:
   - Python resolver tests pass: 14 tests.
   - Targeted Vitest pass: 5 files / 25 tests.
-  - Full Vitest pass: 63 files / 296 tests.
+  - Full Vitest pass: 64 files / 298 tests.
   - Build pass; warnings are pre-existing unused imports/state outside this task.

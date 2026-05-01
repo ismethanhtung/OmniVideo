@@ -368,12 +368,15 @@ export function StorageLibraryPanel({ section }: StorageLibraryPanelProps) {
                                     >
                                         <td className="w-[150px] p-0">
                                             {!downloadBlockedReason ? (
-                                                <video
-                                                    preload="metadata"
-                                                    muted
-                                                    className="h-20 w-full bg-black object-cover"
-                                                    src={`/api/storage/assets/${asset._id}/download?disposition=inline`}
-                                                />
+                                                <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                        setSelectedAsset(asset)
+                                                    }
+                                                    className="flex h-20 w-full items-center justify-center bg-black text-[10px] font-semibold text-white/80 transition-colors hover:bg-neutral-800"
+                                                >
+                                                    Preview
+                                                </button>
                                             ) : (
                                                 <div className="flex h-20 w-full items-center justify-center bg-secondary text-[10px] text-muted">
                                                     Preview blocked

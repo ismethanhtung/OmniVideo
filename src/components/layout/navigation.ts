@@ -2,6 +2,7 @@ import {
     Bot,
     Cable,
     DownloadCloud,
+    Globe2,
     HardDrive,
     LayoutGrid,
     Layers,
@@ -18,6 +19,8 @@ import {
     Mic2,
     RadioTower,
     TestTubes,
+    UserRound,
+    VideoIcon,
 } from "lucide-react";
 
 import type { AppSectionId, LeftbarNavGroup, LeftbarNavItem } from "./types";
@@ -61,7 +64,7 @@ export const LEFTBAR_NAV: LeftbarNavGroup[] = [
     },
     {
         sectionId: "pipeline",
-        sectionIcon: DownloadCloud,
+        sectionIcon: VideoIcon,
         groupLabel: "Video Pipeline",
         items: [
             {
@@ -104,12 +107,12 @@ export const LEFTBAR_NAV: LeftbarNavGroup[] = [
 
     {
         sectionId: "social",
-        sectionIcon: Share2,
+        sectionIcon: Globe2,
         groupLabel: "Social Platforms",
         items: [
             {
                 id: "socialAccounts",
-                icon: Share2,
+                icon: UserRound,
                 label: "Social Accounts",
                 description:
                     "Quản lý account Facebook, TikTok, Shopee và YouTube với secrets được mask.",

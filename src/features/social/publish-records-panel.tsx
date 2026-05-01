@@ -877,12 +877,9 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
                                 No preview
                               </div>
                             ) : (
-                              <video
-                                preload="metadata"
-                                muted
-                                className="h-12 w-20 shrink-0 border border-main bg-black object-cover"
-                                src={`/api/storage/assets/${asset._id}/download?disposition=inline`}
-                              />
+                              <div className="flex h-12 w-20 shrink-0 items-center justify-center border border-main bg-black text-[10px] font-semibold text-white/80">
+                                Video
+                              </div>
                             )}
                             <div className="min-w-0">
                               <p className="truncate text-[12px] font-semibold text-main">

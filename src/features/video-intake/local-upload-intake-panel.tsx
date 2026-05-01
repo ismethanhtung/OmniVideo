@@ -5,7 +5,10 @@ import { RefreshCw, Trash2, Upload } from "lucide-react";
 
 import type { LeftbarNavItem } from "@/components/layout/types";
 import { StatusText } from "@/components/ui/status-text";
-import { TELEGRAM_BOT_DOWNLOAD_LIMIT_BYTES } from "@/lib/storage/telegram-download";
+import {
+    getTelegramDownloadBlockedReason,
+    TELEGRAM_BOT_DOWNLOAD_LIMIT_BYTES,
+} from "@/lib/storage/telegram-download";
 import {
     finishProgressTask,
     startProgressTask,
@@ -60,23 +63,39 @@ type IntakeRunHistory = {
     } | null;
     assetSummary?: {
         _id: string;
+        status?: string;
         storageProvider: string;
         storagePointer?: Record<string, unknown>;
+        publicUrl?: string | null;
         providerAssetId?: string | null;
+        mimeType?: string | null;
         sizeBytes?: number | null;
         durationMs?: number | null;
         metadata?: {
             sourceUrl?: string;
+            originPlatform?: string;
             title?: string | null;
+            resolver?: string;
             requestedQuality?: string;
             actualQuality?: string | null;
+            formatId?: string | null;
+            formatNote?: string | null;
             resolution?: string | null;
+            height?: number | null;
+            width?: number | null;
+            ext?: string | null;
+            vcodec?: string | null;
+            acodec?: string | null;
         };
         createdFrom?: {
             sourceId?: string;
+            jobRunId?: string;
+            storageProviderAccountId?: string | null;
             storageProviderLabel?: string | null;
         };
+        createdAt?: string;
     } | null;
+    durationMs?: number | null;
     createdAt?: string;
 };
 
@@ -175,7 +194,7 @@ function formatDate(value?: string) {
     }).format(new Date(value));
 }
 
-function formatBytes(size?: number) {
+function formatBytes(size?: number | null) {
     if (!size || size <= 0) {
         return "-";
     }
@@ -191,6 +210,27 @@ function formatBytes(size?: number) {
 
     const precision = value >= 100 ? 0 : value >= 10 ? 1 : 2;
     return `${value.toFixed(precision)} ${units[unit]}`;
+}
+
+function formatDuration(durationMs?: number | null) {
+    if (!durationMs || durationMs <= 0) {
+        return "-";
+    }
+
+    const totalSeconds = Math.floor(durationMs / 1000);
+    const seconds = totalSeconds % 60;
+    const minutes = Math.floor(totalSeconds / 60) % 60;
+    const hours = Math.floor(totalSeconds / 3600);
+
+    if (hours > 0) {
+        return `${hours}h ${minutes}m ${seconds}s`;
+    }
+
+    if (minutes > 0) {
+        return `${minutes}m ${seconds}s`;
+    }
+
+    return `${seconds}s`;
 }
 
 export function LocalUploadIntakePanel({
@@ -394,7 +434,8 @@ export function LocalUploadIntakePanel({
             });
             updateProgressTask(progressTaskId, {
                 progress: 75,
-                description: "Pipeline response received; refreshing run history...",
+                description:
+                    "Pipeline response received; refreshing run history...",
             });
             const payload = (await response.json()) as LocalIntakeApiResult;
 
@@ -720,7 +761,9 @@ export function LocalUploadIntakePanel({
                                                 {step.label}
                                             </span>
                                             <span className="font-mono">
-                                                <StatusText status={step.status} />
+                                                <StatusText
+                                                    status={step.status}
+                                                />
                                             </span>
                                         </div>
                                         {step.errorCode ? (
@@ -868,7 +911,9 @@ export function LocalUploadIntakePanel({
                     <table className="w-full border-collapse text-left text-[12px]">
                         <thead className="border-b border-main bg-secondary/45 text-muted">
                             <tr>
-                                <th className="px-4 py-2 font-semibold">Video</th>
+                                <th className="px-4 py-2 font-semibold">
+                                    Video
+                                </th>
                                 <th className="px-4 py-2 font-semibold">
                                     Status
                                 </th>
@@ -878,8 +923,16 @@ export function LocalUploadIntakePanel({
                                 <th className="px-4 py-2 font-semibold">
                                     Storage
                                 </th>
-                                <th className="px-4 py-2 font-semibold">Result</th>
-                                <th className="px-4 py-2 font-semibold">Detail</th>
+
+                                <th className="px-4 py-2 font-semibold">
+                                    Size
+                                </th>
+                                <th className="px-4 py-2 font-semibold">
+                                    Duration
+                                </th>
+                                <th className="px-4 py-2 font-semibold">
+                                    Detail
+                                </th>
                             </tr>
                         </thead>
                         <tbody>
@@ -887,7 +940,7 @@ export function LocalUploadIntakePanel({
                                 <tr>
                                     <td
                                         className="px-4 py-6 text-muted"
-                                        colSpan={6}
+                                        colSpan={7}
                                     >
                                         Chưa có local upload run nào.
                                     </td>
@@ -899,13 +952,23 @@ export function LocalUploadIntakePanel({
                                         className="border-b border-main last:border-b-0"
                                     >
                                         <td className="w-[150px] p-0">
-                                            {run.assetSummary ? (
-                                                <video
-                                                    preload="metadata"
-                                                    muted
-                                                    className="h-20 w-full bg-black object-cover"
-                                                    src={`/api/storage/assets/${run.assetSummary._id}/download?disposition=inline`}
-                                                />
+                                            {run.assetSummary &&
+                                            !getTelegramDownloadBlockedReason({
+                                                storageProvider:
+                                                    run.assetSummary
+                                                        .storageProvider,
+                                                sizeBytes:
+                                                    run.assetSummary.sizeBytes,
+                                            }) ? (
+                                                <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                        setSelectedRun(run)
+                                                    }
+                                                    className="flex h-20 w-full items-center justify-center bg-black text-[10px] font-semibold text-white/80 transition-colors hover:bg-neutral-800"
+                                                >
+                                                    Preview
+                                                </button>
                                             ) : (
                                                 <div className="flex h-20 w-full items-center justify-center bg-secondary text-[10px] text-muted">
                                                     No preview
@@ -935,17 +998,27 @@ export function LocalUploadIntakePanel({
                                         <td className="px-4 py-3 text-muted">
                                             {run.outputSummary
                                                 ?.storageProviderLabel ??
+                                                run.assetSummary?.createdFrom
+                                                    ?.storageProviderLabel ??
                                                 run.inputSnapshot
                                                     ?.storageProvider ??
                                                 "-"}
                                         </td>
+
+                                        <td className="px-4 py-3 text-muted">
+                                            {formatBytes(
+                                                run.assetSummary?.sizeBytes ??
+                                                    run.inputSnapshot
+                                                        ?.fileSizeBytes,
+                                            )}
+                                        </td>
+                                        <td className="px-4 py-3 text-muted">
+                                            {formatDuration(
+                                                run.assetSummary?.durationMs ??
+                                                    run.durationMs,
+                                            )}
+                                        </td>
                                         <td className="max-w-[320px] px-4 py-3">
-                                            <p className="truncate font-mono text-[11px] text-muted">
-                                                {run.outputSummary?.assetId ??
-                                                    run.outputSummary
-                                                        ?.errorCode ??
-                                                    "-"}
-                                            </p>
                                             {run.outputSummary?.errorMessage ? (
                                                 <p className="mt-1 truncate text-[11px] text-muted">
                                                     {
@@ -954,9 +1027,7 @@ export function LocalUploadIntakePanel({
                                                     }
                                                 </p>
                                             ) : null}
-                                        </td>
-                                        <td className="px-4 py-3">
-                                            <div className="flex gap-2">
+                                            <div className="mt-2 flex gap-2">
                                                 <button
                                                     type="button"
                                                     onClick={() =>
@@ -1023,61 +1094,177 @@ export function LocalUploadIntakePanel({
                 </div>
             </div>
             {selectedRun ? (
-                <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/35 px-4 py-6">
-                    <div className="max-h-[90vh] w-full max-w-4xl overflow-y-auto border border-main bg-main shadow-xl">
-                        <div className="flex items-start justify-between gap-4 border-b border-main bg-secondary/35 px-4 py-3">
-                            <div className="min-w-0">
-                                <p className="truncate text-[13px] font-semibold text-main">
-                                    {selectedRun.inputSnapshot?.title ??
-                                        selectedRun.inputSnapshot?.fileName ??
-                                        selectedRun._id}
-                                </p>
-                                <p className="mt-1 truncate font-mono text-[11px] text-muted">
-                                    {selectedRun.inputSnapshot?.fileName ?? "-"}
-                                </p>
-                            </div>
-                            <button
-                                type="button"
-                                onClick={() => setSelectedRun(null)}
-                                className="border border-main bg-main px-2.5 py-1 text-[11px] font-semibold text-main transition-colors hover:bg-secondary"
-                            >
-                                Close
-                            </button>
-                        </div>
-                        <div className="space-y-3 px-4 py-4">
-                            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                                <InfoCell label="Run ID" value={selectedRun._id} mono />
-                                <InfoCell label="Status" value={selectedRun.status} />
-                                <InfoCell
-                                    label="Created"
-                                    value={formatDate(selectedRun.createdAt)}
-                                />
-                                <InfoCell
-                                    label="Asset ID"
-                                    value={selectedRun.outputSummary?.assetId}
-                                    mono
-                                />
-                                <InfoCell
-                                    label="Storage"
-                                    value={
-                                        selectedRun.outputSummary
-                                            ?.storageProviderLabel ??
-                                        selectedRun.inputSnapshot
-                                            ?.storageProvider
-                                    }
-                                />
-                                <InfoCell
-                                    label="File Size"
-                                    value={formatBytes(
-                                        selectedRun.inputSnapshot?.fileSizeBytes,
-                                    )}
-                                />
-                            </div>
-                        </div>
-                    </div>
-                </div>
+                <LocalIntakeRunDetailModal
+                    run={selectedRun}
+                    onClose={() => setSelectedRun(null)}
+                />
             ) : null}
         </section>
+    );
+}
+
+function LocalIntakeRunDetailModal({
+    run,
+    onClose,
+}: {
+    run: IntakeRunHistory;
+    onClose: () => void;
+}) {
+    const asset = run.assetSummary;
+    const downloadBlockedReason = asset
+        ? getTelegramDownloadBlockedReason({
+              storageProvider: asset.storageProvider,
+              sizeBytes: asset.sizeBytes,
+          })
+        : "No stored asset is linked to this run.";
+
+    return (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/35 px-4 py-6">
+            <div className="max-h-[90vh] w-full max-w-4xl overflow-y-auto border border-main bg-main shadow-xl">
+                <div className="flex items-start justify-between gap-4 border-b border-main bg-secondary/35 px-4 py-3">
+                    <div className="min-w-0">
+                        <p className="truncate text-[13px] font-semibold text-main">
+                            {run.inputSnapshot?.title ??
+                                asset?.metadata?.title ??
+                                run._id}
+                        </p>
+                        <p className="mt-1 truncate font-mono text-[11px] text-muted">
+                            {run.inputSnapshot?.fileName ??
+                                asset?.metadata?.sourceUrl ??
+                                "-"}
+                        </p>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="border border-main bg-main px-2.5 py-1 text-[11px] font-semibold text-main transition-colors hover:bg-secondary"
+                    >
+                        Close
+                    </button>
+                </div>
+
+                <div className="space-y-3 px-4 py-4">
+                    {asset && !downloadBlockedReason ? (
+                        <div className="border border-main bg-secondary/20 p-3">
+                            <p className="text-[10px] font-bold uppercase tracking-wide text-muted">
+                                Inline Video Preview
+                            </p>
+                            <video
+                                controls
+                                preload="metadata"
+                                className="mt-2 w-full border border-main bg-black"
+                                src={`/api/storage/assets/${asset._id}/download?disposition=inline`}
+                            />
+                        </div>
+                    ) : (
+                        <div className="border border-main bg-secondary/20 p-3">
+                            <p className="text-[10px] font-bold uppercase tracking-wide text-muted">
+                                Inline Video Preview
+                            </p>
+                            <p className="mt-2 text-[11px] text-muted">
+                                {downloadBlockedReason}
+                            </p>
+                        </div>
+                    )}
+
+                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                        <InfoCell label="Run Status" value={run.status} />
+                        <InfoCell
+                            label="Provider"
+                            value={
+                                asset?.storageProvider ??
+                                run.inputSnapshot?.storageProvider
+                            }
+                        />
+                        <InfoCell
+                            label="Account"
+                            value={
+                                run.outputSummary?.storageProviderLabel ??
+                                asset?.createdFrom?.storageProviderLabel
+                            }
+                        />
+                        <InfoCell
+                            label="File Name"
+                            value={run.inputSnapshot?.fileName}
+                        />
+                        <InfoCell
+                            label="Requested Quality"
+                            value={asset?.metadata?.requestedQuality}
+                        />
+                        <InfoCell
+                            label="Actual Quality"
+                            value={asset?.metadata?.actualQuality}
+                        />
+                        <InfoCell
+                            label="Resolution"
+                            value={asset?.metadata?.resolution}
+                        />
+                        <InfoCell
+                            label="Size"
+                            value={formatBytes(
+                                asset?.sizeBytes ??
+                                    run.inputSnapshot?.fileSizeBytes,
+                            )}
+                        />
+                        <InfoCell
+                            label="Duration"
+                            value={formatDuration(
+                                asset?.durationMs ?? run.durationMs,
+                            )}
+                        />
+                        <InfoCell
+                            label="Error Code"
+                            value={run.outputSummary?.errorCode}
+                            mono
+                        />
+                        <InfoCell
+                            label="Provider Asset ID"
+                            value={asset?.providerAssetId}
+                            mono
+                        />
+                        <InfoCell label="Run ID" value={run._id} mono />
+                        <InfoCell
+                            label="Asset ID"
+                            value={run.outputSummary?.assetId ?? asset?._id}
+                            mono
+                        />
+                        <InfoCell
+                            label="Source ID"
+                            value={asset?.createdFrom?.sourceId}
+                            mono
+                        />
+                        <InfoCell
+                            label="Created"
+                            value={formatDate(run.createdAt)}
+                        />
+                    </div>
+
+                    {run.outputSummary?.errorMessage ? (
+                        <div className="border border-main bg-main px-3 py-2">
+                            <p className="text-[10px] font-bold uppercase tracking-wide text-muted">
+                                Error Message
+                            </p>
+                            <p className="mt-1 text-[12px] leading-5 text-main">
+                                {run.outputSummary.errorMessage}
+                            </p>
+                        </div>
+                    ) : null}
+
+                    <div className="border border-main bg-main px-3 py-2">
+                        <p className="text-[10px] font-bold uppercase tracking-wide text-muted">
+                            Storage Pointer
+                        </p>
+                        <pre className="mt-1 overflow-x-auto whitespace-pre-wrap font-mono text-[11px] leading-5 text-main">
+                            {JSON.stringify(
+                                asset?.storagePointer ?? {},
+                                null,
+                                2,
+                            )}
+                        </pre>
+                    </div>
+                </div>
+            </div>
+        </div>
     );
 }
 
@@ -1095,7 +1282,9 @@ function InfoCell({
             <p className="text-[10px] font-bold uppercase tracking-wide text-muted">
                 {label}
             </p>
-            <p className={`mt-1 truncate text-[12px] text-main ${mono ? "font-mono text-[11px]" : ""}`}>
+            <p
+                className={`mt-1 truncate text-[12px] text-main ${mono ? "font-mono text-[11px]" : ""}`}
+            >
                 {value ?? "-"}
             </p>
         </div>

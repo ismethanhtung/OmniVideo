@@ -1106,12 +1106,15 @@ export function VideoIntakePanel({ section }: VideoIntakePanelProps) {
                                             <td className="w-[150px] p-0">
                                                 {run.assetSummary &&
                                                 !downloadBlockedReason ? (
-                                                    <video
-                                                        preload="metadata"
-                                                        muted
-                                                        className="h-20 w-full bg-black object-cover"
-                                                        src={`/api/storage/assets/${run.assetSummary._id}/download?disposition=inline`}
-                                                    />
+                                                    <button
+                                                        type="button"
+                                                        onClick={() =>
+                                                            setSelectedRun(run)
+                                                        }
+                                                        className="flex h-20 w-full items-center justify-center bg-black text-[10px] font-semibold text-white/80 transition-colors hover:bg-neutral-800"
+                                                    >
+                                                        Preview
+                                                    </button>
                                                 ) : (
                                                     <div className="flex h-20 w-full items-center justify-center bg-secondary text-[10px] text-muted">
                                                         No preview
