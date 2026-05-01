@@ -25,6 +25,7 @@
 
 ## Done
 
+- `FAST-UX-006` - Refactor leftbar navigation to real route-based pages.
 - `FAST-WORKSPACE-009` - Make URL Video behave like Upload Video for processing flows.
 - `FAST-WORKSPACE-008` - Remove Douyin seed, generalize workspace language copy, and enable URL intake to storage flow.
 - `FAST-INTAKE-002` - Prefer public no-cookie video resolver path.

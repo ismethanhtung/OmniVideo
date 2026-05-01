@@ -1,5 +1,15 @@
 # OmniVideo Changelog
 
+## FAST-UX-006 - Refactor leftbar navigation to real route-based pages
+
+- Refactor app shell navigation từ in-memory section switching sang URL routing thật: mỗi leftbar item đi tới route riêng (`/workspace`, `/videoIntake`, `/socialAccounts`, ...).
+- Thêm guard route helper trong navigation registry (`isAppSectionId`, `toSectionPath`) để đảm bảo route segment hợp lệ và fallback an toàn.
+- Giữ tương thích với luồng điều hướng nội bộ hiện có: custom event `omnivideo:navigate` giờ push route thay vì set local state.
+- Thêm page route động `src/app/[section]/page.tsx` để reload/back-forward/share URL vẫn mở đúng panel.
+- Sửa hiện tượng reload bị nháy về Workspace trước khi quay về section đích: active section được derive trực tiếp từ `pathname` thay vì qua local state mặc định.
+- Chuẩn hóa canonical URLs sang kebab-case (ví dụ `/published-content`) và tự động redirect từ đường dẫn camelCase cũ (ví dụ `/publishedContent`) để giữ tương thích.
+- Verification (FAST-UX-006): `npm run test -- --run src/components/layout/navigation.test.ts` pass (1 file / 6 tests).
+
 ## P1-INTAKE-013 - Harden yt-dlp format selection and streaming downloads
 
 - Sửa root cause Bilibili tải về mất tiếng: resolver không còn fallback sang video-only direct URL; khi nguồn tách audio/video, default selector dùng `bv*+ba/...` và chuyển sang `yt-dlp-file` để merge bằng ffmpeg.

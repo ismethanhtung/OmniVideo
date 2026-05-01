@@ -196,3 +196,84 @@ export function getNavItem(
 
     return undefined;
 }
+
+export function isAppSectionId(value: string): value is AppSectionId {
+    return LEFTBAR_NAV.some((group) =>
+        group.items.some((item) => item.id === value),
+    );
+}
+
+export function toSectionPath(sectionId: AppSectionId): string {
+    const slug = SECTION_SLUG_BY_ID[sectionId];
+    return slug ? `/${slug}` : "/";
+}
+
+const SECTION_SLUG_BY_ID: Record<AppSectionId, string> = {
+    workspace: "workspace",
+    profile: "profile",
+    ai: "ai",
+    aiProviders: "ai-providers",
+    display: "display",
+    notif: "notif",
+    videoIntake: "video-intake",
+    localUploadIntake: "local-upload-intake",
+    chineseTranscription: "audio-transcript",
+    piperTtsSandbox: "piper-tts-sandbox",
+    videoToolsLab: "video-tools-lab",
+    storageProviders: "storage-providers",
+    storageLibrary: "storage-library",
+    socialAccounts: "social-accounts",
+    platformTasks: "platform-tasks",
+    publishRecords: "publish-records",
+    publishedContent: "published-content",
+    tutorialDocs: "tutorial-docs",
+    integrations: "integrations",
+    security: "security",
+    data: "data",
+    support: "support",
+    connectionTest: "connection-test",
+    connectionStreams: "connection-streams",
+    connectionProviders: "connection-providers",
+};
+
+const LEGACY_SECTION_BY_CAMEL: Record<string, AppSectionId> = {
+    aiProviders: "aiProviders",
+    videoIntake: "videoIntake",
+    localUploadIntake: "localUploadIntake",
+    chineseTranscription: "chineseTranscription",
+    piperTtsSandbox: "piperTtsSandbox",
+    videoToolsLab: "videoToolsLab",
+    storageProviders: "storageProviders",
+    storageLibrary: "storageLibrary",
+    socialAccounts: "socialAccounts",
+    platformTasks: "platformTasks",
+    publishRecords: "publishRecords",
+    publishedContent: "publishedContent",
+    tutorialDocs: "tutorialDocs",
+    connectionTest: "connectionTest",
+};
+
+const SECTION_BY_SLUG = Object.entries(SECTION_SLUG_BY_ID).reduce(
+    (accumulator, [id, slug]) => {
+        accumulator[slug] = id as AppSectionId;
+        return accumulator;
+    },
+    {} as Record<string, AppSectionId>,
+);
+
+export function resolveSectionFromSegment(
+    segment: string | null | undefined,
+): AppSectionId | null {
+    if (!segment) {
+        return DEFAULT_SECTION_ID;
+    }
+    const normalized = segment.trim().replace(/^\/+|\/+$/g, "");
+    if (!normalized) {
+        return DEFAULT_SECTION_ID;
+    }
+    return (
+        SECTION_BY_SLUG[normalized] ??
+        LEGACY_SECTION_BY_CAMEL[normalized] ??
+        null
+    );
+}

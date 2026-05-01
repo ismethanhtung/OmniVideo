@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_SECTION_ID, LEFTBAR_NAV, getNavItem } from "./navigation";
+import {
+  DEFAULT_SECTION_ID,
+  LEFTBAR_NAV,
+  getNavItem,
+  isAppSectionId,
+  resolveSectionFromSegment,
+  toSectionPath,
+} from "./navigation";
 
 describe("navigation registry", () => {
   it("resolves the default workspace section", () => {
@@ -44,5 +51,24 @@ describe("navigation registry", () => {
     expect(getNavItem("piperTtsSandbox")?.description).toContain("CPU");
     expect(getNavItem("videoToolsLab")?.description).toContain("mirror video");
     expect(navIds).not.toContain("groqTtsSandbox");
+  });
+
+  it("maps sections to stable route paths", () => {
+    expect(toSectionPath("workspace")).toBe("/workspace");
+    expect(toSectionPath("videoIntake")).toBe("/video-intake");
+    expect(toSectionPath("publishedContent")).toBe("/published-content");
+  });
+
+  it("validates section ids from route segments", () => {
+    expect(isAppSectionId("workspace")).toBe(true);
+    expect(isAppSectionId("tutorialDocs")).toBe(true);
+    expect(isAppSectionId("unknown")).toBe(false);
+  });
+
+  it("resolves section from canonical and legacy route segments", () => {
+    expect(resolveSectionFromSegment("published-content")).toBe("publishedContent");
+    expect(resolveSectionFromSegment("publishedContent")).toBe("publishedContent");
+    expect(resolveSectionFromSegment("")).toBe("workspace");
+    expect(resolveSectionFromSegment("unknown")).toBeNull();
   });
 });

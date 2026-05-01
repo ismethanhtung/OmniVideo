@@ -1,9 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
 
 import { ContentRouter } from "@/components/layout/content-router";
-import { DEFAULT_SECTION_ID } from "@/components/layout/navigation";
+import {
+    DEFAULT_SECTION_ID,
+    resolveSectionFromSegment,
+    toSectionPath,
+} from "@/components/layout/navigation";
 import { Leftbar } from "@/components/layout/leftbar";
 import { Topbar } from "@/components/layout/topbar";
 import type { AppSectionId } from "@/components/layout/types";
@@ -17,8 +22,8 @@ import {
 } from "@/lib/ui/preferences";
 
 export function AppShell() {
-    const [activeSection, setActiveSection] =
-        useState<AppSectionId>(DEFAULT_SECTION_ID);
+    const router = useRouter();
+    const pathname = usePathname();
     const [appTheme, setAppTheme] = useState<AppThemeKey>(DEFAULT_APP_THEME);
     const [appFont, setAppFont] = useState<AppFontKey>(DEFAULT_APP_FONT);
     const [contentVersion, setContentVersion] = useState(0);
@@ -47,13 +52,32 @@ export function AppShell() {
         root.setAttribute("data-theme", initialTheme);
     }, []);
 
+    const sectionCandidate = useMemo(
+        () => (pathname === "/" ? "workspace" : pathname.replace(/^\/+/, "").split("/")[0]),
+        [pathname],
+    );
+    const resolvedSection = useMemo(
+        () => resolveSectionFromSegment(sectionCandidate),
+        [sectionCandidate],
+    );
+    const activeSection: AppSectionId = resolvedSection ?? DEFAULT_SECTION_ID;
+
+    useEffect(() => {
+        if (!resolvedSection) {
+            router.replace(toSectionPath(DEFAULT_SECTION_ID));
+            return;
+        }
+        const canonicalPath = toSectionPath(resolvedSection);
+        if (pathname !== canonicalPath) {
+            router.replace(canonicalPath);
+        }
+    }, [pathname, resolvedSection, router]);
+
     useEffect(() => {
         const handleNavigate = (event: Event) => {
             const sectionId = (event as CustomEvent<AppSectionId>).detail;
 
-            if (sectionId) {
-                setActiveSection(sectionId);
-            }
+            if (sectionId) router.push(toSectionPath(sectionId));
         };
 
         window.addEventListener("omnivideo:navigate", handleNavigate);
@@ -61,7 +85,7 @@ export function AppShell() {
         return () => {
             window.removeEventListener("omnivideo:navigate", handleNavigate);
         };
-    }, []);
+    }, [router]);
 
     const applyTheme = (theme: AppThemeKey) => {
         const root = document.documentElement;
@@ -89,7 +113,9 @@ export function AppShell() {
         <div className="flex h-screen min-h-screen bg-main text-main">
             <Leftbar
                 activeSection={activeSection}
-                onSectionChange={setActiveSection}
+                onSectionChange={(sectionId) =>
+                    router.push(toSectionPath(sectionId))
+                }
             />
             <div className="flex min-w-0 flex-1 flex-col">
                 <Topbar
