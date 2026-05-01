@@ -18,6 +18,7 @@
 
 ## Review
 
+- `FAST-WORKSPACE-010` - End-to-end video metadata flow (title/description/hashtags).
 - `FAST-AUDIO-018` - Editable translated segments and Audio Transcript session persistence.
 - `FAST-AUDIO-017` - Add Storage Asset picker to Audio Transcript Source.
 - `P1-INTAKE-013` - Harden yt-dlp format selection and streaming downloads.

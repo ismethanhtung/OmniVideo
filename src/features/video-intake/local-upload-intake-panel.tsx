@@ -239,6 +239,7 @@ export function LocalUploadIntakePanel({
     const Icon = section.icon;
     const [videoFile, setVideoFile] = useState<File | null>(null);
     const [title, setTitle] = useState("");
+    const [description, setDescription] = useState("");
     const [tags, setTags] = useState("local, raw");
     const [storageProviderAccountId, setStorageProviderAccountId] =
         useState("");
@@ -418,6 +419,9 @@ export function LocalUploadIntakePanel({
             const formData = new FormData();
             formData.append("videoFile", videoFile);
             formData.append("title", title.trim() || videoFile.name);
+            if (description.trim()) {
+                formData.append("description", description.trim());
+            }
             formData.append("tags", tags);
             formData.append("storageProvider", targetAccount.providerType);
             formData.append("storageProviderAccountId", targetAccount._id);
@@ -669,6 +673,19 @@ export function LocalUploadIntakePanel({
                                 </select>
                             </label>
                         </div>
+                        <label className="block">
+                            <span className="text-[12px] font-medium text-main">
+                                Description optional
+                            </span>
+                            <input
+                                value={description}
+                                onChange={(event) =>
+                                    setDescription(event.target.value)
+                                }
+                                placeholder="Optional source description"
+                                className="mt-1 w-full border border-main bg-main px-3 py-2 text-[12px] text-main outline-none transition-colors placeholder:text-muted/60 focus:border-accent"
+                            />
+                        </label>
 
                         <label className="block">
                             <span className="text-[12px] font-medium text-main">

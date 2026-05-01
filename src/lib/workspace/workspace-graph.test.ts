@@ -302,6 +302,40 @@ describe("workspace graph helpers", () => {
         );
     });
 
+    it("plans generate VI metadata node after transcript translation", () => {
+        const fileTemplate = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "source.file",
+        )!;
+        const transcriptTemplate = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "audio.chinese-transcribe",
+        )!;
+        const translateTemplate = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "text.translate-transcript",
+        )!;
+        const metadataTemplate = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "text.generate-vi-metadata",
+        )!;
+
+        let graph: WorkspaceGraph = createEmptyWorkspaceGraph("VI metadata");
+        graph = addWorkspaceNode(graph, fileTemplate, { x: 0, y: 0 });
+        graph = addWorkspaceNode(graph, transcriptTemplate, { x: 220, y: 0 });
+        graph = addWorkspaceNode(graph, translateTemplate, { x: 440, y: 0 });
+        graph = addWorkspaceNode(graph, metadataTemplate, { x: 660, y: 0 });
+        graph = connectWorkspaceNodes(graph, "source-file-1", "audio-chinese-transcribe-1");
+        graph = connectWorkspaceNodes(graph, "audio-chinese-transcribe-1", "text-translate-transcript-1");
+        graph = connectWorkspaceNodes(graph, "text-translate-transcript-1", "text-generate-vi-metadata-1");
+
+        const plan = planWorkspaceFlow(graph);
+        expect(plan.ok).toBe(true);
+        expect(
+            plan.steps.some(
+                (step) =>
+                    step.kind === "generate-vi-metadata" &&
+                    step.metadataNodeId === "text-generate-vi-metadata-1",
+            ),
+        ).toBe(true);
+    });
+
     it("rejects source.file without downstream Save to Storage", () => {
         const fileTemplate = WORKSPACE_NODE_TEMPLATES.find(
             (entry) => entry.nodeType === "source.file",

@@ -503,3 +503,30 @@
 - Audio Transcript: thêm chỉnh sửa inline `translatedText` trực tiếp trong panel `Segments` sau khi Translate to VI, để sửa lỗi nhẹ mà không cần chạy dịch lại.
 - Audio Transcript: thêm session persistence qua local storage để giữ transcript/translation/steps và cấu hình chính khi user chuyển trang rồi quay lại.
 - Verification (FAST-AUDIO-018): `npm run test -- src/lib/multilingual-audio/transcript-session.test.ts` pass (1 file / 2 tests).
+
+## 2026-05-01
+
+### Added
+
+- Workspace thêm node processing `Generate VI Metadata` (node lá sau `Translate Transcript`) để tạo `title + description + hashtags` tiếng Việt bằng AI.
+- Thêm API `POST /api/audio/video-metadata` và service metadata generation cho luồng transcript translation -> social metadata.
+
+### Changed
+
+- Mở rộng intake metadata (`URL Intake`, `Local Upload`, và workspace source nodes) để nhận/lưu `description` cùng `title` ngay từ đầu.
+- Mở rộng metadata video asset để có trường `description`, `vietnameseTitle`, `vietnameseDescription`, `vietnameseHashtags`.
+- Workspace publish fallback: khi node Publish Social không override metadata, hệ thống tự dùng metadata tiếng Việt đã generate.
+- Storage Library detail hiển thị thêm source/VI metadata quan trọng.
+- Publish Records asset picker tự điền title/caption/hashtags từ metadata VI (nếu form đang trống).
+
+### Fixed
+
+- Khắc phục khoảng trống metadata xuyên suốt flow intake -> transcript translation -> publish social.
+
+### Notes
+
+- Task IDs: FAST-WORKSPACE-010
+- Verification:
+  - `npm run test -- src/lib/video-intake/validation.test.ts src/lib/video-intake/local-validation.test.ts src/lib/workspace/workspace-graph.test.ts` (pass)
+  - `npm run build` (pass)
+- Audio Transcript: sau khi Translate to VI, thêm action `Generate VI Metadata`, hiển thị trực tiếp kết quả `title/description/hashtags`, và thêm `Save to Asset` để gọi API cập nhật metadata vào Storage Asset đã chọn.

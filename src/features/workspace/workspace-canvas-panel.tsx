@@ -50,6 +50,7 @@ import {
     DEFAULT_TRANSLATION_MODEL,
     type ChineseTranscriptionResult,
     type TranscriptTranslationResult,
+    type VietnameseVideoMetadataResult,
     type VoiceGenerationResult,
 } from "@/lib/multilingual-audio/types";
 import type { VideoDubbingResult } from "@/lib/multilingual-audio/video-dubbing";
@@ -91,6 +92,10 @@ type WorkspaceAsset = {
     providerAssetId?: string | null;
     metadata?: {
         title?: string | null;
+        description?: string | null;
+        vietnameseTitle?: string | null;
+        vietnameseDescription?: string | null;
+        vietnameseHashtags?: string[] | null;
     };
     createdAt?: string;
 };
@@ -480,6 +485,8 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
         useState<Record<string, ChineseTranscriptionResult | undefined>>({});
     const [runtimeTranslationsByNodeId, setRuntimeTranslationsByNodeId] =
         useState<Record<string, TranscriptTranslationResult | undefined>>({});
+    const [runtimeVietnameseMetadataByNodeId, setRuntimeVietnameseMetadataByNodeId] =
+        useState<Record<string, VietnameseVideoMetadataResult | undefined>>({});
     const [nodeRunStatus, setNodeRunStatus] = useState<
         Record<string, NodeRunState>
     >({});
@@ -777,6 +784,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
             setRuntimeAssetIdsByNodeId({});
             setRuntimeTranscriptsByNodeId({});
             setRuntimeTranslationsByNodeId({});
+            setRuntimeVietnameseMetadataByNodeId({});
         }
         const target = nextGraph ?? graph;
         const initial: Record<string, NodeRunState> = {};
@@ -902,6 +910,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
             setRuntimeAssetIdsByNodeId({});
             setRuntimeTranscriptsByNodeId({});
             setRuntimeTranslationsByNodeId({});
+            setRuntimeVietnameseMetadataByNodeId({});
         }
         setRunError(null);
         setRunResult(null);
@@ -949,6 +958,19 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                       ),
                   )
                 : {};
+        const vietnameseMetadataByNodeId: Record<
+            string,
+            VietnameseVideoMetadataResult
+        > = mode === "resume"
+            ? Object.fromEntries(
+                  Object.entries(runtimeVietnameseMetadataByNodeId).filter(
+                      (
+                          entry,
+                      ): entry is [string, VietnameseVideoMetadataResult] =>
+                          entry[1] !== undefined,
+                  ),
+              )
+            : {};
         const artifactByProducer: Record<string, WorkspaceRuntimeArtifact> =
             mode === "resume"
                 ? Object.fromEntries(
@@ -1009,6 +1031,11 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
             if (step.kind === "generate-voice") {
                 return artifactByProducer[step.voiceNodeId]
                     ? "Voice artifact đã có từ lần chạy trước."
+                    : null;
+            }
+            if (step.kind === "generate-vi-metadata") {
+                return vietnameseMetadataByNodeId[step.metadataNodeId]
+                    ? "Vietnamese metadata đã có từ lần chạy trước."
                     : null;
             }
             if (step.kind === "dub-video") {
@@ -1243,6 +1270,13 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     );
                     formData.set("tags", tags.join(","));
                     formData.set("title", title);
+                    const sourceDescription = getStringConfig(
+                        fileNode,
+                        "description",
+                    ).trim();
+                    if (sourceDescription) {
+                        formData.set("description", sourceDescription);
+                    }
                     formData.set("contentIntent", "other");
                     formData.set("ownershipStatus", "unknown");
 
@@ -1344,6 +1378,9 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         storageProviderAccountId: storageAccount._id,
                         tags,
                         title: getStringConfig(urlNode, "title").trim() || undefined,
+                        description:
+                            getStringConfig(urlNode, "description").trim() ||
+                            undefined,
                         qualityPreference: getStringConfig(
                             urlNode,
                             "qualityPreference",
@@ -1559,6 +1596,75 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     );
                     advanceProgress(
                         `Translation ${translationNode.label} complete.`,
+                    );
+                } else if (step.kind === "generate-vi-metadata") {
+                    const translationNode = findNode(step.translationNodeId);
+                    const metadataNode = findNode(step.metadataNodeId);
+                    if (!translationNode || !metadataNode) {
+                        throw new Error("Missing metadata generation nodes.");
+                    }
+                    const translation =
+                        translationByProducer[step.translationNodeId];
+                    if (!translation) {
+                        setNodeStatus(
+                            metadataNode.id,
+                            "skipped",
+                            "Chưa có translated transcript upstream.",
+                        );
+                        throw new Error(
+                            `Generate VI Metadata '${metadataNode.label}' thiếu translated transcript upstream.`,
+                        );
+                    }
+                    setNodeStatus(
+                        metadataNode.id,
+                        "running",
+                        "Generating Vietnamese metadata...",
+                    );
+                    const metadataPayload = await fetchWorkspaceJson<{
+                        ok: true;
+                        data: VietnameseVideoMetadataResult;
+                    }>({
+                        url: "/api/audio/video-metadata",
+                        actionLabel: "Generate Vietnamese metadata",
+                        init: {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                                translatedSegments:
+                                    translation.translatedSegments,
+                                sourceTitle: getStringConfig(
+                                    translationNode,
+                                    "sourceTitle",
+                                ),
+                                sourceDescription: getStringConfig(
+                                    translationNode,
+                                    "sourceDescription",
+                                ),
+                                model: getStringConfig(
+                                    metadataNode,
+                                    "model",
+                                    DEFAULT_TRANSLATION_MODEL,
+                                ),
+                                providerId:
+                                    getStringConfig(
+                                        metadataNode,
+                                        "metadataProviderId",
+                                    ).trim() || undefined,
+                            }),
+                        },
+                    });
+                    vietnameseMetadataByNodeId[metadataNode.id] =
+                        metadataPayload.data;
+                    setRuntimeVietnameseMetadataByNodeId((current) => ({
+                        ...current,
+                        [metadataNode.id]: metadataPayload.data,
+                    }));
+                    setNodeStatus(metadataNode.id, "success", "Metadata ready.");
+                    summary.push(
+                        `VI metadata: ${metadataPayload.data.hashtags.length} hashtag(s).`,
+                    );
+                    advanceProgress(
+                        `Metadata ${metadataNode.label} complete.`,
                     );
                 } else if (step.kind === "generate-voice") {
                     const translationNode = findNode(step.translationNodeId);
@@ -2274,6 +2380,9 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     const hashtags = hashtagsRaw
                         ? parseCommaList(hashtagsRaw)
                         : undefined;
+                    const fallbackMetadata = Object.values(
+                        vietnameseMetadataByNodeId,
+                    )[0];
 
                     setNodeStatus(
                         publishNode.id,
@@ -2301,9 +2410,18 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                                 facebookPageId: facebookPageId || undefined,
                                 publishNow: true,
                                 privacyStatus,
-                                title: titleOverride || undefined,
-                                caption: captionRaw || undefined,
-                                hashtags,
+                                title:
+                                    titleOverride ||
+                                    fallbackMetadata?.title ||
+                                    undefined,
+                                caption:
+                                    captionRaw ||
+                                    fallbackMetadata?.description ||
+                                    undefined,
+                                hashtags:
+                                    hashtags && hashtags.length > 0
+                                        ? hashtags
+                                        : fallbackMetadata?.hashtags,
                             }),
                         },
                     });
@@ -2344,6 +2462,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     step.kind === "upload-and-store" ||
                     step.kind === "transcribe-chinese" ||
                     step.kind === "translate-transcript" ||
+                    step.kind === "generate-vi-metadata" ||
                     step.kind === "generate-voice" ||
                     step.kind === "dub-video" ||
                     step.kind === "mirror-video" ||
@@ -2715,6 +2834,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                 </main>
 
                 <InspectorPanel
+                    graph={graph}
                     node={selectedNode}
                     template={selectedTemplate}
                     pendingSourceNodeId={pendingSourceNodeId}
@@ -3039,6 +3159,14 @@ function describeStep(
             subtitle: "Translate timestamped transcript to Vietnamese",
         };
     }
+    if (step.kind === "generate-vi-metadata") {
+        return {
+            key: `vi-metadata-${step.metadataNodeId}`,
+            statusKey: step.metadataNodeId,
+            label: `VI Metadata · ${findLabel(step.translationNodeId)} → ${findLabel(step.metadataNodeId)}`,
+            subtitle: "Generate Vietnamese title/description/hashtags",
+        };
+    }
     if (step.kind === "generate-voice") {
         return {
             key: `voice-${step.voiceNodeId}`,
@@ -3157,6 +3285,7 @@ function RuntimeTextInput({
 
 function NodeRuntimeConfig({
     node,
+    graph,
     storageAccounts,
     socialAccounts,
     aiProviders,
@@ -3174,6 +3303,7 @@ function NodeRuntimeConfig({
     onEnsureAiProviderModels,
 }: {
     node: WorkspaceNodeInstance;
+    graph: WorkspaceGraph;
     storageAccounts: WorkspaceStorageAccount[];
     socialAccounts: WorkspaceSocialAccount[];
     aiProviders: WorkspaceAiProvider[];
@@ -3197,6 +3327,29 @@ function NodeRuntimeConfig({
 }) {
     const setConfig = (patch: WorkspaceNodeInstance["config"]) =>
         onUpdateNodeConfig(node.id, patch);
+
+    const findUpstreamSourceAsset = (targetNodeId: string) => {
+        const visited = new Set<string>();
+        const stack = graph.edges
+            .filter((edge) => edge.toNodeId === targetNodeId)
+            .map((edge) => edge.fromNodeId);
+        while (stack.length > 0) {
+            const current = stack.pop() as string;
+            if (visited.has(current)) continue;
+            visited.add(current);
+            const currentNode = graph.nodes.find((entry) => entry.id === current);
+            if (!currentNode) continue;
+            if (currentNode.templateNodeType === "source.asset") {
+                return currentNode;
+            }
+            for (const edge of graph.edges) {
+                if (edge.toNodeId === currentNode.id) {
+                    stack.push(edge.fromNodeId);
+                }
+            }
+        }
+        return null;
+    };
 
     if (node.templateNodeType === "source.file") {
         return (
@@ -3232,6 +3385,15 @@ function NodeRuntimeConfig({
                         onChange={(value) => setConfig({ title: value })}
                     />
                     <RuntimeTextInput
+                        label="Description"
+                        value={getStringConfig(node, "description")}
+                        disabled={isRunningFlow}
+                        placeholder="Optional source description"
+                        onChange={(value) =>
+                            setConfig({ description: value })
+                        }
+                    />
+                    <RuntimeTextInput
                         label="Trace tags"
                         value={getStringConfig(
                             node,
@@ -3264,6 +3426,15 @@ function NodeRuntimeConfig({
                         disabled={isRunningFlow}
                         placeholder="Optional title"
                         onChange={(value) => setConfig({ title: value })}
+                    />
+                    <RuntimeTextInput
+                        label="Description"
+                        value={getStringConfig(node, "description")}
+                        disabled={isRunningFlow}
+                        placeholder="Optional source description"
+                        onChange={(value) =>
+                            setConfig({ description: value })
+                        }
                     />
                     <RuntimeTextInput
                         label="Trace tags"
@@ -3540,6 +3711,36 @@ function NodeRuntimeConfig({
     }
 
     if (node.templateNodeType === "social.publish") {
+        const upstreamAssetNode = findUpstreamSourceAsset(node.id);
+        const upstreamAssetId = upstreamAssetNode
+            ? getStringConfig(upstreamAssetNode, "assetId")
+            : "";
+        const upstreamAsset = storageAssets.find(
+            (asset) => asset._id === upstreamAssetId,
+        );
+        const metadataTitle =
+            upstreamAsset?.metadata?.vietnameseTitle ??
+            upstreamAsset?.metadata?.title ??
+            "";
+        const metadataCaption =
+            upstreamAsset?.metadata?.vietnameseDescription ??
+            upstreamAsset?.metadata?.description ??
+            "";
+        const metadataHashtags = (
+            upstreamAsset?.metadata?.vietnameseHashtags ?? []
+        ).join(",");
+        const hasTitleOverride = Object.prototype.hasOwnProperty.call(
+            node.config,
+            "title",
+        );
+        const hasCaptionOverride = Object.prototype.hasOwnProperty.call(
+            node.config,
+            "caption",
+        );
+        const hasHashtagsOverride = Object.prototype.hasOwnProperty.call(
+            node.config,
+            "hashtags",
+        );
         const selectedSocialAccountId = getStringConfig(
             node,
             "socialAccountId",
@@ -3687,21 +3888,33 @@ function NodeRuntimeConfig({
                     ) : null}
                     <RuntimeTextInput
                         label="Title (override)"
-                        value={getStringConfig(node, "title")}
+                        value={
+                            hasTitleOverride
+                                ? getStringConfig(node, "title")
+                                : metadataTitle
+                        }
                         disabled={isRunningFlow}
                         placeholder="Optional title override"
                         onChange={(value) => setConfig({ title: value })}
                     />
                     <RuntimeTextInput
                         label="Caption"
-                        value={getStringConfig(node, "caption")}
+                        value={
+                            hasCaptionOverride
+                                ? getStringConfig(node, "caption")
+                                : metadataCaption
+                        }
                         disabled={isRunningFlow}
                         placeholder="Optional publish caption"
                         onChange={(value) => setConfig({ caption: value })}
                     />
                     <RuntimeTextInput
                         label="Hashtags"
-                        value={getStringConfig(node, "hashtags")}
+                        value={
+                            hasHashtagsOverride
+                                ? getStringConfig(node, "hashtags")
+                                : metadataHashtags
+                        }
                         disabled={isRunningFlow}
                         placeholder="#tag1,#tag2 (optional)"
                         onChange={(value) => setConfig({ hashtags: value })}
@@ -3862,6 +4075,80 @@ function NodeRuntimeConfig({
                             tiếp cho subtitle hoặc voice-over.
                         </p>
                     </div>
+                </div>
+            </InspectorSection>
+        );
+    }
+
+    if (node.templateNodeType === "text.generate-vi-metadata") {
+        const selectedMetadataProviderId = getStringConfig(
+            node,
+            "metadataProviderId",
+        );
+        const metadataModels = selectedMetadataProviderId
+            ? (aiModelsByProviderId[selectedMetadataProviderId] ?? [])
+            : [];
+        return (
+            <InspectorSection title="Runtime Config">
+                <div className="space-y-2 border border-main bg-secondary/20 p-2">
+                    <RuntimeSelect
+                        label="AI Provider"
+                        value={selectedMetadataProviderId}
+                        disabled={isRunningFlow}
+                        onChange={async (value) => {
+                            setConfig({
+                                metadataProviderId: value,
+                                model: value ? "" : DEFAULT_TRANSLATION_MODEL,
+                            });
+                            if (value) {
+                                const models =
+                                    await onEnsureAiProviderModels(value);
+                                if (models[0]) {
+                                    setConfig({
+                                        metadataProviderId: value,
+                                        model: models[0].id,
+                                    });
+                                }
+                            }
+                        }}
+                    >
+                        <option value="">Default (env GROQ_API_KEY)</option>
+                        {aiProviders.map((provider) => (
+                            <option key={provider._id} value={provider._id}>
+                                {provider.label} ({provider.providerType})
+                            </option>
+                        ))}
+                    </RuntimeSelect>
+                    {selectedMetadataProviderId && metadataModels.length > 0 ? (
+                        <RuntimeSelect
+                            label="Model"
+                            value={getStringConfig(node, "model")}
+                            disabled={isRunningFlow}
+                            onChange={(value) => setConfig({ model: value })}
+                        >
+                            {metadataModels.map((model) => (
+                                <option key={model.id} value={model.id}>
+                                    {model.name}
+                                </option>
+                            ))}
+                        </RuntimeSelect>
+                    ) : (
+                        <RuntimeTextInput
+                            label="Model"
+                            value={getStringConfig(
+                                node,
+                                "model",
+                                DEFAULT_TRANSLATION_MODEL,
+                            )}
+                            disabled={isRunningFlow}
+                            placeholder="llama-3.1-8b-instant"
+                            onChange={(value) => setConfig({ model: value })}
+                        />
+                    )}
+                    <p className="border border-main bg-main px-3 py-2 text-[10px] leading-4 text-muted">
+                        Node lá: chạy để sinh title + description + hashtags
+                        tiếng Việt cho publish fallback.
+                    </p>
                 </div>
             </InspectorSection>
         );
@@ -4117,6 +4404,7 @@ function NodeRuntimeConfig({
 }
 
 function InspectorPanel({
+    graph,
     node,
     template,
     pendingSourceNodeId,
@@ -4141,6 +4429,7 @@ function InspectorPanel({
     onEnsureFacebookPages,
     onEnsureAiProviderModels,
 }: {
+    graph: WorkspaceGraph;
     node: WorkspaceNodeInstance | undefined;
     template: WorkspaceNodeTemplate | undefined;
     pendingSourceNodeId: string | null;
@@ -4250,6 +4539,7 @@ function InspectorPanel({
 
                     <NodeRuntimeConfig
                         node={node}
+                        graph={graph}
                         storageAccounts={storageAccounts}
                         socialAccounts={socialAccounts}
                         aiProviders={aiProviders}

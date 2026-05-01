@@ -126,6 +126,7 @@ export function validateIntakeInput(input: unknown): ValidatedIntakeInput {
     qualityPreference,
     formatSelector: formatSelector || undefined,
     title: payload.title?.trim() || undefined,
+    description: payload.description?.trim() || undefined,
     languageHint: payload.languageHint?.trim() || undefined,
     contentIntent: payload.contentIntent?.trim() || "other",
     ownershipStatus: payload.ownershipStatus?.trim() || "unknown",

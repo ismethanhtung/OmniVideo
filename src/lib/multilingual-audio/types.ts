@@ -103,6 +103,17 @@ export type TranscriptTranslationResult = {
     };
 };
 
+export type VietnameseVideoMetadataResult = {
+    title: string;
+    description: string;
+    hashtags: string[];
+    model: string;
+    provider: {
+        name: string;
+        requestId?: string;
+    };
+};
+
 export type VoiceGenerationSettings = {
     binaryPath: string;
     modelPath: string;

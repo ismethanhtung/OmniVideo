@@ -10,6 +10,7 @@ describe("validateLocalIntakeInput", () => {
       storageProviderAccountId: "507f1f77bcf86cd799439011",
       tags: ["local", "raw"],
       title: "Demo local upload",
+      description: " Desc ",
       fileName: "demo.mp4",
       mimeType: "video/mp4",
       fileSizeBytes: 4,
@@ -20,6 +21,7 @@ describe("validateLocalIntakeInput", () => {
     expect(result.storageProvider).toBe("telegram");
     expect(result.tags).toEqual(["local", "raw"]);
     expect(result.contentIntent).toBe("other");
+    expect(result.description).toBe("Desc");
     expect(result.ownershipStatus).toBe("unknown");
     expect(result.fileName).toBe("demo.mp4");
     expect(result.fileSizeBytes).toBe(4);

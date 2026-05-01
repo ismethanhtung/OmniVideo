@@ -28,6 +28,7 @@ export type IntakeInput = {
   qualityPreference?: IntakeQualityPreference;
   formatSelector?: string;
   title?: string;
+  description?: string;
   languageHint?: string;
   contentIntent?: string;
   ownershipStatus?: string;
@@ -43,6 +44,7 @@ export type ResolvedMedia = {
   directMediaUrl?: string;
   originPlatform: OriginPlatform;
   title?: string;
+  description?: string;
   mimeType?: string;
   sizeBytes?: number;
   durationMs?: number;
@@ -93,6 +95,7 @@ export type LocalIntakeInput = {
   storageProviderAccountId: string;
   tags: string[];
   title?: string;
+  description?: string;
   languageHint?: string;
   contentIntent?: string;
   ownershipStatus?: string;
@@ -107,6 +110,7 @@ export type ValidatedLocalIntakeInput = {
   storageProviderAccountId: string;
   tags: string[];
   title?: string;
+  description?: string;
   languageHint?: string;
   contentIntent: string;
   ownershipStatus: string;

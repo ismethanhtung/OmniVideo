@@ -10,12 +10,14 @@ describe("validateIntakeInput", () => {
       storageProvider: "telegram",
       tags: ["intake", "raw"],
       title: "Demo",
+      description: " Desc ",
     });
 
     expect(result.canonicalUrl).toBe("https://www.youtube.com/shorts/demo");
     expect(result.originPlatform).toBe("youtube");
     expect(result.tags).toEqual(["intake", "raw"]);
     expect(result.contentIntent).toBe("other");
+    expect(result.description).toBe("Desc");
     expect(result.ownershipStatus).toBe("unknown");
     expect(result.qualityPreference).toBe("best");
   });

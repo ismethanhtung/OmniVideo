@@ -131,6 +131,11 @@ export type WorkspaceFlowStep =
           translationNodeId: string;
       }
     | {
+          kind: "generate-vi-metadata";
+          translationNodeId: string;
+          metadataNodeId: string;
+      }
+    | {
           kind: "generate-voice";
           translationNodeId: string;
           voiceNodeId: string;
@@ -188,6 +193,12 @@ export const WORKSPACE_NODE_TEMPLATES: WorkspaceNodeTemplate[] = [
                 required: false,
             },
             {
+                key: "description",
+                label: "Description",
+                type: "text",
+                required: false,
+            },
+            {
                 key: "tags",
                 label: "Trace tags",
                 type: "text",
@@ -231,6 +242,25 @@ export const WORKSPACE_NODE_TEMPLATES: WorkspaceNodeTemplate[] = [
                 label: "Storage account",
                 type: "account",
                 required: true,
+            },
+            {
+                key: "title",
+                label: "Title",
+                type: "text",
+                required: false,
+            },
+            {
+                key: "description",
+                label: "Description",
+                type: "text",
+                required: false,
+            },
+            {
+                key: "tags",
+                label: "Trace tags",
+                type: "text",
+                required: false,
+                defaultValue: "workspace,upload",
             },
         ],
         timeoutMs: 300000,
@@ -696,6 +726,45 @@ export const WORKSPACE_NODE_TEMPLATES: WorkspaceNodeTemplate[] = [
         observabilityHooks: ["onStart", "onSuccess", "onError"],
         traceabilityNotes:
             "Translation must preserve segment ids, start/end timestamps, source text, target text, model, and language pair.",
+    },
+    {
+        nodeType: "text.generate-vi-metadata",
+        version: "1.0.0",
+        label: "Generate VI Metadata",
+        description:
+            "Generate Vietnamese title, description, and hashtags from translated transcript.",
+        category: "processing",
+        status: "available",
+        inputPorts: [
+            {
+                id: "transcript",
+                label: "Translated transcript",
+                dataType: "transcript",
+            },
+        ],
+        outputPorts: [{ id: "metadata", label: "Metadata", dataType: "metadata" }],
+        configFields: [
+            {
+                key: "metadataProviderId",
+                label: "AI Provider",
+                type: "account",
+                required: false,
+                defaultValue: "",
+            },
+            {
+                key: "model",
+                label: "Metadata model",
+                type: "select",
+                required: true,
+                defaultValue: "llama-3.1-8b-instant",
+            },
+        ],
+        timeoutMs: 300000,
+        retryPolicy: { maxAttempts: 1, backoff: "none" },
+        idempotencyStrategy: "input-hash",
+        observabilityHooks: ["onStart", "onSuccess", "onError"],
+        traceabilityNotes:
+            "Generated Vietnamese metadata should be reusable in downstream publish nodes.",
     },
     {
         nodeType: "edit.mirror",
@@ -1243,6 +1312,9 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
     const translationNodes = graph.nodes.filter(
         (node) => node.templateNodeType === "text.translate-transcript",
     );
+    const metadataNodes = graph.nodes.filter(
+        (node) => node.templateNodeType === "text.generate-vi-metadata",
+    );
     const voiceNodes = graph.nodes.filter(
         (node) => node.templateNodeType === "audio.voice-generation",
     );
@@ -1680,6 +1752,43 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
         });
     }
 
+    const metadataSteps: WorkspaceFlowStep[] = [];
+    for (const metadataNode of metadataNodes) {
+        const upstreamTranslations = graph.edges
+            .filter((edge) => edge.toNodeId === metadataNode.id)
+            .map((edge) =>
+                graph.nodes.find((node) => node.id === edge.fromNodeId),
+            )
+            .filter(
+                (node): node is WorkspaceNodeInstance =>
+                    node !== undefined &&
+                    node.templateNodeType === "text.translate-transcript",
+            );
+        if (upstreamTranslations.length === 0) {
+            errors.push(
+                `Generate VI Metadata '${metadataNode.label}' (${metadataNode.id}) cần upstream Translate Transcript.`,
+            );
+            continue;
+        }
+        if (upstreamTranslations.length > 1) {
+            errors.push(
+                `Generate VI Metadata '${metadataNode.label}' (${metadataNode.id}) đang nhận nhiều Translate Transcript; chưa hỗ trợ fan-in.`,
+            );
+            continue;
+        }
+        if (!translationProducers.has(upstreamTranslations[0].id)) {
+            errors.push(
+                `Generate VI Metadata '${metadataNode.label}' (${metadataNode.id}) cần Translate Transcript upstream chạy được.`,
+            );
+            continue;
+        }
+        metadataSteps.push({
+            kind: "generate-vi-metadata",
+            translationNodeId: upstreamTranslations[0].id,
+            metadataNodeId: metadataNode.id,
+        });
+    }
+
     const artifactProducers = new Set<string>();
     const dubbingSteps: WorkspaceFlowStep[] = [];
     for (const dubbingNode of dubbingNodes) {
@@ -1906,6 +2015,7 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
         transcriptionSteps.length === 0 &&
         translationSteps.length === 0 &&
         voiceSteps.length === 0 &&
+        metadataSteps.length === 0 &&
         dubbingSteps.length === 0 &&
         mirrorSteps.length === 0 &&
         editSteps.length === 0 &&
@@ -1925,6 +2035,7 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
             ...transcriptionSteps,
             ...translationSteps,
             ...voiceSteps,
+            ...metadataSteps,
             ...dubbingSteps,
             ...mirrorSteps,
             ...editSteps,

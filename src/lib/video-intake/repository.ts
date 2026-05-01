@@ -30,6 +30,7 @@ export async function createSource({
     canonicalLink: input.canonicalUrl,
     originPlatform: input.originPlatform,
     title: input.title ?? null,
+    description: input.description ?? null,
     tags: input.tags,
     languageHint: input.languageHint ?? null,
     contentIntent: input.contentIntent ?? "other",
@@ -56,6 +57,7 @@ export async function createFileSource({
     canonicalLink: null,
     originPlatform: "other",
     title: input.title ?? input.fileName,
+    description: input.description ?? null,
     tags: input.tags,
     languageHint: input.languageHint ?? null,
     contentIntent: input.contentIntent,
@@ -526,6 +528,57 @@ export async function deleteVideoAssetById({
     _id: new ObjectId(assetId),
     assetType: "video",
   });
+}
+
+export async function updateVideoAssetMetadataById({
+  db,
+  assetId,
+  patch,
+}: {
+  db: Db;
+  assetId: string;
+  patch: {
+    title?: string | null;
+    description?: string | null;
+    vietnameseTitle?: string | null;
+    vietnameseDescription?: string | null;
+    vietnameseHashtags?: string[] | null;
+  };
+}) {
+  if (!ObjectId.isValid(assetId)) {
+    return null;
+  }
+
+  const setPatch: Record<string, unknown> = {
+    updatedAt: new Date(),
+  };
+
+  if (patch.title !== undefined) {
+    setPatch["metadata.title"] = patch.title;
+  }
+  if (patch.description !== undefined) {
+    setPatch["metadata.description"] = patch.description;
+  }
+  if (patch.vietnameseTitle !== undefined) {
+    setPatch["metadata.vietnameseTitle"] = patch.vietnameseTitle;
+  }
+  if (patch.vietnameseDescription !== undefined) {
+    setPatch["metadata.vietnameseDescription"] = patch.vietnameseDescription;
+  }
+  if (patch.vietnameseHashtags !== undefined) {
+    setPatch["metadata.vietnameseHashtags"] = patch.vietnameseHashtags;
+  }
+
+  return db.collection("assets").findOneAndUpdate(
+    {
+      _id: new ObjectId(assetId),
+      assetType: "video",
+    },
+    {
+      $set: setPatch,
+    },
+    { returnDocument: "after" },
+  );
 }
 
 export async function listIntakeJobRuns({

@@ -21,6 +21,10 @@ type StoredVideoAsset = {
         sourceUrl?: string;
         originPlatform?: string;
         title?: string | null;
+        description?: string | null;
+        vietnameseTitle?: string | null;
+        vietnameseDescription?: string | null;
+        vietnameseHashtags?: string[] | null;
         resolver?: string;
         requestedQuality?: string;
         actualQuality?: string | null;
@@ -444,17 +448,6 @@ export function StorageLibraryPanel({ section }: StorageLibraryPanelProps) {
                                         </td>
                                         <td className="px-4 py-3">
                                             <div className="flex flex-wrap gap-2">
-                                                {storageUrl ? (
-                                                    <a
-                                                        href={storageUrl}
-                                                        target="_blank"
-                                                        rel="noreferrer"
-                                                        className="inline-flex items-center gap-1.5 border border-main bg-secondary px-2 py-1 text-[11px] font-semibold text-main transition-colors hover:bg-secondary/75"
-                                                    >
-                                                        <ExternalLink className="h-3.5 w-3.5" />
-                                                        Open
-                                                    </a>
-                                                ) : null}
                                                 {downloadBlockedReason ? (
                                                     <button
                                                         type="button"
@@ -786,6 +779,25 @@ export function StorageLibraryPanel({ section }: StorageLibraryPanelProps) {
                                 <DetailCell
                                     label="Created"
                                     value={formatDate(selectedAsset.createdAt)}
+                                />
+                                <DetailCell
+                                    label="Source Description"
+                                    value={selectedAsset.metadata?.description}
+                                />
+                                <DetailCell
+                                    label="VI Title"
+                                    value={selectedAsset.metadata?.vietnameseTitle}
+                                />
+                                <DetailCell
+                                    label="VI Description"
+                                    value={selectedAsset.metadata?.vietnameseDescription}
+                                />
+                                <DetailCell
+                                    label="VI Hashtags"
+                                    value={
+                                        selectedAsset.metadata?.vietnameseHashtags?.join(", ") ??
+                                        null
+                                    }
                                 />
                             </div>
 

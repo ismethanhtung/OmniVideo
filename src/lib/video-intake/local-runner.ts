@@ -109,6 +109,7 @@ export async function runLocalFileIntakePipeline(
       storageProviderAccountId: rawInput.storageProviderAccountId,
       tags: rawInput.tags,
       title: rawInput.title ?? null,
+      description: rawInput.description ?? null,
     },
   });
 
@@ -146,6 +147,7 @@ export async function runLocalFileIntakePipeline(
       directMediaUrl: localSourceUrl,
       originPlatform: "other",
       title: input.title ?? input.fileName,
+      description: input.description,
       mimeType: input.mimeType,
       sizeBytes: input.fileSizeBytes,
       requestedQuality: "best",

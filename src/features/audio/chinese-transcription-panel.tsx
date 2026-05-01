@@ -18,6 +18,7 @@ import type {
     AudioTranscriptionStep,
     ChineseTranscriptionResult,
     TranscriptTranslationResult,
+    VietnameseVideoMetadataResult,
     VoiceGenerationResult,
 } from "@/lib/multilingual-audio/types";
 import { DEFAULT_PIPER_TTS_SETTINGS } from "@/lib/multilingual-audio/types";
@@ -48,6 +49,10 @@ type StoredVideoAsset = {
     sizeBytes?: number | null;
     metadata?: {
         title?: string | null;
+        description?: string | null;
+        vietnameseTitle?: string | null;
+        vietnameseDescription?: string | null;
+        vietnameseHashtags?: string[] | null;
         originPlatform?: string | null;
         actualQuality?: string | null;
     };
@@ -242,11 +247,17 @@ export function ChineseTranscriptionPanel({
     const [isRunning, setIsRunning] = useState(false);
     const [isTranslating, setIsTranslating] = useState(false);
     const [isGeneratingVoice, setIsGeneratingVoice] = useState(false);
+    const [isGeneratingMetadata, setIsGeneratingMetadata] = useState(false);
+    const [isSavingMetadata, setIsSavingMetadata] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [translationError, setTranslationError] = useState<string | null>(
         null,
     );
     const [voiceError, setVoiceError] = useState<string | null>(null);
+    const [metadataError, setMetadataError] = useState<string | null>(null);
+    const [metadataSaveMessage, setMetadataSaveMessage] = useState<string | null>(
+        null,
+    );
     const [result, setResult] = useState<ChineseTranscriptionResult | null>(
         null,
     );
@@ -254,6 +265,8 @@ export function ChineseTranscriptionPanel({
         useState<TranscriptTranslationResult | null>(null);
     const [voiceResult, setVoiceResult] =
         useState<VoiceGenerationResult | null>(null);
+    const [videoMetadata, setVideoMetadata] =
+        useState<VietnameseVideoMetadataResult | null>(null);
     const [steps, setSteps] = useState<AudioTranscriptionStep[]>([]);
     const [copiedSegmentsLabel, setCopiedSegmentsLabel] = useState<
         "json" | "text" | null
@@ -459,6 +472,9 @@ export function ChineseTranscriptionPanel({
         setTranslation(null);
         setVoiceError(null);
         setVoiceResult(null);
+        setMetadataError(null);
+        setMetadataSaveMessage(null);
+        setVideoMetadata(null);
 
         try {
             const response = await fetch("/api/audio/transcript-translation", {
@@ -549,6 +565,95 @@ export function ChineseTranscriptionPanel({
             );
         } finally {
             setIsGeneratingVoice(false);
+        }
+    };
+
+    const runVideoMetadata = async () => {
+        if (!translation?.translatedSegments.length) {
+            setMetadataError("Chưa có bản dịch tiếng Việt để tạo metadata.");
+            return;
+        }
+
+        setIsGeneratingMetadata(true);
+        setMetadataError(null);
+        setMetadataSaveMessage(null);
+
+        try {
+            const response = await fetch("/api/audio/video-metadata", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    translatedSegments: translation.translatedSegments,
+                    sourceTitle:
+                        selectedAsset?.metadata?.title ?? file?.name ?? "",
+                    sourceDescription:
+                        selectedAsset?.metadata?.description ?? "",
+                    model: translationModel,
+                    providerId: selectedProviderId || undefined,
+                }),
+            });
+            const payload = (await response.json()) as
+                | { ok: true; data: VietnameseVideoMetadataResult }
+                | { ok: false; errorCode?: string; error?: string };
+
+            if (!payload.ok) {
+                throw new Error(
+                    payload.errorCode
+                        ? `${payload.errorCode}: ${payload.error ?? "Metadata generation failed."}`
+                        : (payload.error ?? "Metadata generation failed."),
+                );
+            }
+
+            setVideoMetadata(payload.data);
+        } catch (requestError) {
+            setMetadataError(
+                requestError instanceof Error
+                    ? requestError.message
+                    : "Metadata generation failed.",
+            );
+        } finally {
+            setIsGeneratingMetadata(false);
+        }
+    };
+
+    const saveVideoMetadata = async () => {
+        if (!selectedAssetId || !videoMetadata) {
+            setMetadataSaveMessage(
+                "Chưa chọn Storage Asset hoặc chưa có metadata để lưu.",
+            );
+            return;
+        }
+
+        setIsSavingMetadata(true);
+        setMetadataSaveMessage(null);
+        try {
+            const response = await fetch(`/api/storage/assets/${selectedAssetId}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    metadata: {
+                        vietnameseTitle: videoMetadata.title,
+                        vietnameseDescription: videoMetadata.description,
+                        vietnameseHashtags: videoMetadata.hashtags,
+                    },
+                }),
+            });
+            const payload = (await response.json()) as {
+                ok: boolean;
+                error?: string;
+            };
+            if (!response.ok || !payload.ok) {
+                throw new Error(payload.error ?? "Lưu metadata thất bại.");
+            }
+            setMetadataSaveMessage("Đã lưu metadata tiếng Việt vào asset.");
+        } catch (requestError) {
+            setMetadataSaveMessage(
+                requestError instanceof Error
+                    ? requestError.message
+                    : "Lưu metadata thất bại.",
+            );
+        } finally {
+            setIsSavingMetadata(false);
         }
     };
 
@@ -983,6 +1088,68 @@ export function ChineseTranscriptionPanel({
                                             translation.generationDurationMs,
                                         )}
                                     </p>
+                                </div>
+                            ) : null}
+
+                            {translation ? (
+                                <div className="space-y-2 border border-main bg-main p-3">
+                                    <div className="flex flex-wrap gap-2">
+                                        <button
+                                            type="button"
+                                            disabled={isGeneratingMetadata}
+                                            onClick={runVideoMetadata}
+                                            className="inline-flex items-center gap-2 border border-accent/35 bg-accent/10 px-3 py-1.5 text-[11px] font-semibold text-accent transition-colors hover:bg-accent/15 disabled:cursor-not-allowed disabled:opacity-60"
+                                        >
+                                            {isGeneratingMetadata ? (
+                                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                            ) : (
+                                                <Captions className="h-3.5 w-3.5" />
+                                            )}
+                                            {isGeneratingMetadata
+                                                ? "Generating metadata..."
+                                                : "Generate VI Metadata"}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            disabled={
+                                                isSavingMetadata ||
+                                                !videoMetadata ||
+                                                !selectedAssetId
+                                            }
+                                            onClick={saveVideoMetadata}
+                                            className="inline-flex items-center gap-2 border border-main bg-secondary px-3 py-1.5 text-[11px] font-semibold text-main transition-colors hover:bg-secondary/80 disabled:cursor-not-allowed disabled:opacity-60"
+                                        >
+                                            {isSavingMetadata ? (
+                                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                            ) : null}
+                                            Save to Asset
+                                        </button>
+                                    </div>
+                                    {metadataError ? (
+                                        <p className="border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-[11px] leading-5 text-rose-700">
+                                            {metadataError}
+                                        </p>
+                                    ) : null}
+                                    {metadataSaveMessage ? (
+                                        <p className="border border-main bg-secondary/20 px-3 py-2 text-[11px] text-main">
+                                            {metadataSaveMessage}
+                                        </p>
+                                    ) : null}
+                                    {videoMetadata ? (
+                                        <div className="space-y-2 border border-emerald-500/30 bg-emerald-500/10 px-3 py-2">
+                                            <p className="text-[11px] font-semibold text-emerald-700">
+                                                {videoMetadata.title}
+                                            </p>
+                                            <p className="text-[11px] leading-5 text-emerald-700">
+                                                {videoMetadata.description}
+                                            </p>
+                                            <p className="text-[10px] leading-4 text-emerald-700">
+                                                {(videoMetadata.hashtags ?? [])
+                                                    .map((tag) => `#${tag}`)
+                                                    .join(" ")}
+                                            </p>
+                                        </div>
+                                    ) : null}
                                 </div>
                             ) : null}
                         </div>

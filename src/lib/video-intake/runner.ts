@@ -102,6 +102,7 @@ export async function runUrlIntakePipeline(
       formatSelector: rawInput.formatSelector ?? null,
       tags: rawInput.tags,
       title: rawInput.title ?? null,
+      description: rawInput.description ?? null,
     },
   });
 
@@ -144,6 +145,7 @@ export async function runUrlIntakePipeline(
       nodeType: "source.media.resolve",
       execute: () => resolveMediaUrl(input),
     });
+    media.description = input.description;
 
     const upload = await runTrackedStep<StorageUploadResult>({
       db,

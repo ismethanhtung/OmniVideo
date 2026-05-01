@@ -116,6 +116,7 @@ export async function POST(request: Request) {
         .map((tag) => tag.trim())
         .filter(Boolean),
       title: readFormValue(formData, "title") || undefined,
+      description: readFormValue(formData, "description") || undefined,
       languageHint: readFormValue(formData, "languageHint") || undefined,
       contentIntent: readFormValue(formData, "contentIntent") || "other",
       ownershipStatus: readFormValue(formData, "ownershipStatus") || "unknown",

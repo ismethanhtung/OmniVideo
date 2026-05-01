@@ -96,6 +96,7 @@ export function validateLocalIntakeInput(
     storageProviderAccountId,
     tags,
     title: input.title?.trim() || undefined,
+    description: input.description?.trim() || undefined,
     languageHint: input.languageHint?.trim() || undefined,
     contentIntent: input.contentIntent?.trim() || "other",
     ownershipStatus: input.ownershipStatus?.trim() || "unknown",

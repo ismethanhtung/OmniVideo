@@ -35,6 +35,10 @@ type StoredVideoAsset = {
   sizeBytes?: number | null;
   metadata?: {
     title?: string | null;
+    description?: string | null;
+    vietnameseTitle?: string | null;
+    vietnameseDescription?: string | null;
+    vietnameseHashtags?: string[] | null;
     width?: number | null;
     height?: number | null;
     originPlatform?: string | null;
@@ -863,7 +867,23 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
                             key={asset._id}
                             type="button"
                             onClick={() => {
-                              setForm((previous) => ({ ...previous, assetId: asset._id }));
+                              setForm((previous) => ({
+                                ...previous,
+                                assetId: asset._id,
+                                title:
+                                  previous.title ||
+                                  asset.metadata?.vietnameseTitle ||
+                                  asset.metadata?.title ||
+                                  "",
+                                caption:
+                                  previous.caption ||
+                                  asset.metadata?.vietnameseDescription ||
+                                  asset.metadata?.description ||
+                                  "",
+                                hashtags:
+                                  previous.hashtags ||
+                                  (asset.metadata?.vietnameseHashtags ?? []).join(","),
+                              }));
                               setShowAssetPicker(false);
                             }}
                             className={`flex w-full items-start gap-2 border p-2 text-left ${
