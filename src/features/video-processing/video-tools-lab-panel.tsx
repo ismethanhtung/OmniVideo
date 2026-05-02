@@ -188,6 +188,20 @@ const sampleTranslatedSegmentsJson = JSON.stringify(
 );
 
 const ASS_SUBTITLE_OUTLINE = 2;
+const SUBTITLE_BACKGROUND_COLOR_OPTIONS = [
+    { value: "#000000", label: "Đen" },
+    { value: "#FFFFFF", label: "Trắng" },
+    { value: "#808080", label: "Xám" },
+] as const;
+
+function normalizeSubtitleBackgroundColor(value: string | null | undefined) {
+    const normalized = (value || "").trim().toUpperCase();
+    return SUBTITLE_BACKGROUND_COLOR_OPTIONS.some(
+        (option) => option.value === normalized,
+    )
+        ? normalized
+        : "#000000";
+}
 
 export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
     const Icon = section.icon ?? Clapperboard;
@@ -543,7 +557,9 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
         setSubtitleMarginRight(setup.subtitleMarginRight ?? 60);
         setSubtitleAlignment(setup.subtitleAlignment ?? 2);
         setSubtitleBackgroundEnabled(setup.subtitleBackgroundEnabled !== false);
-        setSubtitleBackgroundColor(setup.subtitleBackgroundColor || "#000000");
+        setSubtitleBackgroundColor(
+            normalizeSubtitleBackgroundColor(setup.subtitleBackgroundColor),
+        );
         setSubtitleBackgroundOpacity(setup.subtitleBackgroundOpacity ?? 65);
         setSubtitleSampleWidthPercent(setup.subtitleSampleWidthPercent ?? 100);
         const placement = setup.subtitlePreviewPlacement;
@@ -1450,7 +1466,7 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                                         <span className="mb-1 block text-[10px] font-semibold text-muted">
                                             Background color
                                         </span>
-                                        <input
+                                        <select
                                             value={subtitleBackgroundColor}
                                             disabled={
                                                 isRunningEdit ||
@@ -1461,9 +1477,19 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                                                     event.currentTarget.value,
                                                 )
                                             }
-                                            placeholder="#000000"
                                             className="w-full border border-main bg-secondary/30 px-2 py-1.5 text-[11px] text-main"
-                                        />
+                                        >
+                                            {SUBTITLE_BACKGROUND_COLOR_OPTIONS.map(
+                                                (option) => (
+                                                    <option
+                                                        key={option.value}
+                                                        value={option.value}
+                                                    >
+                                                        {option.label}
+                                                    </option>
+                                                ),
+                                            )}
+                                        </select>
                                     </label>
                                     <label className="block">
                                         <span className="mb-1 block text-[10px] font-semibold text-muted">
@@ -1767,6 +1793,8 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                                                               subtitleBackgroundOpacity,
                                                           )
                                                         : "transparent",
+                                                textShadow:
+                                                    "1px 0 0 #000, -1px 0 0 #000, 0 1px 0 #000, 0 -1px 0 #000",
                                             }}
                                         >
                                             Phụ đề tiếng Việt mẫu để căn vị trí

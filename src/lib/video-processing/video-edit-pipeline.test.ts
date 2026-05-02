@@ -95,7 +95,8 @@ describe("video edit pipeline", () => {
         expect(ass).toContain("Dialogue: 0,0:01:02.12,0:01:04.50");
         expect(ass).toContain("Dong 1\\NDong 2");
         expect(ass).toContain("WrapStyle: 0");
-        expect(ass).toContain("Style: Default,Arial,100");
+        expect(ass).toContain("Style: BackgroundBox,Arial,100");
+        expect(ass).toContain("Style: ForegroundText,Arial,100");
         expect(ass).toContain(",60,60,150,1");
     });
 
@@ -144,8 +145,33 @@ describe("video edit pipeline", () => {
             { fontFamily: "Tahoma", fontSize: 72, marginBottom: 220 },
         );
 
-        expect(ass).toContain("Style: Default,Tahoma,72");
+        expect(ass).toContain("Style: BackgroundBox,Tahoma,72");
+        expect(ass).toContain("Style: ForegroundText,Tahoma,72");
         expect(ass).toContain(",60,60,220,1");
+    });
+
+    it("applies configured subtitle background color in ASS style", () => {
+        const ass = buildSubtitleAssContent(
+            [
+                {
+                    id: 1,
+                    start: 0,
+                    end: 1,
+                    sourceText: "src",
+                    translatedText: "txt",
+                },
+            ],
+            {
+                backgroundEnabled: true,
+                backgroundColor: "#FFFFFF",
+                backgroundOpacity: 100,
+            },
+        );
+
+        expect(ass).toContain("Style: BackgroundBox");
+        expect(ass).toContain("&H00FFFFFF,&H00FFFFFF,-1,0,0,0,100,100,0,0,3,2,0");
+        expect(ass).toContain("Style: ForegroundText");
+        expect(ass).toContain("&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,2");
     });
 
     it("rejects partial blur without translated subtitle overlay", () => {

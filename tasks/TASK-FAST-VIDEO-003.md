@@ -128,9 +128,11 @@
 - Assumptions: giữ backward compatibility với payload cũ.
 - Blockers:
 - Follow-up fix: Video Tools Lab lưu thêm `subtitlePreviewPlacement` theo phần trăm khung preview để khi chọn lại Storage Asset, subtitle mẫu hiển thị đúng vị trí đã kéo; output ffmpeg vẫn dùng ASS margin/alignment hiện có.
+- Follow-up fix: sửa ASS subtitle background color để màu nền render đúng theo cấu hình (không bị cố định đen), và đổi input màu nền sang preset select (đen/trắng/xám) ở Video Tools Lab + Workspace Inspector.
 - Verification evidence:
   - `npm run test -- src/app/api/video-processing/edit/route.test.ts src/lib/video-processing/video-edit-pipeline.test.ts src/lib/workspace/workspace-graph.test.ts` (pass, 3 files / 46 tests)
   - `npm run build` (pass; chỉ còn warning cũ ngoài scope ở navigation/topbar/audio/display-preferences)
+  - `npm run test -- src/lib/video-processing/video-edit-pipeline.test.ts src/app/api/video-processing/edit/route.test.ts src/lib/workspace/workspace-graph.test.ts` (pass, 3 files / 47 tests)
 
 ## 15. Test Evidence (Mandatory if code changed)
 

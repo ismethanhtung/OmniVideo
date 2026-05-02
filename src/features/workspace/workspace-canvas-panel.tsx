@@ -3402,6 +3402,21 @@ function RuntimeSelect({
     );
 }
 
+const SUBTITLE_BACKGROUND_COLOR_OPTIONS = [
+    { value: "#000000", label: "Black" },
+    { value: "#FFFFFF", label: "White" },
+    { value: "#808080", label: "Gray" },
+] as const;
+
+function normalizeSubtitleBackgroundColor(value: string | undefined) {
+    const normalized = (value || "").trim().toUpperCase();
+    return SUBTITLE_BACKGROUND_COLOR_OPTIONS.some(
+        (option) => option.value === normalized,
+    )
+        ? normalized
+        : "#000000";
+}
+
 function RuntimeTextInput({
     label,
     value,
@@ -3818,19 +3833,26 @@ function NodeRuntimeConfig({
                                 setConfig({ subtitleAlignment: Number(value) })
                             }
                         />
-                        <RuntimeTextInput
+                        <RuntimeSelect
                             label="Subtitle background color"
-                            value={getStringConfig(
-                                node,
-                                "subtitleBackgroundColor",
-                                "#000000",
+                            value={normalizeSubtitleBackgroundColor(
+                                getStringConfig(
+                                    node,
+                                    "subtitleBackgroundColor",
+                                    "#000000",
+                                ),
                             )}
                             disabled={isRunningFlow}
-                            placeholder="#000000"
                             onChange={(value) =>
                                 setConfig({ subtitleBackgroundColor: value })
                             }
-                        />
+                        >
+                            {SUBTITLE_BACKGROUND_COLOR_OPTIONS.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                    {option.label}
+                                </option>
+                            ))}
+                        </RuntimeSelect>
                         <RuntimeTextInput
                             label="Subtitle background opacity %"
                             value={String(

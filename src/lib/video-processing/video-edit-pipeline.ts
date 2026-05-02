@@ -317,7 +317,7 @@ export function buildSubtitleAssContent(
     const playResY = Number.isFinite(style?.playResY)
         ? Math.max(360, Math.round(style?.playResY ?? 1080))
         : 1080;
-    const events = segments
+    const normalizedSegments = segments
         .filter(
             (segment) =>
                 Number.isFinite(segment.start) &&
@@ -325,21 +325,44 @@ export function buildSubtitleAssContent(
                 segment.end > segment.start &&
                 segment.translatedText.trim().length > 0,
         )
-        .map(
-            (segment) =>
-                `Dialogue: 0,${formatAssTimestamp(segment.start)},${formatAssTimestamp(
-                    segment.end,
-                )},Default,,0,0,0,,${escapeAssText(
-                    segment.translatedText.trim(),
-                )}`,
-        );
+        .map((segment) => ({
+            start: formatAssTimestamp(segment.start),
+            end: formatAssTimestamp(segment.end),
+            text: escapeAssText(segment.translatedText.trim()),
+        }));
 
-    if (events.length === 0) {
+    if (normalizedSegments.length === 0) {
         throw new VideoEditError(
             "VAL_VIDEO_EDIT_SUBTITLES_REQUIRED",
             "Subtitle overlay requires valid translated segments with timestamps.",
             400,
         );
+    }
+
+    const styleLines: string[] = [];
+    const eventLines: string[] = [];
+
+    if (backgroundEnabled) {
+        // Layer 1: opaque box only (transparent glyph), Layer 2: visible text with black outline.
+        styleLines.push(
+            `Style: BackgroundBox,${subtitleFontFamily || "Arial"},${subtitleFontSize},&HFF000000,&H000000FF,${backgroundAssColor},${backgroundAssColor},-1,0,0,0,100,100,0,0,3,2,0,${subtitleAlignment},${subtitleMarginLeft},${subtitleMarginRight},${subtitleMarginBottom},1`,
+            `Style: ForegroundText,${subtitleFontFamily || "Arial"},${subtitleFontSize},&H00FFFFFF,&H000000FF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,2,0,${subtitleAlignment},${subtitleMarginLeft},${subtitleMarginRight},${subtitleMarginBottom},1`,
+        );
+        for (const segment of normalizedSegments) {
+            eventLines.push(
+                `Dialogue: 0,${segment.start},${segment.end},BackgroundBox,,0,0,0,,${segment.text}`,
+                `Dialogue: 1,${segment.start},${segment.end},ForegroundText,,0,0,0,,${segment.text}`,
+            );
+        }
+    } else {
+        styleLines.push(
+            `Style: Default,${subtitleFontFamily || "Arial"},${subtitleFontSize},&H00FFFFFF,&H000000FF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,${borderStyle},2,0,${subtitleAlignment},${subtitleMarginLeft},${subtitleMarginRight},${subtitleMarginBottom},1`,
+        );
+        for (const segment of normalizedSegments) {
+            eventLines.push(
+                `Dialogue: 0,${segment.start},${segment.end},Default,,0,0,0,,${segment.text}`,
+            );
+        }
     }
 
     return [
@@ -352,11 +375,11 @@ export function buildSubtitleAssContent(
         "",
         "[V4+ Styles]",
         "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
-        `Style: Default,${subtitleFontFamily || "Arial"},${subtitleFontSize},&H00FFFFFF,&H000000FF,&H00111111,${backgroundAssColor},-1,0,0,0,100,100,0,0,${borderStyle},2,0,${subtitleAlignment},${subtitleMarginLeft},${subtitleMarginRight},${subtitleMarginBottom},1`,
+        ...styleLines,
         "",
         "[Events]",
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
-        ...events,
+        ...eventLines,
         "",
     ].join("\n");
 }

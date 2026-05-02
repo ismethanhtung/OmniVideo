@@ -543,14 +543,16 @@
 
 - Video Tools Lab lưu vị trí `Subtitle mẫu` theo phần trăm khung preview trong `videoEditSetup.subtitlePreviewPlacement`, để chọn lại Storage Asset thì hiển thị đúng vị trí đã kéo thay vì suy lại từ ASS margin.
 - Đổi mặc định `Độ rộng Subtitle mẫu (%)` thành `100` và cho phép nhập tối đa `100`.
+- Subtitle background color trong Video Edit chuyển sang preset chọn nhanh (`đen/trắng/xám`) ở cả Video Tools Lab và Workspace Inspector thay cho nhập tay.
 
 ### Fixed
 
 - Sửa lỗi preview subtitle mẫu hiển thị lệch lên cao sau khi load setup từ video asset, trong khi video output đã render đúng.
+- Sửa lỗi subtitle background color không áp dụng đúng màu render (ví dụ `#FFFFFF`) do ASS style chưa đồng bộ màu hộp nền.
 
 ### Notes
 
 - Task IDs: FAST-VIDEO-003
 - Verification:
-  - `npm run test -- src/app/api/video-processing/edit/route.test.ts src/lib/video-processing/video-edit-pipeline.test.ts src/lib/workspace/workspace-graph.test.ts` (pass, 3 files / 46 tests)
+  - `npm run test -- src/app/api/video-processing/edit/route.test.ts src/lib/video-processing/video-edit-pipeline.test.ts src/lib/workspace/workspace-graph.test.ts` (pass, 3 files / 47 tests)
   - `npm run build` (pass; còn warning cũ ngoài scope ở navigation/topbar/audio/display-preferences)
