@@ -150,6 +150,11 @@ function buildTranslationPrompt(input: {
     return [
         "Translate the transcript segments into natural Vietnamese while preserving meaning, context, names, and continuity across segments.",
         "Keep each segment aligned to its original timing. Do not merge, split, reorder, or drop segments.",
+        "This translation will be synthesized as Vietnamese voice-over. Prefer concise spoken Vietnamese that fits the segment duration at a natural speaking pace.",
+        "Do not force Vietnamese to match the source character count exactly; Chinese and Vietnamese have different written length and spoken duration. Use source length only as a compression signal: short Chinese segments need short Vietnamese, long Chinese segments can use fuller wording if timing allows.",
+        "For very short segments, use the shortest natural equivalent. Avoid explanatory additions, filler words, and verbose literal phrasing that would force the TTS to speak too fast.",
+        "If a literal translation is too long for the duration, compress the wording while preserving the core meaning and tone.",
+        "Normalize standalone Arabic numerals into spoken Vietnamese words in translatedText (example: 20 -> hai mươi, 125 -> một trăm hai mươi lăm). Keep numbers as digits only for codes/IDs/measurements where spelling out is unnatural.",
         "Every translatedText must be in the target language. Do not copy the source text unless it is a proper noun, code, or number.",
         input.retryMode
             ? "This is a retry for segments that were missing or left untranslated. Be extra strict: translate all non-name Chinese text into Vietnamese."
@@ -162,6 +167,7 @@ function buildTranslationPrompt(input: {
                 id: segment.id,
                 start: segment.start,
                 end: segment.end,
+                durationSeconds: Math.max(0, segment.end - segment.start),
                 text: segment.text,
             })),
         ),

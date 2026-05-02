@@ -1,5 +1,17 @@
 # OmniVideo Changelog
 
+## FAST-AUDIO-019 - Smooth Piper Dubbing Speech Rate
+
+- Cải thiện Piper timeline voice alignment: segment dài có thể mượn một phần gap sau trước khi bị speed-up, giảm hiện tượng câu nói nhanh/chậm thất thường khi timestamp vẫn đúng.
+- Timeline mode giảm `sentence_silence` khi synthesize từng segment để tránh tạo thêm silence giả rồi phải tăng tempo bằng ffmpeg.
+- Thêm diagnostics vào voice generation alignment metadata: raw duration, slot duration, target duration, borrowed gap, speed factor, tempo filter và warning codes theo từng segment.
+- Audio Transcript hiển thị speech-rate diagnostics sau khi Generate Voice, gồm max speed factor, borrowed gap và các segment nhanh nhất cần rút gọn text.
+- Audio Transcript hiển thị thêm nhóm `slow` để phân biệt đoạn nghe chậm do silence/pad timeline thay vì do TTS kéo chậm giọng nói.
+- Audio Transcript đánh số segment rõ ràng và prompt dịch transcript ưu tiên bản dịch tiếng Việt ngắn/gọn theo `durationSeconds`; không ép số chữ tiếng Việt bằng chữ Trung, chỉ dùng độ dài nguồn như tín hiệu cần nén.
+- Audio Transcript giữ lại `VI Metadata` sau reload bằng session local và cho phép chỉnh sửa title/description/hashtags trước khi `Save to Asset`.
+- Đổi `Preserve timestamp gaps` thành `Balanced timing`: không pad từng segment cho đầy slot, giới hạn pause dài, giới hạn speed-up mặc định và cho phép lệch nhẹ để giọng ít bị nhanh/chậm giả tạo.
+- Verification (FAST-AUDIO-019): `npm run test -- --run src/lib/multilingual-audio/piper-tts.test.ts src/app/api/audio/voice-generation/route.test.ts src/lib/multilingual-audio/transcript-session.test.ts src/lib/multilingual-audio/transcript-translation.test.ts src/app/api/audio/transcript-translation/route.test.ts` pass (27 tests / 5 files); `npm run build` pass với warnings cũ ngoài scope (`Share2`, `loading`, `FileAudio`, missing `selectedProviderId` hook dependency, unused `Image`).
+
 ## FAST-UX-006 - Refactor leftbar navigation to real route-based pages
 
 - Refactor app shell navigation từ in-memory section switching sang URL routing thật: mỗi leftbar item đi tới route riêng (`/workspace`, `/videoIntake`, `/socialAccounts`, ...).

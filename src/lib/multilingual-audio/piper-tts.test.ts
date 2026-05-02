@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildPiperArgs,
   buildAtempoFilterChain,
+  buildTimelineAlignmentChunk,
   generateVoiceFromSegments,
   generatePiperSpeech,
   resolvePiperBinaryPath,
@@ -227,7 +228,44 @@ describe("Piper TTS adapter", () => {
     expect(buildAtempoFilterChain(5)).toBe("atempo=2,atempo=2,atempo=1.25");
   });
 
-  it("returns timestamp-aligned Piper voice audio from segments", async () => {
+  it("borrows safe following gaps before speeding up timeline segments", () => {
+    expect(
+      buildTimelineAlignmentChunk({
+        segment: { id: 7, start: 0, end: 1, text: "Một câu hơi dài" },
+        rawDurationSeconds: 1.5,
+        nextSegmentStart: 2,
+      }),
+    ).toMatchObject({
+      segmentId: 7,
+      slotDurationSeconds: 1,
+      rawDurationSeconds: 1.5,
+      targetDurationSeconds: 1.5,
+      borrowedGapSeconds: 0.5,
+      speedFactor: 1,
+      tempoFilter: "anull",
+      warningCodes: [],
+    });
+  });
+
+  it("flags timeline segments that still need aggressive speed-up", () => {
+    expect(
+      buildTimelineAlignmentChunk({
+        segment: { id: 8, start: 0, end: 1, text: "Một câu quá dài" },
+        rawDurationSeconds: 3,
+        nextSegmentStart: 1.2,
+      }),
+    ).toMatchObject({
+      targetDurationSeconds: 1.15,
+      borrowedGapSeconds: expect.closeTo(0.15, 4),
+      speedFactor: expect.closeTo(2.6087, 4),
+      warningCodes: [
+        "HIGH_SPEED_FACTOR",
+        "INSUFFICIENT_GAP_FOR_NATURAL_SPEED",
+      ],
+    });
+  });
+
+  it("returns balanced timeline Piper voice audio from segments", async () => {
     const spawnMock = createMockSpawn();
     setPiperSpawnForTest(spawnMock as never);
     setPiperFileExistsForTest(() => true);
@@ -249,6 +287,11 @@ describe("Piper TTS adapter", () => {
     });
 
     expect(spawnMock).toHaveBeenCalledTimes(2);
+    expect(spawnMock).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.arrayContaining(["--sentence_silence", "0.05"]),
+      expect.any(Object),
+    );
     expect(result).toMatchObject({
       mimeType: "audio/wav",
       extension: "wav",
@@ -256,9 +299,27 @@ describe("Piper TTS adapter", () => {
       segmentCount: 2,
       generationDurationMs: expect.any(Number),
       alignment: {
-        mode: "timeline",
+        mode: "balanced",
         targetDurationSeconds: 1.5,
         chunks: 2,
+        timeline: [
+          expect.objectContaining({
+            segmentId: 0,
+            rawDurationSeconds: 0.5,
+            targetDurationSeconds: 0.5,
+            scheduledStartSeconds: 0,
+            speedFactor: 1,
+          }),
+          expect.objectContaining({
+            segmentId: 1,
+            rawDurationSeconds: 0.5,
+            targetDurationSeconds: 0.5,
+            scheduledStartSeconds: 0.95,
+            pauseBeforeSeconds: 0.45,
+            speedFactor: 1,
+          }),
+        ],
+        warnings: [],
       },
       provider: { name: "piper", mode: "local-cli" },
     });

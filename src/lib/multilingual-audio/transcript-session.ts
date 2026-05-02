@@ -2,6 +2,7 @@ import type {
   AudioTranscriptionStep,
   ChineseTranscriptionResult,
   TranscriptTranslationResult,
+  VietnameseVideoMetadataResult,
 } from "./types";
 
 export const TRANSCRIPT_SESSION_STORAGE_KEY = "omnivideo.audioTranscript.session.v1";
@@ -17,6 +18,7 @@ export type TranscriptSessionState = {
   steps: AudioTranscriptionStep[];
   result: ChineseTranscriptionResult | null;
   translation: TranscriptTranslationResult | null;
+  videoMetadata: VietnameseVideoMetadataResult | null;
 };
 
 export function serializeTranscriptSession(
@@ -43,12 +45,24 @@ export function serializeTranscriptSession(
 export function parseTranscriptSession(raw: string | null): TranscriptSessionState | null {
   if (!raw) return null;
   try {
-    const parsed = JSON.parse(raw) as TranscriptSessionState;
+    const parsed = JSON.parse(raw) as Partial<TranscriptSessionState>;
     if (!parsed || typeof parsed !== "object") return null;
     if (parsed.segmentView !== "source" && parsed.segmentView !== "translation") {
       return null;
     }
-    return parsed;
+    return {
+      language: parsed.language ?? "zh",
+      prompt: parsed.prompt ?? "",
+      includeWordTimestamps: parsed.includeWordTimestamps ?? true,
+      selectedProviderId: parsed.selectedProviderId ?? "",
+      translationModel: parsed.translationModel ?? "",
+      selectedAssetId: parsed.selectedAssetId ?? "",
+      segmentView: parsed.segmentView,
+      steps: Array.isArray(parsed.steps) ? parsed.steps : [],
+      result: parsed.result ?? null,
+      translation: parsed.translation ?? null,
+      videoMetadata: parsed.videoMetadata ?? null,
+    };
   } catch {
     return null;
   }

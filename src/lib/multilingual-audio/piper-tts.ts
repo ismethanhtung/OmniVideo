@@ -16,6 +16,14 @@ import {
 
 const MAX_PIPER_TEXT_LENGTH = 5000;
 const DEFAULT_TIMEOUT_MS = 60000;
+const TIMELINE_GAP_BORROW_RATIO = 0.75;
+const MAX_TIMELINE_GAP_BORROW_SECONDS = 0.75;
+const TIMELINE_SEGMENT_SENTENCE_SILENCE_SECONDS = 0.05;
+const HIGH_TIMELINE_SPEED_FACTOR = 1.35;
+const BALANCED_MAX_PAUSE_SECONDS = 0.45;
+const BALANCED_MAX_SPEED_FACTOR = 1.25;
+const BALANCED_LONG_PAUSE_SECONDS = 0.7;
+const BALANCED_DRIFT_WARNING_SECONDS = 0.35;
 const DEFAULT_LOCAL_PIPER_DIR = path.join(process.cwd(), "piper");
 const DEFAULT_LOCAL_PIPER_BINARY = path.join(
   process.cwd(),
@@ -54,6 +62,23 @@ export type PiperTtsInput = {
 };
 
 type NormalizedPiperVoiceSettings = VoiceGenerationSettings;
+
+type TimelineAlignmentChunk = {
+  segmentId: number;
+  start: number;
+  end: number;
+  slotDurationSeconds: number;
+  rawDurationSeconds: number;
+  targetDurationSeconds: number;
+  borrowedGapSeconds: number;
+  speedFactor: number;
+  tempoFilter: string;
+  scheduledStartSeconds?: number;
+  scheduledEndSeconds?: number;
+  pauseBeforeSeconds?: number;
+  driftSeconds?: number;
+  warningCodes: string[];
+};
 
 export type PiperTtsResult = {
   audioBase64: string;
@@ -382,6 +407,10 @@ export function normalizePiperVoiceSettings(
       typeof settings?.preserveTimestampGaps === "boolean"
         ? settings.preserveTimestampGaps
         : DEFAULT_PIPER_TTS_SETTINGS.preserveTimestampGaps,
+    alignmentMode:
+      settings?.alignmentMode === "strict" || settings?.alignmentMode === "balanced"
+        ? settings.alignmentMode
+        : DEFAULT_PIPER_TTS_SETTINGS.alignmentMode,
   };
 }
 
@@ -636,8 +665,16 @@ async function synthesizeSegmentFiles(input: {
   segments: VoiceGenerationSegment[];
   settings: NormalizedPiperVoiceSettings;
   workDir: string;
+  timelineMode?: boolean;
 }) {
   const files: Array<{ segment: VoiceGenerationSegment; filePath: string }> = [];
+  const sentenceSilence =
+    input.timelineMode && input.settings.sentenceSilence !== undefined
+      ? Math.min(
+          input.settings.sentenceSilence,
+          TIMELINE_SEGMENT_SENTENCE_SILENCE_SECONDS,
+        )
+      : input.settings.sentenceSilence;
 
   for (const segment of input.segments) {
     const result = await generatePiperSpeech({
@@ -649,7 +686,7 @@ async function synthesizeSegmentFiles(input: {
       lengthScale: input.settings.lengthScale,
       noiseScale: input.settings.noiseScale,
       noiseW: input.settings.noiseW,
-      sentenceSilence: input.settings.sentenceSilence,
+      sentenceSilence,
     });
     const filePath = path.join(input.workDir, `segment-${segment.id}.wav`);
     await writeFile(filePath, Buffer.from(result.audioBase64, "base64"));
@@ -659,6 +696,61 @@ async function synthesizeSegmentFiles(input: {
   return files;
 }
 
+export function buildTimelineAlignmentChunk(input: {
+  segment: VoiceGenerationSegment;
+  rawDurationSeconds: number;
+  nextSegmentStart?: number;
+}) {
+  const slotDurationSeconds = segmentDuration(input.segment);
+  const gapAfter =
+    input.nextSegmentStart !== undefined
+      ? Math.max(0, input.nextSegmentStart - input.segment.end)
+      : 0;
+  const maxBorrowedGapSeconds = Math.min(
+    gapAfter * TIMELINE_GAP_BORROW_RATIO,
+    MAX_TIMELINE_GAP_BORROW_SECONDS,
+  );
+  const wantedBorrowSeconds = Math.max(
+    0,
+    input.rawDurationSeconds - slotDurationSeconds,
+  );
+  const borrowedGapSeconds = Math.min(
+    wantedBorrowSeconds,
+    maxBorrowedGapSeconds,
+  );
+  const targetDurationSeconds = slotDurationSeconds + borrowedGapSeconds;
+  const speedFactor =
+    input.rawDurationSeconds > targetDurationSeconds &&
+    targetDurationSeconds > 0
+      ? input.rawDurationSeconds / targetDurationSeconds
+      : 1;
+  const tempoFilter = buildAtempoFilterChain(speedFactor);
+  const warningCodes: string[] = [];
+
+  if (speedFactor > HIGH_TIMELINE_SPEED_FACTOR) {
+    warningCodes.push("HIGH_SPEED_FACTOR");
+  }
+  if (
+    input.rawDurationSeconds > slotDurationSeconds &&
+    borrowedGapSeconds < wantedBorrowSeconds
+  ) {
+    warningCodes.push("INSUFFICIENT_GAP_FOR_NATURAL_SPEED");
+  }
+
+  return {
+    segmentId: input.segment.id,
+    start: input.segment.start,
+    end: input.segment.end,
+    slotDurationSeconds,
+    rawDurationSeconds: input.rawDurationSeconds,
+    targetDurationSeconds,
+    borrowedGapSeconds,
+    speedFactor,
+    tempoFilter,
+    warningCodes,
+  } satisfies TimelineAlignmentChunk;
+}
+
 async function alignPiperFilesToTimeline(input: {
   files: Array<{ segment: VoiceGenerationSegment; filePath: string }>;
   workDir: string;
@@ -666,8 +758,9 @@ async function alignPiperFilesToTimeline(input: {
 }) {
   const concatPaths: string[] = [];
   let cursor = 0;
+  const chunks: TimelineAlignmentChunk[] = [];
 
-  for (const item of input.files) {
+  for (const [index, item] of input.files.entries()) {
     const duration = segmentDuration(item.segment);
     if (duration <= 0) continue;
 
@@ -693,8 +786,12 @@ async function alignPiperFilesToTimeline(input: {
     }
 
     const rawDuration = await probeAudioDuration(item.filePath);
-    const speedFactor = rawDuration > duration ? rawDuration / duration : 1;
-    const tempoFilter = buildAtempoFilterChain(speedFactor);
+    const chunk = buildTimelineAlignmentChunk({
+      segment: item.segment,
+      rawDurationSeconds: rawDuration,
+      nextSegmentStart: input.files[index + 1]?.segment.start,
+    });
+    chunks.push(chunk);
     const alignedPath = path.join(
       input.workDir,
       `aligned-${item.segment.id}.wav`,
@@ -704,7 +801,7 @@ async function alignPiperFilesToTimeline(input: {
       "-i",
       item.filePath,
       "-af",
-      `${tempoFilter},apad,atrim=0:${duration.toFixed(3)},asetpts=PTS-STARTPTS`,
+      `${chunk.tempoFilter},apad,atrim=0:${chunk.targetDurationSeconds.toFixed(3)},asetpts=PTS-STARTPTS`,
       "-ac",
       "1",
       "-ar",
@@ -714,7 +811,7 @@ async function alignPiperFilesToTimeline(input: {
       alignedPath,
     ]);
     concatPaths.push(alignedPath);
-    cursor = Math.max(cursor, item.segment.end);
+    cursor = Math.max(cursor, item.segment.start + chunk.targetDurationSeconds);
   }
 
   if (concatPaths.length === 0) {
@@ -723,7 +820,7 @@ async function alignPiperFilesToTimeline(input: {
       filePaths: input.files.map((file) => file.filePath),
       outputPath: input.outputPath,
     });
-    return;
+    return { chunks: [], warnings: [] };
   }
 
   await concatWavFiles({
@@ -731,6 +828,139 @@ async function alignPiperFilesToTimeline(input: {
     filePaths: concatPaths,
     outputPath: input.outputPath,
   });
+  return {
+    chunks,
+    warnings: Array.from(
+      new Set(chunks.flatMap((chunk) => chunk.warningCodes)),
+    ),
+  };
+}
+
+async function alignPiperFilesToBalancedTimeline(input: {
+  files: Array<{ segment: VoiceGenerationSegment; filePath: string }>;
+  workDir: string;
+  outputPath: string;
+}) {
+  const concatPaths: string[] = [];
+  const chunks: TimelineAlignmentChunk[] = [];
+  let cursor = 0;
+
+  for (const item of input.files) {
+    const slotDurationSeconds = segmentDuration(item.segment);
+    if (slotDurationSeconds <= 0) continue;
+
+    const rawDurationSeconds = await probeAudioDuration(item.filePath);
+    const naturalGapSeconds = Math.max(0, item.segment.start - cursor);
+    const pauseBeforeSeconds =
+      naturalGapSeconds > 0
+        ? Math.min(naturalGapSeconds, BALANCED_MAX_PAUSE_SECONDS)
+        : 0;
+
+    if (pauseBeforeSeconds > 0.01) {
+      const silencePath = path.join(
+        input.workDir,
+        `balanced-silence-${item.segment.id}.wav`,
+      );
+      await runFfmpeg([
+        "-y",
+        "-f",
+        "lavfi",
+        "-i",
+        "anullsrc=r=22050:cl=mono",
+        "-t",
+        pauseBeforeSeconds.toFixed(3),
+        "-c:a",
+        "pcm_s16le",
+        silencePath,
+      ]);
+      concatPaths.push(silencePath);
+      cursor += pauseBeforeSeconds;
+    }
+
+    const requiredSpeedFactor =
+      rawDurationSeconds > slotDurationSeconds && slotDurationSeconds > 0
+        ? rawDurationSeconds / slotDurationSeconds
+        : 1;
+    const speedFactor =
+      requiredSpeedFactor > 1
+        ? Math.min(requiredSpeedFactor, BALANCED_MAX_SPEED_FACTOR)
+        : 1;
+    const targetDurationSeconds =
+      speedFactor > 1 ? rawDurationSeconds / speedFactor : rawDurationSeconds;
+    const scheduledStartSeconds = cursor;
+    const scheduledEndSeconds = scheduledStartSeconds + targetDurationSeconds;
+    const driftSeconds = scheduledStartSeconds - item.segment.start;
+    const tempoFilter = buildAtempoFilterChain(speedFactor);
+    const warningCodes: string[] = [];
+
+    if (naturalGapSeconds > BALANCED_LONG_PAUSE_SECONDS) {
+      warningCodes.push("COMPRESSED_LONG_PAUSE");
+    }
+    if (requiredSpeedFactor > BALANCED_MAX_SPEED_FACTOR) {
+      warningCodes.push("SPILLOVER_TO_KEEP_NATURAL_SPEED");
+    }
+    if (driftSeconds > BALANCED_DRIFT_WARNING_SECONDS) {
+      warningCodes.push("START_DELAYED_BY_PREVIOUS_SEGMENT");
+    }
+
+    const alignedPath = path.join(
+      input.workDir,
+      `balanced-${item.segment.id}.wav`,
+    );
+    await runFfmpeg([
+      "-y",
+      "-i",
+      item.filePath,
+      "-af",
+      `${tempoFilter},atrim=0:${targetDurationSeconds.toFixed(3)},asetpts=PTS-STARTPTS`,
+      "-ac",
+      "1",
+      "-ar",
+      "22050",
+      "-c:a",
+      "pcm_s16le",
+      alignedPath,
+    ]);
+    concatPaths.push(alignedPath);
+    chunks.push({
+      segmentId: item.segment.id,
+      start: item.segment.start,
+      end: item.segment.end,
+      slotDurationSeconds,
+      rawDurationSeconds,
+      targetDurationSeconds,
+      borrowedGapSeconds: 0,
+      speedFactor,
+      tempoFilter,
+      scheduledStartSeconds,
+      scheduledEndSeconds,
+      pauseBeforeSeconds,
+      driftSeconds,
+      warningCodes,
+    });
+    cursor = scheduledEndSeconds;
+  }
+
+  if (concatPaths.length === 0) {
+    await concatWavFiles({
+      workDir: input.workDir,
+      filePaths: input.files.map((file) => file.filePath),
+      outputPath: input.outputPath,
+    });
+    return { chunks: [], warnings: [] };
+  }
+
+  await concatWavFiles({
+    workDir: input.workDir,
+    filePaths: concatPaths,
+    outputPath: input.outputPath,
+  });
+  return {
+    chunks,
+    warnings: Array.from(
+      new Set(chunks.flatMap((chunk) => chunk.warningCodes)),
+    ),
+  };
 }
 
 export async function generateVoiceFromSegments(input: {
@@ -742,13 +972,33 @@ export async function generateVoiceFromSegments(input: {
   const settings = normalizePiperVoiceSettings(input.settings);
   const workDir = path.join(tmpdir(), `omnivideo-piper-voice-${randomUUID()}`);
   const outputPath = path.join(workDir, "voice.wav");
+  let timelineAlignment:
+    | Awaited<ReturnType<typeof alignPiperFilesToTimeline>>
+    | Awaited<ReturnType<typeof alignPiperFilesToBalancedTimeline>>
+    | undefined;
 
   try {
     await mkdir(workDir, { recursive: true });
-    const files = await synthesizeSegmentFiles({ segments, settings, workDir });
+    const files = await synthesizeSegmentFiles({
+      segments,
+      settings,
+      workDir,
+      timelineMode: settings.preserveTimestampGaps,
+    });
 
     if (settings.preserveTimestampGaps) {
-      await alignPiperFilesToTimeline({ files, workDir, outputPath });
+      timelineAlignment =
+        settings.alignmentMode === "strict"
+          ? await alignPiperFilesToTimeline({
+              files,
+              workDir,
+              outputPath,
+            })
+          : await alignPiperFilesToBalancedTimeline({
+              files,
+              workDir,
+              outputPath,
+            });
     } else {
       await concatWavFiles({
         workDir,
@@ -774,9 +1024,15 @@ export async function generateVoiceFromSegments(input: {
       segmentCount: segments.length,
       generationDurationMs: Date.now() - startedAt,
       alignment: {
-        mode: settings.preserveTimestampGaps ? "timeline" : "natural",
+        mode: settings.preserveTimestampGaps
+          ? settings.alignmentMode === "strict"
+            ? "timeline"
+            : "balanced"
+          : "natural",
         targetDurationSeconds,
         chunks: segments.length,
+        timeline: timelineAlignment?.chunks,
+        warnings: timelineAlignment?.warnings,
       },
       settings,
       provider: {

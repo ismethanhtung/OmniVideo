@@ -10,6 +10,7 @@ import {
     FileAudio,
     Loader2,
     Mic2,
+    TriangleAlert,
     Volume2,
 } from "lucide-react";
 
@@ -118,6 +119,18 @@ function formatDurationMs(ms: number) {
     const seconds = ms / 1000;
     if (seconds < 10) return `${seconds.toFixed(2)} s`;
     return `${seconds.toFixed(1)} s`;
+}
+
+function formatSpeedFactor(value: number) {
+    if (!Number.isFinite(value)) return "n/a";
+    return `${value.toFixed(2)}x`;
+}
+
+function parseHashtagInput(value: string) {
+    return value
+        .split(/[,\s]+/u)
+        .map((token) => token.trim().replace(/^#/u, ""))
+        .filter(Boolean);
 }
 
 function stepTone(status: AudioTranscriptionStep["status"]) {
@@ -255,9 +268,9 @@ export function ChineseTranscriptionPanel({
     );
     const [voiceError, setVoiceError] = useState<string | null>(null);
     const [metadataError, setMetadataError] = useState<string | null>(null);
-    const [metadataSaveMessage, setMetadataSaveMessage] = useState<string | null>(
-        null,
-    );
+    const [metadataSaveMessage, setMetadataSaveMessage] = useState<
+        string | null
+    >(null);
     const [result, setResult] = useState<ChineseTranscriptionResult | null>(
         null,
     );
@@ -267,6 +280,9 @@ export function ChineseTranscriptionPanel({
         useState<VoiceGenerationResult | null>(null);
     const [videoMetadata, setVideoMetadata] =
         useState<VietnameseVideoMetadataResult | null>(null);
+    const [metadataTitleDraft, setMetadataTitleDraft] = useState("");
+    const [metadataDescriptionDraft, setMetadataDescriptionDraft] = useState("");
+    const [metadataHashtagsDraft, setMetadataHashtagsDraft] = useState("");
     const [steps, setSteps] = useState<AudioTranscriptionStep[]>([]);
     const [copiedSegmentsLabel, setCopiedSegmentsLabel] = useState<
         "json" | "text" | null
@@ -322,6 +338,18 @@ export function ChineseTranscriptionPanel({
             setSteps(saved.steps);
             setResult(saved.result);
             setTranslation(saved.translation);
+            setVideoMetadata(saved.videoMetadata);
+            if (saved.videoMetadata) {
+                setMetadataTitleDraft(saved.videoMetadata.title ?? "");
+                setMetadataDescriptionDraft(
+                    saved.videoMetadata.description ?? "",
+                );
+                setMetadataHashtagsDraft(
+                    (saved.videoMetadata.hashtags ?? [])
+                        .map((tag) => `#${tag}`)
+                        .join(" "),
+                );
+            }
         }
         setIsHydrated(true);
     }, []);
@@ -342,6 +370,7 @@ export function ChineseTranscriptionPanel({
                     steps,
                     result,
                     translation,
+                    videoMetadata,
                 }),
             );
         } catch {
@@ -359,6 +388,7 @@ export function ChineseTranscriptionPanel({
         steps,
         translation,
         translationModel,
+        videoMetadata,
     ]);
 
     const fetchModelsForProvider = async (providerId: string) => {
@@ -475,6 +505,9 @@ export function ChineseTranscriptionPanel({
         setMetadataError(null);
         setMetadataSaveMessage(null);
         setVideoMetadata(null);
+        setMetadataTitleDraft("");
+        setMetadataDescriptionDraft("");
+        setMetadataHashtagsDraft("");
 
         try {
             const response = await fetch("/api/audio/transcript-translation", {
@@ -542,6 +575,7 @@ export function ChineseTranscriptionPanel({
                         noiseW: ttsNoiseW,
                         sentenceSilence: ttsSentenceSilence,
                         preserveTimestampGaps: ttsPreserveTimestampGaps,
+                        alignmentMode: "balanced",
                     },
                 }),
             });
@@ -605,6 +639,11 @@ export function ChineseTranscriptionPanel({
             }
 
             setVideoMetadata(payload.data);
+            setMetadataTitleDraft(payload.data.title ?? "");
+            setMetadataDescriptionDraft(payload.data.description ?? "");
+            setMetadataHashtagsDraft(
+                (payload.data.hashtags ?? []).map((tag) => `#${tag}`).join(" "),
+            );
         } catch (requestError) {
             setMetadataError(
                 requestError instanceof Error
@@ -627,17 +666,23 @@ export function ChineseTranscriptionPanel({
         setIsSavingMetadata(true);
         setMetadataSaveMessage(null);
         try {
-            const response = await fetch(`/api/storage/assets/${selectedAssetId}`, {
-                method: "PATCH",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    metadata: {
-                        vietnameseTitle: videoMetadata.title,
-                        vietnameseDescription: videoMetadata.description,
-                        vietnameseHashtags: videoMetadata.hashtags,
-                    },
-                }),
-            });
+            const response = await fetch(
+                `/api/storage/assets/${selectedAssetId}`,
+                {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        metadata: {
+                            vietnameseTitle: metadataTitleDraft.trim(),
+                            vietnameseDescription:
+                                metadataDescriptionDraft.trim(),
+                            vietnameseHashtags: parseHashtagInput(
+                                metadataHashtagsDraft,
+                            ),
+                        },
+                    }),
+                },
+            );
             const payload = (await response.json()) as {
                 ok: boolean;
                 error?: string;
@@ -666,6 +711,39 @@ export function ChineseTranscriptionPanel({
     const voiceAudioUrl = voiceResult
         ? `data:${voiceResult.mimeType};base64,${voiceResult.audioBase64}`
         : null;
+    const voiceTimelineDiagnostics = voiceResult?.alignment.timeline ?? [];
+    const voiceWarningSegments = voiceTimelineDiagnostics
+        .filter(
+            (chunk) =>
+                chunk.warningCodes.length > 0 || chunk.speedFactor > 1.25,
+        )
+        .sort((left, right) => right.speedFactor - left.speedFactor);
+    const voiceSlowSegments = voiceTimelineDiagnostics
+        .filter(
+            (chunk) =>
+                chunk.targetDurationSeconds >
+                    chunk.rawDurationSeconds * 1.25 ||
+                (chunk.pauseBeforeSeconds ?? 0) > 0.7,
+        )
+        .sort(
+            (left, right) =>
+                right.targetDurationSeconds / Math.max(0.01, right.rawDurationSeconds) -
+                left.targetDurationSeconds / Math.max(0.01, left.rawDurationSeconds),
+        );
+    const maxVoiceSpeedFactor =
+        voiceTimelineDiagnostics.length > 0
+            ? Math.max(
+                  ...voiceTimelineDiagnostics.map((chunk) =>
+                      Number.isFinite(chunk.speedFactor)
+                          ? chunk.speedFactor
+                          : 1,
+                  ),
+              )
+            : undefined;
+    const totalBorrowedGapSeconds = voiceTimelineDiagnostics.reduce(
+        (sum, chunk) => sum + chunk.borrowedGapSeconds,
+        0,
+    );
     const extractedAudioUrl = result?.audio.audioPreviewBase64
         ? `data:audio/mpeg;base64,${result.audio.audioPreviewBase64}`
         : null;
@@ -1137,17 +1215,55 @@ export function ChineseTranscriptionPanel({
                                     ) : null}
                                     {videoMetadata ? (
                                         <div className="space-y-2 border border-emerald-500/30 bg-emerald-500/10 px-3 py-2">
-                                            <p className="text-[11px] font-semibold text-emerald-700">
-                                                {videoMetadata.title}
-                                            </p>
-                                            <p className="text-[11px] leading-5 text-emerald-700">
-                                                {videoMetadata.description}
-                                            </p>
-                                            <p className="text-[10px] leading-4 text-emerald-700">
-                                                {(videoMetadata.hashtags ?? [])
-                                                    .map((tag) => `#${tag}`)
-                                                    .join(" ")}
-                                            </p>
+                                            <label className="block">
+                                                <span className="mb-1 block text-[10px] font-semibold text-emerald-700">
+                                                    VI Title
+                                                </span>
+                                                <input
+                                                    value={metadataTitleDraft}
+                                                    disabled={isSavingMetadata}
+                                                    onChange={(event) =>
+                                                        setMetadataTitleDraft(
+                                                            event.currentTarget.value,
+                                                        )
+                                                    }
+                                                    className="w-full border border-emerald-500/30 bg-white/75 px-2 py-1.5 text-[11px] text-main"
+                                                />
+                                            </label>
+                                            <label className="block">
+                                                <span className="mb-1 block text-[10px] font-semibold text-emerald-700">
+                                                    VI Description
+                                                </span>
+                                                <textarea
+                                                    rows={3}
+                                                    value={
+                                                        metadataDescriptionDraft
+                                                    }
+                                                    disabled={isSavingMetadata}
+                                                    onChange={(event) =>
+                                                        setMetadataDescriptionDraft(
+                                                            event.currentTarget.value,
+                                                        )
+                                                    }
+                                                    className="w-full resize-y border border-emerald-500/30 bg-white/75 px-2 py-1.5 text-[11px] leading-5 text-main"
+                                                />
+                                            </label>
+                                            <label className="block">
+                                                <span className="mb-1 block text-[10px] font-semibold text-emerald-700">
+                                                    VI Hashtags
+                                                </span>
+                                                <input
+                                                    value={metadataHashtagsDraft}
+                                                    disabled={isSavingMetadata}
+                                                    onChange={(event) =>
+                                                        setMetadataHashtagsDraft(
+                                                            event.currentTarget.value,
+                                                        )
+                                                    }
+                                                    placeholder="#tag1 #tag2"
+                                                    className="w-full border border-emerald-500/30 bg-white/75 px-2 py-1.5 text-[11px] text-main"
+                                                />
+                                            </label>
                                         </div>
                                     ) : null}
                                 </div>
@@ -1283,11 +1399,11 @@ export function ChineseTranscriptionPanel({
                             <label className="flex items-center justify-between gap-3 border border-main bg-main px-3 py-2">
                                 <span>
                                     <span className="block text-[11px] font-semibold text-main">
-                                        Preserve timestamp gaps
+                                        Balanced timing
                                     </span>
                                     <span className="block text-[10px] text-muted">
-                                        Thêm khoảng lặng giữa segments theo
-                                        timestamp.
+                                        Giữ thứ tự/timeline tương đối, nhưng
+                                        giới hạn pause dài và speed-up quá mạnh.
                                     </span>
                                 </span>
                                 <input
@@ -1350,6 +1466,136 @@ export function ChineseTranscriptionPanel({
                                               )}`
                                             : ""}
                                     </p>
+                                    {voiceTimelineDiagnostics.length > 0 ? (
+                                        <div className="space-y-2 border border-emerald-500/25 bg-white/55 p-2 text-[10px] leading-4 text-emerald-800">
+                                            <div className="flex flex-wrap items-center gap-2">
+                                                <span className="font-semibold">
+                                                    Speech rate diagnostics
+                                                </span>
+                                                <span>
+                                                    max{" "}
+                                                    {formatSpeedFactor(
+                                                        maxVoiceSpeedFactor ??
+                                                            1,
+                                                    )}
+                                                </span>
+                                                <span>
+                                                    borrowed{" "}
+                                                    {totalBorrowedGapSeconds.toFixed(
+                                                        2,
+                                                    )}
+                                                    s
+                                                </span>
+                                                <span>
+                                                    warnings{" "}
+                                                    {
+                                                        voiceWarningSegments.length
+                                                    }
+                                                </span>
+                                                <span>
+                                                    slow{" "}
+                                                    {voiceSlowSegments.length}
+                                                </span>
+                                            </div>
+                                            {voiceWarningSegments.length > 0 ? (
+                                                <div className="space-y-1 border border-amber-500/30 bg-amber-500/10 p-2 text-amber-800">
+                                                    <div className="flex items-start gap-2">
+                                                        <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                                                        <p>
+                                                            Một số segment vẫn
+                                                            cần nói nhanh vì bản
+                                                            dịch dài hơn
+                                                            timeline/gap hiện
+                                                            có. Rút gọn text ở
+                                                            các segment này sẽ
+                                                            cho giọng tự nhiên
+                                                            hơn.
+                                                        </p>
+                                                    </div>
+                                                    <div className="grid gap-1 sm:grid-cols-2">
+                                                        {voiceWarningSegments
+                                                            .slice(0, 6)
+                                                            .map((chunk) => (
+                                                                <div
+                                                                    key={
+                                                                        chunk.segmentId
+                                                                    }
+                                                                    className="border border-amber-500/20 bg-white/60 px-2 py-1"
+                                                                >
+                                                                    <span className="font-semibold">
+                                                                        #
+                                                                        {
+                                                                            chunk.segmentId
+                                                                        }{" "}
+                                                                        {formatSpeedFactor(
+                                                                            chunk.speedFactor,
+                                                                        )}
+                                                                    </span>{" "}
+                                                                    <span>
+                                                                        raw{" "}
+                                                                        {chunk.rawDurationSeconds.toFixed(
+                                                                            2,
+                                                                        )}
+                                                                        s /
+                                                                        target{" "}
+                                                                        {chunk.targetDurationSeconds.toFixed(
+                                                                            2,
+                                                                        )}
+                                                                        s
+                                                                    </span>
+                                                                </div>
+                                                            ))}
+                                                    </div>
+                                                </div>
+                                            ) : null}
+                                            {voiceSlowSegments.length > 0 ? (
+                                                <div className="space-y-1 border border-sky-500/30 bg-sky-500/10 p-2 text-sky-800">
+                                                    <p>
+                                                        Một số đoạn nghe chậm do
+                                                        slot timeline dài hơn
+                                                        phần nói thực tế
+                                                        (silence/pad), không
+                                                        phải do TTS kéo chậm
+                                                        giọng nói.
+                                                    </p>
+                                                    <div className="grid gap-1 sm:grid-cols-2">
+                                                        {voiceSlowSegments
+                                                            .slice(0, 4)
+                                                            .map((chunk) => (
+                                                                <div
+                                                                    key={
+                                                                        chunk.segmentId
+                                                                    }
+                                                                    className="border border-sky-500/20 bg-white/60 px-2 py-1"
+                                                                >
+                                                                    <span className="font-semibold">
+                                                                        #
+                                                                        {
+                                                                            chunk.segmentId
+                                                                        }{" "}
+                                                                        {formatSpeedFactor(
+                                                                            chunk.speedFactor,
+                                                                        )}
+                                                                    </span>{" "}
+                                                                    <span>
+                                                                        raw{" "}
+                                                                        {chunk.rawDurationSeconds.toFixed(
+                                                                            2,
+                                                                        )}
+                                                                        s /
+                                                                        target{" "}
+                                                                        {chunk.targetDurationSeconds.toFixed(
+                                                                            2,
+                                                                        )}
+                                                                        s
+                                                                    </span>
+                                                                </div>
+                                                            ))}
+                                                    </div>
+                                                </div>
+                                            ) : null}
+                                        </div>
+                                    ) : null}
                                     <audio
                                         controls
                                         src={voiceAudioUrl}
@@ -1548,6 +1794,8 @@ export function ChineseTranscriptionPanel({
                                         (() => {
                                             const translated =
                                                 translationById.get(segment.id);
+                                            const segmentNumber =
+                                                segment.id + 1;
                                             const displayText =
                                                 segmentView === "translation" &&
                                                 translated
@@ -1556,17 +1804,23 @@ export function ChineseTranscriptionPanel({
                                             return (
                                                 <div
                                                     key={segment.id}
-                                                    className="grid gap-3 border-b border-main px-4 py-3 last:border-b-0 md:grid-cols-[160px_minmax(0,1fr)]"
+                                                    className="grid gap-3 border-b border-main px-4 py-3 last:border-b-0 md:grid-cols-[190px_minmax(0,1fr)]"
                                                 >
-                                                    <p className="text-[11px] font-semibold text-muted">
-                                                        {formatTime(
-                                                            segment.start,
-                                                        )}{" "}
-                                                        →{" "}
-                                                        {formatTime(
-                                                            segment.end,
-                                                        )}
-                                                    </p>
+                                                    <div className="space-y-1">
+                                                        <p className="text-[11px] font-bold text-main">
+                                                            Segment #
+                                                            {segmentNumber}
+                                                        </p>
+                                                        <p className="text-[10px] font-semibold text-muted">
+                                                            {formatTime(
+                                                                segment.start,
+                                                            )}{" "}
+                                                            →{" "}
+                                                            {formatTime(
+                                                                segment.end,
+                                                            )}
+                                                        </p>
+                                                    </div>
                                                     <div className="min-w-0">
                                                         {segmentView ===
                                                             "translation" &&
@@ -1575,7 +1829,7 @@ export function ChineseTranscriptionPanel({
                                                                 value={
                                                                     translated.translatedText
                                                                 }
-                                                                rows={2}
+                                                                rows={1}
                                                                 onChange={(
                                                                     event,
                                                                 ) => {

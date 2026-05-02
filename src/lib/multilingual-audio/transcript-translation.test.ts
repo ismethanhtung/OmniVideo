@@ -111,8 +111,14 @@ describe("transcript translation", () => {
     });
     const [, init] = fetchImpl.mock.calls[0];
     const body = JSON.parse(init.body as string);
+    const prompt = body.messages[1].content as string;
     expect(body.model).toBe("llama-3.1-8b-instant");
     expect(body.response_format).toEqual({ type: "json_object" });
+    expect(prompt).toContain("fits the segment duration");
+    expect(prompt).toContain("Do not force Vietnamese to match the source character count exactly");
+    expect(prompt).toContain("short Chinese segments need short Vietnamese");
+    expect(prompt).toContain("20 -> hai mươi");
+    expect(prompt).toContain("durationSeconds");
   });
 
   it("maps Groq provider errors", async () => {

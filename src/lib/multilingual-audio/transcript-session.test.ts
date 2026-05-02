@@ -19,6 +19,13 @@ describe("transcript-session", () => {
       steps: [],
       result: null,
       translation: null,
+      videoMetadata: {
+        title: "Tieu de",
+        description: "Mo ta ngan",
+        hashtags: ["a", "b"],
+        model: "llama",
+        provider: { name: "groq" },
+      },
     };
 
     const raw = serializeTranscriptSession(state);

@@ -43,6 +43,7 @@ export const DEFAULT_PIPER_TTS_SETTINGS = {
     noiseW: 0.8,
     sentenceSilence: 0.2,
     preserveTimestampGaps: true,
+    alignmentMode: "balanced",
 } as const;
 
 export type ChineseTranscriptionRequest = {
@@ -124,6 +125,7 @@ export type VoiceGenerationSettings = {
     noiseW?: number;
     sentenceSilence?: number;
     preserveTimestampGaps: boolean;
+    alignmentMode?: "strict" | "balanced";
 };
 
 export type VoiceGenerationSegment = {
@@ -146,9 +148,26 @@ export type VoiceGenerationResult = {
      */
     generationDurationMs: number;
     alignment: {
-        mode: "natural" | "timeline";
+        mode: "natural" | "timeline" | "balanced";
         targetDurationSeconds?: number;
         chunks: number;
+        timeline?: {
+            segmentId: number;
+            start: number;
+            end: number;
+            slotDurationSeconds: number;
+            rawDurationSeconds: number;
+            targetDurationSeconds: number;
+            borrowedGapSeconds: number;
+            speedFactor: number;
+            tempoFilter: string;
+            scheduledStartSeconds?: number;
+            scheduledEndSeconds?: number;
+            pauseBeforeSeconds?: number;
+            driftSeconds?: number;
+            warningCodes: string[];
+        }[];
+        warnings?: string[];
     };
     settings: VoiceGenerationSettings;
     provider: {

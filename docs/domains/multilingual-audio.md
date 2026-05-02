@@ -24,9 +24,12 @@ Hỗ trợ xử lý audio đa ngôn ngữ cho video linh hoạt: phát hiện ng
   và các scale của Piper. Default path portable theo repo: UI có thể gửi
   `piper` và để trống model/config để server tự resolve `piper/.venv/bin/piper`,
   `piper/model.onnx`, `piper/model.onnx.json`. Output trả WAV để
-  preview/download trong UI, chưa persist vào storage. Khi bật preserve timestamp
-  gaps, server synthesize từng segment, chèn silence theo gap, rồi trim/pad và
-  speed-up audio bằng ffmpeg để bám `start/end` segment.
+  preview/download trong UI, chưa persist vào storage. Khi bật balanced timing,
+  server synthesize từng segment với sentence silence rất ngắn, giới hạn pause
+  dài giữa segments và chặn speed-up quá mạnh để ưu tiên giọng tự nhiên hơn
+  timestamp tuyệt đối. Response trả thêm diagnostics theo segment gồm raw
+  duration, target/scheduled duration, pause, drift, speed factor và warning
+  codes để phát hiện câu cần rewrite hoặc dịch ngắn hơn.
 - Workspace hiện có node `audio.voice-generation` để sinh WAV từ translated
   transcript và node `audio.video-dubbing` để chạy trọn MVP ZH->VI: transcribe,
   translate, Piper TTS, duck audio gốc rồi mux MP4 bằng ffmpeg. Node dubbing trả
@@ -68,6 +71,8 @@ Hỗ trợ xử lý audio đa ngôn ngữ cho video linh hoạt: phát hiện ng
 2. Voice-over không cắt chữ ở cuối segment.
 3. Loudness normalization đạt ngưỡng mục tiêu.
 4. TTS thất bại phải fallback voice profile hoặc provider.
+5. Timeline voice generation phải báo segment có speed factor cao để không che
+   giấu lỗi tự nhiên giọng đọc.
 
 ## 7. Risks
 
@@ -89,3 +94,5 @@ Hỗ trợ xử lý audio đa ngôn ngữ cho video linh hoạt: phát hiện ng
 7. Composite dubbing node phù hợp MVP thao tác nhanh, nhưng các pipeline cần
    kiểm soát chất lượng cao vẫn nên tách riêng transcribe, translate, TTS,
    duck/mux và review thành nhiều node nhỏ.
+8. Tối ưu dubbing tự nhiên nên ưu tiên duration-aware translation/rewrite trước
+   khi hậu xử lý tempo mạnh; ffmpeg alignment chỉ nên là bước fine-tune.
