@@ -46,6 +46,30 @@ describe("workspace graph helpers", () => {
         });
     });
 
+    it("creates Piper workspace nodes with balanced timing defaults", () => {
+        for (const nodeType of [
+            "audio.voice-generation",
+            "audio.video-dubbing",
+        ]) {
+            const template = WORKSPACE_NODE_TEMPLATES.find(
+                (entry) => entry.nodeType === nodeType,
+            );
+
+            expect(template).toBeDefined();
+
+            const graph = addWorkspaceNode(
+                createEmptyWorkspaceGraph("Piper"),
+                template!,
+                { x: 100, y: 160 },
+            );
+
+            expect(graph.nodes[0].config).toMatchObject({
+                ttsPreserveTimestampGaps: true,
+                ttsAlignmentMode: "balanced",
+            });
+        }
+    });
+
     it("connects nodes and rejects missing or duplicate edges", () => {
         const sourceTemplate = WORKSPACE_NODE_TEMPLATES.find(
             (entry) => entry.nodeType === "source.url",

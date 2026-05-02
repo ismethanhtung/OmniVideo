@@ -6,7 +6,11 @@ import {
     Clapperboard,
     FlipHorizontal2,
     Loader2,
+    Pause,
+    Play,
     ScanLine,
+    Volume2,
+    VolumeX,
     Wand2,
 } from "lucide-react";
 
@@ -89,11 +93,31 @@ type BlurRegionDraft = {
     strength: number;
 };
 
+type VideoEditSetup = NonNullable<
+    NonNullable<StoredVideoAsset["metadata"]>["videoEditSetup"]
+>;
+
 function formatBytes(bytes: number) {
     if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
     if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
     if (bytes >= 1024) return `${(bytes / 1024).toFixed(2)} KB`;
     return `${bytes} B`;
+}
+
+export function formatPreviewClock(seconds: number) {
+    if (!Number.isFinite(seconds) || seconds < 0) return "00:00";
+    const totalSeconds = Math.floor(seconds);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const remainingSeconds = totalSeconds % 60;
+    if (hours > 0) {
+        return `${hours}:${String(minutes).padStart(2, "0")}:${String(
+            remainingSeconds,
+        ).padStart(2, "0")}`;
+    }
+    return `${String(minutes).padStart(2, "0")}:${String(
+        remainingSeconds,
+    ).padStart(2, "0")}`;
 }
 
 function hexToRgba(hex: string, opacityPercent: number) {
@@ -138,6 +162,73 @@ function InfoCard({
                     Ready
                 </span>
             </div>
+        </div>
+    );
+}
+
+export function SourcePreviewControls({
+    isPlaying,
+    isMuted,
+    currentTime,
+    duration,
+    onTogglePlay,
+    onToggleMute,
+    onSeek,
+}: {
+    isPlaying: boolean;
+    isMuted: boolean;
+    currentTime: number;
+    duration: number;
+    onTogglePlay: () => void;
+    onToggleMute: () => void;
+    onSeek: (timeSeconds: number) => void;
+}) {
+    const safeDuration =
+        Number.isFinite(duration) && duration > 0 ? duration : 0;
+    const safeTime = clampNumber(currentTime, 0, safeDuration || 0);
+    const canSeek = safeDuration > 0;
+
+    return (
+        <div className="flex items-center gap-2 border border-main bg-main px-2 py-2">
+            <button
+                type="button"
+                aria-label={isPlaying ? "Pause preview" : "Play preview"}
+                onClick={onTogglePlay}
+                className="inline-flex h-8 w-8 shrink-0 items-center justify-center border border-main bg-secondary text-main hover:bg-secondary/70"
+            >
+                {isPlaying ? (
+                    <Pause className="h-4 w-4" />
+                ) : (
+                    <Play className="h-4 w-4" />
+                )}
+            </button>
+            <button
+                type="button"
+                aria-label={isMuted ? "Unmute preview" : "Mute preview"}
+                onClick={onToggleMute}
+                className="inline-flex h-8 w-8 shrink-0 items-center justify-center border border-main bg-secondary text-main hover:bg-secondary/70"
+            >
+                {isMuted ? (
+                    <VolumeX className="h-4 w-4" />
+                ) : (
+                    <Volume2 className="h-4 w-4" />
+                )}
+            </button>
+            <input
+                aria-label="Preview seek"
+                type="range"
+                min={0}
+                max={safeDuration || 0}
+                step={0.05}
+                value={safeTime}
+                disabled={!canSeek}
+                onChange={(event) => onSeek(Number(event.currentTarget.value))}
+                className="min-w-0 flex-1 accent-[var(--color-accent)] disabled:opacity-50"
+            />
+            <span className="w-[96px] shrink-0 text-right text-[10px] tabular-nums text-muted">
+                {formatPreviewClock(safeTime)} /{" "}
+                {formatPreviewClock(safeDuration)}
+            </span>
         </div>
     );
 }
@@ -203,6 +294,10 @@ function normalizeSubtitleBackgroundColor(value: string | null | undefined) {
         : "#000000";
 }
 
+function hasSavedVideoEditSetup(asset: StoredVideoAsset | null) {
+    return Boolean(asset?.metadata?.videoEditSetup);
+}
+
 export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
     const Icon = section.icon ?? Clapperboard;
     const [videoFile, setVideoFile] = useState<File | null>(null);
@@ -247,6 +342,10 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
         width: 1920,
         height: 1080,
     });
+    const [sourcePreviewPlaying, setSourcePreviewPlaying] = useState(false);
+    const [sourcePreviewMuted, setSourcePreviewMuted] = useState(true);
+    const [sourcePreviewTime, setSourcePreviewTime] = useState(0);
+    const [sourcePreviewDuration, setSourcePreviewDuration] = useState(0);
     const [previewLayoutVersion, setPreviewLayoutVersion] = useState(0);
     const [subtitlePreviewLeftPx, setSubtitlePreviewLeftPx] = useState(120);
     const [subtitlePreviewTopPx, setSubtitlePreviewTopPx] = useState(320);
@@ -283,6 +382,7 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
 
     const selectedAsset =
         assets.find((asset) => asset._id === selectedAssetId) ?? null;
+    const selectedAssetHasSavedSetup = hasSavedVideoEditSetup(selectedAsset);
 
     const sourceVideoUrl = useMemo(() => {
         if (videoFile) return URL.createObjectURL(videoFile);
@@ -303,6 +403,12 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                 URL.revokeObjectURL(sourceVideoUrl);
         };
     }, [sourceVideoUrl, videoFile]);
+
+    useEffect(() => {
+        setSourcePreviewPlaying(false);
+        setSourcePreviewTime(0);
+        setSourcePreviewDuration(0);
+    }, [sourceVideoUrl]);
 
     const activeRegion =
         blurRegions.find((item) => item.id === activeRegionId) ?? null;
@@ -340,63 +446,63 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
         };
     }, [subtitlePreviewPlacement]);
 
-    const commitSubtitlePositionToAssStyle = useCallback((
-        leftPx: number,
-        topPx: number,
-    ) => {
-        const frame = previewFrameRef.current;
-        const subtitleBox = subtitleBoxRef.current;
-        if (!frame || !subtitleBox) return;
-        const frameWidth = frame.clientWidth;
-        const frameHeight = frame.clientHeight;
-        const boxWidth = subtitleBox.clientWidth;
-        const boxHeight = subtitleBox.clientHeight;
-        if (frameWidth <= 0 || frameHeight <= 0) return;
+    const commitSubtitlePositionToAssStyle = useCallback(
+        (leftPx: number, topPx: number) => {
+            const frame = previewFrameRef.current;
+            const subtitleBox = subtitleBoxRef.current;
+            if (!frame || !subtitleBox) return;
+            const frameWidth = frame.clientWidth;
+            const frameHeight = frame.clientHeight;
+            const boxWidth = subtitleBox.clientWidth;
+            const boxHeight = subtitleBox.clientHeight;
+            if (frameWidth <= 0 || frameHeight <= 0) return;
 
-        const centerX = leftPx + boxWidth / 2;
-        const centerY = topPx + boxHeight / 2;
-        const horizontalZone =
-            centerX < frameWidth * 0.33
-                ? "left"
-                : centerX > frameWidth * 0.67
-                  ? "right"
-                  : "center";
-        const verticalZone = centerY < frameHeight * 0.5 ? "top" : "bottom";
+            const centerX = leftPx + boxWidth / 2;
+            const centerY = topPx + boxHeight / 2;
+            const horizontalZone =
+                centerX < frameWidth * 0.33
+                    ? "left"
+                    : centerX > frameWidth * 0.67
+                      ? "right"
+                      : "center";
+            const verticalZone = centerY < frameHeight * 0.5 ? "top" : "bottom";
 
-        const leftMarginPx = Math.max(0, leftPx);
-        const rightMarginPx = Math.max(0, frameWidth - leftPx - boxWidth);
-        const topMarginPx = Math.max(0, topPx);
-        const bottomMarginPx = Math.max(0, frameHeight - topPx - boxHeight);
-        const scaleX = videoNaturalSize.width / frameWidth;
-        const scaleY = videoNaturalSize.height / frameHeight;
+            const leftMarginPx = Math.max(0, leftPx);
+            const rightMarginPx = Math.max(0, frameWidth - leftPx - boxWidth);
+            const topMarginPx = Math.max(0, topPx);
+            const bottomMarginPx = Math.max(0, frameHeight - topPx - boxHeight);
+            const scaleX = videoNaturalSize.width / frameWidth;
+            const scaleY = videoNaturalSize.height / frameHeight;
 
-        let nextAlignment = 2;
-        if (verticalZone === "top") {
-            nextAlignment =
-                horizontalZone === "left"
-                    ? 7
-                    : horizontalZone === "right"
-                      ? 9
-                      : 8;
-        } else {
-            nextAlignment =
-                horizontalZone === "left"
-                    ? 1
-                    : horizontalZone === "right"
-                      ? 3
-                      : 2;
-        }
+            let nextAlignment = 2;
+            if (verticalZone === "top") {
+                nextAlignment =
+                    horizontalZone === "left"
+                        ? 7
+                        : horizontalZone === "right"
+                          ? 9
+                          : 8;
+            } else {
+                nextAlignment =
+                    horizontalZone === "left"
+                        ? 1
+                        : horizontalZone === "right"
+                          ? 3
+                          : 2;
+            }
 
-        setSubtitleAlignment(nextAlignment);
-        setSubtitleMarginLeft(Math.round(leftMarginPx * scaleX));
-        setSubtitleMarginRight(Math.round(rightMarginPx * scaleX));
-        setSubtitleMarginBottom(
-            Math.round(
-                (verticalZone === "top" ? topMarginPx : bottomMarginPx) *
-                    scaleY,
-            ),
-        );
-    }, [videoNaturalSize.height, videoNaturalSize.width]);
+            setSubtitleAlignment(nextAlignment);
+            setSubtitleMarginLeft(Math.round(leftMarginPx * scaleX));
+            setSubtitleMarginRight(Math.round(rightMarginPx * scaleX));
+            setSubtitleMarginBottom(
+                Math.round(
+                    (verticalZone === "top" ? topMarginPx : bottomMarginPx) *
+                        scaleY,
+                ),
+            );
+        },
+        [videoNaturalSize.height, videoNaturalSize.width],
+    );
 
     useEffect(() => {
         if (!isDraggingSubtitle) return;
@@ -534,54 +640,94 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
         );
     };
 
-    const applyVideoEditSetup = useCallback((
-        setup: NonNullable<StoredVideoAsset["metadata"]>["videoEditSetup"],
-    ) => {
-        if (!setup) {
-            applyDefaultSubtitleSetup();
+    const toggleSourcePreviewPlayback = async () => {
+        const video = sourceVideoRef.current;
+        if (!video) return;
+        if (video.paused) {
+            try {
+                await video.play();
+            } catch {
+                setSourcePreviewPlaying(false);
+            }
             return;
         }
-        setMirrorEnabled(setup.mirrorEnabled === true);
-        setBlurEnabled(setup.blurEnabled !== false);
-        setSubtitleOverlayEnabled(setup.subtitleOverlayEnabled !== false);
-        setBlurRegions(
-            (setup.blurRegions ?? []).map((region, index) => ({
-                id: `setup-${index}-${Date.now()}`,
-                ...region,
-            })),
-        );
-        setSubtitleFontFamily(setup.subtitleFontFamily || "Arial");
-        setSubtitleFontSize(setup.subtitleFontSize ?? 55);
-        setSubtitleMarginBottom(setup.subtitleMarginBottom ?? 150);
-        setSubtitleMarginLeft(setup.subtitleMarginLeft ?? 60);
-        setSubtitleMarginRight(setup.subtitleMarginRight ?? 60);
-        setSubtitleAlignment(setup.subtitleAlignment ?? 2);
-        setSubtitleBackgroundEnabled(setup.subtitleBackgroundEnabled !== false);
-        setSubtitleBackgroundColor(
-            normalizeSubtitleBackgroundColor(setup.subtitleBackgroundColor),
-        );
-        setSubtitleBackgroundOpacity(setup.subtitleBackgroundOpacity ?? 65);
-        setSubtitleSampleWidthPercent(setup.subtitleSampleWidthPercent ?? 100);
-        const placement = setup.subtitlePreviewPlacement;
-        setSubtitlePreviewPlacement(
-            placement &&
-                Number.isFinite(placement.leftPercent) &&
-                Number.isFinite(placement.topPercent)
-                ? {
-                      leftPercent: clampNumber(
-                          Number(placement.leftPercent),
-                          0,
-                          100,
-                      ),
-                      topPercent: clampNumber(
-                          Number(placement.topPercent),
-                          0,
-                          100,
-                      ),
-                  }
-                : null,
-        );
-    }, [applyDefaultSubtitleSetup]);
+        video.pause();
+    };
+
+    const toggleSourcePreviewMuted = () => {
+        const video = sourceVideoRef.current;
+        const nextMuted = !sourcePreviewMuted;
+        if (video) {
+            video.muted = nextMuted;
+        }
+        setSourcePreviewMuted(nextMuted);
+    };
+
+    const seekSourcePreview = (timeSeconds: number) => {
+        const video = sourceVideoRef.current;
+        if (!video || !Number.isFinite(timeSeconds)) return;
+        const duration =
+            Number.isFinite(video.duration) && video.duration > 0
+                ? video.duration
+                : sourcePreviewDuration;
+        const nextTime = clampNumber(timeSeconds, 0, duration || 0);
+        video.currentTime = nextTime;
+        setSourcePreviewTime(nextTime);
+    };
+
+    const applyVideoEditSetup = useCallback(
+        (setup: VideoEditSetup | null) => {
+            if (!setup) {
+                applyDefaultSubtitleSetup();
+                return;
+            }
+            setMirrorEnabled(setup.mirrorEnabled === true);
+            setBlurEnabled(setup.blurEnabled !== false);
+            setSubtitleOverlayEnabled(setup.subtitleOverlayEnabled !== false);
+            setBlurRegions(
+                (setup.blurRegions ?? []).map((region, index) => ({
+                    id: `setup-${index}-${Date.now()}`,
+                    ...region,
+                })),
+            );
+            setSubtitleFontFamily(setup.subtitleFontFamily || "Arial");
+            setSubtitleFontSize(setup.subtitleFontSize ?? 55);
+            setSubtitleMarginBottom(setup.subtitleMarginBottom ?? 150);
+            setSubtitleMarginLeft(setup.subtitleMarginLeft ?? 60);
+            setSubtitleMarginRight(setup.subtitleMarginRight ?? 60);
+            setSubtitleAlignment(setup.subtitleAlignment ?? 2);
+            setSubtitleBackgroundEnabled(
+                setup.subtitleBackgroundEnabled !== false,
+            );
+            setSubtitleBackgroundColor(
+                normalizeSubtitleBackgroundColor(setup.subtitleBackgroundColor),
+            );
+            setSubtitleBackgroundOpacity(setup.subtitleBackgroundOpacity ?? 65);
+            setSubtitleSampleWidthPercent(
+                setup.subtitleSampleWidthPercent ?? 100,
+            );
+            const placement = setup.subtitlePreviewPlacement;
+            setSubtitlePreviewPlacement(
+                placement &&
+                    Number.isFinite(placement.leftPercent) &&
+                    Number.isFinite(placement.topPercent)
+                    ? {
+                          leftPercent: clampNumber(
+                              Number(placement.leftPercent),
+                              0,
+                              100,
+                          ),
+                          topPercent: clampNumber(
+                              Number(placement.topPercent),
+                              0,
+                              100,
+                          ),
+                      }
+                    : null,
+            );
+        },
+        [applyDefaultSubtitleSetup],
+    );
 
     useEffect(() => {
         if (!selectedAssetId) return;
@@ -600,34 +746,34 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
             return;
         }
         try {
+            const videoEditSetup: VideoEditSetup = {
+                mirrorEnabled,
+                blurEnabled,
+                subtitleOverlayEnabled,
+                blurRegions: blurRegions.map((item) => ({
+                    x: item.x,
+                    y: item.y,
+                    width: item.width,
+                    height: item.height,
+                    start: item.start,
+                    end: item.end,
+                    strength: item.strength,
+                })),
+                subtitleFontFamily,
+                subtitleFontSize,
+                subtitleMarginBottom,
+                subtitleMarginLeft,
+                subtitleMarginRight,
+                subtitleAlignment,
+                subtitleBackgroundEnabled,
+                subtitleBackgroundColor,
+                subtitleBackgroundOpacity,
+                subtitleSampleWidthPercent,
+                subtitlePreviewPlacement: getCurrentSubtitlePreviewPlacement(),
+            };
             const payload = {
                 metadata: {
-                    videoEditSetup: {
-                        mirrorEnabled,
-                        blurEnabled,
-                        subtitleOverlayEnabled,
-                        blurRegions: blurRegions.map((item) => ({
-                            x: item.x,
-                            y: item.y,
-                            width: item.width,
-                            height: item.height,
-                            start: item.start,
-                            end: item.end,
-                            strength: item.strength,
-                        })),
-                        subtitleFontFamily,
-                        subtitleFontSize,
-                        subtitleMarginBottom,
-                        subtitleMarginLeft,
-                        subtitleMarginRight,
-                        subtitleAlignment,
-                        subtitleBackgroundEnabled,
-                        subtitleBackgroundColor,
-                        subtitleBackgroundOpacity,
-                        subtitleSampleWidthPercent,
-                        subtitlePreviewPlacement:
-                            getCurrentSubtitlePreviewPlacement(),
-                    },
+                    videoEditSetup,
                 },
             };
             const response = await fetch(
@@ -642,6 +788,20 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
             if (!response.ok || !resultPayload.ok) {
                 throw new Error(resultPayload.error ?? "Save setup failed.");
             }
+            setAssets((current) =>
+                current.map((asset) =>
+                    asset._id === selectedAssetId
+                        ? {
+                              ...asset,
+                              metadata: {
+                                  ...asset.metadata,
+                                  videoEditSetup,
+                              },
+                          }
+                        : asset,
+                ),
+            );
+            applyVideoEditSetup(videoEditSetup);
             await fetch("/api/storage/assets?limit=100", {
                 method: "GET",
                 cache: "no-store",
@@ -866,6 +1026,10 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                                                 const isSelected =
                                                     selectedAssetId ===
                                                     asset._id;
+                                                const hasSetup =
+                                                    hasSavedVideoEditSetup(
+                                                        asset,
+                                                    );
                                                 return (
                                                     <button
                                                         key={asset._id}
@@ -893,16 +1057,23 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                                                                 ?.title ??
                                                                 asset._id}
                                                         </p>
-                                                        <p className="mt-1 truncate text-[10px] text-muted">
-                                                            {
-                                                                asset.storageProvider
-                                                            }{" "}
-                                                            ·{" "}
-                                                            {formatBytes(
-                                                                asset.sizeBytes ??
-                                                                    0,
-                                                            )}
-                                                        </p>
+                                                        <div className="mt-1 flex items-center justify-between gap-2">
+                                                            <p className="truncate text-[10px] text-muted">
+                                                                {
+                                                                    asset.storageProvider
+                                                                }{" "}
+                                                                ·{" "}
+                                                                {formatBytes(
+                                                                    asset.sizeBytes ??
+                                                                        0,
+                                                                )}
+                                                            </p>
+                                                            {hasSetup ? (
+                                                                <span className="shrink-0 border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-700">
+                                                                    Saved setup
+                                                                </span>
+                                                            ) : null}
+                                                        </div>
                                                     </button>
                                                 );
                                             })}
@@ -1591,251 +1762,313 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                             </p>
                         </div>
                         {sourceVideoUrl ? (
-                            <div className="flex justify-center">
-                                <div
-                                    ref={previewFrameRef}
-                                    className="relative inline-block overflow-hidden border border-main bg-black"
-                                    onMouseDown={(event) => {
-                                        if (
-                                            !blurEnabled ||
-                                            isRunningEdit ||
-                                            isDraggingSubtitle
-                                        ) {
-                                            return;
-                                        }
-                                        const rect =
-                                            event.currentTarget.getBoundingClientRect();
-                                        const x =
-                                            ((event.clientX - rect.left) /
-                                                rect.width) *
-                                            100;
-                                        const y =
-                                            ((event.clientY - rect.top) /
-                                                rect.height) *
-                                            100;
-                                        setIsDrawingRegion(true);
-                                        setDrawStart({ x, y });
-                                        setDrawCurrent({ x, y });
-                                    }}
-                                    onMouseMove={(event) => {
-                                        if (!isDrawingRegion || !drawStart)
-                                            return;
-                                        const rect =
-                                            event.currentTarget.getBoundingClientRect();
-                                        const x =
-                                            ((event.clientX - rect.left) /
-                                                rect.width) *
-                                            100;
-                                        const y =
-                                            ((event.clientY - rect.top) /
-                                                rect.height) *
-                                            100;
-                                        setDrawCurrent({ x, y });
-                                    }}
-                                    onMouseUp={() => {
-                                        if (
-                                            !isDrawingRegion ||
-                                            !drawStart ||
-                                            !drawCurrent
-                                        ) {
-                                            setIsDrawingRegion(false);
-                                            return;
-                                        }
-                                        const x = Math.min(
-                                            drawStart.x,
-                                            drawCurrent.x,
-                                        );
-                                        const y = Math.min(
-                                            drawStart.y,
-                                            drawCurrent.y,
-                                        );
-                                        const width = Math.abs(
-                                            drawCurrent.x - drawStart.x,
-                                        );
-                                        const height = Math.abs(
-                                            drawCurrent.y - drawStart.y,
-                                        );
-                                        if (width >= 1 && height >= 1) {
-                                            const id =
-                                                typeof crypto !== "undefined" &&
-                                                "randomUUID" in crypto
-                                                    ? crypto.randomUUID()
-                                                    : `${Date.now()}-${Math.random()}`;
-                                            const next: BlurRegionDraft = {
-                                                id,
-                                                x: Math.max(
-                                                    0,
-                                                    Math.min(100, x),
-                                                ),
-                                                y: Math.max(
-                                                    0,
-                                                    Math.min(100, y),
-                                                ),
-                                                width: Math.max(
-                                                    0.5,
-                                                    Math.min(100, width),
-                                                ),
-                                                height: Math.max(
-                                                    0.5,
-                                                    Math.min(100, height),
-                                                ),
-                                                start: regionTimeStart,
-                                                end: regionTimeEnd,
-                                                strength: regionStrength,
-                                            };
-                                            setBlurRegions((current) => [
-                                                ...current,
-                                                next,
-                                            ]);
-                                            setActiveRegionId(next.id);
-                                        }
-                                        setIsDrawingRegion(false);
-                                        setDrawStart(null);
-                                        setDrawCurrent(null);
-                                    }}
-                                    onMouseLeave={() => {
-                                        if (!isDrawingRegion) return;
-                                        setIsDrawingRegion(false);
-                                        setDrawStart(null);
-                                        setDrawCurrent(null);
-                                    }}
-                                >
-                                    <video
-                                        ref={sourceVideoRef}
-                                        src={sourceVideoUrl}
-                                        className="block max-h-[420px] w-auto max-w-full bg-black"
-                                        playsInline
-                                        muted
-                                        onLoadedMetadata={(event) => {
-                                            const element = event.currentTarget;
+                            <div className="space-y-2">
+                                <div className="flex justify-center">
+                                    <div
+                                        ref={previewFrameRef}
+                                        className="relative inline-block overflow-hidden border border-main bg-black"
+                                        onMouseDown={(event) => {
                                             if (
-                                                element.videoWidth > 0 &&
-                                                element.videoHeight > 0
+                                                !blurEnabled ||
+                                                isRunningEdit ||
+                                                isDraggingSubtitle
                                             ) {
-                                                setVideoNaturalSize({
-                                                    width: element.videoWidth,
-                                                    height: element.videoHeight,
-                                                });
-                                                setPreviewLayoutVersion(
-                                                    (current) => current + 1,
-                                                );
+                                                return;
                                             }
+                                            const rect =
+                                                event.currentTarget.getBoundingClientRect();
+                                            const x =
+                                                ((event.clientX - rect.left) /
+                                                    rect.width) *
+                                                100;
+                                            const y =
+                                                ((event.clientY - rect.top) /
+                                                    rect.height) *
+                                                100;
+                                            setIsDrawingRegion(true);
+                                            setDrawStart({ x, y });
+                                            setDrawCurrent({ x, y });
                                         }}
-                                    />
-                                    {subtitleOverlayEnabled ? (
-                                        <div
-                                            ref={subtitleBoxRef}
-                                            onMouseDown={(event) => {
-                                                if (isRunningEdit) return;
-                                                event.stopPropagation();
-                                                const boxRect =
-                                                    event.currentTarget.getBoundingClientRect();
-                                                setSubtitleDragOffset({
-                                                    x:
-                                                        event.clientX -
-                                                        boxRect.left,
-                                                    y:
-                                                        event.clientY -
-                                                        boxRect.top,
-                                                });
-                                                setIsDraggingSubtitle(true);
+                                        onMouseMove={(event) => {
+                                            if (!isDrawingRegion || !drawStart)
+                                                return;
+                                            const rect =
+                                                event.currentTarget.getBoundingClientRect();
+                                            const x =
+                                                ((event.clientX - rect.left) /
+                                                    rect.width) *
+                                                100;
+                                            const y =
+                                                ((event.clientY - rect.top) /
+                                                    rect.height) *
+                                                100;
+                                            setDrawCurrent({ x, y });
+                                        }}
+                                        onMouseUp={() => {
+                                            if (
+                                                !isDrawingRegion ||
+                                                !drawStart ||
+                                                !drawCurrent
+                                            ) {
+                                                setIsDrawingRegion(false);
+                                                return;
+                                            }
+                                            const x = Math.min(
+                                                drawStart.x,
+                                                drawCurrent.x,
+                                            );
+                                            const y = Math.min(
+                                                drawStart.y,
+                                                drawCurrent.y,
+                                            );
+                                            const width = Math.abs(
+                                                drawCurrent.x - drawStart.x,
+                                            );
+                                            const height = Math.abs(
+                                                drawCurrent.y - drawStart.y,
+                                            );
+                                            if (width >= 1 && height >= 1) {
+                                                const id =
+                                                    typeof crypto !==
+                                                        "undefined" &&
+                                                    "randomUUID" in crypto
+                                                        ? crypto.randomUUID()
+                                                        : `${Date.now()}-${Math.random()}`;
+                                                const next: BlurRegionDraft = {
+                                                    id,
+                                                    x: Math.max(
+                                                        0,
+                                                        Math.min(100, x),
+                                                    ),
+                                                    y: Math.max(
+                                                        0,
+                                                        Math.min(100, y),
+                                                    ),
+                                                    width: Math.max(
+                                                        0.5,
+                                                        Math.min(100, width),
+                                                    ),
+                                                    height: Math.max(
+                                                        0.5,
+                                                        Math.min(100, height),
+                                                    ),
+                                                    start: regionTimeStart,
+                                                    end: regionTimeEnd,
+                                                    strength: regionStrength,
+                                                };
+                                                setBlurRegions((current) => [
+                                                    ...current,
+                                                    next,
+                                                ]);
+                                                setActiveRegionId(next.id);
+                                            }
+                                            setIsDrawingRegion(false);
+                                            setDrawStart(null);
+                                            setDrawCurrent(null);
+                                        }}
+                                        onMouseLeave={() => {
+                                            if (!isDrawingRegion) return;
+                                            setIsDrawingRegion(false);
+                                            setDrawStart(null);
+                                            setDrawCurrent(null);
+                                        }}
+                                    >
+                                        <video
+                                            ref={sourceVideoRef}
+                                            src={sourceVideoUrl}
+                                            className="block max-h-[420px] w-auto max-w-full bg-black"
+                                            playsInline
+                                            muted={sourcePreviewMuted}
+                                            onPlay={() =>
+                                                setSourcePreviewPlaying(true)
+                                            }
+                                            onPause={() =>
+                                                setSourcePreviewPlaying(false)
+                                            }
+                                            onEnded={() =>
+                                                setSourcePreviewPlaying(false)
+                                            }
+                                            onTimeUpdate={(event) =>
+                                                setSourcePreviewTime(
+                                                    event.currentTarget
+                                                        .currentTime,
+                                                )
+                                            }
+                                            onDurationChange={(event) => {
+                                                const duration =
+                                                    event.currentTarget
+                                                        .duration;
+                                                setSourcePreviewDuration(
+                                                    Number.isFinite(duration)
+                                                        ? duration
+                                                        : 0,
+                                                );
                                             }}
-                                            className="absolute cursor-move select-none border border-dashed border-accent/70 text-center text-[12px] font-semibold text-white"
-                                            style={{
-                                                left: subtitlePreviewLeftPx,
-                                                top: subtitlePreviewTopPx,
-                                                width: `${subtitleSampleWidthPercent}%`,
-                                                fontFamily: subtitleFontFamily,
-                                                // ASS uses 72dpi typography while CSS uses 96dpi.
-                                                // Convert so preview fontsize matches rendered subtitle.
-                                                fontSize: `${Math.max(
-                                                    10,
-                                                    ((subtitleFontSize *
-                                                        (previewFrameRef.current
+                                            onLoadedMetadata={(event) => {
+                                                const element =
+                                                    event.currentTarget;
+                                                setSourcePreviewDuration(
+                                                    Number.isFinite(
+                                                        element.duration,
+                                                    )
+                                                        ? element.duration
+                                                        : 0,
+                                                );
+                                                setSourcePreviewTime(
+                                                    element.currentTime,
+                                                );
+                                                if (
+                                                    element.videoWidth > 0 &&
+                                                    element.videoHeight > 0
+                                                ) {
+                                                    setVideoNaturalSize({
+                                                        width: element.videoWidth,
+                                                        height: element.videoHeight,
+                                                    });
+                                                    setPreviewLayoutVersion(
+                                                        (current) =>
+                                                            current + 1,
+                                                    );
+                                                }
+                                            }}
+                                        />
+                                        {subtitleOverlayEnabled ? (
+                                            <div
+                                                ref={subtitleBoxRef}
+                                                onMouseDown={(event) => {
+                                                    if (isRunningEdit) return;
+                                                    event.stopPropagation();
+                                                    const boxRect =
+                                                        event.currentTarget.getBoundingClientRect();
+                                                    setSubtitleDragOffset({
+                                                        x:
+                                                            event.clientX -
+                                                            boxRect.left,
+                                                        y:
+                                                            event.clientY -
+                                                            boxRect.top,
+                                                    });
+                                                    setIsDraggingSubtitle(true);
+                                                }}
+                                                className="absolute cursor-move select-none border border-dashed border-accent/70 text-center text-[12px] font-semibold text-white"
+                                                style={{
+                                                    left: subtitlePreviewLeftPx,
+                                                    top: subtitlePreviewTopPx,
+                                                    width: `${subtitleSampleWidthPercent}%`,
+                                                    fontFamily:
+                                                        subtitleFontFamily,
+                                                    // ASS uses 72dpi typography while CSS uses 96dpi.
+                                                    // Convert so preview fontsize matches rendered subtitle.
+                                                    fontSize: `${Math.max(
+                                                        10,
+                                                        ((subtitleFontSize *
+                                                            (previewFrameRef
+                                                                .current
+                                                                ?.clientHeight ??
+                                                                420)) /
+                                                            videoNaturalSize.height) *
+                                                            (72 / 96),
+                                                    )}px`,
+                                                    lineHeight: 1.25,
+                                                    paddingLeft: `${Math.max(
+                                                        1,
+                                                        ((previewFrameRef
+                                                            .current
                                                             ?.clientHeight ??
-                                                            420)) /
-                                                        videoNaturalSize.height) *
-                                                        (72 / 96),
-                                                )}px`,
-                                                lineHeight: 1.25,
-                                                paddingLeft: `${Math.max(
-                                                    1,
-                                                    ((previewFrameRef.current
-                                                        ?.clientHeight ?? 420) /
-                                                        videoNaturalSize.height) *
-                                                        ASS_SUBTITLE_OUTLINE,
-                                                )}px`,
-                                                paddingRight: `${Math.max(
-                                                    1,
-                                                    ((previewFrameRef.current
-                                                        ?.clientHeight ?? 420) /
-                                                        videoNaturalSize.height) *
-                                                        ASS_SUBTITLE_OUTLINE,
-                                                )}px`,
-                                                paddingTop: `${Math.max(
-                                                    1,
-                                                    ((previewFrameRef.current
-                                                        ?.clientHeight ?? 420) /
-                                                        videoNaturalSize.height) *
-                                                        ASS_SUBTITLE_OUTLINE,
-                                                )}px`,
-                                                paddingBottom: `${Math.max(
-                                                    1,
-                                                    ((previewFrameRef.current
-                                                        ?.clientHeight ?? 420) /
-                                                        videoNaturalSize.height) *
-                                                        ASS_SUBTITLE_OUTLINE,
-                                                )}px`,
-                                                backgroundColor:
-                                                    subtitleBackgroundEnabled
-                                                        ? hexToRgba(
-                                                              subtitleBackgroundColor,
-                                                              subtitleBackgroundOpacity,
-                                                          )
-                                                        : "transparent",
-                                                textShadow:
-                                                    "1px 0 0 #000, -1px 0 0 #000, 0 1px 0 #000, 0 -1px 0 #000",
-                                            }}
-                                        >
-                                            Phụ đề tiếng Việt mẫu để căn vị trí
-                                        </div>
-                                    ) : null}
-                                    {blurRegions.map((region) => (
-                                        <div
-                                            key={region.id}
-                                            className={`pointer-events-none absolute border ${activeRegionId === region.id ? "border-accent bg-accent/20" : "border-main bg-main/10"}`}
-                                            style={{
-                                                left: `${region.x}%`,
-                                                top: `${region.y}%`,
-                                                width: `${region.width}%`,
-                                                height: `${region.height}%`,
-                                            }}
-                                        />
-                                    ))}
-                                    {isDrawingRegion &&
-                                    drawStart &&
-                                    drawCurrent ? (
-                                        <div
-                                            className="pointer-events-none absolute border border-accent bg-accent/15"
-                                            style={{
-                                                left: `${Math.min(
-                                                    drawStart.x,
-                                                    drawCurrent.x,
-                                                )}%`,
-                                                top: `${Math.min(
-                                                    drawStart.y,
-                                                    drawCurrent.y,
-                                                )}%`,
-                                                width: `${Math.abs(
-                                                    drawCurrent.x - drawStart.x,
-                                                )}%`,
-                                                height: `${Math.abs(
-                                                    drawCurrent.y - drawStart.y,
-                                                )}%`,
-                                            }}
-                                        />
-                                    ) : null}
+                                                            420) /
+                                                            videoNaturalSize.height) *
+                                                            ASS_SUBTITLE_OUTLINE,
+                                                    )}px`,
+                                                    paddingRight: `${Math.max(
+                                                        1,
+                                                        ((previewFrameRef
+                                                            .current
+                                                            ?.clientHeight ??
+                                                            420) /
+                                                            videoNaturalSize.height) *
+                                                            ASS_SUBTITLE_OUTLINE,
+                                                    )}px`,
+                                                    paddingTop: `${Math.max(
+                                                        1,
+                                                        ((previewFrameRef
+                                                            .current
+                                                            ?.clientHeight ??
+                                                            420) /
+                                                            videoNaturalSize.height) *
+                                                            ASS_SUBTITLE_OUTLINE,
+                                                    )}px`,
+                                                    paddingBottom: `${Math.max(
+                                                        1,
+                                                        ((previewFrameRef
+                                                            .current
+                                                            ?.clientHeight ??
+                                                            420) /
+                                                            videoNaturalSize.height) *
+                                                            ASS_SUBTITLE_OUTLINE,
+                                                    )}px`,
+                                                    backgroundColor:
+                                                        subtitleBackgroundEnabled
+                                                            ? hexToRgba(
+                                                                  subtitleBackgroundColor,
+                                                                  subtitleBackgroundOpacity,
+                                                              )
+                                                            : "transparent",
+                                                    textShadow:
+                                                        "1px 0 0 #000, -1px 0 0 #000, 0 1px 0 #000, 0 -1px 0 #000",
+                                                }}
+                                            >
+                                                Phụ đề tiếng Việt mẫu để căn vị
+                                                trí
+                                            </div>
+                                        ) : null}
+                                        {blurRegions.map((region) => (
+                                            <div
+                                                key={region.id}
+                                                className={`pointer-events-none absolute border ${activeRegionId === region.id ? "border-accent bg-accent/20" : "border-main bg-main/10"}`}
+                                                style={{
+                                                    left: `${region.x}%`,
+                                                    top: `${region.y}%`,
+                                                    width: `${region.width}%`,
+                                                    height: `${region.height}%`,
+                                                }}
+                                            />
+                                        ))}
+                                        {isDrawingRegion &&
+                                        drawStart &&
+                                        drawCurrent ? (
+                                            <div
+                                                className="pointer-events-none absolute border border-accent bg-accent/15"
+                                                style={{
+                                                    left: `${Math.min(
+                                                        drawStart.x,
+                                                        drawCurrent.x,
+                                                    )}%`,
+                                                    top: `${Math.min(
+                                                        drawStart.y,
+                                                        drawCurrent.y,
+                                                    )}%`,
+                                                    width: `${Math.abs(
+                                                        drawCurrent.x -
+                                                            drawStart.x,
+                                                    )}%`,
+                                                    height: `${Math.abs(
+                                                        drawCurrent.y -
+                                                            drawStart.y,
+                                                    )}%`,
+                                                }}
+                                            />
+                                        ) : null}
+                                    </div>
                                 </div>
+                                <SourcePreviewControls
+                                    isPlaying={sourcePreviewPlaying}
+                                    isMuted={sourcePreviewMuted}
+                                    currentTime={sourcePreviewTime}
+                                    duration={sourcePreviewDuration}
+                                    onTogglePlay={toggleSourcePreviewPlayback}
+                                    onToggleMute={toggleSourcePreviewMuted}
+                                    onSeek={seekSourcePreview}
+                                />
                             </div>
                         ) : (
                             <div className="flex min-h-28 items-center justify-center border border-dashed border-main bg-main px-4 py-3 text-center text-[11px] text-muted">

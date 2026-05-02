@@ -13,6 +13,7 @@ import {
   setPiperFileExistsForTest,
   setPiperReadFileForTest,
   setPiperSpawnForTest,
+  splitTextForPiperSynthesis,
   validatePiperTtsInput,
   validatePiperRuntimeFiles,
   validateVoiceSegments,
@@ -228,6 +229,17 @@ describe("Piper TTS adapter", () => {
     expect(buildAtempoFilterChain(5)).toBe("atempo=2,atempo=2,atempo=1.25");
   });
 
+  it("splits multi-sentence text before Piper synthesis", () => {
+    expect(
+      splitTextForPiperSynthesis(
+        "mạch máu bị cắt đứt ngay. Mất nguồn máu và dinh dưỡng, các tế bào chết đi.",
+      ),
+    ).toEqual([
+      "mạch máu bị cắt đứt ngay.",
+      "Mất nguồn máu và dinh dưỡng, các tế bào chết đi.",
+    ]);
+  });
+
   it("borrows safe following gaps before speeding up timeline segments", () => {
     expect(
       buildTimelineAlignmentChunk({
@@ -314,8 +326,8 @@ describe("Piper TTS adapter", () => {
             segmentId: 1,
             rawDurationSeconds: 0.5,
             targetDurationSeconds: 0.5,
-            scheduledStartSeconds: 0.95,
-            pauseBeforeSeconds: 0.45,
+            scheduledStartSeconds: 0.8,
+            pauseBeforeSeconds: 0.3,
             speedFactor: 1,
           }),
         ],
@@ -323,5 +335,33 @@ describe("Piper TTS adapter", () => {
       },
       provider: { name: "piper", mode: "local-cli" },
     });
+  });
+
+  it("synthesizes multi-sentence segments in smaller Piper calls", async () => {
+    const spawnMock = createMockSpawn();
+    setPiperSpawnForTest(spawnMock as never);
+    setPiperFileExistsForTest(() => true);
+    setPiperReadFileForTest(async () => Buffer.from("chunked-audio"));
+    setPiperFfmpegRunnerForTest(async () => ({
+      stderr: "Duration: 00:00:01.000",
+    }));
+
+    await generateVoiceFromSegments({
+      segments: [
+        {
+          id: 0,
+          start: 0,
+          end: 3,
+          text: "Câu đầu bình thường. Câu sau từng gây rè rất nặng.",
+        },
+      ],
+      settings: {
+        binaryPath: "piper",
+        modelPath: "/models/voice.onnx",
+        preserveTimestampGaps: true,
+      },
+    });
+
+    expect(spawnMock).toHaveBeenCalledTimes(2);
   });
 });

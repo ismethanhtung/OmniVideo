@@ -18,6 +18,7 @@
 
 ## Review
 
+- `FAST-VIDEO-004` - Keep Video Tools preview controls outside blur frame.
 - `FAST-AUDIO-019` - Smooth Piper dubbing speech rate.
 - `FAST-VIDEO-003` - Multi-region interactive blur tool.
 - `FAST-WORKSPACE-010` - End-to-end video metadata flow (title/description/hashtags).

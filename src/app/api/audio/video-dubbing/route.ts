@@ -28,6 +28,11 @@ function readOptionalBoolean(formData: FormData, key: string) {
   return value === "true";
 }
 
+function readOptionalAlignmentMode(formData: FormData) {
+  const value = readFormValue(formData, "ttsAlignmentMode").trim();
+  return value === "strict" || value === "balanced" ? value : undefined;
+}
+
 async function readStorageAssetVideo(assetId: string) {
   const db = await getIntakeDb();
   const asset = await getVideoAssetById({ db, assetId });
@@ -122,6 +127,7 @@ export async function POST(request: Request) {
         formData,
         "ttsPreserveTimestampGaps",
       ),
+      alignmentMode: readOptionalAlignmentMode(formData),
     };
 
     const result = await runVideoDubbing({

@@ -45,6 +45,11 @@
   - Hiển thị nhóm segment `slow` trong diagnostics.
   - Persist `videoMetadata` qua reload và cho phép chỉnh sửa metadata trước khi lưu asset.
   - Đổi default alignment sang balanced timing để giảm pause/speed-up giả tạo.
+  - Hạ balanced speed cap xuống `1.2x`.
+  - Chia segment nhiều câu thành nhiều lần Piper để tránh rè sau dấu chấm.
+  - Giảm balanced pause cap xuống `0.3s`.
+  - Hiển thị tooltip setup Piper/balanced timing trong Voice Generation.
+  - Đồng bộ cấu hình Piper/balanced timing cho Workspace Voice Generation và Video Dubbing nodes.
   - Cập nhật tests/docs/changelog.
 - Out of scope:
   - Thay provider TTS.
@@ -63,6 +68,7 @@
 3. API result có diagnostics gồm raw duration, slot duration, target duration, speed factor và borrowed gap per segment.
 4. Segment cần tempo cao vẫn được đánh dấu warning để người dùng/flow biết cần rewrite sau này.
 5. Regression tests cho gap borrowing, bounded diagnostics và existing Piper route pass.
+6. Workspace Voice Generation/Video Dubbing dùng cùng default `balanced` alignment và truyền setting này sang API runtime.
 
 ## 6. Technical Plan
 
@@ -82,12 +88,18 @@
   - `src/lib/multilingual-audio/transcript-session.test.ts`
   - `src/lib/multilingual-audio/piper-tts.test.ts`
   - `src/features/audio/chinese-transcription-panel.tsx`
+  - `src/features/workspace/workspace-canvas-panel.tsx`
+  - `src/lib/workspace/workspace-graph.ts`
+  - `src/lib/workspace/workspace-graph.test.ts`
+  - `src/app/api/audio/video-dubbing/route.ts`
+  - `src/app/api/audio/video-dubbing/route.test.ts`
   - `docs/domains/multilingual-audio.md`
 
 ## 8. Test Plan
 
 1. Unit/Integration cần chạy:
    - `npm run test -- --run src/lib/multilingual-audio/piper-tts.test.ts src/app/api/audio/voice-generation/route.test.ts`
+   - `npm run test -- --run src/lib/workspace/workspace-graph.test.ts src/app/api/audio/video-dubbing/route.test.ts src/lib/multilingual-audio/piper-tts.test.ts src/app/api/audio/voice-generation/route.test.ts`
    - `npm run build`
 2. Failure cases cần thử:
    - Segment dài hơn slot nhưng có gap sau để mượn.
@@ -151,7 +163,9 @@
 - Blockers:
   - None currently.
 - Verification evidence:
+  - `npm run test -- --run src/lib/multilingual-audio/piper-tts.test.ts src/app/api/audio/voice-generation/route.test.ts` pass (17 tests / 2 files).
   - `npm run test -- --run src/lib/multilingual-audio/piper-tts.test.ts src/app/api/audio/voice-generation/route.test.ts src/lib/multilingual-audio/transcript-session.test.ts src/lib/multilingual-audio/transcript-translation.test.ts src/app/api/audio/transcript-translation/route.test.ts` pass (27 tests / 5 files).
+  - `npm run test -- --run src/lib/workspace/workspace-graph.test.ts src/app/api/audio/video-dubbing/route.test.ts src/lib/multilingual-audio/piper-tts.test.ts src/app/api/audio/voice-generation/route.test.ts` pass (53 tests / 4 files).
   - `npm run build` pass with existing warnings outside task scope: unused `Share2`, unused `loading`, unused `FileAudio`, missing `selectedProviderId` hook dependency, unused `Image`.
 
 ## 15. Test Evidence (Mandatory if code changed)
@@ -160,9 +174,14 @@
   - `src/lib/multilingual-audio/piper-tts.test.ts`
   - `src/lib/multilingual-audio/transcript-translation.test.ts`
   - `src/lib/multilingual-audio/transcript-session.test.ts`
+  - `src/lib/workspace/workspace-graph.test.ts`
+  - `src/app/api/audio/video-dubbing/route.test.ts`
 - Test commands executed:
+  - `npm run test -- --run src/lib/multilingual-audio/piper-tts.test.ts src/app/api/audio/voice-generation/route.test.ts`
   - `npm run test -- --run src/lib/multilingual-audio/piper-tts.test.ts src/app/api/audio/voice-generation/route.test.ts src/lib/multilingual-audio/transcript-session.test.ts src/lib/multilingual-audio/transcript-translation.test.ts src/app/api/audio/transcript-translation/route.test.ts`
+  - `npm run test -- --run src/lib/workspace/workspace-graph.test.ts src/app/api/audio/video-dubbing/route.test.ts src/lib/multilingual-audio/piper-tts.test.ts src/app/api/audio/voice-generation/route.test.ts`
   - `npm run build`
 - Test results summary:
   - Targeted session/Piper/voice generation/translation tests pass (27 tests / 5 files).
+  - Workspace/Piper/API tests pass (53 tests / 4 files).
   - Production build pass; warnings are existing/outside scope and do not fail build.

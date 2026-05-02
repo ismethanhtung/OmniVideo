@@ -8,6 +8,7 @@ import {
     Copy,
     Download,
     FileAudio,
+    Info,
     Loader2,
     Mic2,
     TriangleAlert,
@@ -22,7 +23,10 @@ import type {
     VietnameseVideoMetadataResult,
     VoiceGenerationResult,
 } from "@/lib/multilingual-audio/types";
-import { DEFAULT_PIPER_TTS_SETTINGS } from "@/lib/multilingual-audio/types";
+import {
+    DEFAULT_PIPER_TTS_SETTINGS,
+    PIPER_TTS_ALIGNMENT_SETTINGS,
+} from "@/lib/multilingual-audio/types";
 import {
     parseTranscriptSession,
     serializeTranscriptSession,
@@ -138,6 +142,46 @@ function stepTone(status: AudioTranscriptionStep["status"]) {
     if (status === "failed") return "text-rose-700";
     return "text-muted";
 }
+
+const PIPER_TTS_SETUP_ROWS = [
+    ["Alignment mode", DEFAULT_PIPER_TTS_SETTINGS.alignmentMode],
+    [
+        "Preserve timing",
+        String(DEFAULT_PIPER_TTS_SETTINGS.preserveTimestampGaps),
+    ],
+    [
+        "Balanced max speed",
+        `${PIPER_TTS_ALIGNMENT_SETTINGS.balancedMaxSpeedFactor}x`,
+    ],
+    [
+        "Balanced max pause",
+        `${PIPER_TTS_ALIGNMENT_SETTINGS.balancedMaxPauseSeconds}s`,
+    ],
+    [
+        "Long pause warning",
+        `${PIPER_TTS_ALIGNMENT_SETTINGS.balancedLongPauseSeconds}s`,
+    ],
+    [
+        "Drift warning",
+        `${PIPER_TTS_ALIGNMENT_SETTINGS.balancedDriftWarningSeconds}s`,
+    ],
+    [
+        "Timeline sentence silence",
+        `${PIPER_TTS_ALIGNMENT_SETTINGS.timelineSegmentSentenceSilenceSeconds}s`,
+    ],
+    [
+        "Strict gap borrow ratio",
+        String(PIPER_TTS_ALIGNMENT_SETTINGS.timelineGapBorrowRatio),
+    ],
+    [
+        "Strict max gap borrow",
+        `${PIPER_TTS_ALIGNMENT_SETTINGS.maxTimelineGapBorrowSeconds}s`,
+    ],
+    [
+        "Strict high-speed warning",
+        `${PIPER_TTS_ALIGNMENT_SETTINGS.highTimelineSpeedFactor}x`,
+    ],
+] as const;
 
 function StepTracePanel({ steps }: { steps: AudioTranscriptionStep[] }) {
     const [collapsed, setCollapsed] = useState(false);
@@ -281,7 +325,8 @@ export function ChineseTranscriptionPanel({
     const [videoMetadata, setVideoMetadata] =
         useState<VietnameseVideoMetadataResult | null>(null);
     const [metadataTitleDraft, setMetadataTitleDraft] = useState("");
-    const [metadataDescriptionDraft, setMetadataDescriptionDraft] = useState("");
+    const [metadataDescriptionDraft, setMetadataDescriptionDraft] =
+        useState("");
     const [metadataHashtagsDraft, setMetadataHashtagsDraft] = useState("");
     const [steps, setSteps] = useState<AudioTranscriptionStep[]>([]);
     const [copiedSegmentsLabel, setCopiedSegmentsLabel] = useState<
@@ -289,6 +334,7 @@ export function ChineseTranscriptionPanel({
     >(null);
     const [isHydrated, setIsHydrated] = useState(false);
     const [isTranscriptCollapsed, setIsTranscriptCollapsed] = useState(false);
+    const [isDubPreviewPaused, setIsDubPreviewPaused] = useState(false);
     const videoPreviewRef = useRef<HTMLVideoElement | null>(null);
     const voicePreviewRef = useRef<HTMLAudioElement | null>(null);
 
@@ -721,14 +767,15 @@ export function ChineseTranscriptionPanel({
     const voiceSlowSegments = voiceTimelineDiagnostics
         .filter(
             (chunk) =>
-                chunk.targetDurationSeconds >
-                    chunk.rawDurationSeconds * 1.25 ||
+                chunk.targetDurationSeconds > chunk.rawDurationSeconds * 1.25 ||
                 (chunk.pauseBeforeSeconds ?? 0) > 0.7,
         )
         .sort(
             (left, right) =>
-                right.targetDurationSeconds / Math.max(0.01, right.rawDurationSeconds) -
-                left.targetDurationSeconds / Math.max(0.01, left.rawDurationSeconds),
+                right.targetDurationSeconds /
+                    Math.max(0.01, right.rawDurationSeconds) -
+                left.targetDurationSeconds /
+                    Math.max(0.01, left.rawDurationSeconds),
         );
     const maxVoiceSpeedFactor =
         voiceTimelineDiagnostics.length > 0
@@ -770,18 +817,24 @@ export function ChineseTranscriptionPanel({
         video.currentTime = 0;
         audio.currentTime = 0;
         await Promise.all([video.play(), audio.play()]);
+        setIsDubPreviewPaused(false);
     };
 
-    const pauseDubPreview = () => {
-        videoPreviewRef.current?.pause();
-        voicePreviewRef.current?.pause();
+    const toggleDubPreviewPause = async () => {
+        const video = videoPreviewRef.current;
+        const audio = voicePreviewRef.current;
+        if (!video || !audio) return;
+        if (isDubPreviewPaused) {
+            video.muted = true;
+            await Promise.all([video.play(), audio.play()]);
+            setIsDubPreviewPaused(false);
+            return;
+        }
+        video.pause();
+        audio.pause();
+        setIsDubPreviewPaused(true);
     };
 
-    const resetDubPreview = () => {
-        pauseDubPreview();
-        if (videoPreviewRef.current) videoPreviewRef.current.currentTime = 0;
-        if (voicePreviewRef.current) voicePreviewRef.current.currentTime = 0;
-    };
     const selectedAsset =
         assets.find((asset) => asset._id === selectedAssetId) ?? null;
     const copySegmentsToClipboard = async (mode: "json" | "text") => {
@@ -1224,7 +1277,8 @@ export function ChineseTranscriptionPanel({
                                                     disabled={isSavingMetadata}
                                                     onChange={(event) =>
                                                         setMetadataTitleDraft(
-                                                            event.currentTarget.value,
+                                                            event.currentTarget
+                                                                .value,
                                                         )
                                                     }
                                                     className="w-full border border-emerald-500/30 bg-white/75 px-2 py-1.5 text-[11px] text-main"
@@ -1242,7 +1296,8 @@ export function ChineseTranscriptionPanel({
                                                     disabled={isSavingMetadata}
                                                     onChange={(event) =>
                                                         setMetadataDescriptionDraft(
-                                                            event.currentTarget.value,
+                                                            event.currentTarget
+                                                                .value,
                                                         )
                                                     }
                                                     className="w-full resize-y border border-emerald-500/30 bg-white/75 px-2 py-1.5 text-[11px] leading-5 text-main"
@@ -1253,11 +1308,14 @@ export function ChineseTranscriptionPanel({
                                                     VI Hashtags
                                                 </span>
                                                 <input
-                                                    value={metadataHashtagsDraft}
+                                                    value={
+                                                        metadataHashtagsDraft
+                                                    }
                                                     disabled={isSavingMetadata}
                                                     onChange={(event) =>
                                                         setMetadataHashtagsDraft(
-                                                            event.currentTarget.value,
+                                                            event.currentTarget
+                                                                .value,
                                                         )
                                                     }
                                                     placeholder="#tag1 #tag2"
@@ -1276,9 +1334,42 @@ export function ChineseTranscriptionPanel({
                             <div className="flex items-start gap-2">
                                 <Volume2 className="mt-0.5 h-4 w-4 text-muted" />
                                 <div>
-                                    <p className="text-[12px] font-semibold text-main">
-                                        Voice Generation
-                                    </p>
+                                    <div className="flex items-center gap-1.5">
+                                        <p className="text-[12px] font-semibold text-main">
+                                            Voice Generation
+                                        </p>
+                                        <div className="group relative inline-flex">
+                                            <button
+                                                type="button"
+                                                aria-label="Piper TTS setup"
+                                                className="inline-flex h-4 w-4 items-center justify-center border border-main bg-main text-muted hover:bg-secondary focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
+                                            >
+                                                <Info className="h-3 w-3" />
+                                            </button>
+                                            <div className="pointer-events-none absolute left-0 top-6 z-20 hidden w-[300px] border border-main bg-main p-3 shadow-lg group-focus-within:block group-hover:block">
+                                                <p className="text-[10px] font-bold uppercase text-muted">
+                                                    Piper TTS setup
+                                                </p>
+                                                <div className="mt-2 space-y-1.5">
+                                                    {PIPER_TTS_SETUP_ROWS.map(
+                                                        ([label, value]) => (
+                                                            <div
+                                                                key={label}
+                                                                className="flex items-center justify-between gap-3 border-b border-main pb-1 last:border-b-0 last:pb-0"
+                                                            >
+                                                                <span className="text-[10px] text-muted">
+                                                                    {label}
+                                                                </span>
+                                                                <span className="text-[10px] font-semibold text-main">
+                                                                    {value}
+                                                                </span>
+                                                            </div>
+                                                        ),
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
                                     <p className="mt-1 text-[10px] leading-4 text-muted">
                                         Sinh voice tiếng Việt từ translated
                                         segments bằng Piper local.
@@ -1615,7 +1706,11 @@ export function ChineseTranscriptionPanel({
                                                 src={sourceVideoPreviewUrl}
                                                 className="w-full border border-main bg-black"
                                             />
-                                            <div className="flex flex-wrap gap-2">
+                                        </div>
+                                    ) : null}
+                                    <div className="flex items-center gap-2 overflow-x-auto whitespace-nowrap">
+                                        {sourceVideoPreviewUrl ? (
+                                            <>
                                                 <button
                                                     type="button"
                                                     onClick={() => {
@@ -1627,34 +1722,26 @@ export function ChineseTranscriptionPanel({
                                                 </button>
                                                 <button
                                                     type="button"
-                                                    onClick={pauseDubPreview}
+                                                    onClick={() => {
+                                                        void toggleDubPreviewPause();
+                                                    }}
                                                     className="border border-main bg-main px-2 py-1 text-[10px] font-semibold text-main hover:bg-secondary"
                                                 >
-                                                    Pause
+                                                    {isDubPreviewPaused
+                                                        ? "Resume"
+                                                        : "Pause"}
                                                 </button>
-                                                <button
-                                                    type="button"
-                                                    onClick={resetDubPreview}
-                                                    className="border border-main bg-main px-2 py-1 text-[10px] font-semibold text-main hover:bg-secondary"
-                                                >
-                                                    Reset
-                                                </button>
-                                            </div>
-                                            <p className="text-[10px] leading-4 text-muted">
-                                                Video gốc được mute để nghe
-                                                voice mới rõ hơn; dùng Play sync
-                                                preview để canh timing nhanh.
-                                            </p>
-                                        </div>
-                                    ) : null}
-                                    <a
-                                        href={voiceAudioUrl}
-                                        download={voiceResult.fileName}
-                                        className="inline-flex items-center gap-2 border border-emerald-500/35 bg-main px-2 py-1 text-[10px] font-semibold text-emerald-700 hover:bg-secondary"
-                                    >
-                                        <Download className="h-3.5 w-3.5" />
-                                        Download {voiceResult.extension}
-                                    </a>
+                                            </>
+                                        ) : null}
+                                        <a
+                                            href={voiceAudioUrl}
+                                            download={voiceResult.fileName}
+                                            className="inline-flex items-center gap-2 border border-emerald-500/35 bg-main px-2 py-1 text-[10px] font-semibold text-emerald-700 hover:bg-secondary"
+                                        >
+                                            <Download className="h-3.5 w-3.5" />
+                                            Download {voiceResult.extension}
+                                        </a>
+                                    </div>
                                 </div>
                             ) : null}
                         </div>

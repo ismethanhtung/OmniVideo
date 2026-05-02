@@ -1,5 +1,12 @@
 # OmniVideo Changelog
 
+## FAST-VIDEO-004 - Keep Video Tools preview controls outside blur frame
+
+- Video Tools Lab `Original Preview` dùng control bar riêng bên dưới preview thay vì native controls trong frame, nên play/pause/seek/mute không còn che vùng cần vẽ blur.
+- Storage Asset đã từng `Save Setup To Asset` giờ có badge/trạng thái `Saved setup`, tự apply lại blur/subtitle setup khi chọn asset, và cập nhật state local ngay sau khi save.
+- Giữ `Edited Output` dùng native controls vì output preview không dùng để căn/vẽ vùng blur.
+- Verification (FAST-VIDEO-004): `npm run test -- --run src/features/video-processing/video-tools-lab-panel.test.ts` pass (3 tests / 1 file); `npm run build` pass với warnings cũ ngoài scope (`Share2`, `loading`, `FileAudio`, missing `selectedProviderId` hook dependency, unused `Image`).
+
 ## FAST-AUDIO-019 - Smooth Piper Dubbing Speech Rate
 
 - Cải thiện Piper timeline voice alignment: segment dài có thể mượn một phần gap sau trước khi bị speed-up, giảm hiện tượng câu nói nhanh/chậm thất thường khi timestamp vẫn đúng.
@@ -10,7 +17,12 @@
 - Audio Transcript đánh số segment rõ ràng và prompt dịch transcript ưu tiên bản dịch tiếng Việt ngắn/gọn theo `durationSeconds`; không ép số chữ tiếng Việt bằng chữ Trung, chỉ dùng độ dài nguồn như tín hiệu cần nén.
 - Audio Transcript giữ lại `VI Metadata` sau reload bằng session local và cho phép chỉnh sửa title/description/hashtags trước khi `Save to Asset`.
 - Đổi `Preserve timestamp gaps` thành `Balanced timing`: không pad từng segment cho đầy slot, giới hạn pause dài, giới hạn speed-up mặc định và cho phép lệch nhẹ để giọng ít bị nhanh/chậm giả tạo.
-- Verification (FAST-AUDIO-019): `npm run test -- --run src/lib/multilingual-audio/piper-tts.test.ts src/app/api/audio/voice-generation/route.test.ts src/lib/multilingual-audio/transcript-session.test.ts src/lib/multilingual-audio/transcript-translation.test.ts src/app/api/audio/transcript-translation/route.test.ts` pass (27 tests / 5 files); `npm run build` pass với warnings cũ ngoài scope (`Share2`, `loading`, `FileAudio`, missing `selectedProviderId` hook dependency, unused `Image`).
+- Hạ balanced speed cap từ `1.25x` xuống `1.2x` để giảm cảm giác nói gấp, chấp nhận drift nhẹ hơn ở segment quá dài.
+- Chia segment nhiều câu thành các lần Piper nhỏ trước khi nối WAV, tránh lỗi rè nặng sau dấu chấm trong segment dài.
+- Giảm balanced pause cap từ `0.45s` xuống `0.3s` để nhịp voice bớt ngắt quãng.
+- Thêm tooltip `i` ở Audio Transcript `Voice Generation` để xem toàn bộ setup Piper/balanced timing đang dùng.
+- Đồng bộ Workspace Voice Generation/Video Dubbing với Audio Transcript: node defaults dùng `balanced`, Inspector có `Alignment mode`, checkbox `Balanced timing`, tooltip `i`, và runtime gửi `ttsAlignmentMode` sang voice/video dubbing API.
+- Verification (FAST-AUDIO-019): `npm run test -- --run src/lib/workspace/workspace-graph.test.ts src/app/api/audio/video-dubbing/route.test.ts src/lib/multilingual-audio/piper-tts.test.ts src/app/api/audio/voice-generation/route.test.ts` pass (53 tests / 4 files); `npm run build` pass với warnings cũ ngoài scope (`Share2`, `loading`, `FileAudio`, missing `selectedProviderId` hook dependency, unused `Image`).
 
 ## FAST-UX-006 - Refactor leftbar navigation to real route-based pages
 

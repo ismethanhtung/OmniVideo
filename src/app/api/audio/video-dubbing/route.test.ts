@@ -126,6 +126,8 @@ describe("video dubbing API", () => {
       language: "zh",
       targetLanguage: "vi",
       originalAudioVolume: "0.12",
+      ttsAlignmentMode: "balanced",
+      ttsPreserveTimestampGaps: "true",
     });
     formData.set(
       "videoFile",
@@ -157,6 +159,10 @@ describe("video dubbing API", () => {
         language: "zh",
         targetLanguage: "vi",
         originalAudioVolume: 0.12,
+        ttsSettings: expect.objectContaining({
+          alignmentMode: "balanced",
+          preserveTimestampGaps: true,
+        }),
       }),
     );
   });

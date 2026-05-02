@@ -7,6 +7,7 @@ import {
     Link2,
     Plus,
     Captions,
+    Info,
     Trash2,
     Volume2,
     Workflow,
@@ -48,6 +49,8 @@ import {
 } from "@/lib/workspace/workspace-graph";
 import {
     DEFAULT_TRANSLATION_MODEL,
+    DEFAULT_PIPER_TTS_SETTINGS,
+    PIPER_TTS_ALIGNMENT_SETTINGS,
     type ChineseTranscriptionResult,
     type TranscriptTranslationResult,
     type VietnameseVideoMetadataResult,
@@ -391,6 +394,46 @@ function parseCommaList(value: string) {
         .map((entry) => entry.trim())
         .filter(Boolean);
 }
+
+const PIPER_TTS_SETUP_ROWS = [
+    ["Alignment mode", DEFAULT_PIPER_TTS_SETTINGS.alignmentMode],
+    [
+        "Preserve timing",
+        String(DEFAULT_PIPER_TTS_SETTINGS.preserveTimestampGaps),
+    ],
+    [
+        "Balanced max speed",
+        `${PIPER_TTS_ALIGNMENT_SETTINGS.balancedMaxSpeedFactor}x`,
+    ],
+    [
+        "Balanced max pause",
+        `${PIPER_TTS_ALIGNMENT_SETTINGS.balancedMaxPauseSeconds}s`,
+    ],
+    [
+        "Long pause warning",
+        `${PIPER_TTS_ALIGNMENT_SETTINGS.balancedLongPauseSeconds}s`,
+    ],
+    [
+        "Drift warning",
+        `${PIPER_TTS_ALIGNMENT_SETTINGS.balancedDriftWarningSeconds}s`,
+    ],
+    [
+        "Timeline sentence silence",
+        `${PIPER_TTS_ALIGNMENT_SETTINGS.timelineSegmentSentenceSilenceSeconds}s`,
+    ],
+    [
+        "Strict gap borrow ratio",
+        String(PIPER_TTS_ALIGNMENT_SETTINGS.timelineGapBorrowRatio),
+    ],
+    [
+        "Strict max gap borrow",
+        `${PIPER_TTS_ALIGNMENT_SETTINGS.maxTimelineGapBorrowSeconds}s`,
+    ],
+    [
+        "Strict high-speed warning",
+        `${PIPER_TTS_ALIGNMENT_SETTINGS.highTimelineSpeedFactor}x`,
+    ],
+] as const;
 
 function getStringConfig(
     node: WorkspaceNodeInstance | undefined,
@@ -1783,6 +1826,11 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                                         "ttsLengthScale",
                                         1,
                                     ),
+                                    alignmentMode: getStringConfig(
+                                        voiceNode,
+                                        "ttsAlignmentMode",
+                                        DEFAULT_PIPER_TTS_SETTINGS.alignmentMode,
+                                    ),
                                     preserveTimestampGaps: getBooleanConfig(
                                         voiceNode,
                                         "ttsPreserveTimestampGaps",
@@ -1909,6 +1957,14 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     formData.set(
                         "ttsConfigPath",
                         getStringConfig(dubbingNode, "ttsConfigPath"),
+                    );
+                    formData.set(
+                        "ttsAlignmentMode",
+                        getStringConfig(
+                            dubbingNode,
+                            "ttsAlignmentMode",
+                            DEFAULT_PIPER_TTS_SETTINGS.alignmentMode,
+                        ),
                     );
                     formData.set(
                         "ttsPreserveTimestampGaps",
@@ -4609,13 +4665,29 @@ function NodeRuntimeConfig({
                             setConfig({ ttsConfigPath: value })
                         }
                     />
+                    <RuntimeSelect
+                        label="Alignment mode"
+                        value={getStringConfig(
+                            node,
+                            "ttsAlignmentMode",
+                            DEFAULT_PIPER_TTS_SETTINGS.alignmentMode,
+                        )}
+                        disabled={isRunningFlow}
+                        onChange={(value) =>
+                            setConfig({ ttsAlignmentMode: value })
+                        }
+                    >
+                        <option value="balanced">balanced</option>
+                        <option value="strict">strict</option>
+                    </RuntimeSelect>
                     <label className="flex items-center justify-between gap-3 border border-main bg-main px-3 py-2">
                         <span>
                             <span className="block text-[11px] font-semibold text-main">
-                                Preserve timestamp gaps
+                                Balanced timing
                             </span>
                             <span className="block text-[10px] text-muted">
-                                Giữ silence/segment timing cho voice-over.
+                                Giữ thứ tự/timeline tương đối, nhưng giới hạn
+                                pause dài và speed-up quá mạnh.
                             </span>
                         </span>
                         <input
@@ -4774,9 +4846,17 @@ function InspectorPanel({
                     <div>
                         <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0">
-                                <p className="truncate text-[14px] font-semibold text-main">
-                                    {node.label}
-                                </p>
+                                <div className="flex min-w-0 items-center gap-1.5">
+                                    <p className="truncate text-[14px] font-semibold text-main">
+                                        {node.label}
+                                    </p>
+                                    {node.templateNodeType ===
+                                        "audio.voice-generation" ||
+                                    node.templateNodeType ===
+                                        "audio.video-dubbing" ? (
+                                        <PiperTtsSetupInfo />
+                                    ) : null}
+                                </div>
                                 <p className="mt-1 text-[11px] text-muted">
                                     {template.nodeType} · v{template.version}
                                 </p>
@@ -4940,6 +5020,40 @@ function InspectorPanel({
                 </div>
             ) : null}
         </aside>
+    );
+}
+
+function PiperTtsSetupInfo() {
+    return (
+        <div className="group relative inline-flex shrink-0">
+            <button
+                type="button"
+                aria-label="Piper TTS setup"
+                className="inline-flex h-4 w-4 items-center justify-center border border-main bg-main text-muted hover:bg-secondary focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
+            >
+                <Info className="h-3 w-3" />
+            </button>
+            <div className="pointer-events-none absolute right-0 top-6 z-30 hidden w-[300px] border border-main bg-main p-3 shadow-lg group-focus-within:block group-hover:block">
+                <p className="text-[10px] font-bold uppercase text-muted">
+                    Piper TTS setup
+                </p>
+                <div className="mt-2 space-y-1.5">
+                    {PIPER_TTS_SETUP_ROWS.map(([label, value]) => (
+                        <div
+                            key={label}
+                            className="flex items-center justify-between gap-3 border-b border-main pb-1 last:border-b-0 last:pb-0"
+                        >
+                            <span className="text-[10px] text-muted">
+                                {label}
+                            </span>
+                            <span className="text-[10px] font-semibold text-main">
+                                {value}
+                            </span>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        </div>
     );
 }
 

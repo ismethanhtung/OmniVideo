@@ -9,6 +9,7 @@ import { resolveFfmpegPath } from "./audio-extraction";
 import {
   ChineseTranscriptionError,
   DEFAULT_PIPER_TTS_SETTINGS,
+  PIPER_TTS_ALIGNMENT_SETTINGS,
   type VoiceGenerationResult,
   type VoiceGenerationSegment,
   type VoiceGenerationSettings,
@@ -16,14 +17,17 @@ import {
 
 const MAX_PIPER_TEXT_LENGTH = 5000;
 const DEFAULT_TIMEOUT_MS = 60000;
-const TIMELINE_GAP_BORROW_RATIO = 0.75;
-const MAX_TIMELINE_GAP_BORROW_SECONDS = 0.75;
-const TIMELINE_SEGMENT_SENTENCE_SILENCE_SECONDS = 0.05;
-const HIGH_TIMELINE_SPEED_FACTOR = 1.35;
-const BALANCED_MAX_PAUSE_SECONDS = 0.45;
-const BALANCED_MAX_SPEED_FACTOR = 1.25;
-const BALANCED_LONG_PAUSE_SECONDS = 0.7;
-const BALANCED_DRIFT_WARNING_SECONDS = 0.35;
+const {
+  timelineGapBorrowRatio: TIMELINE_GAP_BORROW_RATIO,
+  maxTimelineGapBorrowSeconds: MAX_TIMELINE_GAP_BORROW_SECONDS,
+  timelineSegmentSentenceSilenceSeconds:
+    TIMELINE_SEGMENT_SENTENCE_SILENCE_SECONDS,
+  highTimelineSpeedFactor: HIGH_TIMELINE_SPEED_FACTOR,
+  balancedMaxPauseSeconds: BALANCED_MAX_PAUSE_SECONDS,
+  balancedMaxSpeedFactor: BALANCED_MAX_SPEED_FACTOR,
+  balancedLongPauseSeconds: BALANCED_LONG_PAUSE_SECONDS,
+  balancedDriftWarningSeconds: BALANCED_DRIFT_WARNING_SECONDS,
+} = PIPER_TTS_ALIGNMENT_SETTINGS;
 const DEFAULT_LOCAL_PIPER_DIR = path.join(process.cwd(), "piper");
 const DEFAULT_LOCAL_PIPER_BINARY = path.join(
   process.cwd(),
@@ -534,6 +538,18 @@ async function concatWavFiles(input: {
   ]);
 }
 
+export function splitTextForPiperSynthesis(text: string) {
+  const normalized = text.replace(/\s+/gu, " ").trim();
+  if (!normalized) return [];
+
+  const chunks = normalized.match(/[^.!?。！？]+[.!?。！？]+|[^.!?。！？]+$/gu) ?? [
+    normalized,
+  ];
+  return chunks
+    .map((chunk) => chunk.trim())
+    .filter(Boolean);
+}
+
 export async function generatePiperSpeech(
   input: PiperTtsInput,
 ): Promise<PiperTtsResult> {
@@ -677,19 +693,49 @@ async function synthesizeSegmentFiles(input: {
       : input.settings.sentenceSilence;
 
   for (const segment of input.segments) {
-    const result = await generatePiperSpeech({
-      text: segment.text,
-      binaryPath: input.settings.binaryPath,
-      modelPath: input.settings.modelPath,
-      configPath: input.settings.configPath,
-      speaker: input.settings.speaker,
-      lengthScale: input.settings.lengthScale,
-      noiseScale: input.settings.noiseScale,
-      noiseW: input.settings.noiseW,
-      sentenceSilence,
-    });
     const filePath = path.join(input.workDir, `segment-${segment.id}.wav`);
-    await writeFile(filePath, Buffer.from(result.audioBase64, "base64"));
+    const textChunks = splitTextForPiperSynthesis(segment.text);
+
+    if (textChunks.length <= 1) {
+      const result = await generatePiperSpeech({
+        text: segment.text,
+        binaryPath: input.settings.binaryPath,
+        modelPath: input.settings.modelPath,
+        configPath: input.settings.configPath,
+        speaker: input.settings.speaker,
+        lengthScale: input.settings.lengthScale,
+        noiseScale: input.settings.noiseScale,
+        noiseW: input.settings.noiseW,
+        sentenceSilence,
+      });
+      await writeFile(filePath, Buffer.from(result.audioBase64, "base64"));
+    } else {
+      const chunkPaths: string[] = [];
+      for (const [chunkIndex, text] of textChunks.entries()) {
+        const result = await generatePiperSpeech({
+          text,
+          binaryPath: input.settings.binaryPath,
+          modelPath: input.settings.modelPath,
+          configPath: input.settings.configPath,
+          speaker: input.settings.speaker,
+          lengthScale: input.settings.lengthScale,
+          noiseScale: input.settings.noiseScale,
+          noiseW: input.settings.noiseW,
+          sentenceSilence,
+        });
+        const chunkPath = path.join(
+          input.workDir,
+          `segment-${segment.id}-${chunkIndex}.wav`,
+        );
+        await writeFile(chunkPath, Buffer.from(result.audioBase64, "base64"));
+        chunkPaths.push(chunkPath);
+      }
+      await concatWavFiles({
+        workDir: input.workDir,
+        filePaths: chunkPaths,
+        outputPath: filePath,
+      });
+    }
     files.push({ segment, filePath });
   }
 
