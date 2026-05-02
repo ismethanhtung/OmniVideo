@@ -7,20 +7,25 @@ import {
 
 import { POST } from "./route";
 
-vi.mock("@/lib/video-processing/video-edit-pipeline", async (importOriginal) => {
-    const actual =
-        await importOriginal<
-            typeof import("@/lib/video-processing/video-edit-pipeline")
-        >();
-    return {
-        ...actual,
-        runVideoEditPipeline: vi.fn(),
-        runVideoEditPipelineFromPath: vi.fn(),
-    };
-});
+vi.mock(
+    "@/lib/video-processing/video-edit-pipeline",
+    async (importOriginal) => {
+        const actual =
+            await importOriginal<
+                typeof import("@/lib/video-processing/video-edit-pipeline")
+            >();
+        return {
+            ...actual,
+            runVideoEditPipeline: vi.fn(),
+            runVideoEditPipelineFromPath: vi.fn(),
+        };
+    },
+);
 
 const mockedRunVideoEditPipeline = vi.mocked(runVideoEditPipeline);
-const mockedRunVideoEditPipelineFromPath = vi.mocked(runVideoEditPipelineFromPath);
+const mockedRunVideoEditPipelineFromPath = vi.mocked(
+    runVideoEditPipelineFromPath,
+);
 
 function createFormData(fields?: Record<string, string>) {
     const formData = new FormData();
@@ -78,7 +83,7 @@ describe("video edit API", () => {
             regionHeight: "15",
             timelineStart: "0",
             timelineEnd: "12",
-            blurStrength: "18",
+            blurStrength: "30",
             translatedSegmentsJson: JSON.stringify([
                 {
                     id: 1,
@@ -127,7 +132,7 @@ describe("video edit API", () => {
                     enabled: true,
                     region: { x: 0, y: 80, width: 100, height: 15 },
                     timeline: { start: 0, end: 12 },
-                    strength: 18,
+                    strength: 30,
                 }),
                 subtitles: expect.objectContaining({
                     enabled: true,
@@ -205,9 +210,8 @@ describe("video edit API", () => {
     });
 
     it("maps validation errors from the pipeline", async () => {
-        const { VideoEditError } = await import(
-            "@/lib/video-processing/video-edit-pipeline"
-        );
+        const { VideoEditError } =
+            await import("@/lib/video-processing/video-edit-pipeline");
         const formData = createFormData({ mirrorEnabled: "true" });
         formData.set(
             "videoFile",
@@ -237,5 +241,89 @@ describe("video edit API", () => {
             ok: false,
             errorCode: "VAL_VIDEO_EDIT_REGION_INVALID",
         });
+    });
+
+    it("parses multi blur regions json and forwards to pipeline", async () => {
+        mockedRunVideoEditPipeline.mockResolvedValueOnce({
+            videoBase64: Buffer.from("edited").toString("base64"),
+            mimeType: "video/mp4",
+            extension: "mp4",
+            fileName: "source-edit.mp4",
+            byteLength: 6,
+            generationDurationMs: 12,
+            transform: {
+                mirror: false,
+                partialBlur: true,
+                subtitleOverlay: true,
+                segmentCount: 1,
+            },
+        });
+        const formData = createFormData({
+            blurEnabled: "true",
+            subtitleOverlayEnabled: "true",
+            blurRegionsJson: JSON.stringify([
+                {
+                    x: 1,
+                    y: 2,
+                    width: 30,
+                    height: 20,
+                    start: 0,
+                    end: 5,
+                    strength: 26,
+                },
+                {
+                    x: 50,
+                    y: 70,
+                    width: 40,
+                    height: 20,
+                    start: 2,
+                    end: 9,
+                    strength: 30,
+                },
+            ]),
+            translatedSegmentsJson: JSON.stringify([
+                {
+                    id: 1,
+                    start: 0,
+                    end: 2,
+                    sourceText: "source",
+                    translatedText: "Xin chao",
+                },
+            ]),
+        });
+        formData.set(
+            "videoFile",
+            new File([new Uint8Array([1, 2, 3])], "source.mp4", {
+                type: "video/mp4",
+            }),
+        );
+
+        const response = await POST(
+            new Request("http://localhost/api/video-processing/edit", {
+                method: "POST",
+                body: formData,
+            }),
+        );
+
+        expect(response.status).toBe(200);
+        expect(mockedRunVideoEditPipeline).toHaveBeenCalledWith(
+            expect.objectContaining({
+                blur: expect.objectContaining({
+                    enabled: true,
+                    regions: [
+                        expect.objectContaining({
+                            region: { x: 1, y: 2, width: 30, height: 20 },
+                            timeline: { start: 0, end: 5 },
+                            strength: 26,
+                        }),
+                        expect.objectContaining({
+                            region: { x: 50, y: 70, width: 40, height: 20 },
+                            timeline: { start: 2, end: 9 },
+                            strength: 30,
+                        }),
+                    ],
+                }),
+            }),
+        );
     });
 });

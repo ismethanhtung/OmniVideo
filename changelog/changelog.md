@@ -510,6 +510,7 @@
 
 - Workspace thêm node processing `Generate VI Metadata` (node lá sau `Translate Transcript`) để tạo `title + description + hashtags` tiếng Việt bằng AI.
 - Thêm API `POST /api/audio/video-metadata` và service metadata generation cho luồng transcript translation -> social metadata.
+- Video Tools Lab hỗ trợ vẽ trực tiếp nhiều vùng blur trên preview video (multi-region), mỗi vùng có timeline + strength riêng.
 
 ### Changed
 
@@ -518,15 +519,38 @@
 - Workspace publish fallback: khi node Publish Social không override metadata, hệ thống tự dùng metadata tiếng Việt đã generate.
 - Storage Library detail hiển thị thêm source/VI metadata quan trọng.
 - Publish Records asset picker tự điền title/caption/hashtags từ metadata VI (nếu form đang trống).
+- API `POST /api/video-processing/edit` nhận thêm `blurRegionsJson` để xử lý nhiều vùng blur, đồng thời giữ backward compatibility với single-region payload cũ.
+- Workspace `edit.mask-region` cho phép nhập `blurRegionsJson` để chạy multi-region blur trong flow runtime.
 
 ### Fixed
 
 - Khắc phục khoảng trống metadata xuyên suốt flow intake -> transcript translation -> publish social.
+- Sửa giới hạn blur một vùng cố định, cho phép blur nhiều vị trí trong cùng video.
 
 ### Notes
 
-- Task IDs: FAST-WORKSPACE-010
+- Task IDs: FAST-WORKSPACE-010, FAST-VIDEO-003
 - Verification:
   - `npm run test -- src/lib/video-intake/validation.test.ts src/lib/video-intake/local-validation.test.ts src/lib/workspace/workspace-graph.test.ts` (pass)
   - `npm run build` (pass)
 - Audio Transcript: sau khi Translate to VI, thêm action `Generate VI Metadata`, hiển thị trực tiếp kết quả `title/description/hashtags`, và thêm `Save to Asset` để gọi API cập nhật metadata vào Storage Asset đã chọn.
+- Video Edit multi-region verification:
+  - `npm run test -- src/app/api/video-processing/edit/route.test.ts src/lib/video-processing/video-edit-pipeline.test.ts src/lib/workspace/workspace-graph.test.ts` (pass)
+
+## 2026-05-02
+
+### Changed
+
+- Video Tools Lab lưu vị trí `Subtitle mẫu` theo phần trăm khung preview trong `videoEditSetup.subtitlePreviewPlacement`, để chọn lại Storage Asset thì hiển thị đúng vị trí đã kéo thay vì suy lại từ ASS margin.
+- Đổi mặc định `Độ rộng Subtitle mẫu (%)` thành `100` và cho phép nhập tối đa `100`.
+
+### Fixed
+
+- Sửa lỗi preview subtitle mẫu hiển thị lệch lên cao sau khi load setup từ video asset, trong khi video output đã render đúng.
+
+### Notes
+
+- Task IDs: FAST-VIDEO-003
+- Verification:
+  - `npm run test -- src/app/api/video-processing/edit/route.test.ts src/lib/video-processing/video-edit-pipeline.test.ts src/lib/workspace/workspace-graph.test.ts` (pass, 3 files / 46 tests)
+  - `npm run build` (pass; còn warning cũ ngoài scope ở navigation/topbar/audio/display-preferences)

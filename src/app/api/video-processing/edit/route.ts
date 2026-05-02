@@ -82,6 +82,59 @@ function readTranslatedSegments(formData: FormData) {
     }
 }
 
+type ParsedBlurRegion = {
+    region: VideoEditRegionPercent;
+    timeline: VideoEditTimelineSeconds;
+    strength: number;
+};
+
+function readBlurRegions(formData: FormData): ParsedBlurRegion[] {
+    const raw = readFormValue(formData, "blurRegionsJson").trim();
+    if (!raw) return [];
+    try {
+        const parsed = JSON.parse(raw) as unknown;
+        if (!Array.isArray(parsed)) return [];
+        return parsed
+            .map((item): ParsedBlurRegion | null => {
+                if (!item || typeof item !== "object") return null;
+                const candidate = item as {
+                    x?: unknown;
+                    y?: unknown;
+                    width?: unknown;
+                    height?: unknown;
+                    start?: unknown;
+                    end?: unknown;
+                    strength?: unknown;
+                };
+                const x = Number(candidate.x);
+                const y = Number(candidate.y);
+                const width = Number(candidate.width);
+                const height = Number(candidate.height);
+                const start = Number(candidate.start);
+                const end = Number(candidate.end);
+                const strength = Number(candidate.strength);
+                if (
+                    !Number.isFinite(x) ||
+                    !Number.isFinite(y) ||
+                    !Number.isFinite(width) ||
+                    !Number.isFinite(height) ||
+                    !Number.isFinite(start) ||
+                    !Number.isFinite(end)
+                ) {
+                    return null;
+                }
+                return {
+                    region: { x, y, width, height },
+                    timeline: { start, end },
+                    strength: Number.isFinite(strength) ? strength : 30,
+                };
+            })
+            .filter((entry): entry is ParsedBlurRegion => entry !== null);
+    } catch {
+        return [];
+    }
+}
+
 async function writeUploadedFile(file: File, outputPath: string) {
     await pipeline(
         Readable.fromWeb(
@@ -91,7 +144,9 @@ async function writeUploadedFile(file: File, outputPath: string) {
     );
 }
 
-function buildBinaryHeaders(result: Awaited<ReturnType<typeof runVideoEditPipelineFromPath>>) {
+function buildBinaryHeaders(
+    result: Awaited<ReturnType<typeof runVideoEditPipelineFromPath>>,
+) {
     return {
         "Content-Type": result.mimeType,
         "Content-Disposition": `attachment; filename="${result.fileName}"`,
@@ -133,8 +188,9 @@ export async function POST(request: Request) {
         };
         const timeline: VideoEditTimelineSeconds = {
             start: readNumber(formData, "timelineStart", 0),
-            end: readNumber(formData, "timelineEnd", 999999),
+            end: readNumber(formData, "timelineEnd", 36000),
         };
+        const parsedBlurRegions = readBlurRegions(formData);
         const input = {
             fileName: file.name || "source.mp4",
             mimeType: file.type || undefined,
@@ -143,9 +199,17 @@ export async function POST(request: Request) {
             blur: blurEnabled
                 ? {
                       enabled: true,
-                      region,
-                      timeline,
-                      strength: readNumber(formData, "blurStrength", 18),
+                      ...(parsedBlurRegions.length > 0
+                          ? { regions: parsedBlurRegions }
+                          : {
+                                region,
+                                timeline,
+                                strength: readNumber(
+                                    formData,
+                                    "blurStrength",
+                                    50,
+                                ),
+                            }),
                   }
                 : undefined,
             subtitles: subtitlesEnabled
@@ -165,6 +229,46 @@ export async function POST(request: Request) {
                               formData,
                               "subtitleMarginBottom",
                               150,
+                          ),
+                          marginLeft: readNumber(
+                              formData,
+                              "subtitleMarginLeft",
+                              60,
+                          ),
+                          marginRight: readNumber(
+                              formData,
+                              "subtitleMarginRight",
+                              60,
+                          ),
+                          alignment: readNumber(
+                              formData,
+                              "subtitleAlignment",
+                              2,
+                          ),
+                          backgroundColor:
+                              readFormValue(
+                                  formData,
+                                  "subtitleBackgroundColor",
+                              ) || "#000000",
+                          backgroundOpacity: readNumber(
+                              formData,
+                              "subtitleBackgroundOpacity",
+                              65,
+                          ),
+                          backgroundEnabled:
+                              readFormValue(
+                                  formData,
+                                  "subtitleBackgroundEnabled",
+                              ) !== "false",
+                          playResX: readNumber(
+                              formData,
+                              "subtitlePlayResX",
+                              1920,
+                          ),
+                          playResY: readNumber(
+                              formData,
+                              "subtitlePlayResY",
+                              1080,
                           ),
                       },
                   }

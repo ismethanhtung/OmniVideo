@@ -61,6 +61,7 @@ export async function PATCH(
         vietnameseTitle?: string | null;
         vietnameseDescription?: string | null;
         vietnameseHashtags?: string[] | null;
+        videoEditSetup?: Record<string, unknown> | null;
       };
     };
     const metadata = payload.metadata ?? {};
@@ -90,6 +91,13 @@ export async function PATCH(
               .filter(Boolean)
               .slice(0, 30)
           : undefined,
+        videoEditSetup:
+          metadata.videoEditSetup &&
+          typeof metadata.videoEditSetup === "object"
+            ? metadata.videoEditSetup
+            : metadata.videoEditSetup === null
+              ? null
+              : undefined,
       },
     });
 

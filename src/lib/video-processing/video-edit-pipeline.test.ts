@@ -74,7 +74,7 @@ describe("video edit pipeline", () => {
         );
         const filter = args[args.indexOf("-filter_complex") + 1];
         expect(filter).toContain("crop=w=iw*0.8:h=ih*0.18");
-        expect(filter).toContain("boxblur=22:1");
+        expect(filter).toContain("boxblur=luma_radius=min(22\\,min(w\\,h)/2-1)");
         expect(filter).toContain("enable='between(t,1,5)'");
         expect(filter).toContain("ass='/tmp/subtitles.ass'");
         expect(args).toEqual(expect.arrayContaining(["-crf", "22"]));
@@ -97,6 +97,37 @@ describe("video edit pipeline", () => {
         expect(ass).toContain("WrapStyle: 0");
         expect(ass).toContain("Style: Default,Arial,100");
         expect(ass).toContain(",60,60,150,1");
+    });
+
+    it("builds ffmpeg filter with multiple blur regions", () => {
+        const args = buildVideoEditFfmpegArgs({
+            videoPath: "/tmp/source.mp4",
+            outputPath: "/tmp/out.mp4",
+            mirror: false,
+            blur: {
+                enabled: true,
+                regions: [
+                    {
+                        region: { x: 0, y: 80, width: 100, height: 12 },
+                        timeline: { start: 0, end: 5 },
+                        strength: 25,
+                    },
+                    {
+                        region: { x: 70, y: 0, width: 30, height: 20 },
+                        timeline: { start: 5, end: 10 },
+                        strength: 30,
+                    },
+                ],
+            },
+            subtitleAssPath: "/tmp/subtitles.ass",
+        });
+        const filter = args[args.indexOf("-filter_complex") + 1];
+        expect(filter).toContain("between(t,0,5)");
+        expect(filter).toContain("between(t,5,10)");
+        expect(filter).toContain("boxblur=luma_radius=min(25\\,min(w\\,h)/2-1)");
+        expect(filter).toContain(
+            "boxblur=luma_radius=min(30\\,min(w\\,h)/2-1)",
+        );
     });
 
     it("applies custom subtitle style overrides", () => {

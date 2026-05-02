@@ -33,9 +33,14 @@ export type VideoEditInput = {
     mirror?: boolean;
     blur?: {
         enabled: boolean;
-        region: VideoEditRegionPercent;
-        timeline: VideoEditTimelineSeconds;
-        strength: number;
+        region?: VideoEditRegionPercent;
+        timeline?: VideoEditTimelineSeconds;
+        strength?: number;
+        regions?: Array<{
+            region: VideoEditRegionPercent;
+            timeline: VideoEditTimelineSeconds;
+            strength: number;
+        }>;
     };
     subtitles?: {
         enabled: boolean;
@@ -137,38 +142,11 @@ export function validateVideoEditInput(input: VideoEditInput) {
     }
 
     if (blurEnabled) {
-        const region = input.blur?.region;
-        if (
-            !region ||
-            !isFiniteNumber(region.x) ||
-            !isFiniteNumber(region.y) ||
-            !isFiniteNumber(region.width) ||
-            !isFiniteNumber(region.height) ||
-            region.x < 0 ||
-            region.y < 0 ||
-            region.width <= 0 ||
-            region.height <= 0 ||
-            region.x + region.width > 100 ||
-            region.y + region.height > 100
-        ) {
+        const blurRegions = normalizeBlurRegions(input.blur);
+        if (blurRegions.length === 0) {
             throw new VideoEditError(
                 "VAL_VIDEO_EDIT_REGION_INVALID",
                 "Partial blur region must be valid percentages inside the output frame.",
-                400,
-            );
-        }
-
-        const timeline = input.blur?.timeline;
-        if (
-            !timeline ||
-            !isFiniteNumber(timeline.start) ||
-            !isFiniteNumber(timeline.end) ||
-            timeline.start < 0 ||
-            timeline.end <= timeline.start
-        ) {
-            throw new VideoEditError(
-                "VAL_VIDEO_EDIT_TIMELINE_INVALID",
-                "Partial blur timeline must have start >= 0 and end > start.",
                 400,
             );
         }
@@ -207,6 +185,69 @@ function normalizeBlurStrength(value: number) {
     return Math.min(60, Math.max(1, Math.round(value)));
 }
 
+type NormalizedBlurRegion = {
+    region: VideoEditRegionPercent;
+    timeline: VideoEditTimelineSeconds;
+    strength: number;
+};
+
+function isValidRegion(region: VideoEditRegionPercent | undefined) {
+    if (!region) return false;
+    return (
+        isFiniteNumber(region.x) &&
+        isFiniteNumber(region.y) &&
+        isFiniteNumber(region.width) &&
+        isFiniteNumber(region.height) &&
+        region.x >= 0 &&
+        region.y >= 0 &&
+        region.width > 0 &&
+        region.height > 0 &&
+        region.x + region.width <= 100 &&
+        region.y + region.height <= 100
+    );
+}
+
+function isValidTimeline(timeline: VideoEditTimelineSeconds | undefined) {
+    if (!timeline) return false;
+    return (
+        isFiniteNumber(timeline.start) &&
+        isFiniteNumber(timeline.end) &&
+        timeline.start >= 0 &&
+        timeline.end > timeline.start
+    );
+}
+
+function normalizeBlurRegions(
+    blur: VideoEditInput["blur"] | undefined,
+): NormalizedBlurRegion[] {
+    if (!blur?.enabled) return [];
+    const output: NormalizedBlurRegion[] = [];
+    if (Array.isArray(blur.regions)) {
+        for (const item of blur.regions) {
+            if (!isValidRegion(item.region) || !isValidTimeline(item.timeline)) {
+                continue;
+            }
+            output.push({
+                region: item.region,
+                timeline: item.timeline,
+                strength: normalizeBlurStrength(item.strength),
+            });
+        }
+    }
+    if (
+        output.length === 0 &&
+        isValidRegion(blur.region) &&
+        isValidTimeline(blur.timeline)
+    ) {
+        output.push({
+            region: blur.region as VideoEditRegionPercent,
+            timeline: blur.timeline as VideoEditTimelineSeconds,
+            strength: normalizeBlurStrength(blur.strength ?? 18),
+        });
+    }
+    return output;
+}
+
 function escapeAssText(text: string) {
     return text
         .replace(/\r?\n/g, "\\N")
@@ -235,6 +276,14 @@ export function buildSubtitleAssContent(
         fontFamily?: string;
         fontSize?: number;
         marginBottom?: number;
+        marginLeft?: number;
+        marginRight?: number;
+        alignment?: number;
+        backgroundColor?: string;
+        backgroundOpacity?: number;
+        backgroundEnabled?: boolean;
+        playResX?: number;
+        playResY?: number;
     },
 ) {
     const subtitleFontFamily = (style?.fontFamily || "Arial")
@@ -246,6 +295,28 @@ export function buildSubtitleAssContent(
     const subtitleMarginBottom = Number.isFinite(style?.marginBottom)
         ? Math.min(520, Math.max(20, Math.round(style?.marginBottom ?? 150)))
         : 150;
+    const subtitleMarginLeft = Number.isFinite(style?.marginLeft)
+        ? Math.min(520, Math.max(0, Math.round(style?.marginLeft ?? 60)))
+        : 60;
+    const subtitleMarginRight = Number.isFinite(style?.marginRight)
+        ? Math.min(520, Math.max(0, Math.round(style?.marginRight ?? 60)))
+        : 60;
+    const subtitleAlignment = Number.isFinite(style?.alignment)
+        ? Math.min(9, Math.max(1, Math.round(style?.alignment ?? 2)))
+        : 2;
+    const backgroundEnabled = style?.backgroundEnabled !== false;
+    const backgroundOpacity = Number.isFinite(style?.backgroundOpacity)
+        ? Math.min(100, Math.max(0, Math.round(style?.backgroundOpacity ?? 65)))
+        : 65;
+    const backgroundColor = (style?.backgroundColor || "#000000").trim();
+    const backgroundAssColor = hexToAssColor(backgroundColor, backgroundOpacity);
+    const borderStyle = backgroundEnabled ? 3 : 1;
+    const playResX = Number.isFinite(style?.playResX)
+        ? Math.max(360, Math.round(style?.playResX ?? 1920))
+        : 1920;
+    const playResY = Number.isFinite(style?.playResY)
+        ? Math.max(360, Math.round(style?.playResY ?? 1080))
+        : 1080;
     const events = segments
         .filter(
             (segment) =>
@@ -276,18 +347,34 @@ export function buildSubtitleAssContent(
         "ScriptType: v4.00+",
         "WrapStyle: 0",
         "ScaledBorderAndShadow: yes",
-        "PlayResX: 1080",
-        "PlayResY: 1920",
+        `PlayResX: ${playResX}`,
+        `PlayResY: ${playResY}`,
         "",
         "[V4+ Styles]",
         "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
-        `Style: Default,${subtitleFontFamily || "Arial"},${subtitleFontSize},&H00FFFFFF,&H000000FF,&H00111111,&HAA000000,-1,0,0,0,100,100,0,0,1,2,0,2,60,60,${subtitleMarginBottom},1`,
+        `Style: Default,${subtitleFontFamily || "Arial"},${subtitleFontSize},&H00FFFFFF,&H000000FF,&H00111111,${backgroundAssColor},-1,0,0,0,100,100,0,0,${borderStyle},2,0,${subtitleAlignment},${subtitleMarginLeft},${subtitleMarginRight},${subtitleMarginBottom},1`,
         "",
         "[Events]",
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
         ...events,
         "",
     ].join("\n");
+}
+
+function hexToAssColor(hex: string, opacityPercent: number) {
+    const normalized = hex.replace(/^#/u, "");
+    const safe =
+        normalized.length === 6 && /^[0-9a-fA-F]{6}$/u.test(normalized)
+            ? normalized
+            : "000000";
+    const rr = safe.slice(0, 2);
+    const gg = safe.slice(2, 4);
+    const bb = safe.slice(4, 6);
+    const alpha = Math.round((100 - opacityPercent) * 2.55)
+        .toString(16)
+        .padStart(2, "0")
+        .toUpperCase();
+    return `&H${alpha}${bb}${gg}${rr}`;
 }
 
 function escapeFfmpegFilterPath(filePath: string) {
@@ -298,9 +385,14 @@ export function buildVideoEditFilter(input: {
     mirror: boolean;
     blur?: {
         enabled: boolean;
-        region: VideoEditRegionPercent;
-        timeline: VideoEditTimelineSeconds;
-        strength: number;
+        region?: VideoEditRegionPercent;
+        timeline?: VideoEditTimelineSeconds;
+        strength?: number;
+        regions?: Array<{
+            region: VideoEditRegionPercent;
+            timeline: VideoEditTimelineSeconds;
+            strength: number;
+        }>;
     };
     subtitleAssPath?: string;
 }) {
@@ -308,32 +400,37 @@ export function buildVideoEditFilter(input: {
     let currentLabel = "0:v";
     let step = 0;
 
+    const blurRegions = normalizeBlurRegions(input.blur);
+    if (blurRegions.length > 0) {
+        for (const blurRegion of blurRegions) {
+            const region = blurRegion.region;
+            const timeline = blurRegion.timeline;
+            const strength = blurRegion.strength;
+            const splitBase = `base${step}`;
+            const splitCrop = `crop${step}`;
+            const blurLabel = `blur${step}`;
+            const nextLabel = `v${step++}`;
+            const x = roundFilterNumber(region.x / 100);
+            const y = roundFilterNumber(region.y / 100);
+            const width = roundFilterNumber(region.width / 100);
+            const height = roundFilterNumber(region.height / 100);
+            const adaptiveLumaRadius = `min(${strength}\\,min(w\\,h)/2-1)`;
+            const adaptiveChromaRadius = `min(${strength}\\,min(cw\\,ch)/2-1)`;
+
+            filters.push(
+                `[${currentLabel}]split[${splitBase}][${splitCrop}]`,
+                `[${splitCrop}]crop=w=iw*${width}:h=ih*${height}:x=iw*${x}:y=ih*${y},boxblur=luma_radius=${adaptiveLumaRadius}:luma_power=1:chroma_radius=${adaptiveChromaRadius}:chroma_power=1[${blurLabel}]`,
+                `[${splitBase}][${blurLabel}]overlay=x=main_w*${x}:y=main_h*${y}:enable='between(t,${roundFilterNumber(
+                    timeline.start,
+                )},${roundFilterNumber(timeline.end)})'[${nextLabel}]`,
+            );
+            currentLabel = nextLabel;
+        }
+    }
+
     if (input.mirror) {
         const nextLabel = `v${step++}`;
         filters.push(`[${currentLabel}]hflip[${nextLabel}]`);
-        currentLabel = nextLabel;
-    }
-
-    if (input.blur?.enabled) {
-        const region = input.blur.region;
-        const timeline = input.blur.timeline;
-        const strength = normalizeBlurStrength(input.blur.strength);
-        const splitBase = `base${step}`;
-        const splitCrop = `crop${step}`;
-        const blurLabel = `blur${step}`;
-        const nextLabel = `v${step++}`;
-        const x = roundFilterNumber(region.x / 100);
-        const y = roundFilterNumber(region.y / 100);
-        const width = roundFilterNumber(region.width / 100);
-        const height = roundFilterNumber(region.height / 100);
-
-        filters.push(
-            `[${currentLabel}]split[${splitBase}][${splitCrop}]`,
-            `[${splitCrop}]crop=w=iw*${width}:h=ih*${height}:x=iw*${x}:y=ih*${y},boxblur=${strength}:1[${blurLabel}]`,
-            `[${splitBase}][${blurLabel}]overlay=x=main_w*${x}:y=main_h*${y}:enable='between(t,${roundFilterNumber(
-                timeline.start,
-            )},${roundFilterNumber(timeline.end)})'[${nextLabel}]`,
-        );
         currentLabel = nextLabel;
     }
 
@@ -359,9 +456,14 @@ export function buildVideoEditFfmpegArgs(input: {
     mirror: boolean;
     blur?: {
         enabled: boolean;
-        region: VideoEditRegionPercent;
-        timeline: VideoEditTimelineSeconds;
-        strength: number;
+        region?: VideoEditRegionPercent;
+        timeline?: VideoEditTimelineSeconds;
+        strength?: number;
+        regions?: Array<{
+            region: VideoEditRegionPercent;
+            timeline: VideoEditTimelineSeconds;
+            strength: number;
+        }>;
     };
     subtitleAssPath?: string;
 }) {

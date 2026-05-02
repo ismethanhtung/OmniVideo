@@ -96,6 +96,29 @@ type WorkspaceAsset = {
         vietnameseTitle?: string | null;
         vietnameseDescription?: string | null;
         vietnameseHashtags?: string[] | null;
+        videoEditSetup?: {
+            mirrorEnabled?: boolean;
+            blurEnabled?: boolean;
+            subtitleOverlayEnabled?: boolean;
+            blurRegions?: Array<{
+                x: number;
+                y: number;
+                width: number;
+                height: number;
+                start: number;
+                end: number;
+                strength: number;
+            }>;
+            subtitleFontFamily?: string;
+            subtitleFontSize?: number;
+            subtitleMarginBottom?: number;
+            subtitleMarginLeft?: number;
+            subtitleMarginRight?: number;
+            subtitleAlignment?: number;
+            subtitleBackgroundEnabled?: boolean;
+            subtitleBackgroundColor?: string;
+            subtitleBackgroundOpacity?: number;
+        } | null;
     };
     createdAt?: string;
 };
@@ -485,8 +508,10 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
         useState<Record<string, ChineseTranscriptionResult | undefined>>({});
     const [runtimeTranslationsByNodeId, setRuntimeTranslationsByNodeId] =
         useState<Record<string, TranscriptTranslationResult | undefined>>({});
-    const [runtimeVietnameseMetadataByNodeId, setRuntimeVietnameseMetadataByNodeId] =
-        useState<Record<string, VietnameseVideoMetadataResult | undefined>>({});
+    const [
+        runtimeVietnameseMetadataByNodeId,
+        setRuntimeVietnameseMetadataByNodeId,
+    ] = useState<Record<string, VietnameseVideoMetadataResult | undefined>>({});
     const [nodeRunStatus, setNodeRunStatus] = useState<
         Record<string, NodeRunState>
     >({});
@@ -961,16 +986,17 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
         const vietnameseMetadataByNodeId: Record<
             string,
             VietnameseVideoMetadataResult
-        > = mode === "resume"
-            ? Object.fromEntries(
-                  Object.entries(runtimeVietnameseMetadataByNodeId).filter(
-                      (
-                          entry,
-                      ): entry is [string, VietnameseVideoMetadataResult] =>
-                          entry[1] !== undefined,
-                  ),
-              )
-            : {};
+        > =
+            mode === "resume"
+                ? Object.fromEntries(
+                      Object.entries(runtimeVietnameseMetadataByNodeId).filter(
+                          (
+                              entry,
+                          ): entry is [string, VietnameseVideoMetadataResult] =>
+                              entry[1] !== undefined,
+                      ),
+                  )
+                : {};
         const artifactByProducer: Record<string, WorkspaceRuntimeArtifact> =
             mode === "resume"
                 ? Object.fromEntries(
@@ -1334,7 +1360,11 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     const tags = parseCommaList(tagsRaw);
 
                     if (!sourceUrl) {
-                        setNodeStatus(urlNode.id, "failed", "Chưa nhập source URL.");
+                        setNodeStatus(
+                            urlNode.id,
+                            "failed",
+                            "Chưa nhập source URL.",
+                        );
                         setNodeStatus(
                             storageNode.id,
                             "skipped",
@@ -1345,7 +1375,11 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         );
                     }
                     if (!storageAccount) {
-                        setNodeStatus(urlNode.id, "failed", "Chưa chọn storage account.");
+                        setNodeStatus(
+                            urlNode.id,
+                            "failed",
+                            "Chưa chọn storage account.",
+                        );
                         setNodeStatus(
                             storageNode.id,
                             "failed",
@@ -1356,13 +1390,21 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         );
                     }
                     if (tags.length < 2) {
-                        setNodeStatus(urlNode.id, "failed", "Cần >= 2 trace tag.");
+                        setNodeStatus(
+                            urlNode.id,
+                            "failed",
+                            "Cần >= 2 trace tag.",
+                        );
                         throw new Error(
                             `URL Video '${urlNode.label}' cần ít nhất 2 tag (cách nhau bằng dấu phẩy).`,
                         );
                     }
 
-                    setNodeStatus(urlNode.id, "running", "Resolving source URL...");
+                    setNodeStatus(
+                        urlNode.id,
+                        "running",
+                        "Resolving source URL...",
+                    );
                     setNodeStatus(
                         storageNode.id,
                         "running",
@@ -1377,7 +1419,9 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                                 : "drive",
                         storageProviderAccountId: storageAccount._id,
                         tags,
-                        title: getStringConfig(urlNode, "title").trim() || undefined,
+                        title:
+                            getStringConfig(urlNode, "title").trim() ||
+                            undefined,
                         description:
                             getStringConfig(urlNode, "description").trim() ||
                             undefined,
@@ -1423,7 +1467,11 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         "success",
                         `Run ${intakePayload.data.runId ?? ""}.`,
                     );
-                    setNodeStatus(storageNode.id, "success", `Asset ${newAssetId}.`);
+                    setNodeStatus(
+                        storageNode.id,
+                        "success",
+                        `Asset ${newAssetId}.`,
+                    );
                     summary.push(`Created asset ${newAssetId}.`);
                     advanceProgress(`Created asset ${newAssetId}.`);
                 } else if (step.kind === "transcribe-chinese") {
@@ -1659,13 +1707,15 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         ...current,
                         [metadataNode.id]: metadataPayload.data,
                     }));
-                    setNodeStatus(metadataNode.id, "success", "Metadata ready.");
+                    setNodeStatus(
+                        metadataNode.id,
+                        "success",
+                        "Metadata ready.",
+                    );
                     summary.push(
                         `VI metadata: ${metadataPayload.data.hashtags.length} hashtag(s).`,
                     );
-                    advanceProgress(
-                        `Metadata ${metadataNode.label} complete.`,
-                    );
+                    advanceProgress(`Metadata ${metadataNode.label} complete.`);
                 } else if (step.kind === "generate-voice") {
                     const translationNode = findNode(step.translationNodeId);
                     const voiceNode = findNode(step.voiceNodeId);
@@ -1911,7 +1961,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                             ? "Source file used."
                             : sourceNode.templateNodeType === "source.url"
                               ? "Resolved URL video used."
-                            : "Storage asset used.",
+                              : "Storage asset used.",
                     );
                     setNodeStatus(
                         dubbingNode.id,
@@ -2016,7 +2066,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                             ? "Source file used."
                             : sourceNode.templateNodeType === "source.url"
                               ? "Resolved URL video used."
-                            : "Video artifact used.",
+                              : "Video artifact used.",
                     );
                     setNodeStatus(
                         mirrorNode.id,
@@ -2099,48 +2149,85 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     );
                     formData.set("blurEnabled", "true");
                     formData.set("subtitleOverlayEnabled", "true");
-                    formData.set(
-                        "regionX",
-                        String(getNumberConfig(editNode, "regionX", 0)),
-                    );
-                    formData.set(
-                        "regionY",
-                        String(getNumberConfig(editNode, "regionY", 84)),
-                    );
-                    formData.set(
-                        "regionWidth",
-                        String(getNumberConfig(editNode, "regionWidth", 100)),
-                    );
-                    formData.set(
-                        "regionHeight",
-                        String(getNumberConfig(editNode, "regionHeight", 16)),
-                    );
-                    formData.set(
-                        "timelineStart",
-                        String(getNumberConfig(editNode, "timelineStart", 0)),
-                    );
-                    formData.set(
-                        "timelineEnd",
-                        String(
-                            getNumberConfig(editNode, "timelineEnd", 999999),
-                        ),
-                    );
-                    formData.set(
-                        "blurStrength",
-                        String(getNumberConfig(editNode, "blurStrength", 18)),
-                    );
+                    const sourceAssetSetup =
+                        sourceNode.templateNodeType === "source.asset"
+                            ? (storageAssets.find(
+                                  (item) =>
+                                      item._id ===
+                                      getStringConfig(sourceNode, "assetId"),
+                              )?.metadata?.videoEditSetup ?? null)
+                            : null;
+                    const blurRegionsJson = getStringConfig(
+                        editNode,
+                        "blurRegionsJson",
+                    ).trim();
+                    const setupBlurRegionsJson =
+                        sourceAssetSetup?.blurRegions &&
+                        sourceAssetSetup.blurRegions.length > 0
+                            ? JSON.stringify(sourceAssetSetup.blurRegions)
+                            : "";
+                    if (blurRegionsJson) {
+                        formData.set("blurRegionsJson", blurRegionsJson);
+                    } else if (setupBlurRegionsJson) {
+                        formData.set("blurRegionsJson", setupBlurRegionsJson);
+                    } else {
+                        formData.set(
+                            "regionX",
+                            String(getNumberConfig(editNode, "regionX", 0)),
+                        );
+                        formData.set(
+                            "regionY",
+                            String(getNumberConfig(editNode, "regionY", 84)),
+                        );
+                        formData.set(
+                            "regionWidth",
+                            String(
+                                getNumberConfig(editNode, "regionWidth", 100),
+                            ),
+                        );
+                        formData.set(
+                            "regionHeight",
+                            String(
+                                getNumberConfig(editNode, "regionHeight", 16),
+                            ),
+                        );
+                        formData.set(
+                            "timelineStart",
+                            String(
+                                getNumberConfig(editNode, "timelineStart", 0),
+                            ),
+                        );
+                        formData.set(
+                            "timelineEnd",
+                            String(
+                                getNumberConfig(
+                                    editNode,
+                                    "timelineEnd",
+                                    36000,
+                                ),
+                            ),
+                        );
+                        formData.set(
+                            "blurStrength",
+                            String(getNumberConfig(editNode, "blurStrength", 50)),
+                        );
+                    }
                     formData.set(
                         "subtitleFontFamily",
                         getStringConfig(
                             editNode,
                             "subtitleFontFamily",
-                            "Arial",
+                            sourceAssetSetup?.subtitleFontFamily ?? "Arial",
                         ),
                     );
                     formData.set(
                         "subtitleFontSize",
                         String(
-                            getNumberConfig(editNode, "subtitleFontSize", 100),
+                            getNumberConfig(
+                                editNode,
+                                "subtitleFontSize",
+                                sourceAssetSetup?.subtitleFontSize ?? 55,
+                            ),
                         ),
                     );
                     formData.set(
@@ -2149,7 +2236,68 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                             getNumberConfig(
                                 editNode,
                                 "subtitleMarginBottom",
-                                150,
+                                sourceAssetSetup?.subtitleMarginBottom ?? 150,
+                            ),
+                        ),
+                    );
+                    formData.set(
+                        "subtitleMarginLeft",
+                        String(
+                            getNumberConfig(
+                                editNode,
+                                "subtitleMarginLeft",
+                                sourceAssetSetup?.subtitleMarginLeft ?? 60,
+                            ),
+                        ),
+                    );
+                    formData.set(
+                        "subtitleMarginRight",
+                        String(
+                            getNumberConfig(
+                                editNode,
+                                "subtitleMarginRight",
+                                sourceAssetSetup?.subtitleMarginRight ?? 60,
+                            ),
+                        ),
+                    );
+                    formData.set(
+                        "subtitleAlignment",
+                        String(
+                            getNumberConfig(
+                                editNode,
+                                "subtitleAlignment",
+                                sourceAssetSetup?.subtitleAlignment ?? 2,
+                            ),
+                        ),
+                    );
+                    formData.set(
+                        "subtitleBackgroundEnabled",
+                        String(
+                            getBooleanConfig(
+                                editNode,
+                                "subtitleBackgroundEnabled",
+                                sourceAssetSetup?.subtitleBackgroundEnabled ??
+                                    true,
+                            ),
+                        ),
+                    );
+                    formData.set(
+                        "subtitleBackgroundColor",
+                        getStringConfig(
+                            editNode,
+                            "subtitleBackgroundColor",
+                            sourceAssetSetup?.subtitleBackgroundColor ??
+                                "#000000",
+                        ),
+                    );
+                    formData.set(
+                        "subtitleBackgroundOpacity",
+                        String(
+                            getNumberConfig(
+                                editNode,
+                                "subtitleBackgroundOpacity",
+                                sourceAssetSetup?.subtitleBackgroundOpacity ??
+                                    65,
                             ),
                         ),
                     );
@@ -2191,7 +2339,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                             ? "Source file used."
                             : sourceNode.templateNodeType === "source.url"
                               ? "Resolved URL video used."
-                            : "Video artifact used.",
+                              : "Video artifact used.",
                     );
                     setNodeStatus(
                         translationNode.id,
@@ -3337,7 +3485,9 @@ function NodeRuntimeConfig({
             const current = stack.pop() as string;
             if (visited.has(current)) continue;
             visited.add(current);
-            const currentNode = graph.nodes.find((entry) => entry.id === current);
+            const currentNode = graph.nodes.find(
+                (entry) => entry.id === current,
+            );
             if (!currentNode) continue;
             if (currentNode.templateNodeType === "source.asset") {
                 return currentNode;
@@ -3389,9 +3539,7 @@ function NodeRuntimeConfig({
                         value={getStringConfig(node, "description")}
                         disabled={isRunningFlow}
                         placeholder="Optional source description"
-                        onChange={(value) =>
-                            setConfig({ description: value })
-                        }
+                        onChange={(value) => setConfig({ description: value })}
                     />
                     <RuntimeTextInput
                         label="Trace tags"
@@ -3432,9 +3580,7 @@ function NodeRuntimeConfig({
                         value={getStringConfig(node, "description")}
                         disabled={isRunningFlow}
                         placeholder="Optional source description"
-                        onChange={(value) =>
-                            setConfig({ description: value })
-                        }
+                        onChange={(value) => setConfig({ description: value })}
                     />
                     <RuntimeTextInput
                         label="Trace tags"
@@ -3445,7 +3591,11 @@ function NodeRuntimeConfig({
                     />
                     <RuntimeSelect
                         label="Quality preference"
-                        value={getStringConfig(node, "qualityPreference", "best")}
+                        value={getStringConfig(
+                            node,
+                            "qualityPreference",
+                            "best",
+                        )}
                         disabled={isRunningFlow}
                         onChange={(value) =>
                             setConfig({ qualityPreference: value })
@@ -3517,6 +3667,23 @@ function NodeRuntimeConfig({
                         />
                     </label>
                     <div className="grid gap-2 sm:grid-cols-2">
+                        <label className="block sm:col-span-2">
+                            <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-muted">
+                                Blur regions JSON (multi-region)
+                            </span>
+                            <textarea
+                                value={getStringConfig(node, "blurRegionsJson")}
+                                disabled={isRunningFlow}
+                                onChange={(event) =>
+                                    setConfig({
+                                        blurRegionsJson:
+                                            event.currentTarget.value,
+                                    })
+                                }
+                                placeholder='[{"x":0,"y":84,"width":100,"height":16,"start":0,"end":36000,"strength":30}]'
+                                className="min-h-16 w-full border border-main bg-main px-2 py-1.5 font-mono text-[10px] leading-4 text-main placeholder:text-muted/60"
+                            />
+                        </label>
                         <RuntimeTextInput
                             label="Region X %"
                             value={String(getNumberConfig(node, "regionX", 0))}
@@ -3571,10 +3738,10 @@ function NodeRuntimeConfig({
                         <RuntimeTextInput
                             label="End seconds"
                             value={String(
-                                getNumberConfig(node, "timelineEnd", 999999),
+                                getNumberConfig(node, "timelineEnd", 36000),
                             )}
                             disabled={isRunningFlow}
-                            placeholder="999999"
+                            placeholder="36000"
                             onChange={(value) =>
                                 setConfig({ timelineEnd: Number(value) })
                             }
@@ -3582,7 +3749,7 @@ function NodeRuntimeConfig({
                         <RuntimeTextInput
                             label="Blur strength"
                             value={String(
-                                getNumberConfig(node, "blurStrength", 18),
+                                getNumberConfig(node, "blurStrength", 50),
                             )}
                             disabled={isRunningFlow}
                             placeholder="18"
@@ -3606,7 +3773,7 @@ function NodeRuntimeConfig({
                         <RuntimeTextInput
                             label="Subtitle size"
                             value={String(
-                                getNumberConfig(node, "subtitleFontSize", 100),
+                                getNumberConfig(node, "subtitleFontSize", 55),
                             )}
                             disabled={isRunningFlow}
                             placeholder="100"
@@ -3614,6 +3781,94 @@ function NodeRuntimeConfig({
                                 setConfig({ subtitleFontSize: Number(value) })
                             }
                         />
+                        <RuntimeTextInput
+                            label="Subtitle left margin"
+                            value={String(
+                                getNumberConfig(node, "subtitleMarginLeft", 60),
+                            )}
+                            disabled={isRunningFlow}
+                            placeholder="60"
+                            onChange={(value) =>
+                                setConfig({ subtitleMarginLeft: Number(value) })
+                            }
+                        />
+                        <RuntimeTextInput
+                            label="Subtitle right margin"
+                            value={String(
+                                getNumberConfig(
+                                    node,
+                                    "subtitleMarginRight",
+                                    60,
+                                ),
+                            )}
+                            disabled={isRunningFlow}
+                            placeholder="60"
+                            onChange={(value) =>
+                                setConfig({ subtitleMarginRight: Number(value) })
+                            }
+                        />
+                        <RuntimeTextInput
+                            label="Subtitle alignment (1..9)"
+                            value={String(
+                                getNumberConfig(node, "subtitleAlignment", 2),
+                            )}
+                            disabled={isRunningFlow}
+                            placeholder="2"
+                            onChange={(value) =>
+                                setConfig({ subtitleAlignment: Number(value) })
+                            }
+                        />
+                        <RuntimeTextInput
+                            label="Subtitle background color"
+                            value={getStringConfig(
+                                node,
+                                "subtitleBackgroundColor",
+                                "#000000",
+                            )}
+                            disabled={isRunningFlow}
+                            placeholder="#000000"
+                            onChange={(value) =>
+                                setConfig({ subtitleBackgroundColor: value })
+                            }
+                        />
+                        <RuntimeTextInput
+                            label="Subtitle background opacity %"
+                            value={String(
+                                getNumberConfig(
+                                    node,
+                                    "subtitleBackgroundOpacity",
+                                    65,
+                                ),
+                            )}
+                            disabled={isRunningFlow}
+                            placeholder="65"
+                            onChange={(value) =>
+                                setConfig({
+                                    subtitleBackgroundOpacity: Number(value),
+                                })
+                            }
+                        />
+                        <label className="flex items-center justify-between gap-3 border border-main bg-main px-3 py-2 sm:col-span-2">
+                            <span className="block text-[11px] font-semibold text-main">
+                                Subtitle background enabled
+                            </span>
+                            <input
+                                type="checkbox"
+                                checked={getBooleanConfig(
+                                    node,
+                                    "subtitleBackgroundEnabled",
+                                    true,
+                                )}
+                                disabled={isRunningFlow}
+                                onChange={(event) =>
+                                    setConfig({
+                                        subtitleBackgroundEnabled:
+                                            event.currentTarget.checked,
+                                    })
+                                }
+                                className="h-4 w-4 accent-[var(--color-accent)]"
+                            />
+                        </label>
                         <RuntimeTextInput
                             label="Subtitle Y margin"
                             value={String(
@@ -4066,7 +4321,7 @@ function NodeRuntimeConfig({
                     >
                         <option value="vi">Vietnamese (vi)</option>
                         <option value="en">English (en)</option>
-                                <option value="zh">Mandarin (zh)</option>
+                        <option value="zh">Mandarin (zh)</option>
                     </RuntimeSelect>
                     <div className="flex items-start gap-2 border border-main bg-main px-3 py-2">
                         <Captions className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted" />

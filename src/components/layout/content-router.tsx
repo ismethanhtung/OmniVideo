@@ -104,6 +104,14 @@ export function ContentRouter({
         );
     }
 
+    if (activeSection === "videoToolsLab") {
+        return (
+            <main className="min-w-0 flex-1 overflow-auto bg-secondary/35 px-3 py-3">
+                <SectionComponent section={section} />
+            </main>
+        );
+    }
+
     return (
         <main className="min-w-0 flex-1 overflow-auto bg-secondary/35">
             <div className="mx-auto w-full max-w-7xl px-5 py-5">
