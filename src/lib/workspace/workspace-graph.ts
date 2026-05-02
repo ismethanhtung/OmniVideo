@@ -2495,7 +2495,7 @@ export function createUploadVietnameseMaskPublishSampleGraph(): WorkspaceGraph {
                 id: "audio-video-dubbing-1",
                 templateNodeType: "audio.video-dubbing",
                 label: "Vietnamese Voice Dubbing",
-                position: { x: 360, y: 240 },
+                position: { x: 360, y: 160 },
                 config: {
                     language: "zh",
                     targetLanguage: "vi",

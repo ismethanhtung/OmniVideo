@@ -1,5 +1,11 @@
 # OmniVideo Changelog
 
+## FAST-UX-007 - Redesign AI Provider Chat Test Modal in English
+
+- Redesign modal `API Chat Test` trong AI Providers với bố cục rõ hơn: header context, empty-state hint, chat timeline, composer và controls riêng cho model/temperature.
+- Chuẩn hóa copy modal sang tiếng Anh (title, tooltip, send/loading labels, response metadata, empty-response fallback).
+- Verification (FAST-UX-007): `npm run test -- --run src/features/ai-providers/ai-providers-panel.test.ts` pass (1 file / 2 tests).
+
 ## FAST-VIDEO-004 - Keep Video Tools preview controls outside blur frame
 
 - Video Tools Lab `Original Preview` dùng control bar riêng bên dưới preview thay vì native controls trong frame, nên play/pause/seek/mute không còn che vùng cần vẽ blur.

@@ -4,11 +4,13 @@ import { useEffect, useState } from "react";
 import {
     CheckCircle2,
     Loader2,
+    MessageSquare,
     PauseCircle,
     Plus,
     RefreshCw,
     Trash2,
-    Unplug,
+    Settings,
+    X,
     Zap,
 } from "lucide-react";
 
@@ -57,6 +59,25 @@ type TestResult = {
     modelCount: number;
     latencyMs: number;
     error?: string;
+};
+
+const DEFAULT_CHAT_PROMPT =
+    "Hi. Please introduce yourself in one short paragraph.";
+
+type ChatBubble = {
+    role: "user" | "assistant";
+    content: string;
+};
+
+type ChatTestApiData = {
+    assistantMessage: string;
+    latencyMs: number;
+    usage: {
+        prompt_tokens: number;
+        completion_tokens: number;
+        total_tokens: number;
+    } | null;
+    finishReason?: string;
 };
 
 type SubmitState =
@@ -157,6 +178,24 @@ export function AiProvidersPanel({ section }: AiProvidersPanelProps) {
         result: TestResult;
     } | null>(null);
 
+    const [chatTestProviderId, setChatTestProviderId] = useState<string | null>(
+        null,
+    );
+    const [chatTestProviderLabel, setChatTestProviderLabel] = useState("");
+    const [chatModel, setChatModel] = useState("");
+    const [chatModels, setChatModels] = useState<string[]>([]);
+    const [chatModelsLoading, setChatModelsLoading] = useState(false);
+    const [chatMessages, setChatMessages] = useState<ChatBubble[]>([]);
+    const [chatInput, setChatInput] = useState("");
+    const [chatTemperature, setChatTemperature] = useState(0.7);
+    const [chatSending, setChatSending] = useState(false);
+    const [chatError, setChatError] = useState<string | null>(null);
+    const [chatLastMeta, setChatLastMeta] = useState<{
+        latencyMs: number;
+        usage: ChatTestApiData["usage"];
+        finishReason?: string;
+    } | null>(null);
+
     const fetchProviders = async () => {
         setIsLoading(true);
         setLoadError(null);
@@ -180,6 +219,134 @@ export function AiProvidersPanel({ section }: AiProvidersPanelProps) {
     useEffect(() => {
         fetchProviders();
     }, []);
+
+    useEffect(() => {
+        if (!chatTestProviderId) return undefined;
+
+        let cancelled = false;
+        setChatModelsLoading(true);
+
+        void (async () => {
+            try {
+                const response = await fetch(
+                    `/api/ai-providers/${chatTestProviderId}/models`,
+                );
+                const payload = (await response.json()) as ApiResponse<
+                    { id: string }[]
+                >;
+                if (cancelled) return;
+                if (payload.ok && payload.data && payload.data.length > 0) {
+                    const ids = payload.data.map((model) => model.id);
+                    setChatModels(ids);
+                    setChatModel((previous) =>
+                        previous.trim() !== "" ? previous : (ids[0] ?? ""),
+                    );
+                }
+            } catch {
+                // optional: user can type model id manually
+            } finally {
+                if (!cancelled) {
+                    setChatModelsLoading(false);
+                }
+            }
+        })();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [chatTestProviderId]);
+
+    const closeChatTestModal = () => {
+        setChatTestProviderId(null);
+        setChatTestProviderLabel("");
+        setChatModel("");
+        setChatModels([]);
+        setChatModelsLoading(false);
+        setChatMessages([]);
+        setChatInput("");
+        setChatTemperature(0.7);
+        setChatSending(false);
+        setChatError(null);
+        setChatLastMeta(null);
+    };
+
+    const openChatTestModal = (provider: AiProvider) => {
+        setChatTestProviderId(provider._id);
+        setChatTestProviderLabel(provider.label);
+        setChatModel("");
+        setChatModels([]);
+        setChatMessages([]);
+        setChatInput("");
+        setChatTemperature(0.7);
+        setChatError(null);
+        setChatLastMeta(null);
+    };
+
+    const handleChatSend = async () => {
+        if (!chatTestProviderId || chatSending) return;
+        const trimmedModel = chatModel.trim();
+        const userText = chatInput.trim();
+        if (!trimmedModel || !userText) return;
+
+        setChatSending(true);
+        setChatError(null);
+
+        const userBubble: ChatBubble = { role: "user", content: userText };
+        const historyForApi = [...chatMessages, userBubble];
+        setChatMessages(historyForApi);
+        setChatInput("");
+
+        try {
+            const apiMessages = historyForApi.map((message) => ({
+                role: message.role,
+                content: message.content,
+            }));
+            const safeTemperature =
+                typeof chatTemperature === "number" &&
+                Number.isFinite(chatTemperature)
+                    ? Math.min(2, Math.max(0, chatTemperature))
+                    : 0.7;
+            const response = await fetch(
+                `/api/ai-providers/${chatTestProviderId}/chat-test`,
+                {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        model: trimmedModel,
+                        messages: apiMessages,
+                        temperature: safeTemperature,
+                    }),
+                },
+            );
+
+            const payload =
+                (await response.json()) as ApiResponse<ChatTestApiData>;
+
+            if (!payload.ok || !payload.data) {
+                setChatError(payload.error ?? "Chat test failed.");
+                return;
+            }
+
+            const answer =
+                payload.data.assistantMessage.trim() === ""
+                    ? "(No response content.)"
+                    : payload.data.assistantMessage;
+
+            setChatMessages((previous) => [
+                ...previous,
+                { role: "assistant", content: answer },
+            ]);
+            setChatLastMeta({
+                latencyMs: payload.data.latencyMs,
+                usage: payload.data.usage,
+                finishReason: payload.data.finishReason,
+            });
+        } catch {
+            setChatError("Network error.");
+        } finally {
+            setChatSending(false);
+        }
+    };
 
     const resetForm = () => {
         setFormLabel("");
@@ -293,9 +460,16 @@ export function AiProvidersPanel({ section }: AiProvidersPanelProps) {
         }
     };
 
-    const handleDelete = async (providerId: string) => {
+    const handleDelete = async (provider: AiProvider) => {
+        if (
+            !confirm(
+                `Xóa AI provider "${provider.label}"?\nHành động này không thể hoàn tác.`,
+            )
+        )
+            return;
+
         try {
-            const response = await fetch(`/api/ai-providers/${providerId}`, {
+            const response = await fetch(`/api/ai-providers/${provider._id}`, {
                 method: "DELETE",
             });
             const payload = (await response.json()) as ApiResponse<unknown>;
@@ -662,6 +836,191 @@ export function AiProvidersPanel({ section }: AiProvidersPanelProps) {
                     </div>
                 ) : null}
 
+                {chatTestProviderId ? (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-4 py-6">
+                        <div className="flex h-[min(90vh,820px)] w-full max-w-2xl flex-col overflow-hidden border border-main bg-main shadow-xl">
+                            <div className="flex items-start justify-between gap-3 border-b border-main bg-secondary/35 px-4 py-3">
+                                <div className="min-w-0">
+                                    <p className="text-[12px] font-semibold text-main">
+                                        API Chat Test
+                                    </p>
+                                    <p className="mt-1 truncate text-[11px] text-muted">
+                                        {chatTestProviderLabel} - OpenAI{" "}
+                                        <code className="font-mono text-[10px]">
+                                            /v1/chat/completions
+                                        </code>{" "}
+                                        via server-side proxy (API key stays
+                                        hidden).
+                                    </p>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={closeChatTestModal}
+                                    className="shrink-0 border border-main bg-main p-1.5 text-muted hover:bg-secondary hover:text-main"
+                                    title="Close"
+                                >
+                                    <X className="h-4 w-4" />
+                                </button>
+                            </div>
+
+                            <div className="min-h-0 flex-1 overflow-y-auto bg-secondary/15 px-4 py-3">
+                                {chatMessages.length === 0 ? (
+                                    <div className="border border-dashed border-main bg-main/70 px-4 py-6 text-[11px] text-muted">
+                                        Start by sending a prompt below.
+                                        Messages are kept only in this modal
+                                        session.
+                                    </div>
+                                ) : (
+                                    <div className="space-y-2">
+                                        {chatMessages.map((message, index) => (
+                                            <div
+                                                key={`${message.role}-${index}`}
+                                                className={`flex ${
+                                                    message.role === "user"
+                                                        ? "justify-end"
+                                                        : "justify-start"
+                                                }`}
+                                            >
+                                                <div
+                                                    className={`max-w-[85%] border px-3 py-2 text-[12px] leading-5 ${
+                                                        message.role === "user"
+                                                            ? "border-accent/40 bg-accent/10 text-main"
+                                                            : "border-main bg-main text-main"
+                                                    }`}
+                                                >
+                                                    <p className="text-[9px] font-bold uppercase tracking-wide text-muted">
+                                                        {message.role === "user"
+                                                            ? "You"
+                                                            : "Assistant"}
+                                                    </p>
+                                                    <p className="mt-1 whitespace-pre-wrap">
+                                                        {message.content}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+
+                            {chatError ? (
+                                <div className="shrink-0 border-t border-rose-500/30 bg-rose-500/10 px-4 py-2">
+                                    <p className="text-[11px] text-rose-700">
+                                        {chatError}
+                                    </p>
+                                </div>
+                            ) : null}
+
+                            {chatLastMeta ? (
+                                <div className="shrink-0 border-t border-main px-4 py-2">
+                                    <p className="text-[10px] text-muted">
+                                        Last response: {chatLastMeta.latencyMs}{" "}
+                                        ms
+                                        {chatLastMeta.finishReason
+                                            ? ` · ${chatLastMeta.finishReason}`
+                                            : ""}
+                                        {chatLastMeta.usage
+                                            ? ` · tokens in ${chatLastMeta.usage.prompt_tokens} / out ${chatLastMeta.usage.completion_tokens} (total ${chatLastMeta.usage.total_tokens})`
+                                            : ""}
+                                    </p>
+                                </div>
+                            ) : null}
+
+                            <div className="shrink-0 border-t border-main bg-main px-4 py-3">
+                                <div className="space-y-3">
+                                    <textarea
+                                        value={chatInput}
+                                        onChange={(event) =>
+                                            setChatInput(
+                                                event.currentTarget.value,
+                                            )
+                                        }
+                                        rows={1}
+                                        className="w-full resize-y border border-main bg-main px-3 py-2 text-[12px] text-main outline-none placeholder:text-muted/60 focus:border-accent"
+                                        placeholder={DEFAULT_CHAT_PROMPT}
+                                    />
+
+                                    <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_130px_auto] sm:items-center">
+                                        {chatModelsLoading ? (
+                                            <div className="flex items-center gap-2 border border-main bg-main px-2.5 py-2 text-[11px] text-muted">
+                                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                                Loading models...
+                                            </div>
+                                        ) : chatModels.length > 0 ? (
+                                            <select
+                                                value={chatModel}
+                                                onChange={(event) =>
+                                                    setChatModel(
+                                                        event.currentTarget
+                                                            .value,
+                                                    )
+                                                }
+                                                className="h-9 w-full border border-main bg-main px-2.5 text-[11px] font-mono text-main outline-none focus:border-accent"
+                                                aria-label="Model"
+                                            >
+                                                {chatModels.map((id) => (
+                                                    <option key={id} value={id}>
+                                                        {id}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        ) : (
+                                            <input
+                                                value={chatModel}
+                                                onChange={(event) =>
+                                                    setChatModel(
+                                                        event.currentTarget
+                                                            .value,
+                                                    )
+                                                }
+                                                placeholder="Model ID"
+                                                className="h-9 w-full border border-main bg-main px-2.5 text-[11px] font-mono text-main outline-none placeholder:text-muted/60 focus:border-accent"
+                                                aria-label="Model"
+                                            />
+                                        )}
+                                        <div className="flex h-9 items-center border border-main bg-main px-2">
+                                            <span className="mr-2 text-[10px] text-muted">
+                                                Temp
+                                            </span>
+                                            <input
+                                                type="number"
+                                                step={0.1}
+                                                min={0}
+                                                max={2}
+                                                value={chatTemperature}
+                                                onChange={(event) =>
+                                                    setChatTemperature(
+                                                        Number(
+                                                            event.currentTarget
+                                                                .value,
+                                                        ),
+                                                    )
+                                                }
+                                                className="h-7 w-full bg-main px-1 text-center text-[11px] text-main tabular-nums outline-none"
+                                                aria-label="Temperature"
+                                            />
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                void handleChatSend();
+                                            }}
+                                            disabled={
+                                                chatSending ||
+                                                !chatModel.trim() ||
+                                                !chatInput.trim()
+                                            }
+                                            className="inline-flex items-center gap-2 border border-accent/35 bg-accent/10 px-4 py-2 text-[12px] font-semibold text-accent hover:bg-accent/15 disabled:cursor-not-allowed disabled:opacity-60"
+                                        >
+                                            Send message
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                ) : null}
+
                 {isLoading && providers.length === 0 ? (
                     <div className="flex items-center gap-2 py-8 text-[12px] text-muted">
                         <Loader2 className="h-4 w-4 animate-spin" />
@@ -731,6 +1090,16 @@ export function AiProvidersPanel({ section }: AiProvidersPanelProps) {
                                         <button
                                             type="button"
                                             onClick={() =>
+                                                openChatTestModal(provider)
+                                            }
+                                            title="Open API chat test (chat/completions)"
+                                            className="border border-main bg-main p-1.5 text-muted hover:bg-secondary hover:text-main"
+                                        >
+                                            <MessageSquare className="h-3.5 w-3.5" />
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() =>
                                                 handleToggleStatus(provider)
                                             }
                                             title={
@@ -754,12 +1123,12 @@ export function AiProvidersPanel({ section }: AiProvidersPanelProps) {
                                             title="Edit"
                                             className="border border-main bg-main p-1.5 text-muted hover:bg-secondary hover:text-main"
                                         >
-                                            <Unplug className="h-3.5 w-3.5" />
+                                            <Settings className="h-3.5 w-3.5" />
                                         </button>
                                         <button
                                             type="button"
                                             onClick={() =>
-                                                handleDelete(provider._id)
+                                                void handleDelete(provider)
                                             }
                                             title="Delete"
                                             className="border border-main bg-main p-1.5 text-muted hover:bg-secondary hover:text-rose-600"
