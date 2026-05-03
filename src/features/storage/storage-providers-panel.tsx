@@ -10,8 +10,11 @@ import {
   PauseCircle,
   Plus,
   RefreshCw,
+  Settings,
   ShieldCheck,
+  Trash2,
   Vault,
+  Zap,
 } from "lucide-react";
 
 import type { LeftbarNavItem } from "@/components/layout/types";
@@ -197,6 +200,10 @@ export function StorageProvidersPanel({ section }: StorageProvidersPanelProps) {
     status: "idle",
     message: "Ready.",
   });
+  const [testingProviderId, setTestingProviderId] = useState<string | null>(null);
+  const [providerTestResult, setProviderTestResult] = useState<
+    Record<string, { ok: boolean; message: string }>
+  >({});
   const openTutorialDocs = () => {
     window.dispatchEvent(
       new CustomEvent("omnivideo:navigate", { detail: "tutorialDocs" }),
@@ -210,6 +217,46 @@ export function StorageProvidersPanel({ section }: StorageProvidersPanelProps) {
 
   const updateSecret = (key: keyof SecretFormState, value: string) => {
     setSecrets((previous) => ({ ...previous, [key]: value }));
+  };
+
+  const testConnection = async (providerId: string) => {
+    setTestingProviderId(providerId);
+    try {
+      const response = await fetch("/api/health/connections", {
+        method: "GET",
+        cache: "no-store",
+      });
+      const payload = (await response.json()) as {
+        ok: boolean;
+        checks?: Array<{
+          serviceType: "mongodb" | "storage" | "social";
+          providerId?: string;
+          status: "ok" | "down" | "skipped";
+          message: string;
+        }>;
+      };
+      const check = (payload.checks ?? []).find(
+        (item) => item.serviceType === "storage" && item.providerId === providerId,
+      );
+      if (!check) {
+        setProviderTestResult((prev) => ({
+          ...prev,
+          [providerId]: { ok: false, message: "No check result for this provider." },
+        }));
+        return;
+      }
+      setProviderTestResult((prev) => ({
+        ...prev,
+        [providerId]: { ok: check.status === "ok", message: check.message },
+      }));
+    } catch {
+      setProviderTestResult((prev) => ({
+        ...prev,
+        [providerId]: { ok: false, message: "Connection test failed." },
+      }));
+    } finally {
+      setTestingProviderId(null);
+    }
   };
 
   const resetForm = () => {
@@ -624,9 +671,9 @@ export function StorageProvidersPanel({ section }: StorageProvidersPanelProps) {
             </div>
           </div>
 
-          <div className="divide-y divide-[var(--border-color)]">
+          <div className="grid gap-3 p-3 lg:grid-cols-2">
             {providers.length === 0 ? (
-              <div className="px-4 py-10 text-[12px] text-muted">
+              <div className="px-4 py-10 text-[12px] text-muted lg:col-span-2">
                 Chưa có storage provider account nào.
               </div>
             ) : (
@@ -637,7 +684,7 @@ export function StorageProvidersPanel({ section }: StorageProvidersPanelProps) {
                 const ProviderIcon = option?.icon ?? Vault;
 
                 return (
-                  <article key={provider._id} className="bg-main px-4 py-4">
+                  <article key={provider._id} className="border border-main bg-main px-4 py-4">
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
@@ -658,15 +705,27 @@ export function StorageProvidersPanel({ section }: StorageProvidersPanelProps) {
                         ) : null}
                       </div>
 
-                      <div className="flex gap-2">
+                      <div className="flex shrink-0 gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void testConnection(provider._id);
+                          }}
+                          disabled={testingProviderId === provider._id}
+                          title="Test connection"
+                          className="border border-main bg-main p-1.5 text-muted hover:bg-secondary hover:text-main disabled:opacity-60"
+                        >
+                          <Zap className={`h-3.5 w-3.5 ${testingProviderId === provider._id ? "animate-pulse" : ""}`} />
+                        </button>
                         <button
                           type="button"
                           onClick={() => {
                             void openEditForm(provider);
                           }}
-                          className="inline-flex items-center gap-1.5 border border-main bg-secondary px-2.5 py-1.5 text-[11px] font-semibold text-main transition-colors hover:bg-secondary/75"
+                          title="Edit"
+                          className="border border-main bg-main p-1.5 text-muted hover:bg-secondary hover:text-main"
                         >
-                          Edit
+                          <Settings className="h-3.5 w-3.5" />
                         </button>
                         {provider.status === "active" ? (
                           <button
@@ -674,10 +733,10 @@ export function StorageProvidersPanel({ section }: StorageProvidersPanelProps) {
                             onClick={() => {
                               void updateStatus(provider._id, "paused");
                             }}
-                            className="inline-flex items-center gap-1.5 border border-main bg-secondary px-2.5 py-1.5 text-[11px] font-semibold text-main transition-colors hover:bg-secondary/75"
+                            title="Pause"
+                            className="border border-main bg-main p-1.5 text-muted hover:bg-secondary hover:text-main"
                           >
                             <PauseCircle className="h-3.5 w-3.5" />
-                            Pause
                           </button>
                         ) : (
                           <button
@@ -685,10 +744,10 @@ export function StorageProvidersPanel({ section }: StorageProvidersPanelProps) {
                             onClick={() => {
                               void updateStatus(provider._id, "active");
                             }}
-                            className="btn-success inline-flex items-center gap-1.5 border px-2.5 py-1.5 text-[11px] font-semibold transition-colors"
+                            title="Activate"
+                            className="border border-main bg-main p-1.5 text-muted hover:bg-secondary hover:text-main"
                           >
                             <CheckCircle2 className="h-3.5 w-3.5" />
-                            Activate
                           </button>
                         )}
                         <button
@@ -699,12 +758,24 @@ export function StorageProvidersPanel({ section }: StorageProvidersPanelProps) {
                             }
                             void deleteProvider(provider._id);
                           }}
-                          className="btn-danger inline-flex items-center gap-1.5 border px-2.5 py-1.5 text-[11px] font-semibold transition-colors"
+                          title="Delete"
+                          className="border border-main bg-main p-1.5 text-muted hover:bg-secondary hover:text-rose-600"
                         >
-                          Delete
+                          <Trash2 className="h-3.5 w-3.5" />
                         </button>
                       </div>
                     </div>
+                    {providerTestResult[provider._id] ? (
+                      <div
+                        className={`mt-3 border px-3 py-2 text-[11px] ${
+                          providerTestResult[provider._id].ok
+                            ? "border-emerald-500/30 bg-emerald-500/5 text-emerald-700"
+                            : "border-rose-500/30 bg-rose-500/5 text-rose-700"
+                        }`}
+                      >
+                        {providerTestResult[provider._id].message}
+                      </div>
+                    ) : null}
 
                     <div className="mt-4 grid gap-3 lg:grid-cols-3">
                       <div className="border border-main bg-secondary/20 px-3 py-2">

@@ -46,9 +46,17 @@ type StoredVideoAsset = {
     createdAt?: string;
 };
 
+type Pagination = {
+    page: number;
+    pageSize: number;
+    total: number;
+    totalPages: number;
+};
+
 type AssetsApiResponse = {
     ok: boolean;
     data?: StoredVideoAsset[];
+    pagination?: Pagination;
     errorCode?: string;
     error?: string;
 };
@@ -67,6 +75,13 @@ type CreateAssetPayload = {
 
 type StorageLibraryPanelProps = {
     section: LeftbarNavItem;
+};
+
+const DEFAULT_PAGINATION: Pagination = {
+    page: 1,
+    pageSize: 20,
+    total: 0,
+    totalPages: 1,
 };
 
 function formatDate(value?: string) {
@@ -128,6 +143,8 @@ export function StorageLibraryPanel({ section }: StorageLibraryPanelProps) {
     const [status, setStatus] = useState<
         "idle" | "loading" | "failed" | "ready"
     >("idle");
+    const [pagination, setPagination] =
+        useState<Pagination>(DEFAULT_PAGINATION);
     const [message, setMessage] = useState("Ready.");
     const [showAddForm, setShowAddForm] = useState(false);
     const [newAsset, setNewAsset] = useState<CreateAssetPayload>({
@@ -140,15 +157,18 @@ export function StorageLibraryPanel({ section }: StorageLibraryPanelProps) {
         mimeType: "video/mp4",
     });
 
-    const loadAssets = async () => {
+    const loadAssets = async (page = pagination.page) => {
         setStatus("loading");
         setMessage("Loading storage metadata...");
 
         try {
-            const response = await fetch("/api/storage/assets?limit=50", {
-                method: "GET",
-                cache: "no-store",
-            });
+            const response = await fetch(
+                `/api/storage/assets?page=${page}&pageSize=${pagination.pageSize}`,
+                {
+                    method: "GET",
+                    cache: "no-store",
+                },
+            );
             const payload = (await response.json()) as AssetsApiResponse;
 
             if (!response.ok || !payload.ok) {
@@ -158,8 +178,11 @@ export function StorageLibraryPanel({ section }: StorageLibraryPanelProps) {
             }
 
             setAssets(payload.data ?? []);
+            setPagination(payload.pagination ?? DEFAULT_PAGINATION);
             setStatus("ready");
-            setMessage(`Loaded ${(payload.data ?? []).length} video assets.`);
+            setMessage(
+                `Loaded ${(payload.data ?? []).length} / ${payload.pagination?.total ?? (payload.data ?? []).length} video assets.`,
+            );
         } catch (error) {
             setStatus("failed");
             setMessage(
@@ -171,7 +194,7 @@ export function StorageLibraryPanel({ section }: StorageLibraryPanelProps) {
     };
 
     useEffect(() => {
-        void loadAssets();
+        void loadAssets(1);
     }, []);
 
     const createAsset = async () => {
@@ -208,7 +231,7 @@ export function StorageLibraryPanel({ section }: StorageLibraryPanelProps) {
                 publicUrl: "",
                 mimeType: "video/mp4",
             });
-            await loadAssets();
+            await loadAssets(pagination.page);
             setStatus("ready");
             setMessage("Manual asset created.");
         } catch (error) {
@@ -297,7 +320,7 @@ export function StorageLibraryPanel({ section }: StorageLibraryPanelProps) {
                     <button
                         type="button"
                         onClick={() => {
-                            void loadAssets();
+                            void loadAssets(pagination.page);
                         }}
                         disabled={status === "loading"}
                         className="inline-flex items-center gap-2 border border-main bg-main px-3 py-1.5 text-[12px] font-semibold text-main transition-colors hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-60"
@@ -370,14 +393,14 @@ export function StorageLibraryPanel({ section }: StorageLibraryPanelProps) {
                                         key={asset._id}
                                         className="border-b border-main last:border-b-0"
                                     >
-                                        <td className="w-[150px] p-0">
+                                        <td className="w-[120px] p-0">
                                             {!downloadBlockedReason ? (
                                                 <button
                                                     type="button"
                                                     onClick={() =>
                                                         setSelectedAsset(asset)
                                                     }
-                                                    className="flex h-20 w-full items-center justify-center bg-black text-[10px] font-semibold text-white/80 transition-colors hover:bg-neutral-800"
+                                                    className="flex h-16 w-full items-center justify-center bg-black text-[10px] font-semibold text-white/80 transition-colors hover:bg-neutral-800"
                                                 >
                                                     Preview
                                                 </button>
@@ -509,6 +532,37 @@ export function StorageLibraryPanel({ section }: StorageLibraryPanelProps) {
                         )}
                     </tbody>
                 </table>
+            </div>
+            <div className="mt-3 flex items-center justify-between px-5 pb-5">
+                <p className="text-[11px] text-muted">
+                    Page {pagination.page} / {pagination.totalPages} ·{" "}
+                    {pagination.total} assets
+                </p>
+                <div className="flex gap-2">
+                    <button
+                        type="button"
+                        onClick={() => {
+                            void loadAssets(pagination.page - 1);
+                        }}
+                        disabled={status === "loading" || pagination.page <= 1}
+                        className="border border-main bg-secondary px-3 py-1.5 text-[11px] font-semibold text-main transition-colors hover:bg-secondary/75 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                        Prev
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => {
+                            void loadAssets(pagination.page + 1);
+                        }}
+                        disabled={
+                            status === "loading" ||
+                            pagination.page >= pagination.totalPages
+                        }
+                        className="border border-main bg-secondary px-3 py-1.5 text-[11px] font-semibold text-main transition-colors hover:bg-secondary/75 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                        Next
+                    </button>
+                </div>
             </div>
 
             {showAddForm ? (
@@ -786,17 +840,23 @@ export function StorageLibraryPanel({ section }: StorageLibraryPanelProps) {
                                 />
                                 <DetailCell
                                     label="VI Title"
-                                    value={selectedAsset.metadata?.vietnameseTitle}
+                                    value={
+                                        selectedAsset.metadata?.vietnameseTitle
+                                    }
                                 />
                                 <DetailCell
                                     label="VI Description"
-                                    value={selectedAsset.metadata?.vietnameseDescription}
+                                    value={
+                                        selectedAsset.metadata
+                                            ?.vietnameseDescription
+                                    }
                                 />
                                 <DetailCell
                                     label="VI Hashtags"
                                     value={
-                                        selectedAsset.metadata?.vietnameseHashtags?.join(", ") ??
-                                        null
+                                        selectedAsset.metadata?.vietnameseHashtags?.join(
+                                            ", ",
+                                        ) ?? null
                                     }
                                 />
                             </div>

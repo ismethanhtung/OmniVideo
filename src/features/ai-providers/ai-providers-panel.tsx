@@ -1044,11 +1044,11 @@ export function AiProvidersPanel({ section }: AiProvidersPanelProps) {
                 ) : null}
 
                 {providers.length > 0 ? (
-                    <div className="space-y-3">
+                    <div className="grid gap-3 xl:grid-cols-2">
                         {providers.map((provider) => (
                             <div
                                 key={provider._id}
-                                className="border border-main bg-main transition-colors"
+                                className="flex h-full flex-col border border-main bg-main transition-colors"
                             >
                                 <div className="flex items-start justify-between gap-3 px-4 py-3">
                                     <div className="min-w-0 flex-1">
@@ -1138,7 +1138,7 @@ export function AiProvidersPanel({ section }: AiProvidersPanelProps) {
                                     </div>
                                 </div>
 
-                                <div className="flex flex-wrap gap-3 border-t border-main px-4 py-2.5">
+                                <div className="mt-auto flex flex-wrap gap-3 border-t border-main px-4 py-2.5">
                                     <div className="text-[10px]">
                                         <span className="font-semibold text-muted">
                                             Type:

@@ -2089,7 +2089,7 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
         errors.length === 0
     ) {
         errors.push(
-            "Flow cần ít nhất một input chạy thật: Upload Video, Storage Asset hoặc Audio Transcript.",
+            "Flow cần ít nhất một input chạy thật: Upload Video, Storage Asset,...",
         );
     }
 

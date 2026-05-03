@@ -31,10 +31,30 @@ type YtDlpFormatSummary = {
 };
 
 type FormatListState =
-    | { status: "idle"; message: string; formats: YtDlpFormatSummary[]; recommended?: string }
-    | { status: "loading"; message: string; formats: YtDlpFormatSummary[]; recommended?: string }
-    | { status: "success"; message: string; formats: YtDlpFormatSummary[]; recommended?: string }
-    | { status: "failed"; message: string; formats: YtDlpFormatSummary[]; recommended?: string };
+    | {
+          status: "idle";
+          message: string;
+          formats: YtDlpFormatSummary[];
+          recommended?: string;
+      }
+    | {
+          status: "loading";
+          message: string;
+          formats: YtDlpFormatSummary[];
+          recommended?: string;
+      }
+    | {
+          status: "success";
+          message: string;
+          formats: YtDlpFormatSummary[];
+          recommended?: string;
+      }
+    | {
+          status: "failed";
+          message: string;
+          formats: YtDlpFormatSummary[];
+          recommended?: string;
+      };
 
 type IntakeApiResult = {
     ok: boolean;
@@ -450,7 +470,10 @@ export function VideoIntakePanel({ section }: VideoIntakePanelProps) {
                 formats: payload.data.formats,
                 recommended: payload.data.recommendedFormatSelector,
             });
-            if (!formatSelector.trim() && payload.data.recommendedFormatSelector) {
+            if (
+                !formatSelector.trim() &&
+                payload.data.recommendedFormatSelector
+            ) {
                 setFormatSelector(payload.data.recommendedFormatSelector);
             }
         } catch (error) {
@@ -535,6 +558,104 @@ export function VideoIntakePanel({ section }: VideoIntakePanelProps) {
                     error instanceof Error
                         ? error.message
                         : "Video intake failed.",
+            });
+        }
+    };
+
+    const retryRun = async (run: IntakeRunHistory) => {
+        const retrySourceUrl = run.inputSnapshot?.sourceUrl?.trim();
+        if (!retrySourceUrl) {
+            setState({
+                status: "failed",
+                message: "Retry failed: missing source URL from selected run.",
+                errorCode: "VAL_SOURCE_URL_REQUIRED",
+            });
+            return;
+        }
+
+        const retryAccountId = run.inputSnapshot?.storageProviderAccountId;
+        if (retryAccountId) {
+            setStorageProviderAccountId(retryAccountId);
+        }
+        if (run.inputSnapshot?.title) {
+            setTitle(run.inputSnapshot.title);
+        }
+        setSourceUrl(retrySourceUrl);
+
+        const fallbackAccount = selectedAccount ?? uploadAccounts[0];
+        const retryAccount =
+            uploadAccounts.find((account) => account._id === retryAccountId) ??
+            fallbackAccount;
+
+        if (!retryAccount) {
+            setState({
+                status: "failed",
+                message:
+                    "Retry failed: no active Telegram/Drive account available.",
+                errorCode: "VAL_STORAGE_PROVIDER_ACCOUNT_REQUIRED",
+            });
+            return;
+        }
+
+        setState({
+            status: "running",
+            message: "Retrying pipeline run...",
+        });
+
+        try {
+            const response = await fetch("/api/video-intake/runs", {
+                method: "POST",
+                headers: {
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({
+                    sourceUrl: retrySourceUrl,
+                    title: run.inputSnapshot?.title?.trim() || undefined,
+                    description: description.trim() || undefined,
+                    storageProvider: retryAccount.providerType,
+                    storageProviderAccountId: retryAccount._id,
+                    tags: tags
+                        .split(",")
+                        .map((tag) => tag.trim())
+                        .filter(Boolean),
+                    qualityPreference,
+                    formatSelector: formatSelector.trim() || undefined,
+                    contentIntent: "other",
+                    ownershipStatus: "unknown",
+                }),
+            });
+
+            const payload = (await response.json()) as IntakeApiResult;
+
+            if (!response.ok || !payload.ok) {
+                setState({
+                    status: "failed",
+                    message: payload.error ?? "Video intake failed.",
+                    errorCode: payload.errorCode ?? payload.data?.errorCode,
+                });
+                if (payload.data?.runId) {
+                    await loadRunDetail(payload.data.runId);
+                }
+                await loadHistory(1);
+                return;
+            }
+
+            setState({
+                status: "success",
+                message: "Retry completed.",
+                result: payload.data,
+            });
+            if (payload.data?.runId) {
+                await loadRunDetail(payload.data.runId);
+            }
+            await loadHistory(1);
+        } catch (error) {
+            setState({
+                status: "failed",
+                message:
+                    error instanceof Error
+                        ? error.message
+                        : "Video intake retry failed.",
             });
         }
     };
@@ -846,58 +967,66 @@ export function VideoIntakePanel({ section }: VideoIntakePanelProps) {
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            {formatList.formats.map((format) => {
-                                                const type = format.hasAudio
-                                                    ? format.hasVideo
-                                                        ? "A+V"
-                                                        : "Audio"
-                                                    : format.hasVideo
-                                                      ? "Video"
-                                                      : "-";
+                                            {formatList.formats.map(
+                                                (format) => {
+                                                    const type = format.hasAudio
+                                                        ? format.hasVideo
+                                                            ? "A+V"
+                                                            : "Audio"
+                                                        : format.hasVideo
+                                                          ? "Video"
+                                                          : "-";
 
-                                                return (
-                                                    <tr
-                                                        key={format.formatId}
-                                                        className="border-t border-main"
-                                                    >
-                                                        <td className="px-2 py-2 font-mono text-main">
-                                                            {format.formatId}
-                                                        </td>
-                                                        <td className="px-2 py-2 text-muted">
-                                                            {type}
-                                                        </td>
-                                                        <td className="px-2 py-2 text-muted">
-                                                            {format.resolution ??
-                                                                (format.height
-                                                                    ? `${format.height}p`
-                                                                    : "-")}
-                                                        </td>
-                                                        <td className="px-2 py-2 text-muted">
-                                                            {formatCodecSummary(
-                                                                format,
-                                                            )}
-                                                        </td>
-                                                        <td className="px-2 py-2 text-muted">
-                                                            {formatFormatSize(
-                                                                format,
-                                                            )}
-                                                        </td>
-                                                        <td className="px-2 py-2">
-                                                            <button
-                                                                type="button"
-                                                                onClick={() =>
-                                                                    setFormatSelector(
-                                                                        format.formatId,
-                                                                    )
+                                                    return (
+                                                        <tr
+                                                            key={
+                                                                format.formatId
+                                                            }
+                                                            className="border-t border-main"
+                                                        >
+                                                            <td className="px-2 py-2 font-mono text-main">
+                                                                {
+                                                                    format.formatId
                                                                 }
-                                                                className="border border-main px-2 py-1 font-mono text-[10px] text-main transition-colors hover:bg-secondary"
-                                                            >
-                                                                {format.formatId}
-                                                            </button>
-                                                        </td>
-                                                    </tr>
-                                                );
-                                            })}
+                                                            </td>
+                                                            <td className="px-2 py-2 text-muted">
+                                                                {type}
+                                                            </td>
+                                                            <td className="px-2 py-2 text-muted">
+                                                                {format.resolution ??
+                                                                    (format.height
+                                                                        ? `${format.height}p`
+                                                                        : "-")}
+                                                            </td>
+                                                            <td className="px-2 py-2 text-muted">
+                                                                {formatCodecSummary(
+                                                                    format,
+                                                                )}
+                                                            </td>
+                                                            <td className="px-2 py-2 text-muted">
+                                                                {formatFormatSize(
+                                                                    format,
+                                                                )}
+                                                            </td>
+                                                            <td className="px-2 py-2">
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() =>
+                                                                        setFormatSelector(
+                                                                            format.formatId,
+                                                                        )
+                                                                    }
+                                                                    className="border border-main px-2 py-1 font-mono text-[10px] text-main transition-colors hover:bg-secondary"
+                                                                >
+                                                                    {
+                                                                        format.formatId
+                                                                    }
+                                                                </button>
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                },
+                                            )}
                                         </tbody>
                                     </table>
                                 </div>
@@ -1118,7 +1247,7 @@ export function VideoIntakePanel({ section }: VideoIntakePanelProps) {
                                             key={run._id}
                                             className="border-b border-main last:border-b-0"
                                         >
-                                            <td className="w-[150px] p-0">
+                                            <td className="w-[120px] p-0">
                                                 {run.assetSummary &&
                                                 !downloadBlockedReason ? (
                                                     <button
@@ -1126,7 +1255,7 @@ export function VideoIntakePanel({ section }: VideoIntakePanelProps) {
                                                         onClick={() =>
                                                             setSelectedRun(run)
                                                         }
-                                                        className="flex h-20 w-full items-center justify-center bg-black text-[10px] font-semibold text-white/80 transition-colors hover:bg-neutral-800"
+                                                        className="flex h-16 w-full items-center justify-center bg-black text-[10px] font-semibold text-white/80 transition-colors hover:bg-neutral-800"
                                                     >
                                                         Preview
                                                     </button>
@@ -1206,6 +1335,19 @@ export function VideoIntakePanel({ section }: VideoIntakePanelProps) {
                                                     >
                                                         Detail
                                                     </button>
+                                                    {run.status === "failed" ? (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                void retryRun(
+                                                                    run,
+                                                                );
+                                                            }}
+                                                            className="border border-main bg-main px-2 py-1 text-[11px] font-semibold text-main transition-colors hover:bg-secondary"
+                                                        >
+                                                            Again
+                                                        </button>
+                                                    ) : null}
                                                     <button
                                                         type="button"
                                                         onClick={() => {

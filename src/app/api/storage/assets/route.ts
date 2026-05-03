@@ -11,13 +11,19 @@ export const runtime = "nodejs";
 export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
-    const limit = Number(url.searchParams.get("limit") ?? 25);
+    const page = Number(url.searchParams.get("page") ?? 1);
+    const pageSize = Number(
+      url.searchParams.get("pageSize") ?? url.searchParams.get("limit") ?? 25,
+    );
     const db = await getIntakeDb();
-    const assets = await listVideoAssets(db, Number.isFinite(limit) ? limit : 25);
+    const result = await listVideoAssets(db, {
+      page: Number.isFinite(page) ? page : 1,
+      pageSize: Number.isFinite(pageSize) ? pageSize : 25,
+    });
 
     return NextResponse.json({
       ok: true,
-      data: assets.map((asset) => ({
+      data: result.data.map((asset) => ({
         ...asset,
         _id: asset._id.toString(),
         createdFrom: {
@@ -26,6 +32,7 @@ export async function GET(request: Request) {
           jobRunId: asset.createdFrom?.jobRunId?.toString?.(),
         },
       })),
+      pagination: result.pagination,
     });
   } catch (error) {
     return NextResponse.json(

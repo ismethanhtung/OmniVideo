@@ -19,6 +19,8 @@ type SocialAccountsPanelProps = {
   section: LeftbarNavItem;
 };
 
+
+
 type AccountFormState = {
   platform: SocialPlatform;
   label: string;
@@ -489,6 +491,7 @@ export function SocialAccountsPanel({ section }: SocialAccountsPanelProps) {
         <span className="ml-3">{message}</span>
         <span className="ml-3">Connected: {activeCount}</span>
       </div>
+
 
       <div className="overflow-x-auto">
         <table className="w-full border-collapse text-left text-[12px]">

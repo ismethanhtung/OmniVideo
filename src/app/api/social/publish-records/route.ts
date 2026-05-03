@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import {
   createPublishRecord,
+  deleteFailedPublishRecords,
   executePublishNow,
   getSocialDb,
   listPublishRecordsPage,
@@ -132,6 +133,43 @@ export async function POST(request: Request) {
           error instanceof Error
             ? error.message
             : "Publish record create API failed.",
+      },
+      { status: 500 },
+    );
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const url = new URL(request.url);
+    const status = url.searchParams.get("status");
+    if (status !== "failed") {
+      return NextResponse.json(
+        {
+          ok: false,
+          errorCode: "VAL_PUBLISH_RECORD_STATUS_INVALID",
+          error: "Only status=failed is supported for bulk delete.",
+        },
+        { status: 400 },
+      );
+    }
+
+    const db = await getSocialDb();
+    const result = await deleteFailedPublishRecords(db);
+
+    return NextResponse.json({
+      ok: true,
+      data: result,
+    });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        ok: false,
+        errorCode: "SYS_PUBLISH_RECORD_DELETE_API_FAILED",
+        error:
+          error instanceof Error
+            ? error.message
+            : "Publish record delete API failed.",
       },
       { status: 500 },
     );

@@ -1,11 +1,16 @@
 import type { Metadata } from "next";
 import {
+  Figtree,
   IBM_Plex_Sans,
   Inter,
   JetBrains_Mono,
+  Manrope,
   Outfit,
   Plus_Jakarta_Sans,
+  Public_Sans,
+  Sora,
   Space_Grotesk,
+  Urbanist,
 } from "next/font/google";
 
 import "./globals.css";
@@ -46,12 +51,47 @@ const spaceGrotesk = Space_Grotesk({
   display: "swap",
 });
 
+const manrope = Manrope({
+  subsets: ["latin"],
+  variable: "--font-app-manrope",
+  display: "swap",
+});
+
+const sora = Sora({
+  subsets: ["latin"],
+  variable: "--font-app-sora",
+  display: "swap",
+});
+
+const urbanist = Urbanist({
+  subsets: ["latin"],
+  variable: "--font-app-urbanist",
+  display: "swap",
+});
+
+const publicSans = Public_Sans({
+  subsets: ["latin"],
+  variable: "--font-app-public-sans",
+  display: "swap",
+});
+
+const figtree = Figtree({
+  subsets: ["latin"],
+  variable: "--font-app-figtree",
+  display: "swap",
+});
+
 const appFontVariableClassName = [
   inter.variable,
   outfit.variable,
   plusJakartaSans.variable,
   ibmPlexSans.variable,
   spaceGrotesk.variable,
+  manrope.variable,
+  sora.variable,
+  urbanist.variable,
+  publicSans.variable,
+  figtree.variable,
   jetbrainsMono.variable,
 ].join(" ");
 

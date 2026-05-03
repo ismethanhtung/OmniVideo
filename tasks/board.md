@@ -11,6 +11,10 @@
 ## In Progress
 
 - `FAST-AUDIO-008` - Align Edge TTS voice to segment timestamps.
+- `FAST-AUDIO-020` - Add asset preview in Audio Transcript Video Asset picker.
+- `FAST-INTAKE-004` - Add Again retry action in Video Intake Run History.
+- `FAST-UX-008` - Global full-width layout and hide per-page header block.
+- `FAST-UX-009` - Add 5 typography options and 3 additional light themes.
 
 ## Blocked
 
@@ -32,6 +36,8 @@
 
 ## Done
 
+- `FAST-WORKSPACE-011` - Move flow seed controls into Inspector with extensible seed registry.
+- `FAST-GOV-003` - Strengthen version bump governance workflow.
 - `FAST-UX-006` - Refactor leftbar navigation to real route-based pages.
 - `FAST-WORKSPACE-009` - Make URL Video behave like Upload Video for processing flows.
 - `FAST-WORKSPACE-008` - Remove Douyin seed, generalize workspace language copy, and enable URL intake to storage flow.

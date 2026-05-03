@@ -697,6 +697,14 @@ export async function listPublishRecordsPage({
   };
 }
 
+export async function deleteFailedPublishRecords(db: Db) {
+  const result = await db
+    .collection<PublishRecordDocument>(PUBLISH_RECORDS_COLLECTION)
+    .deleteMany({ status: "failed" });
+
+  return { deletedCount: result.deletedCount ?? 0 };
+}
+
 export async function getSocialDashboard(db: Db) {
   const [accounts, records, assetCount] = await Promise.all([
     listSocialAccounts(db),

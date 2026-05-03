@@ -723,8 +723,7 @@ export function LocalUploadIntakePanel({
                             Run Status
                         </p>
                         <p className="mt-1 text-[11px] text-muted">
-                            Step trace local upload trong `job_runs`,
-                            `step_runs`, `run_events`.
+                            Step trace local upload trong MongoDB.
                         </p>
                     </div>
 
@@ -968,7 +967,7 @@ export function LocalUploadIntakePanel({
                                         key={run._id}
                                         className="border-b border-main last:border-b-0"
                                     >
-                                        <td className="w-[150px] p-0">
+                                        <td className="w-[120px] p-0">
                                             {run.assetSummary &&
                                             !getTelegramDownloadBlockedReason({
                                                 storageProvider:
@@ -982,7 +981,7 @@ export function LocalUploadIntakePanel({
                                                     onClick={() =>
                                                         setSelectedRun(run)
                                                     }
-                                                    className="flex h-20 w-full items-center justify-center bg-black text-[10px] font-semibold text-white/80 transition-colors hover:bg-neutral-800"
+                                                    className="flex h-16 w-full items-center justify-center bg-black text-[10px] font-semibold text-white/80 transition-colors hover:bg-neutral-800"
                                                 >
                                                     Preview
                                                 </button>

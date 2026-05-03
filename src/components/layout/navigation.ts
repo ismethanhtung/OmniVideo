@@ -18,7 +18,8 @@ import {
     ListVideo,
     Mic2,
     RadioTower,
-    TestTubes,
+    Compass,
+    ClipboardCheck,
     UserRound,
     VideoIcon,
 } from "lucide-react";
@@ -60,6 +61,20 @@ export const LEFTBAR_NAV: LeftbarNavGroup[] = [
                 description:
                     "Quản lý kết nối AI providers (Groq, OpenRouter, custom) với quota và usage tracking.",
             },
+            {
+                id: "storageProviders",
+                icon: HardDrive,
+                label: "Storage Providers",
+                description:
+                    "Quản lý nhiều Telegram/Drive/S3/local storage accounts.",
+            },
+            {
+                id: "socialAccounts",
+                icon: UserRound,
+                label: "Social Accounts",
+                description:
+                    "Quản lý account Facebook, TikTok, Shopee và YouTube với secrets được mask.",
+            },
         ],
     },
     {
@@ -88,19 +103,19 @@ export const LEFTBAR_NAV: LeftbarNavGroup[] = [
                 description:
                     "Extract audio từ video/audio và gọi Groq Whisper Large v3 Turbo để lấy text + timestamp.",
             },
-
             {
-                id: "storageProviders",
-                icon: HardDrive,
-                label: "Storage Providers",
+                id: "videoToolsLab",
+                icon: Clapperboard,
+                label: "Video Tools Lab",
                 description:
-                    "Quản lý nhiều Telegram/Drive/S3/local storage accounts.",
+                    "Test upload, preview và mirror video bằng ffmpeg trước khi đưa vào pipeline.",
             },
             {
                 id: "storageLibrary",
                 icon: Vault,
                 label: "Storage Library",
-                description: "Quản lý metadata video đã lưu ở Telegram/Drive.",
+                description:
+                    "Quản lý metadata video đã lưu ở Storage Providers.",
             },
         ],
     },
@@ -110,20 +125,6 @@ export const LEFTBAR_NAV: LeftbarNavGroup[] = [
         sectionIcon: Globe2,
         groupLabel: "Social Platforms",
         items: [
-            {
-                id: "socialAccounts",
-                icon: UserRound,
-                label: "Social Accounts",
-                description:
-                    "Quản lý account Facebook, TikTok, Shopee và YouTube với secrets được mask.",
-            },
-            {
-                id: "platformTasks",
-                icon: ClipboardList,
-                label: "Platform Tasks",
-                description:
-                    "Xem capability, scope còn thiếu và tác vụ có thể làm trên từng nền tảng.",
-            },
             {
                 id: "publishRecords",
                 icon: Send,
@@ -162,22 +163,22 @@ export const LEFTBAR_NAV: LeftbarNavGroup[] = [
     },
     {
         sectionId: "test",
-        sectionIcon: TestTubes,
-        groupLabel: "Test",
+        sectionIcon: Compass,
+        groupLabel: "More",
         items: [
+            {
+                id: "platformTasks",
+                icon: ClipboardCheck,
+                label: "Social Readiness",
+                description:
+                    "Theo dõi mức sẵn sàng publish theo platform: account status, scopes, limits, next actions.",
+            },
             {
                 id: "piperTtsSandbox",
                 icon: RadioTower,
                 label: "Piper TTS Sandbox",
                 description:
                     "Test local Piper voice model ONNX bằng CPU, không cần GPU.",
-            },
-            {
-                id: "videoToolsLab",
-                icon: Clapperboard,
-                label: "Video Tools Lab",
-                description:
-                    "Test upload, preview và mirror video bằng ffmpeg trước khi đưa vào pipeline.",
             },
         ],
     },
@@ -223,7 +224,7 @@ const SECTION_SLUG_BY_ID: Record<AppSectionId, string> = {
     storageProviders: "storage-providers",
     storageLibrary: "storage-library",
     socialAccounts: "social-accounts",
-    platformTasks: "platform-tasks",
+    platformTasks: "social-readiness",
     publishRecords: "publish-records",
     publishedContent: "published-content",
     tutorialDocs: "tutorial-docs",

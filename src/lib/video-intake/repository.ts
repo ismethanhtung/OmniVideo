@@ -392,27 +392,51 @@ export async function createRunEvent({
   });
 }
 
-export async function listVideoAssets(db: Db, limit = 25) {
-  return db
-    .collection("assets")
-    .find({ assetType: "video" })
-    .sort({ createdAt: -1 })
-    .limit(limit)
-    .project({
-      assetType: 1,
-      status: 1,
-      storageProvider: 1,
-      storagePointer: 1,
-      publicUrl: 1,
-      providerAssetId: 1,
-      mimeType: 1,
-      durationMs: 1,
-      sizeBytes: 1,
-      metadata: 1,
-      createdFrom: 1,
-      createdAt: 1,
-    })
-    .toArray();
+export async function listVideoAssets(
+  db: Db,
+  { page = 1, pageSize = 25 }: { page?: number; pageSize?: number } = {},
+) {
+  const normalizedPage = Number.isFinite(page) ? Math.max(1, Math.floor(page)) : 1;
+  const normalizedPageSize = Number.isFinite(pageSize)
+    ? Math.min(100, Math.max(1, Math.floor(pageSize)))
+    : 25;
+  const skip = (normalizedPage - 1) * normalizedPageSize;
+  const query = { assetType: "video" as const };
+
+  const [total, data] = await Promise.all([
+    db.collection("assets").countDocuments(query),
+    db
+      .collection("assets")
+      .find(query)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(normalizedPageSize)
+      .project({
+        assetType: 1,
+        status: 1,
+        storageProvider: 1,
+        storagePointer: 1,
+        publicUrl: 1,
+        providerAssetId: 1,
+        mimeType: 1,
+        durationMs: 1,
+        sizeBytes: 1,
+        metadata: 1,
+        createdFrom: 1,
+        createdAt: 1,
+      })
+      .toArray(),
+  ]);
+
+  return {
+    data,
+    pagination: {
+      page: normalizedPage,
+      pageSize: normalizedPageSize,
+      total,
+      totalPages: Math.max(1, Math.ceil(total / normalizedPageSize)),
+    },
+  };
 }
 
 export type ManualVideoAssetInput = {

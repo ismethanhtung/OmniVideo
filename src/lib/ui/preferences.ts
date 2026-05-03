@@ -3,11 +3,19 @@ export type AppFontKey =
   | "outfit"
   | "plus-jakarta-sans"
   | "ibm-plex-sans"
-  | "space-grotesk";
+  | "space-grotesk"
+  | "manrope"
+  | "sora"
+  | "urbanist"
+  | "public-sans"
+  | "figtree";
 
 export type AppThemeKey =
   | "light"
   | "light-pastel-pink"
+  | "light-warm-paper"
+  | "light-mint-fog"
+  | "light-sky-glass"
   | "dark1"
   | "dark2"
   | "dark3"
@@ -20,11 +28,19 @@ export const APP_FONT_OPTIONS: Array<{ key: AppFontKey; label: string }> = [
   { key: "outfit", label: "Outfit" },
   { key: "ibm-plex-sans", label: "IBM Plex Sans" },
   { key: "space-grotesk", label: "Space Grotesk" },
+  { key: "manrope", label: "Manrope" },
+  { key: "sora", label: "Sora" },
+  { key: "urbanist", label: "Urbanist" },
+  { key: "public-sans", label: "Public Sans" },
+  { key: "figtree", label: "Figtree" },
 ];
 
 export const APP_THEME_OPTIONS: Array<{ key: AppThemeKey; label: string }> = [
   { key: "light", label: "Light" },
   { key: "light-pastel-pink", label: "Light Pastel Pink" },
+  { key: "light-warm-paper", label: "Light Warm Paper" },
+  { key: "light-mint-fog", label: "Light Mint Fog" },
+  { key: "light-sky-glass", label: "Light Sky Glass" },
   { key: "dark1", label: "Dark Slate" },
   { key: "dark2", label: "Dark Ocean" },
   { key: "dark3", label: "Dark Violet" },

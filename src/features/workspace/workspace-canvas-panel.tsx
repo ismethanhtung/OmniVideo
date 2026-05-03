@@ -11,6 +11,7 @@ import {
     Trash2,
     Volume2,
     Workflow,
+    Play,
 } from "lucide-react";
 
 import type { LeftbarNavItem } from "@/components/layout/types";
@@ -29,7 +30,6 @@ import {
     addWorkspaceNode,
     connectWorkspaceNodes,
     createEmptyWorkspaceGraph,
-    createUploadVietnameseMaskPublishSampleGraph,
     deleteWorkspaceNode,
     getWorkspaceNodeTemplate,
     moveWorkspaceNode,
@@ -47,6 +47,10 @@ import {
     type WorkspaceNodeInstance,
     type WorkspaceNodeTemplate,
 } from "@/lib/workspace/workspace-graph";
+import {
+    WORKSPACE_SEED_TEMPLATES,
+    type WorkspaceSeedTemplate,
+} from "@/lib/workspace/workspace-seeds";
 import {
     DEFAULT_TRANSLATION_MODEL,
     DEFAULT_PIPER_TTS_SETTINGS,
@@ -873,10 +877,10 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
         });
     };
 
-    const seedVietnameseMaskPublishFlow = () => {
+    const applySeedTemplate = (seed: WorkspaceSeedTemplate) => {
         setPendingSourceNodeId(null);
         setConnectionError(null);
-        const next = createUploadVietnameseMaskPublishSampleGraph();
+        const next = seed.buildGraph();
         setGraph(next);
         resetRunState(next, true);
     };
@@ -2256,16 +2260,14 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         formData.set(
                             "timelineEnd",
                             String(
-                                getNumberConfig(
-                                    editNode,
-                                    "timelineEnd",
-                                    36000,
-                                ),
+                                getNumberConfig(editNode, "timelineEnd", 36000),
                             ),
                         );
                         formData.set(
                             "blurStrength",
-                            String(getNumberConfig(editNode, "blurStrength", 50)),
+                            String(
+                                getNumberConfig(editNode, "blurStrength", 50),
+                            ),
                         );
                     }
                     formData.set(
@@ -2845,16 +2847,6 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         {section.description}
                     </p>
                 </div>
-                <div className="flex shrink-0 flex-wrap gap-2">
-                    <button
-                        type="button"
-                        onClick={seedVietnameseMaskPublishFlow}
-                        className="inline-flex items-center gap-1.5 border border-main bg-main px-2.5 py-1.5 text-[11px] font-semibold text-main hover:bg-secondary"
-                    >
-                        <Workflow className="h-3.5 w-3.5" />
-                        Seed VI Voice Mask Publish
-                    </button>
-                </div>
             </header>
 
             <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[280px_minmax(0,1fr)_340px]">
@@ -3064,6 +3056,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     loadingFacebookAccountIds={loadingFacebookAccountIds}
                     loadingAiModelProviderIds={loadingAiModelProviderIds}
                     isRunningFlow={isRunningFlow}
+                    seedTemplates={WORKSPACE_SEED_TEMPLATES}
                     onSetPendingSource={(nodeId) =>
                         setPendingSourceNodeId(nodeId)
                     }
@@ -3071,6 +3064,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     onDeleteSelected={deleteSelectedNode}
                     onUpdateNodeConfig={updateNodeConfig}
                     onUpdateNodeFile={setNodeFile}
+                    onApplySeed={applySeedTemplate}
                     onEnsureFacebookPages={ensureFacebookPages}
                     onEnsureAiProviderModels={ensureAiProviderModels}
                 />
@@ -3227,10 +3221,8 @@ function WorkspaceRunStatusPanel({
                             onClick={onRun}
                             className="inline-flex items-center gap-1.5 border border-accent/35 bg-accent/10 px-3 py-1.5 text-[11px] font-semibold text-accent transition-colors hover:bg-accent/15 disabled:cursor-not-allowed disabled:opacity-60"
                         >
-                            <Workflow className="h-3.5 w-3.5" />
-                            {isRunningFlow
-                                ? "Running Flow..."
-                                : "Run Workspace Flow"}
+                            <Play className="h-3.5 w-3.5" />
+                            {isRunningFlow ? "Running Flow..." : "Run Flow"}
                         </button>
                         <button
                             type="button"
@@ -3875,7 +3867,9 @@ function NodeRuntimeConfig({
                             disabled={isRunningFlow}
                             placeholder="60"
                             onChange={(value) =>
-                                setConfig({ subtitleMarginRight: Number(value) })
+                                setConfig({
+                                    subtitleMarginRight: Number(value),
+                                })
                             }
                         />
                         <RuntimeTextInput
@@ -4770,11 +4764,13 @@ function InspectorPanel({
     loadingFacebookAccountIds,
     loadingAiModelProviderIds,
     isRunningFlow,
+    seedTemplates,
     onSetPendingSource,
     onCancelPendingSource,
     onDeleteSelected,
     onUpdateNodeConfig,
     onUpdateNodeFile,
+    onApplySeed,
     onEnsureFacebookPages,
     onEnsureAiProviderModels,
 }: {
@@ -4795,6 +4791,7 @@ function InspectorPanel({
     loadingFacebookAccountIds: Record<string, boolean>;
     loadingAiModelProviderIds: Record<string, boolean>;
     isRunningFlow: boolean;
+    seedTemplates: WorkspaceSeedTemplate[];
     onSetPendingSource: (nodeId: string) => void;
     onCancelPendingSource: () => void;
     onDeleteSelected: () => void;
@@ -4803,6 +4800,7 @@ function InspectorPanel({
         patch: WorkspaceNodeInstance["config"],
     ) => void;
     onUpdateNodeFile: (nodeId: string, file: File | null) => void;
+    onApplySeed: (seed: WorkspaceSeedTemplate) => void;
     onEnsureFacebookPages: (accountId: string) => Promise<FacebookPagesResult>;
     onEnsureAiProviderModels: (
         providerId: string,
@@ -4832,14 +4830,38 @@ function InspectorPanel({
             ) : null}
 
             {!node || !template ? (
-                <div className="mt-3 border border-dashed border-main bg-secondary/30 px-3 py-3">
-                    <p className="text-[12px] font-medium text-main">
-                        Select a node
-                    </p>
-                    <p className="mt-1 text-[11px] leading-5 text-muted">
-                        Node contract, ports, config fields and traceability
-                        notes will appear here.
-                    </p>
+                <div className="mt-3 space-y-4">
+                    <div className="border border-dashed border-main bg-secondary/30 px-3 py-3">
+                        <p className="text-[12px] font-medium text-main">
+                            Select a node
+                        </p>
+                        <p className="mt-1 text-[11px] leading-5 text-muted">
+                            Node contract, ports, config fields and traceability
+                            notes will appear here.
+                        </p>
+                    </div>
+                    <InspectorSection title="Flow Seeds">
+                        <div className="space-y-2">
+                            {seedTemplates.map((seed) => (
+                                <button
+                                    key={seed.id}
+                                    type="button"
+                                    onClick={() => onApplySeed(seed)}
+                                    className="w-full border border-main bg-main px-2.5 py-2 text-left hover:bg-secondary"
+                                >
+                                    <div className="flex items-center gap-1.5">
+                                        <Workflow className="h-3.5 w-3.5 text-muted" />
+                                        <p className="text-[11px] font-semibold text-main">
+                                            {seed.label}
+                                        </p>
+                                    </div>
+                                    <p className="mt-1 text-[10px] leading-4 text-muted">
+                                        {seed.description}
+                                    </p>
+                                </button>
+                            ))}
+                        </div>
+                    </InspectorSection>
                 </div>
             ) : (
                 <div className="mt-3 space-y-4">

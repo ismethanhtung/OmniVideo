@@ -34,6 +34,23 @@ type PiperTtsApiPayload =
           errorCode?: string;
           error?: string;
       };
+type VoiceGenerationApiPayload =
+    | {
+          ok: true;
+          data: {
+              audioBase64: string;
+              mimeType: "audio/wav";
+              extension: "wav";
+              byteLength: number;
+              generationDurationMs: number;
+              segmentCount: number;
+          };
+      }
+    | {
+          ok: false;
+          errorCode?: string;
+          error?: string;
+      };
 
 type PiperTtsSandboxPanelProps = {
     section: LeftbarNavItem;
@@ -50,7 +67,7 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
     const [noiseW, setNoiseW] = useState("0.8");
     const [sentenceSilence, setSentenceSilence] = useState("0.2");
     const [text, setText] = useState(
-        "Xin chao, day la trang test Piper TTS local trong OmniVideo.",
+        "Xin chào, đây là trang test Piper TTS local trong OmniVideo.",
     );
     const [isRunning, setIsRunning] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -69,22 +86,71 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
         setResult(null);
 
         try {
-            const response = await fetch("/api/audio/piper-tts", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    text,
-                    binaryPath,
-                    modelPath,
-                    configPath,
-                    speaker,
-                    lengthScale,
-                    noiseScale,
-                    noiseW,
-                    sentenceSilence,
-                }),
-            });
-            const payload = (await response.json()) as PiperTtsApiPayload;
+            const raw = text.trim();
+            const looksLikeJsonArray = raw.startsWith("[") && raw.endsWith("]");
+            let payload: PiperTtsApiPayload | VoiceGenerationApiPayload;
+            if (looksLikeJsonArray) {
+                const parsed = JSON.parse(raw) as Array<
+                    Record<string, unknown>
+                >;
+                const segments = parsed
+                    .map((item, index) => ({
+                        id: Number(item.id ?? index),
+                        start: Number(item.start ?? 0),
+                        end: Number(item.end ?? Number(item.start ?? 0) + 1),
+                        text: String(
+                            item.translatedText ?? item.text ?? "",
+                        ).trim(),
+                    }))
+                    .filter((segment) => segment.text.length > 0);
+                const response = await fetch("/api/audio/voice-generation", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        segments,
+                        settings: {
+                            binaryPath,
+                            modelPath,
+                            configPath,
+                            speaker:
+                                speaker === "" ? undefined : Number(speaker),
+                            lengthScale:
+                                lengthScale === ""
+                                    ? undefined
+                                    : Number(lengthScale),
+                            noiseScale:
+                                noiseScale === ""
+                                    ? undefined
+                                    : Number(noiseScale),
+                            noiseW: noiseW === "" ? undefined : Number(noiseW),
+                            sentenceSilence:
+                                sentenceSilence === ""
+                                    ? undefined
+                                    : Number(sentenceSilence),
+                            preserveTimestampGaps: true,
+                            balancedTiming: true,
+                        },
+                    }),
+                });
+                payload = (await response.json()) as VoiceGenerationApiPayload;
+            } else {
+                const response = await fetch("/api/audio/piper-tts", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        text,
+                        binaryPath,
+                        modelPath,
+                        configPath,
+                        speaker,
+                        lengthScale,
+                        noiseScale,
+                        noiseW,
+                        sentenceSilence,
+                    }),
+                });
+                payload = (await response.json()) as PiperTtsApiPayload;
+            }
             if (!payload.ok) {
                 throw new Error(
                     payload.errorCode
@@ -92,7 +158,31 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
                         : (payload.error ?? "Piper TTS failed."),
                 );
             }
-            setResult(payload.data);
+            setResult({
+                ...payload.data,
+                durationMs:
+                    "durationMs" in payload.data
+                        ? payload.data.durationMs
+                        : payload.data.generationDurationMs,
+                settings:
+                    "settings" in payload.data
+                        ? payload.data.settings
+                        : {
+                              modelPath,
+                              configPath,
+                              speaker: speaker ? Number(speaker) : undefined,
+                              lengthScale: lengthScale
+                                  ? Number(lengthScale)
+                                  : undefined,
+                              noiseScale: noiseScale
+                                  ? Number(noiseScale)
+                                  : undefined,
+                              noiseW: noiseW ? Number(noiseW) : undefined,
+                              sentenceSilence: sentenceSilence
+                                  ? Number(sentenceSilence)
+                                  : undefined,
+                          },
+            });
         } catch (requestError) {
             setError(
                 requestError instanceof Error
@@ -132,30 +222,31 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
 
             <div className="grid gap-4 p-5 xl:grid-cols-[340px_minmax(0,1fr)]">
                 <aside className="space-y-3">
-                    <div className="border border-main bg-secondary/20 p-4">
-                        <div className="flex items-center gap-2">
-                            <RadioTower className="h-4 w-4 text-muted" />
-                            <p className="text-[12px] font-semibold text-main">
-                                Piper Config
-                            </p>
-                        </div>
-                        <div className="mt-3 space-y-3">
+                    <div className="space-y-3 border border-main bg-secondary/20 p-4">
+                        <p className="text-[12px] font-semibold text-main">
+                            Voice Generation
+                        </p>
+                        <p className="text-[10px] leading-4 text-muted">
+                            Sinh voice tiếng Việt từ translated segments bằng
+                            Piper local.
+                        </p>
+                        <label className="block">
+                            <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                Piper executable
+                            </span>
+                            <input
+                                value={binaryPath}
+                                onChange={(event) =>
+                                    setBinaryPath(event.target.value)
+                                }
+                                className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main placeholder:text-muted/60"
+                                placeholder="piper"
+                            />
+                        </label>
+                        <div className="grid gap-2 sm:grid-cols-2">
                             <label className="block">
                                 <span className="mb-1 block text-[10px] font-semibold text-muted">
-                                    Piper Executable
-                                </span>
-                                <input
-                                    value={binaryPath}
-                                    onChange={(event) =>
-                                        setBinaryPath(event.target.value)
-                                    }
-                                    className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main placeholder:text-muted/60"
-                                    placeholder="piper or /absolute/path/to/piper"
-                                />
-                            </label>
-                            <label className="block">
-                                <span className="mb-1 block text-[10px] font-semibold text-muted">
-                                    ONNX Model
+                                    ONNX model
                                 </span>
                                 <input
                                     value={modelPath}
@@ -179,27 +270,7 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
                                     placeholder="auto: piper/model.onnx.json"
                                 />
                             </label>
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    setBinaryPath(REPO_PIPER_BINARY);
-                                    setModelPath(REPO_PIPER_MODEL);
-                                    setConfigPath(REPO_PIPER_CONFIG);
-                                }}
-                                className="inline-flex items-center gap-1.5 border border-main bg-main px-2.5 py-1.5 text-[11px] font-semibold text-main hover:bg-secondary"
-                            >
-                                Use Repo Defaults
-                            </button>
                         </div>
-                    </div>
-
-                    <div className="space-y-3 border border-main bg-secondary/20 p-4">
-                        <p className="text-[12px] font-semibold text-main">
-                            Synthesis Params
-                        </p>
-                        <p className="text-[10px] leading-4 text-muted">
-                            Tuỳ chỉnh speaker và noise params cho Piper model.
-                        </p>
                         <label className="block">
                             <span className="mb-1 block text-[10px] font-semibold text-muted">
                                 Speaker
@@ -214,42 +285,74 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
                                 inputMode="numeric"
                             />
                         </label>
-                        {(
-                            [
-                                ["Length Scale", lengthScale, setLengthScale],
-                                ["Noise Scale", noiseScale, setNoiseScale],
-                                ["Noise W", noiseW, setNoiseW],
+                        <div className="grid gap-2 sm:grid-cols-2">
+                            {(
                                 [
-                                    "Sentence Silence",
-                                    sentenceSilence,
-                                    setSentenceSilence,
-                                ],
-                            ] as const
-                        ).map(([label, value, setter]) => (
-                            <label key={label} className="block">
-                                <span className="mb-1 block text-[10px] font-semibold text-muted">
-                                    {label}
+                                    [
+                                        "Length scale",
+                                        lengthScale,
+                                        setLengthScale,
+                                        0.05,
+                                    ],
+                                    [
+                                        "Noise scale",
+                                        noiseScale,
+                                        setNoiseScale,
+                                        0.01,
+                                    ],
+                                    ["Noise W", noiseW, setNoiseW, 0.01],
+                                    [
+                                        "Sentence silence",
+                                        sentenceSilence,
+                                        setSentenceSilence,
+                                        0.05,
+                                    ],
+                                ] as const
+                            ).map(([label, value, setter, step]) => (
+                                <label key={label} className="block">
+                                    <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                        {label}
+                                    </span>
+                                    <input
+                                        type="number"
+                                        step={step}
+                                        value={value}
+                                        onChange={(event) =>
+                                            setter(event.target.value)
+                                        }
+                                        className="w-full border border-main bg-main px-2.5 py-2 text-[12px] text-main"
+                                    />
+                                </label>
+                            ))}
+                        </div>
+                        <label className="flex items-center justify-between gap-3 border border-main bg-main px-3 py-2">
+                            <span>
+                                <span className="block text-[11px] font-semibold text-main">
+                                    Balanced timing
                                 </span>
-                                <input
-                                    value={value}
-                                    onChange={(event) =>
-                                        setter(event.target.value)
-                                    }
-                                    className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main"
-                                    inputMode="decimal"
-                                />
-                            </label>
-                        ))}
+                                <span className="block text-[10px] text-muted">
+                                    Giữ thứ tự/timeline tương đối, nhưng giới
+                                    hạn pause dài và speed-up quá mạnh.
+                                </span>
+                            </span>
+                            <input
+                                type="checkbox"
+                                checked
+                                disabled
+                                className="h-4 w-4 accent-[var(--color-accent)]"
+                            />
+                        </label>
                     </div>
                 </aside>
 
                 <div className="space-y-4">
-                    <div className="border border-main bg-secondary/20 p-4">
+                    <div className="space-y-3 border border-main bg-secondary/20 p-4">
                         <p className="text-[12px] font-semibold text-main">
-                            Text Input
+                            Voice Generation
                         </p>
                         <p className="mt-1 text-[10px] leading-4 text-muted">
-                            Nhập văn bản cần chuyển thành giọng nói.
+                            Sinh voice tiếng Việt từ text hoặc
+                            `translatedSegments` JSON bằng Piper local.
                         </p>
                         <textarea
                             rows={7}
@@ -257,7 +360,7 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
                             onChange={(event) => setText(event.target.value)}
                             className="mt-3 w-full resize-none border border-main bg-main px-2 py-1.5 text-[11px] leading-5 text-main placeholder:text-muted/60"
                         />
-                        <div className="mt-3 flex flex-wrap items-center gap-3">
+                        <div className="mt-2 flex flex-wrap items-center gap-3">
                             <button
                                 type="button"
                                 onClick={runTts}
@@ -297,26 +400,6 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
                                 </p>
                             </div>
                             <audio controls className="w-full" src={audioUrl} />
-                            <div className="grid gap-2 border border-main bg-main p-3 text-[11px] text-muted sm:grid-cols-3">
-                                <p>
-                                    <span className="block font-semibold text-main">
-                                        Format
-                                    </span>
-                                    {result.extension}
-                                </p>
-                                <p>
-                                    <span className="block font-semibold text-main">
-                                        Size
-                                    </span>
-                                    {result.byteLength} bytes
-                                </p>
-                                <p>
-                                    <span className="block font-semibold text-main">
-                                        Runtime
-                                    </span>
-                                    {result.durationMs} ms
-                                </p>
-                            </div>
                             <a
                                 href={audioUrl}
                                 download="piper-tts-sandbox.wav"

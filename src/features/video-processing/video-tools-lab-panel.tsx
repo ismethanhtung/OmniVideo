@@ -1729,11 +1729,6 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                             }
                             className="inline-flex w-full items-center justify-center gap-2 border border-accent/35 bg-accent/10 px-3 py-2 text-[12px] font-semibold text-accent transition-colors hover:bg-accent/15 disabled:cursor-not-allowed disabled:opacity-60"
                         >
-                            {isRunningEdit ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                                <Wand2 className="h-4 w-4" />
-                            )}
                             {isRunningEdit ? "Editing..." : "Run Video Edit"}
                         </button>
 
@@ -1742,15 +1737,6 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                                 {error}
                             </p>
                         ) : null}
-
-                        <InfoCard
-                            title="Partial Blur"
-                            description="Blur subtitle/logo theo region/timeline và burn phụ đề tiếng Việt trong cùng output."
-                        />
-                        <InfoCard
-                            title="Audio Tools"
-                            description="Transcript/translation timestamps có thể nối vào Workspace edit node."
-                        />
                     </div>
                 </aside>
 

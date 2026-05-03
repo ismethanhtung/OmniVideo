@@ -45,9 +45,9 @@ export function DisplayPreferencesPanel({
                         Typography
                     </p>
                     <p className="mt-1 text-[11px] text-muted">
-                        5 font options.
+                        {APP_FONT_OPTIONS.length} font options.
                     </p>
-                    <div className="mt-3 space-y-2">
+                    <div className="mt-3 grid grid-cols-2 gap-2">
                         {APP_FONT_OPTIONS.map((option) => (
                             <button
                                 key={option.key}

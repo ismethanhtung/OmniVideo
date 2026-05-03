@@ -1,5 +1,20 @@
 # OmniVideo Changelog
 
+## FAST-WORKSPACE-011 - Move flow seed controls into Inspector with extensible seed registry
+
+- Chuyển `Seed VI Voice Mask Publish` từ header của Workspace Canvas vào phần Inspector để khu vực thao tác flow tập trung hơn.
+- Thêm `Flow Seeds` trong Inspector (khi chưa chọn node) và wiring callback `onApplySeed(seed)` để apply seed graph theo cơ chế chung.
+- Chuẩn hóa seed definitions vào registry mới `src/lib/workspace/workspace-seeds.ts` để dễ thêm nhiều seed trong tương lai mà không cần hard-code button rời rạc.
+- Thêm test `src/lib/workspace/workspace-seeds.test.ts` để xác nhận seed registry có entry hợp lệ và build được graph mẫu.
+- Verification (FAST-WORKSPACE-011): `npm run test -- --run src/lib/workspace/workspace-seeds.test.ts src/lib/workspace/workspace-graph.test.ts` pass (2 files / 34 tests).
+
+## FAST-GOV-003 - Strengthen version bump governance workflow
+
+- Mở rộng `docs/governance/versioning-rules.md` với SemVer strict policy (áp dụng cả trước 1.0.0), quyết định bump `patch/minor/major` theo matrix rõ ràng, và quy tắc chọn mức bump cao nhất theo release batch.
+- Bổ sung workflow chuẩn cho version bump: tạo task release, chạy `npm version <patch|minor|major> --no-git-tag-version`, cập nhật changelog, verify build/test scope impacted, và kiểm tra UI hiển thị đúng version.
+- Thêm enforcement rule để không được chốt `Done` cho task feature/bugfix đã sẵn sàng release nếu version chưa được bump đúng theo policy.
+- Verification (FAST-GOV-003): docs-only governance update, không có thay đổi code runtime.
+
 ## FAST-UX-007 - Redesign AI Provider Chat Test Modal in English
 
 - Redesign modal `API Chat Test` trong AI Providers với bố cục rõ hơn: header context, empty-state hint, chat timeline, composer và controls riêng cho model/temperature.
@@ -57,13 +72,11 @@
 - Thêm API `GET /api/system/snapshot` (nhẹ) để hiển thị process/system metrics cơ bản: memory, CPU cores/model/usage xấp xỉ, load average, network interfaces, uptime, pid/threadpool.
 - Verification (FAST-OPS-001): `npm run test -- --run src/app/api/system/snapshot/route.test.ts src/app/api/video-intake/runs/route.test.ts src/app/api/video-intake/runs/[runId]/route.test.ts` pass (3 files/5 tests); `npm run build` pass (warnings cũ ngoài scope).
 
-
 ## FAST-INTAKE-003 - Improve Video Intake run history detail and failed cleanup
 
 - Cập nhật Video Intake Run History theo hướng giống Storage Library: thêm preview video khi run có asset, thêm detail modal chứa Created và metadata chính, đồng thời bỏ cột Created khỏi bảng chính.
 - Thêm nút `Delete Failed` cạnh `Refresh` để xoá các URL intake run failed cùng `step_runs` và `run_events` liên quan.
 - Verification (FAST-INTAKE-003): `npm run test -- --run src/app/api/video-intake/runs/route.test.ts` pass (1 file / 2 tests); `npm run build` pass (còn 2 warning cũ ngoài scope: unused `Download` và `Image`).
-
 
 ## 2026-04-30
 
@@ -512,6 +525,7 @@
 
 - Task IDs: SETUP-DOC-001, SETUP-GOV-001, SETUP-ARCH-001
 - Risks: Cần duy trì cập nhật docs đồng bộ với code trong các phase triển khai tiếp theo.
+
 ## 2026-05-01
 
 ### Added
@@ -561,11 +575,11 @@
 
 - Task IDs: FAST-WORKSPACE-010, FAST-VIDEO-003
 - Verification:
-  - `npm run test -- src/lib/video-intake/validation.test.ts src/lib/video-intake/local-validation.test.ts src/lib/workspace/workspace-graph.test.ts` (pass)
-  - `npm run build` (pass)
+    - `npm run test -- src/lib/video-intake/validation.test.ts src/lib/video-intake/local-validation.test.ts src/lib/workspace/workspace-graph.test.ts` (pass)
+    - `npm run build` (pass)
 - Audio Transcript: sau khi Translate to VI, thêm action `Generate VI Metadata`, hiển thị trực tiếp kết quả `title/description/hashtags`, và thêm `Save to Asset` để gọi API cập nhật metadata vào Storage Asset đã chọn.
 - Video Edit multi-region verification:
-  - `npm run test -- src/app/api/video-processing/edit/route.test.ts src/lib/video-processing/video-edit-pipeline.test.ts src/lib/workspace/workspace-graph.test.ts` (pass)
+    - `npm run test -- src/app/api/video-processing/edit/route.test.ts src/lib/video-processing/video-edit-pipeline.test.ts src/lib/workspace/workspace-graph.test.ts` (pass)
 
 ## 2026-05-02
 
@@ -584,5 +598,5 @@
 
 - Task IDs: FAST-VIDEO-003
 - Verification:
-  - `npm run test -- src/app/api/video-processing/edit/route.test.ts src/lib/video-processing/video-edit-pipeline.test.ts src/lib/workspace/workspace-graph.test.ts` (pass, 3 files / 47 tests)
-  - `npm run build` (pass; còn warning cũ ngoài scope ở navigation/topbar/audio/display-preferences)
+    - `npm run test -- src/app/api/video-processing/edit/route.test.ts src/lib/video-processing/video-edit-pipeline.test.ts src/lib/workspace/workspace-graph.test.ts` (pass, 3 files / 47 tests)
+    - `npm run build` (pass; còn warning cũ ngoài scope ở navigation/topbar/audio/display-preferences)

@@ -12,7 +12,7 @@ import {
     AlertTriangle,
     CheckCircle2,
     Moon,
-    ScanHeart,
+    Cpu,
     RefreshCw,
     Sun,
     X,
@@ -87,7 +87,7 @@ export function Topbar({
                     className="inline-flex shrink-0 items-center gap-1.5 border border-main bg-main px-2.5 py-1 text-[11px] font-semibold text-main transition-colors hover:bg-secondary"
                     aria-label="Open system snapshot"
                 >
-                    <ScanHeart className="h-3.5 w-3.5" />
+                    <Cpu className="h-3.5 w-3.5" />
                     System
                 </button>
                 <button

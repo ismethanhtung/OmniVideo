@@ -58,6 +58,7 @@ type StoredVideoAsset = {
         vietnameseTitle?: string | null;
         vietnameseDescription?: string | null;
         vietnameseHashtags?: string[] | null;
+        sourceUrl?: string | null;
         originPlatform?: string | null;
         actualQuality?: string | null;
     };
@@ -65,6 +66,11 @@ type StoredVideoAsset = {
         storageProviderLabel?: string | null;
     };
     storageProvider: string;
+};
+
+type AssetPreviewState = {
+    assetId: string;
+    src: string;
 };
 
 type ApiPayload =
@@ -263,6 +269,9 @@ export function ChineseTranscriptionPanel({
     const [assets, setAssets] = useState<StoredVideoAsset[]>([]);
     const [selectedAssetId, setSelectedAssetId] = useState("");
     const [showAssetPicker, setShowAssetPicker] = useState(false);
+    const [assetPreview, setAssetPreview] = useState<AssetPreviewState | null>(
+        null,
+    );
     const [language, setLanguage] = useState("zh");
     const [prompt, setPrompt] = useState("");
     const [includeWordTimestamps, setIncludeWordTimestamps] = useState(true);
@@ -962,37 +971,99 @@ export function ChineseTranscriptionPanel({
                                                 const isSelected =
                                                     selectedAssetId ===
                                                     asset._id;
+                                                const isPreviewing =
+                                                    assetPreview?.assetId ===
+                                                    asset._id;
                                                 return (
-                                                    <button
+                                                    <div
                                                         key={asset._id}
-                                                        type="button"
-                                                        onClick={() => {
-                                                            setSelectedAssetId(
-                                                                asset._id,
-                                                            );
-                                                            setFile(null);
-                                                            setShowAssetPicker(
-                                                                false,
-                                                            );
-                                                        }}
-                                                        className={`w-full border p-2 text-left ${isSelected ? "border-accent bg-secondary/35" : "border-main bg-main hover:bg-secondary/20"}`}
+                                                        className={`border p-2 ${isSelected ? "border-accent bg-secondary/35" : "border-main bg-main"}`}
                                                     >
-                                                        <p className="truncate text-[12px] font-semibold text-main">
-                                                            {asset.metadata
-                                                                ?.title ??
-                                                                asset._id}
-                                                        </p>
-                                                        <p className="mt-1 truncate text-[10px] text-muted">
-                                                            {asset.createdFrom
-                                                                ?.storageProviderLabel ??
-                                                                asset.storageProvider}{" "}
-                                                            ·{" "}
-                                                            {formatBytes(
-                                                                asset.sizeBytes ??
-                                                                    0,
-                                                            )}
-                                                        </p>
-                                                    </button>
+                                                        <div className="flex items-start justify-between gap-2">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    setSelectedAssetId(
+                                                                        asset._id,
+                                                                    );
+                                                                    setFile(
+                                                                        null,
+                                                                    );
+                                                                    setShowAssetPicker(
+                                                                        false,
+                                                                    );
+                                                                }}
+                                                                className="min-w-0 flex-1 text-left hover:opacity-90"
+                                                            >
+                                                                <p className="truncate text-[12px] font-semibold text-main">
+                                                                    {asset
+                                                                        .metadata
+                                                                        ?.title ??
+                                                                        asset._id}
+                                                                </p>
+                                                                <p className="mt-1 truncate text-[10px] text-muted">
+                                                                    {[
+                                                                        asset
+                                                                            .createdFrom
+                                                                            ?.storageProviderLabel ??
+                                                                            asset.storageProvider,
+                                                                        formatBytes(
+                                                                            asset.sizeBytes ??
+                                                                                0,
+                                                                        ),
+                                                                        asset.metadata
+                                                                            ?.originPlatform,
+                                                                        asset.metadata
+                                                                            ?.actualQuality,
+                                                                    ]
+                                                                        .filter(Boolean)
+                                                                        .join(" · ")}
+                                                                </p>
+                                                                {asset.metadata?.sourceUrl ? (
+                                                                    <p className="mt-1 truncate text-[10px] text-muted">
+                                                                        {asset.metadata.sourceUrl}
+                                                                    </p>
+                                                                ) : null}
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    if (
+                                                                        isPreviewing
+                                                                    ) {
+                                                                        setAssetPreview(
+                                                                            null,
+                                                                        );
+                                                                        return;
+                                                                    }
+                                                                    setAssetPreview(
+                                                                        {
+                                                                            assetId:
+                                                                                asset._id,
+                                                                            src: `/api/storage/assets/${asset._id}/download?disposition=inline`,
+                                                                        },
+                                                                    );
+                                                                }}
+                                                                className="border border-main bg-main px-2 py-1 text-[10px] font-semibold text-main hover:bg-secondary"
+                                                            >
+                                                                {isPreviewing
+                                                                    ? "Hide"
+                                                                    : "Preview"}
+                                                            </button>
+                                                        </div>
+                                                        {isPreviewing ? (
+                                                            <div className="mt-2 border border-main bg-black">
+                                                                <video
+                                                                    src={
+                                                                        assetPreview.src
+                                                                    }
+                                                                    controls
+                                                                    preload="metadata"
+                                                                    className="block max-h-48 w-full bg-black"
+                                                                />
+                                                            </div>
+                                                        ) : null}
+                                                    </div>
                                                 );
                                             })}
                                         </div>
@@ -1063,11 +1134,6 @@ export function ChineseTranscriptionPanel({
                             onClick={runTranscription}
                             className="inline-flex w-full items-center justify-center gap-2 border border-accent/35 bg-accent/10 px-3 py-2 text-[12px] font-semibold text-accent transition-colors hover:bg-accent/15 disabled:cursor-not-allowed disabled:opacity-60"
                         >
-                            {isRunning ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                                <Mic2 className="h-4 w-4" />
-                            )}
                             {isRunning
                                 ? "Transcribing..."
                                 : "Extract + Transcribe"}
@@ -1189,11 +1255,6 @@ export function ChineseTranscriptionPanel({
                                 onClick={runTranslation}
                                 className="inline-flex w-full items-center justify-center gap-2 border border-accent/35 bg-accent/10 px-3 py-2 text-[12px] font-semibold text-accent transition-colors hover:bg-accent/15 disabled:cursor-not-allowed disabled:opacity-60"
                             >
-                                {isTranslating ? (
-                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                ) : (
-                                    <Captions className="h-4 w-4" />
-                                )}
                                 {isTranslating
                                     ? "Translating..."
                                     : "Translate to VI"}
@@ -1209,10 +1270,7 @@ export function ChineseTranscriptionPanel({
                                 <div className="border border-emerald-500/30 bg-emerald-500/10 px-3 py-2">
                                     <p className="text-[11px] font-semibold text-emerald-700">
                                         {translation.translatedSegments.length}{" "}
-                                        translated segments
-                                    </p>
-                                    <p className="mt-1 text-[10px] leading-4 text-emerald-700">
-                                        {translation.model} ·{" "}
+                                        translated segments ·{" "}
                                         {translation.chunks.length} chunk(s) ·{" "}
                                         Created in{" "}
                                         {formatDurationMs(
@@ -1231,11 +1289,6 @@ export function ChineseTranscriptionPanel({
                                             onClick={runVideoMetadata}
                                             className="inline-flex items-center gap-2 border border-accent/35 bg-accent/10 px-3 py-1.5 text-[11px] font-semibold text-accent transition-colors hover:bg-accent/15 disabled:cursor-not-allowed disabled:opacity-60"
                                         >
-                                            {isGeneratingMetadata ? (
-                                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                            ) : (
-                                                <Captions className="h-3.5 w-3.5" />
-                                            )}
                                             {isGeneratingMetadata
                                                 ? "Generating metadata..."
                                                 : "Generate VI Metadata"}
@@ -1332,7 +1385,6 @@ export function ChineseTranscriptionPanel({
                     {translation ? (
                         <div className="space-y-3 border border-main bg-secondary/20 p-4">
                             <div className="flex items-start gap-2">
-                                <Volume2 className="mt-0.5 h-4 w-4 text-muted" />
                                 <div>
                                     <div className="flex items-center gap-1.5">
                                         <p className="text-[12px] font-semibold text-main">
@@ -1394,39 +1446,41 @@ export function ChineseTranscriptionPanel({
                                 />
                             </label>
 
-                            <label className="block">
-                                <span className="mb-1 block text-[10px] font-semibold text-muted">
-                                    ONNX model
-                                </span>
-                                <input
-                                    value={ttsModelPath}
-                                    disabled={isGeneratingVoice}
-                                    onChange={(event) =>
-                                        setTtsModelPath(
-                                            event.currentTarget.value,
-                                        )
-                                    }
-                                    className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main"
-                                    placeholder="auto: piper/model.onnx"
-                                />
-                            </label>
+                            <div className="grid gap-2 sm:grid-cols-2">
+                                <label className="block">
+                                    <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                        ONNX model
+                                    </span>
+                                    <input
+                                        value={ttsModelPath}
+                                        disabled={isGeneratingVoice}
+                                        onChange={(event) =>
+                                            setTtsModelPath(
+                                                event.currentTarget.value,
+                                            )
+                                        }
+                                        className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main"
+                                        placeholder="auto: piper/model.onnx"
+                                    />
+                                </label>
 
-                            <label className="block">
-                                <span className="mb-1 block text-[10px] font-semibold text-muted">
-                                    Config JSON
-                                </span>
-                                <input
-                                    value={ttsConfigPath}
-                                    disabled={isGeneratingVoice}
-                                    onChange={(event) =>
-                                        setTtsConfigPath(
-                                            event.currentTarget.value,
-                                        )
-                                    }
-                                    className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main"
-                                    placeholder="auto: piper/model.onnx.json"
-                                />
-                            </label>
+                                <label className="block">
+                                    <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                        Config JSON
+                                    </span>
+                                    <input
+                                        value={ttsConfigPath}
+                                        disabled={isGeneratingVoice}
+                                        onChange={(event) =>
+                                            setTtsConfigPath(
+                                                event.currentTarget.value,
+                                            )
+                                        }
+                                        className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main"
+                                        placeholder="auto: piper/model.onnx.json"
+                                    />
+                                </label>
+                            </div>
 
                             <div className="grid gap-2 sm:grid-cols-2">
                                 {[
@@ -1463,8 +1517,11 @@ export function ChineseTranscriptionPanel({
                                 ].map((control) => (
                                     <label
                                         key={control.label}
-                                        className="block border border-main bg-main px-3 py-2"
+                                        className="block"
                                     >
+                                        <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                            {control.label}
+                                        </span>
                                         <input
                                             type="number"
                                             step={control.step}
@@ -1478,11 +1535,8 @@ export function ChineseTranscriptionPanel({
                                                     ),
                                                 )
                                             }
-                                            className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main"
+                                            className="w-full border border-main bg-main px-2.5 py-2 text-[12px] text-main"
                                         />
-                                        <span className="mt-1 block text-[10px] font-semibold text-muted">
-                                            {control.label}
-                                        </span>
                                     </label>
                                 ))}
                             </div>
@@ -1519,11 +1573,6 @@ export function ChineseTranscriptionPanel({
                                 onClick={runVoiceGeneration}
                                 className="inline-flex w-full items-center justify-center gap-2 border border-accent/35 bg-accent/10 px-3 py-2 text-[12px] font-semibold text-accent transition-colors hover:bg-accent/15 disabled:cursor-not-allowed disabled:opacity-60"
                             >
-                                {isGeneratingVoice ? (
-                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                ) : (
-                                    <Volume2 className="h-4 w-4" />
-                                )}
                                 {isGeneratingVoice
                                     ? "Generating voice..."
                                     : "Generate Voice"}
@@ -1535,215 +1584,7 @@ export function ChineseTranscriptionPanel({
                                 </p>
                             ) : null}
 
-                            {voiceResult && voiceAudioUrl ? (
-                                <div className="space-y-2 border border-emerald-500/30 bg-emerald-500/10 p-3">
-                                    <p className="text-[11px] font-semibold text-emerald-700">
-                                        Voice ready ·{" "}
-                                        {formatBytes(voiceResult.byteLength)} ·
-                                        Created in{" "}
-                                        {formatDurationMs(
-                                            voiceResult.generationDurationMs,
-                                        )}
-                                    </p>
-                                    <p className="text-[10px] leading-4 text-emerald-700">
-                                        Piper · {voiceResult.segmentCount}{" "}
-                                        segment(s) ·{" "}
-                                        {voiceResult.alignment.mode}
-                                        {voiceResult.alignment
-                                            .targetDurationSeconds
-                                            ? ` · target ${formatTime(
-                                                  voiceResult.alignment
-                                                      .targetDurationSeconds,
-                                              )}`
-                                            : ""}
-                                    </p>
-                                    {voiceTimelineDiagnostics.length > 0 ? (
-                                        <div className="space-y-2 border border-emerald-500/25 bg-white/55 p-2 text-[10px] leading-4 text-emerald-800">
-                                            <div className="flex flex-wrap items-center gap-2">
-                                                <span className="font-semibold">
-                                                    Speech rate diagnostics
-                                                </span>
-                                                <span>
-                                                    max{" "}
-                                                    {formatSpeedFactor(
-                                                        maxVoiceSpeedFactor ??
-                                                            1,
-                                                    )}
-                                                </span>
-                                                <span>
-                                                    borrowed{" "}
-                                                    {totalBorrowedGapSeconds.toFixed(
-                                                        2,
-                                                    )}
-                                                    s
-                                                </span>
-                                                <span>
-                                                    warnings{" "}
-                                                    {
-                                                        voiceWarningSegments.length
-                                                    }
-                                                </span>
-                                                <span>
-                                                    slow{" "}
-                                                    {voiceSlowSegments.length}
-                                                </span>
-                                            </div>
-                                            {voiceWarningSegments.length > 0 ? (
-                                                <div className="space-y-1 border border-amber-500/30 bg-amber-500/10 p-2 text-amber-800">
-                                                    <div className="flex items-start gap-2">
-                                                        <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                                                        <p>
-                                                            Một số segment vẫn
-                                                            cần nói nhanh vì bản
-                                                            dịch dài hơn
-                                                            timeline/gap hiện
-                                                            có. Rút gọn text ở
-                                                            các segment này sẽ
-                                                            cho giọng tự nhiên
-                                                            hơn.
-                                                        </p>
-                                                    </div>
-                                                    <div className="grid gap-1 sm:grid-cols-2">
-                                                        {voiceWarningSegments
-                                                            .slice(0, 6)
-                                                            .map((chunk) => (
-                                                                <div
-                                                                    key={
-                                                                        chunk.segmentId
-                                                                    }
-                                                                    className="border border-amber-500/20 bg-white/60 px-2 py-1"
-                                                                >
-                                                                    <span className="font-semibold">
-                                                                        #
-                                                                        {
-                                                                            chunk.segmentId
-                                                                        }{" "}
-                                                                        {formatSpeedFactor(
-                                                                            chunk.speedFactor,
-                                                                        )}
-                                                                    </span>{" "}
-                                                                    <span>
-                                                                        raw{" "}
-                                                                        {chunk.rawDurationSeconds.toFixed(
-                                                                            2,
-                                                                        )}
-                                                                        s /
-                                                                        target{" "}
-                                                                        {chunk.targetDurationSeconds.toFixed(
-                                                                            2,
-                                                                        )}
-                                                                        s
-                                                                    </span>
-                                                                </div>
-                                                            ))}
-                                                    </div>
-                                                </div>
-                                            ) : null}
-                                            {voiceSlowSegments.length > 0 ? (
-                                                <div className="space-y-1 border border-sky-500/30 bg-sky-500/10 p-2 text-sky-800">
-                                                    <p>
-                                                        Một số đoạn nghe chậm do
-                                                        slot timeline dài hơn
-                                                        phần nói thực tế
-                                                        (silence/pad), không
-                                                        phải do TTS kéo chậm
-                                                        giọng nói.
-                                                    </p>
-                                                    <div className="grid gap-1 sm:grid-cols-2">
-                                                        {voiceSlowSegments
-                                                            .slice(0, 4)
-                                                            .map((chunk) => (
-                                                                <div
-                                                                    key={
-                                                                        chunk.segmentId
-                                                                    }
-                                                                    className="border border-sky-500/20 bg-white/60 px-2 py-1"
-                                                                >
-                                                                    <span className="font-semibold">
-                                                                        #
-                                                                        {
-                                                                            chunk.segmentId
-                                                                        }{" "}
-                                                                        {formatSpeedFactor(
-                                                                            chunk.speedFactor,
-                                                                        )}
-                                                                    </span>{" "}
-                                                                    <span>
-                                                                        raw{" "}
-                                                                        {chunk.rawDurationSeconds.toFixed(
-                                                                            2,
-                                                                        )}
-                                                                        s /
-                                                                        target{" "}
-                                                                        {chunk.targetDurationSeconds.toFixed(
-                                                                            2,
-                                                                        )}
-                                                                        s
-                                                                    </span>
-                                                                </div>
-                                                            ))}
-                                                    </div>
-                                                </div>
-                                            ) : null}
-                                        </div>
-                                    ) : null}
-                                    <audio
-                                        controls
-                                        src={voiceAudioUrl}
-                                        ref={voicePreviewRef}
-                                        className="w-full"
-                                    />
-                                    {sourceVideoPreviewUrl ? (
-                                        <div className="space-y-2 border border-main bg-main p-3">
-                                            <p className="text-[11px] font-semibold text-main">
-                                                Dub preview (source video +
-                                                generated voice)
-                                            </p>
-                                            <video
-                                                ref={videoPreviewRef}
-                                                controls
-                                                muted
-                                                src={sourceVideoPreviewUrl}
-                                                className="w-full border border-main bg-black"
-                                            />
-                                        </div>
-                                    ) : null}
-                                    <div className="flex items-center gap-2 overflow-x-auto whitespace-nowrap">
-                                        {sourceVideoPreviewUrl ? (
-                                            <>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => {
-                                                        void playDubPreview();
-                                                    }}
-                                                    className="border border-main bg-main px-2 py-1 text-[10px] font-semibold text-main hover:bg-secondary"
-                                                >
-                                                    Play sync preview
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => {
-                                                        void toggleDubPreviewPause();
-                                                    }}
-                                                    className="border border-main bg-main px-2 py-1 text-[10px] font-semibold text-main hover:bg-secondary"
-                                                >
-                                                    {isDubPreviewPaused
-                                                        ? "Resume"
-                                                        : "Pause"}
-                                                </button>
-                                            </>
-                                        ) : null}
-                                        <a
-                                            href={voiceAudioUrl}
-                                            download={voiceResult.fileName}
-                                            className="inline-flex items-center gap-2 border border-emerald-500/35 bg-main px-2 py-1 text-[10px] font-semibold text-emerald-700 hover:bg-secondary"
-                                        >
-                                            <Download className="h-3.5 w-3.5" />
-                                            Download {voiceResult.extension}
-                                        </a>
-                                    </div>
-                                </div>
-                            ) : null}
+                            {null}
                         </div>
                     ) : null}
                 </aside>
@@ -2000,6 +1841,87 @@ export function ChineseTranscriptionPanel({
                             ) : null}
                         </>
                     )}
+                    {voiceResult && voiceAudioUrl ? (
+                        <div className="grid gap-3 border border-emerald-500/30 bg-emerald-500/10 p-3 lg:grid-cols-2">
+                            <div className="space-y-2">
+                                <p className="text-[11px] font-semibold text-emerald-700">Voice ready · {formatBytes(voiceResult.byteLength)} · Created in {formatDurationMs(voiceResult.generationDurationMs)}</p>
+                                <p className="text-[10px] leading-4 text-emerald-700">Piper · {voiceResult.segmentCount} segment(s) · {voiceResult.alignment.mode}{voiceResult.alignment.targetDurationSeconds ? ` · target ${formatTime(voiceResult.alignment.targetDurationSeconds)}` : ""}</p>
+                                {voiceTimelineDiagnostics.length > 0 ? (
+                                    <div className="space-y-2 border border-emerald-500/25 bg-white/55 p-2 text-[10px] leading-4 text-emerald-800">
+                                        <div className="flex flex-wrap items-center gap-2">
+                                            <span className="font-semibold">Speech rate diagnostics</span>
+                                            <span>max {formatSpeedFactor(maxVoiceSpeedFactor ?? 1)}</span>
+                                            <span>borrowed {totalBorrowedGapSeconds.toFixed(2)}s</span>
+                                            <span>warnings {voiceWarningSegments.length}</span>
+                                            <span>slow {voiceSlowSegments.length}</span>
+                                        </div>
+                                        {voiceWarningSegments.length > 0 ? (
+                                            <div className="space-y-1 border border-amber-500/30 bg-amber-500/10 p-2 text-amber-800">
+                                                <div className="flex items-start gap-2">
+                                                    <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                                                    <p>Một số segment vẫn cần nói nhanh vì bản dịch dài hơn timeline/gap hiện có. Rút gọn text ở các segment này sẽ cho giọng tự nhiên hơn.</p>
+                                                </div>
+                                                <div className="grid gap-1 sm:grid-cols-2">
+                                                    {voiceWarningSegments
+                                                        .slice(0, 6)
+                                                        .map((chunk) => (
+                                                            <div
+                                                                key={
+                                                                    chunk.segmentId
+                                                                }
+                                                                className="border border-amber-500/20 bg-white/60 px-2 py-1"
+                                                            >
+                                                                <span className="font-semibold">
+                                                                    #
+                                                                    {
+                                                                        chunk.segmentId
+                                                                    }{" "}
+                                                                    {formatSpeedFactor(
+                                                                        chunk.speedFactor,
+                                                                    )}
+                                                                </span>{" "}
+                                                                <span>
+                                                                    raw{" "}
+                                                                    {chunk.rawDurationSeconds.toFixed(
+                                                                        2,
+                                                                    )}
+                                                                    s / target{" "}
+                                                                    {chunk.targetDurationSeconds.toFixed(
+                                                                        2,
+                                                                    )}
+                                                                    s
+                                                                </span>
+                                                            </div>
+                                                        ))}
+                                                </div>
+                                            </div>
+                                        ) : null}
+                                    </div>
+                                ) : null}
+                                <audio controls src={voiceAudioUrl} ref={voicePreviewRef} className="w-full" />
+                                <div className="flex items-center gap-2 overflow-x-auto whitespace-nowrap">
+                                    {sourceVideoPreviewUrl ? (
+                                        <>
+                                            <button type="button" onClick={() => { void playDubPreview(); }} className="border border-main bg-main px-2 py-1 text-[10px] font-semibold text-main hover:bg-secondary">Play sync preview</button>
+                                            <button type="button" onClick={() => { void toggleDubPreviewPause(); }} className="border border-main bg-main px-2 py-1 text-[10px] font-semibold text-main hover:bg-secondary">{isDubPreviewPaused ? "Resume" : "Pause"}</button>
+                                        </>
+                                    ) : null}
+                                    <a href={voiceAudioUrl} download={voiceResult.fileName} className="inline-flex items-center gap-2 border border-emerald-500/35 bg-main px-2 py-1 text-[10px] font-semibold text-emerald-700 hover:bg-secondary">
+                                        <Download className="h-3.5 w-3.5" />
+                                        Download {voiceResult.extension}
+                                    </a>
+                                </div>
+                            </div>
+                            <div className="space-y-2">
+                                <p className="text-[11px] font-semibold text-main">Dub preview (source video + generated voice)</p>
+                                {sourceVideoPreviewUrl ? (
+                                    <video ref={videoPreviewRef} controls muted src={sourceVideoPreviewUrl} className="w-full border border-main bg-black" />
+                                ) : (
+                                    <div className="border border-dashed border-main bg-main px-3 py-8 text-[11px] text-muted">No source video preview.</div>
+                                )}
+                            </div>
+                        </div>
+                    ) : null}
                 </main>
             </div>
         </section>

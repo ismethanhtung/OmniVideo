@@ -1,5 +1,9 @@
 @import "tailwindcss";
 
+main[data-hide-section-header="true"] > section > header:first-child {
+    display: none;
+}
+
 @theme {
     --font-sans:
         var(--font-app-plus-jakarta), ui-sans-serif, system-ui, sans-serif;
@@ -29,6 +33,27 @@ html[data-app-font="ibm-plex-sans"] {
 html[data-app-font="space-grotesk"] {
     --font-sans:
         var(--font-app-space-grotesk), ui-sans-serif, system-ui, sans-serif;
+}
+
+
+html[data-app-font="manrope"] {
+    --font-sans: var(--font-app-manrope), ui-sans-serif, system-ui, sans-serif;
+}
+
+html[data-app-font="sora"] {
+    --font-sans: var(--font-app-sora), ui-sans-serif, system-ui, sans-serif;
+}
+
+html[data-app-font="urbanist"] {
+    --font-sans: var(--font-app-urbanist), ui-sans-serif, system-ui, sans-serif;
+}
+
+html[data-app-font="public-sans"] {
+    --font-sans: var(--font-app-public-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+html[data-app-font="figtree"] {
+    --font-sans: var(--font-app-figtree), ui-sans-serif, system-ui, sans-serif;
 }
 
 :root {
@@ -62,6 +87,55 @@ html[data-app-font="space-grotesk"] {
     --success-border: #c8e0d4;
     --success-text: #6b8e7f;
     --success-hover-bg: #e6f2ec;
+}
+
+
+[data-theme="light-warm-paper"] {
+    --bg-main: #fffdfa;
+    --bg-secondary: #f7f2ea;
+    --border-color: #e5d8c7;
+    --text-main: #3f3528;
+    --text-muted: #8b7a64;
+    --danger-bg: #fff1ef;
+    --danger-border: #f3c8c2;
+    --danger-text: #b34a3c;
+    --danger-hover-bg: #ffe5e1;
+    --success-bg: #eef8ef;
+    --success-border: #c7dfc9;
+    --success-text: #3e7b48;
+    --success-hover-bg: #e4f2e6;
+}
+
+[data-theme="light-mint-fog"] {
+    --bg-main: #f9fffd;
+    --bg-secondary: #eff8f4;
+    --border-color: #d4e7df;
+    --text-main: #2f4a40;
+    --text-muted: #6f8f84;
+    --danger-bg: #fff1f4;
+    --danger-border: #f3ccd5;
+    --danger-text: #b4526b;
+    --danger-hover-bg: #ffe7ec;
+    --success-bg: #ecfaf2;
+    --success-border: #bfe4cf;
+    --success-text: #2d7a52;
+    --success-hover-bg: #ddf3e8;
+}
+
+[data-theme="light-sky-glass"] {
+    --bg-main: #f8fbff;
+    --bg-secondary: #eef4fb;
+    --border-color: #d4dfef;
+    --text-main: #2c3f59;
+    --text-muted: #7087a5;
+    --danger-bg: #fff1f2;
+    --danger-border: #f3cfd4;
+    --danger-text: #b84f63;
+    --danger-hover-bg: #ffe7ea;
+    --success-bg: #edf7ff;
+    --success-border: #c9ddf3;
+    --success-text: #2f6f9e;
+    --success-hover-bg: #e0eefb;
 }
 
 [data-theme="dark1"] {

@@ -82,8 +82,11 @@ export function ContentRouter({
 
     if (activeSection === "display") {
         return (
-            <main className="min-w-0 flex-1 overflow-auto bg-secondary/35">
-                <div className="mx-auto w-full max-w-7xl px-5 py-5">
+            <main
+                className="min-w-0 flex-1 overflow-auto bg-secondary/35"
+                data-hide-section-header="true"
+            >
+                <div className="w-full px-5 py-5">
                     <DisplayPreferencesPanel
                         section={section}
                         appTheme={appTheme}
@@ -98,7 +101,10 @@ export function ContentRouter({
 
     if (activeSection === "workspace") {
         return (
-            <main className="flex min-h-0 min-w-0 flex-1 overflow-hidden bg-secondary/35 p-3">
+            <main
+                className="flex min-h-0 min-w-0 flex-1 overflow-hidden bg-secondary/35 p-3"
+                data-hide-section-header="true"
+            >
                 <SectionComponent section={section} />
             </main>
         );
@@ -106,15 +112,21 @@ export function ContentRouter({
 
     if (activeSection === "videoToolsLab") {
         return (
-            <main className="min-w-0 flex-1 overflow-auto bg-secondary/35 px-3 py-3">
+            <main
+                className="min-w-0 flex-1 overflow-auto bg-secondary/35 px-3 py-3"
+                data-hide-section-header="true"
+            >
                 <SectionComponent section={section} />
             </main>
         );
     }
 
     return (
-        <main className="min-w-0 flex-1 overflow-auto bg-secondary/35">
-            <div className="mx-auto w-full max-w-7xl px-5 py-5">
+        <main
+            className="min-w-0 flex-1 overflow-auto bg-secondary/35"
+            data-hide-section-header="true"
+        >
+            <div className="w-full px-5 py-5">
                 <SectionComponent section={section} />
             </div>
         </main>
