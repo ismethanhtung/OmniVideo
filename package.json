@@ -1,12 +1,13 @@
 {
   "name": "omnivideo",
-  "version": "0.3.0",
+  "version": "0.4.1",
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack -p 3000",
     "build": "next build --turbopack",
     "start": "next start",
     "setup:resolver": "node scripts/setup-yt-dlp.mjs",
+    "guard:version": "node scripts/version-guard.mjs",
     "lint": "next lint",
     "test": "vitest run"
   },

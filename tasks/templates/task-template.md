@@ -6,6 +6,7 @@
 - [ ] Scope locked
 - [ ] Implementation completed
 - [ ] Tests added/updated (if code changed)
+- [ ] Version guard passed (if runtime changed)
 - [ ] Docs updated (if impacted)
 - [ ] Changelog updated
 - [ ] Ready for review
@@ -117,3 +118,4 @@
 - Test files added/updated:
 - Test commands executed:
 - Test results summary:
+- Version guard command/result (if runtime changed):

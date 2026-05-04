@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 
 import type { LeftbarNavItem } from "@/components/layout/types";
+import { isViewModeAccessError } from "@/lib/access-control/access-control";
 
 type AiProviderType =
     | "groq"
@@ -84,7 +85,7 @@ type SubmitState =
     | { status: "idle"; message: string }
     | { status: "loading"; message: string }
     | { status: "success"; message: string }
-    | { status: "failed"; message: string };
+    | { status: "failed"; message: string; errorCode?: string };
 
 const PROVIDER_TYPE_OPTIONS: Array<{
     value: AiProviderType;
@@ -140,6 +141,12 @@ function formatNumber(value: number): string {
     return String(value);
 }
 
+function formatApiError(payload: ApiResponse<unknown>, fallback: string) {
+    return payload.errorCode
+        ? `${payload.errorCode}: ${payload.error ?? fallback}`
+        : (payload.error ?? fallback);
+}
+
 type AiProvidersPanelProps = {
     section: LeftbarNavItem;
 };
@@ -171,6 +178,10 @@ export function AiProvidersPanel({ section }: AiProvidersPanelProps) {
         status: "idle",
         message: "",
     });
+    const [actionError, setActionError] = useState<{
+        message: string;
+        errorCode?: string;
+    } | null>(null);
 
     const [testingId, setTestingId] = useState<string | null>(null);
     const [testResult, setTestResult] = useState<{
@@ -241,6 +252,8 @@ export function AiProvidersPanel({ section }: AiProvidersPanelProps) {
                     setChatModel((previous) =>
                         previous.trim() !== "" ? previous : (ids[0] ?? ""),
                     );
+                } else if (!payload.ok) {
+                    setChatError(formatApiError(payload, "Could not load models."));
                 }
             } catch {
                 // optional: user can type model id manually
@@ -323,7 +336,7 @@ export function AiProvidersPanel({ section }: AiProvidersPanelProps) {
                 (await response.json()) as ApiResponse<ChatTestApiData>;
 
             if (!payload.ok || !payload.data) {
-                setChatError(payload.error ?? "Chat test failed.");
+                setChatError(formatApiError(payload, "Chat test failed."));
                 return;
             }
 
@@ -444,7 +457,8 @@ export function AiProvidersPanel({ section }: AiProvidersPanelProps) {
             if (!payload.ok) {
                 setSubmitState({
                     status: "failed",
-                    message: payload.error ?? "Save failed.",
+                    message: formatApiError(payload, "Save failed."),
+                    errorCode: payload.errorCode,
                 });
                 return;
             }
@@ -474,10 +488,16 @@ export function AiProvidersPanel({ section }: AiProvidersPanelProps) {
             });
             const payload = (await response.json()) as ApiResponse<unknown>;
             if (payload.ok) {
+                setActionError(null);
                 await fetchProviders();
+            } else {
+                setActionError({
+                    message: formatApiError(payload, "Delete failed."),
+                    errorCode: payload.errorCode,
+                });
             }
         } catch {
-            // silent
+            setActionError({ message: "Network error." });
         }
     };
 
@@ -501,7 +521,7 @@ export function AiProvidersPanel({ section }: AiProvidersPanelProps) {
                         ok: false,
                         modelCount: 0,
                         latencyMs: 0,
-                        error: payload.error,
+                        error: formatApiError(payload, "Connection test failed."),
                     },
                 });
             }
@@ -525,14 +545,23 @@ export function AiProvidersPanel({ section }: AiProvidersPanelProps) {
             provider.status === "active" ? "paused" : "active";
 
         try {
-            await fetch(`/api/ai-providers/${provider._id}`, {
+            const response = await fetch(`/api/ai-providers/${provider._id}`, {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ status: newStatus }),
             });
+            const payload = (await response.json()) as ApiResponse<AiProvider>;
+            if (!payload.ok) {
+                setActionError({
+                    message: formatApiError(payload, "Status update failed."),
+                    errorCode: payload.errorCode,
+                });
+                return;
+            }
+            setActionError(null);
             await fetchProviders();
         } catch {
-            // silent
+            setActionError({ message: "Network error." });
         }
     };
 
@@ -578,6 +607,20 @@ export function AiProvidersPanel({ section }: AiProvidersPanelProps) {
                     <div className="border border-rose-500/30 bg-rose-500/10 px-4 py-3">
                         <p className="text-[12px] font-medium text-rose-700">
                             {loadError}
+                        </p>
+                    </div>
+                ) : null}
+
+                {actionError ? (
+                    <div
+                        className={`mb-3 border px-4 py-3 ${
+                            isViewModeAccessError(actionError)
+                                ? "border-rose-500/30 bg-rose-500/10 text-rose-700"
+                                : "border-amber-500/30 bg-amber-500/10 text-amber-700"
+                        }`}
+                    >
+                        <p className="text-[12px] font-semibold">
+                            {actionError.message}
                         </p>
                     </div>
                 ) : null}

@@ -36,6 +36,11 @@
 
 ## Done
 
+- `FAST-GOV-004` - Add mandatory automated version bump guard.
+- `FAST-UX-024` - Auto-sort exploited Inspiration items to bottom.
+- `FAST-ACCESS-004` - Fix View Mode error visibility without eager Inspiration warnings.
+- `FAST-ACCESS-003` - Restore full View Mode lock messages and red error rendering.
+- `FAST-ACCESS-002` - Polish View Mode locked-state copy and bump version.
 - `FAST-ACCESS-001` - Public demo access guard and AI rate limits.
 - `FAST-SOURCE-002` - Move Inspiration Vault persistence to MongoDB.
 - `FAST-OPS-003` - Fix Vercel runtime ERR_REQUIRE_ESM by removing package type module.

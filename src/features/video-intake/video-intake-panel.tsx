@@ -197,6 +197,10 @@ function isUploadProvider(
     );
 }
 
+function cn(...classes: Array<string | false | null | undefined>) {
+    return classes.filter(Boolean).join(" ");
+}
+
 function formatDate(value?: string) {
     if (!value) {
         return "-";
@@ -1120,7 +1124,14 @@ export function VideoIntakePanel({ section }: VideoIntakePanelProps) {
                         <div className="text-[10px] font-bold uppercase tracking-wide">
                             <StatusText status={state.status} />
                         </div>
-                        <p className="text-[12px] leading-5 text-main">
+                        <p
+                            className={cn(
+                                "text-[12px] leading-5",
+                                state.status === "failed"
+                                    ? "font-semibold text-rose-700"
+                                    : "text-main",
+                            )}
+                        >
                             {state.message}
                         </p>
                         {isResolverFailure ? (
@@ -1133,7 +1144,7 @@ export function VideoIntakePanel({ section }: VideoIntakePanelProps) {
                             </p>
                         ) : null}
                         {state.status === "failed" && state.errorCode ? (
-                            <p className="font-mono text-[11px] text-muted">
+                            <p className="font-mono text-[11px] text-rose-700">
                                 {state.errorCode}
                             </p>
                         ) : null}

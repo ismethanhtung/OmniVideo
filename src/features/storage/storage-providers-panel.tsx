@@ -130,6 +130,10 @@ function providerLabel(providerType: ProviderType) {
   return PROVIDER_OPTIONS.find((option) => option.value === providerType)?.label;
 }
 
+function cn(...classes: Array<string | false | null | undefined>) {
+  return classes.filter(Boolean).join(" ");
+}
+
 function StatusBadge({ status }: { status: ProviderStatus }) {
   const classes = {
     active: "border-emerald-200 bg-emerald-50 text-emerald-700",
@@ -658,13 +662,32 @@ export function StorageProvidersPanel({ section }: StorageProvidersPanelProps) {
                 {activeCount} active / {providers.length} total.
               </p>
             </div>
-            <div className="text-right">
-              <span className="inline-flex border border-main bg-main px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-muted">
+            <div
+              className={cn(
+                "text-right",
+                state.status === "failed" ? "text-rose-700" : "text-muted",
+              )}
+            >
+              <span
+                className={cn(
+                  "inline-flex border bg-main px-2 py-1 text-[10px] font-bold uppercase tracking-wide",
+                  state.status === "failed"
+                    ? "border-rose-300 text-rose-700"
+                    : "border-main text-muted",
+                )}
+              >
                 {state.status}
               </span>
-              <p className="mt-1 text-[11px] text-muted">{state.message}</p>
+              <p
+                className={cn(
+                  "mt-1 text-[11px]",
+                  state.status === "failed" && "font-semibold",
+                )}
+              >
+                {state.message}
+              </p>
               {state.status === "failed" && state.errorCode ? (
-                <p className="mt-1 font-mono text-[10px] text-muted">
+                <p className="mt-1 font-mono text-[10px] text-rose-700">
                   {state.errorCode}
                 </p>
               ) : null}

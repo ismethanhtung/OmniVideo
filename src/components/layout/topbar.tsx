@@ -22,7 +22,10 @@ import {
 
 import { getNavItem } from "@/components/layout/navigation";
 import type { AppSectionId } from "@/components/layout/types";
-import type { AppAccessState } from "@/lib/access-control/access-control";
+import {
+    VIEW_MODE_LOCKED_NOTE,
+    type AppAccessState,
+} from "@/lib/access-control/access-control";
 import { fetchAppAccessState } from "@/lib/access-control/client";
 import {
     clearFinishedProgressTasks,
@@ -56,7 +59,7 @@ export function Topbar({
     const [appAccess, setAppAccess] = useState<AppAccessState | null>(null);
     const [quickCapture, setQuickCapture] = useState("");
     const [quickCaptureStatus, setQuickCaptureStatus] = useState<
-        "idle" | "saving" | "saved" | "empty" | "error" | "readonly"
+        "idle" | "saving" | "saved" | "empty" | "error" | "locked"
     >("idle");
     const progressTasks = useSyncExternalStore(
         subscribeProgressTasks,
@@ -88,7 +91,7 @@ export function Topbar({
 
     const submitQuickCapture = async () => {
         if (isReadOnlyDemo) {
-            setQuickCaptureStatus("readonly");
+            setQuickCaptureStatus("locked");
             return;
         }
 
@@ -147,16 +150,31 @@ export function Topbar({
                                     ? "Saved to Inspiration Vault"
                                     : quickCaptureStatus === "saving"
                                       ? "Saving..."
-                                      : quickCaptureStatus === "readonly"
-                                        ? "Read-only in public demo"
+                                      : quickCaptureStatus === "locked"
+                                        ? VIEW_MODE_LOCKED_NOTE
                                     : quickCaptureStatus === "empty"
                                       ? "Paste link or keyword first"
                                       : quickCaptureStatus === "error"
                                         ? "Could not save"
                                       : "Capture link / keyword..."
                             }
-                            disabled={isReadOnlyDemo}
-                            className="h-7 w-full border border-main bg-secondary/45 pl-7 pr-2 text-[11px] font-medium text-main placeholder:text-muted/60 focus:border-accent/40 focus:outline-none focus:ring-1 focus:ring-accent/25"
+                            readOnly={isReadOnlyDemo}
+                            onClick={() => {
+                                if (isReadOnlyDemo) {
+                                    setQuickCaptureStatus("locked");
+                                }
+                            }}
+                            onFocus={() => {
+                                if (isReadOnlyDemo) {
+                                    setQuickCaptureStatus("locked");
+                                }
+                            }}
+                            className={`h-7 w-full border border-main bg-secondary/45 pl-7 pr-2 text-[11px] font-medium text-main placeholder:text-muted/60 focus:border-accent/40 focus:outline-none focus:ring-1 focus:ring-accent/25 ${
+                                quickCaptureStatus === "locked" ||
+                                quickCaptureStatus === "error"
+                                    ? "border-red-500/40 text-red-500 placeholder:text-red-500"
+                                    : ""
+                            }`}
                         />
                     </div>
                 </form>
@@ -167,7 +185,7 @@ export function Topbar({
                         className="inline-flex shrink-0 items-center gap-1.5 border border-main bg-main px-2.5 py-1 text-[11px] font-semibold text-main transition-colors hover:bg-secondary"
                         aria-label="Open owner access"
                     >
-                        {appAccess.isOwner ? "Owner" : "Demo"}
+                        {appAccess.isOwner ? "Owner" : "View Mode"}
                     </button>
                 ) : null}
                 <button
@@ -282,7 +300,7 @@ function OwnerAccessModal({
                         <p className="mt-1 text-[11px] text-muted">
                             {access?.isOwner
                                 ? "Owner mode is active for this browser."
-                                : "Public demo is read-only until owner access is unlocked."}
+                                : VIEW_MODE_LOCKED_NOTE}
                         </p>
                     </div>
                     <button

@@ -134,6 +134,10 @@ function formatDuration(durationMs?: number | null) {
     return `${seconds}s`;
 }
 
+function cn(...classes: Array<string | false | null | undefined>) {
+    return classes.filter(Boolean).join(" ");
+}
+
 export function StorageLibraryPanel({ section }: StorageLibraryPanelProps) {
     const Icon = section.icon;
     const [assets, setAssets] = useState<StoredVideoAsset[]>([]);
@@ -156,6 +160,7 @@ export function StorageLibraryPanel({ section }: StorageLibraryPanelProps) {
         publicUrl: "",
         mimeType: "video/mp4",
     });
+    const statusFailed = status === "failed";
 
     const loadAssets = async (page = pagination.page) => {
         setStatus("loading");
@@ -333,11 +338,30 @@ export function StorageLibraryPanel({ section }: StorageLibraryPanelProps) {
                 </div>
             </header>
 
-            <div className="border-b border-main bg-secondary/25 px-5 py-3">
-                <span className="inline-flex border border-main bg-main px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-muted">
+            <div
+                className={cn(
+                    "border-b border-main bg-secondary/25 px-5 py-3",
+                    statusFailed ? "text-rose-700" : "text-muted",
+                )}
+            >
+                <span
+                    className={cn(
+                        "inline-flex border bg-main px-2 py-1 text-[10px] font-bold uppercase tracking-wide",
+                        statusFailed
+                            ? "border-rose-300 text-rose-700"
+                            : "border-main text-muted",
+                    )}
+                >
                     {status}
                 </span>
-                <span className="ml-3 text-[12px] text-muted">{message}</span>
+                <span
+                    className={cn(
+                        "ml-3 text-[12px]",
+                        statusFailed ? "font-semibold text-rose-700" : "text-muted",
+                    )}
+                >
+                    {message}
+                </span>
                 <span className="ml-3 text-[12px] text-muted">
                     Ready: {stats.readyCount} · Total size:{" "}
                     {formatBytes(stats.totalBytes)}

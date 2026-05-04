@@ -4,6 +4,7 @@ import {
   OWNER_TOKEN_COOKIE,
   checkDemoRateLimit,
   getAppAccessState,
+  isViewModeAccessError,
   isOwnerRequest,
   resetDemoRateLimitForTests,
 } from "./access-control";
@@ -62,5 +63,17 @@ describe("access control", () => {
       checkDemoRateLimit({ request: demoRequest, feature: "voice-generation" })
         .ok,
     ).toBe(false);
+  });
+
+  it("detects View Mode access errors by code or message", () => {
+    expect(isViewModeAccessError({ errorCode: "DEMO_WRITE_DISABLED" })).toBe(
+      true,
+    );
+    expect(
+      isViewModeAccessError({
+        error: "Some features are disabled in View Mode.",
+      }),
+    ).toBe(true);
+    expect(isViewModeAccessError({ errorCode: "SYS_OTHER" })).toBe(false);
   });
 });

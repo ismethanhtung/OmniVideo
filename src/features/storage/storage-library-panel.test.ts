@@ -17,4 +17,10 @@ describe("Storage Library pagination", () => {
     expect(source).toContain("void loadAssets(pagination.page - 1);");
     expect(source).toContain("void loadAssets(pagination.page + 1);");
   });
+
+  it("renders failed status messages with red error treatment", () => {
+    expect(source).toContain('const statusFailed = status === "failed";');
+    expect(source).toContain('statusFailed ? "text-rose-700" : "text-muted"');
+    expect(source).toContain('statusFailed ? "font-semibold text-rose-700" : "text-muted"');
+  });
 });

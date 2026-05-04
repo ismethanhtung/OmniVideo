@@ -12,4 +12,10 @@ describe("Social Accounts panel", () => {
     expect(source).not.toContain("/api/social/dashboard");
     expect(source).not.toContain("Platform Readiness");
   });
+
+  it("renders failed account status messages with red error treatment", () => {
+    expect(source).toContain('const statusFailed = status === "failed";');
+    expect(source).toContain('statusFailed ? "text-rose-700" : "text-muted"');
+    expect(source).toContain('statusFailed ? "border-rose-300 text-rose-700" : "border-main"');
+  });
 });

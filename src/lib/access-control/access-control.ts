@@ -1,4 +1,26 @@
 export const OWNER_TOKEN_COOKIE = "omnivideo_owner_token";
+export const VIEW_MODE_LOCKED_NOTE =
+  "Some features are disabled in View Mode.";
+export const VIEW_MODE_WRITE_DISABLED_MESSAGE = `This public demo is read-only for data-changing actions. ${VIEW_MODE_LOCKED_NOTE}`;
+export const VIEW_MODE_PROVIDER_ACCOUNT_DISABLED_MESSAGE = `Public demo requests cannot use saved provider accounts. ${VIEW_MODE_LOCKED_NOTE}`;
+export const VIEW_MODE_RATE_LIMITED_MESSAGE = `Public demo rate limit exceeded. Try again later. ${VIEW_MODE_LOCKED_NOTE}`;
+
+const VIEW_MODE_ERROR_CODES = new Set([
+  "DEMO_WRITE_DISABLED",
+  "DEMO_PROVIDER_ACCOUNT_DISABLED",
+  "DEMO_RATE_LIMITED",
+]);
+
+export function isViewModeAccessError(value?: {
+  errorCode?: string;
+  error?: string;
+} | null): boolean {
+  if (!value) return false;
+  return (
+    (value.errorCode ? VIEW_MODE_ERROR_CODES.has(value.errorCode) : false) ||
+    Boolean(value.error?.includes("View Mode"))
+  );
+}
 
 export type AppMode = "owner" | "public-demo";
 

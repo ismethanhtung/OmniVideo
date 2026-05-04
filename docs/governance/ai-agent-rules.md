@@ -12,6 +12,7 @@ Bộ quy tắc này bắt buộc cho mọi AI agent làm việc trong repo OmniV
 4. Task có thay đổi code mà không có test mới/cập nhật test -> không được `Done`.
 5. Không cập nhật `changelog/changelog.md` -> task chưa hoàn thành.
 6. Không có file docs liên quan khi thay đổi kiến trúc/domain -> task chưa hoàn thành.
+7. Runtime code change mà không pass `npm run guard:version` -> task chưa hoàn thành.
 
 ## 3. Mandatory Execution Protocol
 
@@ -24,7 +25,8 @@ Mọi agent phải đi theo 8 bước sau:
 5. Viết/cập nhật tests tương ứng với thay đổi code.
 6. Verify theo acceptance criteria + test results.
 7. Cập nhật docs/changelog/board trạng thái.
-8. Chốt outcome và open risks.
+8. Chạy `npm run guard:version` cho runtime changes.
+9. Chốt outcome và open risks.
 
 ## 4. Task Requirement for Every Activity
 

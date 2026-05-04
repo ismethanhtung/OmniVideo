@@ -56,3 +56,10 @@ Format: `MAJOR.MINOR.PATCH`
 1. Nếu task yêu cầu thay đổi version/release behavior, agent phải kiểm tra và cập nhật checklist này.
 2. Nếu phát hiện UI version lệch với source-of-truth, phải sửa trong cùng task.
 3. Nếu task là feature/bugfix đã sẵn sàng release nhưng version chưa bump, không được đánh dấu `Done`.
+
+## 9. Automated Guard (Mandatory)
+
+1. Runtime changes (ví dụ: `src/**`, API routes, app behavior) bắt buộc pass `npm run guard:version`.
+2. Guard sẽ fail nếu có runtime change nhưng thiếu một trong ba file: `package.json`, `package-lock.json`, `changelog/changelog.md`.
+3. Base ref mặc định của guard: `origin/main` merge-base; có thể override bằng env `VERSION_GUARD_BASE`.
+4. Khi CI/review chạy guard và fail, task không được chuyển `Review` hoặc `Done`.

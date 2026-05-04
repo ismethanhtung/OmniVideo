@@ -25,14 +25,14 @@ The default mode remains owner mode. Public demo mode must be explicitly enabled
 
 Owner access can be provided in two ways:
 
-1. Browser unlock through the topbar `Demo` / `Owner` control, which calls `POST /api/app/access` and stores an HTTP-only owner cookie.
+1. Browser unlock through the topbar `View Mode` / `Owner` control, which calls `POST /api/app/access` and stores an HTTP-only owner cookie.
 2. API/script access with header `x-omnivideo-owner-token: <OMNIVIDEO_OWNER_TOKEN>`.
 
 Owner requests bypass public demo write blocks and demo AI rate limits.
 
 ## 4. Public Visitor Policy
 
-Public visitors in `public-demo` mode:
+Public visitors in `public-demo` mode see `View Mode` in the topbar.
 
 1. Can view read-only data returned by `GET` routes.
 2. Cannot run DB-changing actions such as Video Intake, local upload intake, storage provider changes, asset writes/deletes, Inspiration Vault capture/toggle/delete, AI provider admin actions, social account changes, OAuth setup, or publish record changes.

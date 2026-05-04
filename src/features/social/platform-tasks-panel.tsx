@@ -28,6 +28,10 @@ type DashboardPayload = {
   };
 };
 
+function cn(...classes: Array<string | false | null | undefined>) {
+  return classes.filter(Boolean).join(" ");
+}
+
 export function PlatformTasksPanel({ section }: PlatformTasksPanelProps) {
   const Icon = section.icon;
   const [dashboard, setDashboard] = useState<DashboardPayload | null>(null);
@@ -35,6 +39,7 @@ export function PlatformTasksPanel({ section }: PlatformTasksPanelProps) {
     "idle",
   );
   const [message, setMessage] = useState("Ready.");
+  const statusFailed = status === "failed";
 
   const loadDashboard = async () => {
     setStatus("loading");
@@ -102,7 +107,12 @@ export function PlatformTasksPanel({ section }: PlatformTasksPanelProps) {
         </button>
       </header>
 
-      <div className="grid border-b border-main bg-secondary/25 px-5 py-3 text-[12px] text-muted md:grid-cols-4">
+      <div
+        className={cn(
+          "grid border-b border-main bg-secondary/25 px-5 py-3 text-[12px] md:grid-cols-4",
+          statusFailed ? "text-rose-700" : "text-muted",
+        )}
+      >
         <span>Status: {status}</span>
         <span>Accounts: {dashboard?.summary.accountCount ?? 0}</span>
         <span>Connected: {dashboard?.summary.connectedAccountCount ?? 0}</span>
@@ -110,7 +120,14 @@ export function PlatformTasksPanel({ section }: PlatformTasksPanelProps) {
       </div>
 
       <div className="px-5 py-5">
-        <p className="text-[12px] text-muted">{message}</p>
+        <p
+          className={cn(
+            "text-[12px]",
+            statusFailed ? "font-semibold text-rose-700" : "text-muted",
+          )}
+        >
+          {message}
+        </p>
         <div className="mt-4 grid gap-4 lg:grid-cols-2">
           {(dashboard?.capabilities ?? []).map((capability) => {
             const account = accountsByPlatform.get(capability.platform);

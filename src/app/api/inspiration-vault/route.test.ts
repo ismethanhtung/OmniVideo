@@ -90,6 +90,8 @@ describe("inspiration vault API", () => {
         expect(payload).toMatchObject({
             ok: false,
             errorCode: "DEMO_WRITE_DISABLED",
+            error:
+                "This public demo is read-only for data-changing actions. Some features are disabled in View Mode.",
         });
         expect(mockedGetDb).not.toHaveBeenCalled();
         expect(mockedCreateItem).not.toHaveBeenCalled();

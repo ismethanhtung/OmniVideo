@@ -1,5 +1,55 @@
 # OmniVideo Changelog
 
+## Release v0.4.1 - View Mode Error Visibility
+
+- Bump app version from `0.4.0` to `0.4.1` as a patch release for View Mode UX bugfixes without public API contract changes.
+- Release scope includes restored full View Mode messages, delayed Inspiration Vault locked warning display, and red failed/error message treatment across affected social/storage/video-intake panels.
+- Verification (FAST-ACCESS-004): `npm run test -- --run src/features/inspiration-vault/inspiration-vault-panel.test.ts src/features/storage/storage-library-panel.test.ts src/features/storage/storage-providers-panel.test.ts src/features/social/social-accounts-panel.test.ts src/features/social/publish-records-panel.test.ts src/features/video-intake/video-intake-panel.test.ts src/features/video-intake/local-upload-intake-panel.test.ts` pass (7 files / 12 tests); `npm test` pass (85 files / 368 tests); `npm run build` pass with existing Turbopack warning outside scope in `src/app/api/video-processing/edit/route.ts`.
+- Task IDs: `FAST-ACCESS-003`, `FAST-ACCESS-004`.
+
+## Release v0.4.0 - View Mode Public Demo
+
+- Bump app version from `0.3.0` to `0.4.0` as a minor release because the batch adds backward-compatible public View Mode behavior and owner access.
+- Release scope includes DB-backed Inspiration Vault, public-demo server guards, owner access, View Mode locked-state polish, and demo rate limiting.
+- Verification (FAST-ACCESS-002): `npm test` pass (81 files / 360 tests); `npm run build` pass with existing Turbopack warning outside scope in `src/app/api/video-processing/edit/route.ts`.
+- Task IDs: `FAST-SOURCE-002`, `FAST-ACCESS-001`, `FAST-ACCESS-002`.
+
+## FAST-ACCESS-002 - Polish View Mode Locked-State Copy
+
+- Renamed public topbar label from `Demo` to `View Mode`.
+- Replaced long public-demo locked messages with short copy: `Some features are disabled in View Mode.`
+- Locked topbar capture and Inspiration Vault controls now show red feedback when clicked/focused in View Mode.
+- Server guard messages now use the same short View Mode copy while preserving stable error codes.
+- Verification (FAST-ACCESS-002): `npm run test -- --run src/lib/access-control/access-control.test.ts src/app/api/app/access/route.test.ts src/app/api/inspiration-vault/route.test.ts src/app/api/audio/voice-generation/route.test.ts` pass (4 files / 13 tests); `npm test` pass (81 files / 360 tests); `npm run build` pass with existing warning outside scope.
+
+## FAST-ACCESS-003 - Restore Full View Mode Lock Messages
+
+- Restored specific lock reasons and appended `Some features are disabled in View Mode.` instead of replacing the original messages.
+- `DEMO_WRITE_DISABLED`, `DEMO_PROVIDER_ACCOUNT_DISABLED`, and `DEMO_RATE_LIMITED` now keep their specific message context.
+- AI Providers now surfaces View Mode errors from save/delete/status/test/chat/model actions with red error treatment instead of silent or muted feedback.
+- Verification (FAST-ACCESS-003): `npm run test -- --run src/lib/access-control/access-control.test.ts src/app/api/inspiration-vault/route.test.ts src/features/ai-providers/ai-providers-panel.test.ts src/app/api/app/access/route.test.ts` pass (4 files / 12 tests); `npm test` pass (81 files / 361 tests); `npm run build` pass with existing Turbopack warning outside scope.
+
+## FAST-ACCESS-004 - Fix View Mode Error Visibility
+
+- Inspiration Vault no longer shows a red View Mode warning just because the visitor is in read-only mode; it appears only after a locked action is attempted.
+- Publish Records, Storage Library, Social Accounts, Storage Providers, Published Content, Platform Tasks, Video Intake, and Local Upload Intake now render failed status/messages/error codes in red instead of muted gray.
+- Bumped app version from `0.4.0` to `0.4.1` as a patch bugfix release.
+- Verification (FAST-ACCESS-004): targeted panel tests pass (7 files / 12 tests); `npm test` pass (85 files / 368 tests); `npm run build` pass with existing Turbopack warning outside scope.
+
+## FAST-UX-024 - Auto-sort exploited Inspiration items to bottom
+
+- Inspiration Vault now sorts each category table with unexploited rows first and exploited rows last.
+- After toggling `Exploited`, the updated row automatically drops to the bottom section of that category list.
+- Verification (FAST-UX-024): `npm run test -- --run src/features/inspiration-vault/inspiration-vault-panel.test.ts` pass (1 file / 2 tests).
+
+## FAST-GOV-004 - Mandatory Automated Version Guard
+
+- Added `scripts/version-guard.mjs` to enforce release integrity for runtime changes.
+- Added `npm run guard:version` command for local/CI gate usage.
+- Guard fails when runtime behavior changes without synchronized updates in `package.json`, `package-lock.json`, and `changelog/changelog.md`.
+- Updated governance docs and task template to require `guard:version` evidence before Done for runtime changes.
+- Verification (FAST-GOV-004): `npm run guard:version` pass.
+
 ## FAST-ACCESS-001 - Public Demo Access Guard and AI Rate Limits
 
 - Thêm `public-demo` mode qua `OMNIVIDEO_APP_MODE=public-demo` để public visitors chỉ view/read-only theo mặc định.

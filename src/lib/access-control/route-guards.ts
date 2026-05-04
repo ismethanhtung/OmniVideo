@@ -3,6 +3,9 @@ import { NextResponse } from "next/server";
 import {
   checkDemoRateLimit,
   getAppAccessState,
+  VIEW_MODE_PROVIDER_ACCOUNT_DISABLED_MESSAGE,
+  VIEW_MODE_RATE_LIMITED_MESSAGE,
+  VIEW_MODE_WRITE_DISABLED_MESSAGE,
   type DemoFeature,
 } from "./access-control";
 
@@ -17,7 +20,7 @@ export function requireWriteAccess(request: Request): NextResponse | null {
     {
       ok: false,
       errorCode: "DEMO_WRITE_DISABLED",
-      error: "This public demo is read-only for data-changing actions.",
+      error: VIEW_MODE_WRITE_DISABLED_MESSAGE,
     },
     { status: 403 },
   );
@@ -40,7 +43,7 @@ export function requireOwnerForProviderAccount(
     {
       ok: false,
       errorCode: "DEMO_PROVIDER_ACCOUNT_DISABLED",
-      error: "Public demo requests cannot use saved provider accounts.",
+      error: VIEW_MODE_PROVIDER_ACCOUNT_DISABLED_MESSAGE,
     },
     { status: 403 },
   );
@@ -65,7 +68,7 @@ export function applyDemoRateLimit(
     {
       ok: false,
       errorCode: "DEMO_RATE_LIMITED",
-      error: "Public demo rate limit exceeded. Try again later.",
+      error: VIEW_MODE_RATE_LIMITED_MESSAGE,
       rateLimit: {
         limit: result.limit,
         remaining: result.remaining,

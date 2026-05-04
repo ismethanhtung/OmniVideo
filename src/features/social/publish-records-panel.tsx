@@ -196,6 +196,10 @@ function formatBytes(size?: number | null) {
     return `${value.toFixed(precision)} ${units[unitIndex]}`;
 }
 
+function cn(...classes: Array<string | false | null | undefined>) {
+    return classes.filter(Boolean).join(" ");
+}
+
 function buildDestinationLabel({
     destination,
     accounts,
@@ -275,6 +279,7 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
             form.destinations.length > 0 &&
             form.destinations.every(isDestinationValid),
         ) && !isSubmitting;
+    const statusFailed = status === "failed";
 
     const selectedAssetShortHint = useMemo(() => {
         if (!selectedAsset || !hasYouTubeShortDestination) {
@@ -721,9 +726,16 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
                 </div>
             </header>
 
-            <div className="border-b border-main bg-secondary/25 px-5 py-3 text-[12px] text-muted">
+            <div
+                className={cn(
+                    "border-b border-main bg-secondary/25 px-5 py-3 text-[12px]",
+                    statusFailed ? "text-rose-700" : "text-muted",
+                )}
+            >
                 <StatusBadge status={status} />
-                <span className="ml-3">{message}</span>
+                <span className={cn("ml-3", statusFailed && "font-semibold")}>
+                    {message}
+                </span>
             </div>
 
             <div className="flex flex-wrap items-end justify-between gap-3 border-b border-main bg-main px-5 py-3">
@@ -1909,7 +1921,14 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
                             </label>
                         </div>
                         {formMessage ? (
-                            <div className="border-t border-main bg-secondary/20 px-4 py-3 text-[12px] leading-5 text-muted">
+                            <div
+                                className={cn(
+                                    "border-t border-main bg-secondary/20 px-4 py-3 text-[12px] leading-5",
+                                    statusFailed
+                                        ? "font-semibold text-rose-700"
+                                        : "text-muted",
+                                )}
+                            >
                                 {isSubmitting ? (
                                     <RefreshCw className="mr-2 inline h-3.5 w-3.5 animate-spin" />
                                 ) : null}

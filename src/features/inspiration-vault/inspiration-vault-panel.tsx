@@ -4,7 +4,11 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Trash2 } from "lucide-react";
 
 import type { LeftbarNavItem } from "@/components/layout/types";
-import type { AppAccessState } from "@/lib/access-control/access-control";
+import {
+    VIEW_MODE_LOCKED_NOTE,
+    VIEW_MODE_WRITE_DISABLED_MESSAGE,
+    type AppAccessState,
+} from "@/lib/access-control/access-control";
 import { fetchAppAccessState } from "@/lib/access-control/client";
 import {
     INSPIRATION_VAULT_UPDATED_EVENT,
@@ -40,6 +44,18 @@ function formatDate(value: string) {
     }).format(new Date(value));
 }
 
+function sortVaultItems(items: InspirationVaultItem[]) {
+    return [...items].sort((left, right) => {
+        if (left.exploited !== right.exploited) {
+            return left.exploited ? 1 : -1;
+        }
+        return (
+            new Date(right.createdAt).getTime() -
+            new Date(left.createdAt).getTime()
+        );
+    });
+}
+
 export function InspirationVaultPanel({ section }: InspirationVaultPanelProps) {
     void section;
     const [items, setItems] = useState<InspirationVaultItem[]>([]);
@@ -49,6 +65,7 @@ export function InspirationVaultPanel({ section }: InspirationVaultPanelProps) {
         "loading",
     );
     const [error, setError] = useState<string | null>(null);
+    const [lockedMessage, setLockedMessage] = useState<string | null>(null);
 
     const loadItems = useCallback(async () => {
         try {
@@ -93,20 +110,27 @@ export function InspirationVaultPanel({ section }: InspirationVaultPanelProps) {
 
     const groupedItems = useMemo(
         () => ({
-            "video-source": items.filter(
-                (item) => item.category === "video-source",
+            "video-source": sortVaultItems(
+                items.filter((item) => item.category === "video-source"),
             ),
-            link: items.filter((item) => item.category === "link"),
-            keyword: items.filter(
-                (item) => item.category === "keyword",
+            link: sortVaultItems(
+                items.filter((item) => item.category === "link"),
             ),
-            note: items.filter((item) => item.category === "note"),
+            keyword: sortVaultItems(
+                items.filter((item) => item.category === "keyword"),
+            ),
+            note: sortVaultItems(
+                items.filter((item) => item.category === "note"),
+            ),
         }),
         [items],
     );
 
     const toggleItem = async (itemId: string, exploited: boolean) => {
-        if (isReadOnlyDemo) return;
+        if (isReadOnlyDemo) {
+            setLockedMessage(VIEW_MODE_WRITE_DISABLED_MESSAGE);
+            return;
+        }
 
         const currentItems = items;
         setItems((existingItems) =>
@@ -137,7 +161,10 @@ export function InspirationVaultPanel({ section }: InspirationVaultPanelProps) {
     };
 
     const deleteItem = async (itemId: string) => {
-        if (isReadOnlyDemo) return;
+        if (isReadOnlyDemo) {
+            setLockedMessage(VIEW_MODE_WRITE_DISABLED_MESSAGE);
+            return;
+        }
 
         const currentItems = items;
         setItems((existingItems) =>
@@ -160,10 +187,9 @@ export function InspirationVaultPanel({ section }: InspirationVaultPanelProps) {
     return (
         <section className="flex h-full min-h-0 flex-col overflow-hidden border border-main bg-main">
             <div className="flex h-full min-h-0 flex-col gap-4 px-5 py-5">
-                {isReadOnlyDemo ? (
-                    <div className="border border-main bg-secondary/35 px-3 py-2 text-[11px] font-semibold text-muted">
-                        Public demo is read-only. Capture, Exploited, and Delete
-                        actions are disabled.
+                {lockedMessage ? (
+                    <div className="border border-red-500/30 bg-red-500/10 px-3 py-2 text-[11px] font-semibold text-red-500">
+                        {lockedMessage}
                     </div>
                 ) : null}
                 {status === "error" || error ? (
@@ -222,6 +248,11 @@ export function InspirationVaultPanel({ section }: InspirationVaultPanelProps) {
                                                     onToggle={toggleItem}
                                                     onDelete={deleteItem}
                                                     readOnly={isReadOnlyDemo}
+                                                    onLockedAction={() =>
+                                                        setLockedMessage(
+                                                            VIEW_MODE_WRITE_DISABLED_MESSAGE,
+                                                        )
+                                                    }
                                                     copied={
                                                         copiedItemId === item.id
                                                     }
@@ -261,6 +292,7 @@ function VaultItemRow({
     onToggle,
     onDelete,
     readOnly,
+    onLockedAction,
     copied,
     onCopied,
 }: {
@@ -268,6 +300,7 @@ function VaultItemRow({
     onToggle: (itemId: string, exploited: boolean) => Promise<void>;
     onDelete: (itemId: string) => Promise<void>;
     readOnly: boolean;
+    onLockedAction: () => void;
     copied: boolean;
     onCopied: (itemId: string) => void;
 }) {
@@ -326,15 +359,27 @@ function VaultItemRow({
                 {formatDate(item.createdAt)}
             </td>
             <td className="px-3 py-2">
-                <label className="inline-flex cursor-pointer items-center gap-1.5 px-2 py-1 text-[10px] font-semibold text-main">
+                <label
+                    className={cn(
+                        "inline-flex items-center gap-1.5 px-2 py-1 text-[10px] font-semibold",
+                        readOnly
+                            ? "cursor-not-allowed text-main"
+                            : "cursor-pointer text-main",
+                    )}
+                    onClick={(event) => {
+                        if (readOnly) {
+                            event.preventDefault();
+                            onLockedAction();
+                        }
+                    }}
+                >
                     <input
                         type="checkbox"
                         checked={item.exploited}
-                        disabled={readOnly}
                         onChange={(event) =>
                             void onToggle(item.id, event.target.checked)
                         }
-                        className="h-3.5 w-3.5 accent-[var(--color-accent)] disabled:cursor-not-allowed"
+                        className="h-3.5 w-3.5 accent-[var(--color-accent)]"
                     />
                     Exploited
                 </label>
@@ -343,9 +388,19 @@ function VaultItemRow({
                 <div className="flex flex-wrap gap-1.5">
                     <button
                         type="button"
-                        onClick={() => void onDelete(item.id)}
-                        disabled={readOnly}
-                        className="inline-flex items-center gap-1 border border-main bg-main px-2 py-1 text-[10px] font-semibold text-muted hover:bg-secondary hover:text-main"
+                        onClick={() => {
+                            if (readOnly) {
+                                onLockedAction();
+                                return;
+                            }
+                            void onDelete(item.id);
+                        }}
+                        className={cn(
+                            "inline-flex items-center gap-1 border px-2 py-1 text-[10px] font-semibold",
+                            readOnly
+                                ? "cursor-not-allowed border-main bg-main text-muted"
+                                : "border-main bg-main text-muted hover:bg-secondary hover:text-main",
+                        )}
                     >
                         <Trash2 className="h-3 w-3" />
                         Delete

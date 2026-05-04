@@ -95,6 +95,10 @@ function formatDate(value: string | null) {
     return value ? new Date(value).toLocaleString("vi-VN") : "-";
 }
 
+function cn(...classes: Array<string | false | null | undefined>) {
+    return classes.filter(Boolean).join(" ");
+}
+
 export function PublishedContentPanel({ section }: PublishedContentPanelProps) {
     const Icon = section.icon;
     const [inventory, setInventory] = useState<InventoryPayload>({
@@ -105,6 +109,7 @@ export function PublishedContentPanel({ section }: PublishedContentPanelProps) {
         "idle" | "loading" | "ready" | "failed"
     >("idle");
     const [message, setMessage] = useState("Ready.");
+    const statusFailed = status === "failed";
     const youtubeAccounts = useMemo(
         () =>
             inventory.accounts.filter(
@@ -223,9 +228,16 @@ export function PublishedContentPanel({ section }: PublishedContentPanelProps) {
                 </button>
             </header>
 
-            <div className="border-b border-main bg-secondary/25 px-5 py-3 text-[12px] text-muted">
+            <div
+                className={cn(
+                    "border-b border-main bg-secondary/25 px-5 py-3 text-[12px]",
+                    statusFailed ? "text-rose-700" : "text-muted",
+                )}
+            >
                 <StatusBadge status={status} />
-                <span className="ml-3">{message}</span>
+                <span className={cn("ml-3", statusFailed && "font-semibold")}>
+                    {message}
+                </span>
             </div>
 
             <div className="grid gap-4 p-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]">

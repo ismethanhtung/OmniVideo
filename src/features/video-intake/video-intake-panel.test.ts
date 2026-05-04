@@ -17,4 +17,10 @@ describe("Video Intake history retry action", () => {
     expect(source).toContain("Retry failed: missing source URL from selected run.");
     expect(source).toContain("message: \"Retry completed.\"");
   });
+
+  it("renders failed run status messages and error codes in red", () => {
+    expect(source).toContain('state.status === "failed"');
+    expect(source).toContain('? "font-semibold text-rose-700"');
+    expect(source).toContain('className="font-mono text-[11px] text-rose-700"');
+  });
 });

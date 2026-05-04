@@ -24,6 +24,7 @@ Task chỉ được chuyển `Done` khi đáp ứng đủ:
 6. Cập nhật `changelog/changelog.md`.
 7. Cập nhật trạng thái trong `tasks/board.md`.
 8. Nêu rõ residual risks (nếu còn).
+9. Nếu có runtime code change thì phải chạy pass `npm run guard:version`.
 
 ## Fail-Fast Rule
 

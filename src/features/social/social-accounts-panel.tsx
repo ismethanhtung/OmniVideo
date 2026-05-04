@@ -161,6 +161,10 @@ function compactSecrets(form: AccountFormState) {
   );
 }
 
+function cn(...classes: Array<string | false | null | undefined>) {
+  return classes.filter(Boolean).join(" ");
+}
+
 export function SocialAccountsPanel({ section }: SocialAccountsPanelProps) {
   const Icon = section.icon;
   const [accounts, setAccounts] = useState<SocialAccount[]>([]);
@@ -190,6 +194,7 @@ export function SocialAccountsPanel({ section }: SocialAccountsPanelProps) {
   const oauthBaseUrl =
     typeof window === "undefined" ? "" : window.location.origin;
   const redirectUri = `${oauthBaseUrl}/api/social/oauth/callback/${form.platform}`;
+  const statusFailed = status === "failed";
   const openTutorialDocs = () => {
     window.dispatchEvent(
       new CustomEvent("omnivideo:navigate", { detail: "tutorialDocs" }),
@@ -484,11 +489,23 @@ export function SocialAccountsPanel({ section }: SocialAccountsPanelProps) {
         </div>
       </header>
 
-      <div className="border-b border-main bg-secondary/25 px-5 py-3 text-[12px] text-muted">
-        <span className="inline-flex border border-main bg-main px-2 py-1 text-[10px] font-bold uppercase">
+      <div
+        className={cn(
+          "border-b border-main bg-secondary/25 px-5 py-3 text-[12px]",
+          statusFailed ? "text-rose-700" : "text-muted",
+        )}
+      >
+        <span
+          className={cn(
+            "inline-flex border bg-main px-2 py-1 text-[10px] font-bold uppercase",
+            statusFailed ? "border-rose-300 text-rose-700" : "border-main",
+          )}
+        >
           {status}
         </span>
-        <span className="ml-3">{message}</span>
+        <span className={cn("ml-3", statusFailed && "font-semibold")}>
+          {message}
+        </span>
         <span className="ml-3">Connected: {activeCount}</span>
       </div>
 
