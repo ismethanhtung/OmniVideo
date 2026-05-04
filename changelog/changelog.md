@@ -1,5 +1,12 @@
 # OmniVideo Changelog
 
+## FAST-OPS-003 - Fix Vercel Runtime ERR_REQUIRE_ESM
+
+- Sửa production outage trên Vercel khi toàn bộ routes trả `500` với `ERR_REQUIRE_ESM`.
+- Root cause: package khai báo `"type": "module"` làm server bundle `.js` bị coi là ESM, không tương thích với launcher `require()` của runtime.
+- Fix: bỏ field `"type": "module"` khỏi `package.json` để runtime load server routes bình thường.
+- Verification (FAST-OPS-003): `npm test` pass (76 files / 344 tests); `npm run build` pass.
+
 ## Release v0.3.0 - Inspiration Vault and Focused Progress
 
 - Bump app version from `0.2.0` to `0.3.0` as a minor release because this batch adds the user-facing `Inspiration Vault` feature and backward-compatible UX/runtime improvements.

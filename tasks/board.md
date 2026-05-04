@@ -36,6 +36,7 @@
 
 ## Done
 
+- `FAST-OPS-003` - Fix Vercel runtime ERR_REQUIRE_ESM by removing package type module.
 - `FAST-REL-001` - Release OmniVideo 0.3.0.
 - `FAST-UX-023` - Remove host subline from Inspiration Vault content cells.
 - `FAST-UX-022` - Strengthen Inspiration Vault copy feedback visibility.
