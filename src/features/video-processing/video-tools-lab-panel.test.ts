@@ -28,7 +28,6 @@ describe("Video Tools Lab source preview controls", () => {
     it("shows and immediately reapplies saved setup for selected assets", () => {
         expect(source).toContain("hasSavedVideoEditSetup");
         expect(source).toContain("Saved setup");
-        expect(source).toContain("Asset này có setup đã lưu");
         expect(source).toContain("applyVideoEditSetup(videoEditSetup)");
     });
 });

@@ -84,6 +84,7 @@ export async function runChineseVideoTranscription(
                 sampleRate: 16000,
                 channels: 1,
                 bitrateKbps: 64,
+                audioSizeBytes: audioBytes.byteLength,
                 audioSize: formatBytes(audioBytes.byteLength),
             },
         });

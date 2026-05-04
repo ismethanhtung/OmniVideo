@@ -36,6 +36,23 @@
 
 ## Done
 
+- `FAST-REL-001` - Release OmniVideo 0.3.0.
+- `FAST-UX-023` - Remove host subline from Inspiration Vault content cells.
+- `FAST-UX-022` - Strengthen Inspiration Vault copy feedback visibility.
+- `FAST-UX-021` - Add Copy Feedback in Inspiration Vault Rows.
+- `FAST-UX-020` - Use Pointer Cursor for Content Copy Hover.
+- `FAST-UX-019` - Copy on Content Click in Inspiration Vault.
+- `FAST-UX-018` - Align Outer Border Spacing for Inspiration Vault and Video Tools Lab.
+- `FAST-UX-017` - Make Inspiration Vault Truly Fill Viewport Height.
+- `FAST-UX-016` - Make Four Inspiration Tables Stretch Full Available Height.
+- `FAST-UX-015` - Simplify Inspiration Vault Tables.
+- `FAST-UX-014` - Split Inspiration Vault into Four Full-Width Tables.
+- `FAST-UX-013` - Finalize Topbar Icons and Remove Temporary Logo Options.
+- `FAST-OPS-002` - Focus Progress on Heavy Tasks and Add Logo Options.
+- `FAST-UX-012` - Use Table Layout for Inspiration Vault and Simplify Topbar Capture.
+- `FAST-UX-011` - Simplify Inspiration Vault Header and Remove Stats.
+- `FAST-UX-010` - Align Inspiration Vault Shell Styling.
+- `P2-SOURCE-001` - Inspiration Vault.
 - `FAST-WORKSPACE-011` - Move flow seed controls into Inspector with extensible seed registry.
 - `FAST-GOV-003` - Strengthen version bump governance workflow.
 - `FAST-UX-006` - Refactor leftbar navigation to real route-based pages.

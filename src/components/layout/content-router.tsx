@@ -4,6 +4,7 @@ import { getNavItem } from "@/components/layout/navigation";
 import type { AppSectionId, LeftbarNavItem } from "@/components/layout/types";
 import { AiProvidersPanel } from "@/features/ai-providers/ai-providers-panel";
 import { ConnectionTestPanel } from "@/features/connections/connection-test-panel";
+import { InspirationVaultPanel } from "@/features/inspiration-vault/inspiration-vault-panel";
 import { ChineseTranscriptionPanel } from "@/features/audio/chinese-transcription-panel";
 import { PiperTtsSandboxPanel } from "@/features/audio/piper-tts-sandbox-panel";
 import { StorageLibraryPanel } from "@/features/storage/storage-library-panel";
@@ -30,6 +31,7 @@ const SECTION_COMPONENTS: Partial<
 > = {
     aiProviders: AiProvidersPanel,
     connectionTest: ConnectionTestPanel,
+    inspirationVault: InspirationVaultPanel,
     storageLibrary: StorageLibraryPanel,
     chineseTranscription: ChineseTranscriptionPanel,
     piperTtsSandbox: PiperTtsSandboxPanel,
@@ -113,10 +115,25 @@ export function ContentRouter({
     if (activeSection === "videoToolsLab") {
         return (
             <main
-                className="min-w-0 flex-1 overflow-auto bg-secondary/35 px-3 py-3"
+                className="min-w-0 flex-1 overflow-auto bg-secondary/35"
                 data-hide-section-header="true"
             >
-                <SectionComponent section={section} />
+                <div className="w-full px-5 py-5">
+                    <SectionComponent section={section} />
+                </div>
+            </main>
+        );
+    }
+
+    if (activeSection === "inspirationVault") {
+        return (
+            <main
+                className="flex min-h-0 min-w-0 flex-1 overflow-hidden bg-secondary/35"
+                data-hide-section-header="true"
+            >
+                <div className="h-full w-full px-5 py-5">
+                    <SectionComponent section={section} />
+                </div>
             </main>
         );
     }

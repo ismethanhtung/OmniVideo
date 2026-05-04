@@ -24,7 +24,7 @@ describe("navigation registry", () => {
     expect(getNavItem("workspace")?.description).toContain("node-flow");
   });
 
-  it("registers audio transcription as a video pipeline page", () => {
+  it("registers audio transcription and inspiration vault pages", () => {
     const pipelineGroup = LEFTBAR_NAV.find(
       (group) => group.sectionId === "pipeline",
     );
@@ -32,13 +32,20 @@ describe("navigation registry", () => {
     expect(pipelineGroup?.items.map((item) => item.id)).toContain(
       "chineseTranscription",
     );
+    expect(LEFTBAR_NAV.flatMap((group) => group.items.map((item) => item.id))).toContain(
+      "inspirationVault",
+    );
     expect(getNavItem("chineseTranscription")?.description).toContain("Groq");
     expect(getNavItem("chineseTranscription")?.label).toBe("Audio Transcript");
+    expect(getNavItem("inspirationVault")?.label).toBe("Inspiration Vault");
   });
 
   it("registers Piper TTS sandbox in test group and leaves Groq TTS sandbox removed", () => {
     const testGroup = LEFTBAR_NAV.find(
       (group) => group.sectionId === "test",
+    );
+    const pipelineGroup = LEFTBAR_NAV.find(
+      (group) => group.sectionId === "pipeline",
     );
     const navIds = LEFTBAR_NAV.flatMap((group) =>
       group.items.map((item) => item.id),
@@ -47,7 +54,7 @@ describe("navigation registry", () => {
     expect(testGroup?.items.map((item) => item.id)).toContain(
       "piperTtsSandbox",
     );
-    expect(testGroup?.items.map((item) => item.id)).toContain("videoToolsLab");
+    expect(pipelineGroup?.items.map((item) => item.id)).toContain("videoToolsLab");
     expect(getNavItem("piperTtsSandbox")?.description).toContain("CPU");
     expect(getNavItem("videoToolsLab")?.description).toContain("mirror video");
     expect(navIds).not.toContain("groqTtsSandbox");
@@ -55,17 +62,21 @@ describe("navigation registry", () => {
 
   it("maps sections to stable route paths", () => {
     expect(toSectionPath("workspace")).toBe("/workspace");
+    expect(toSectionPath("inspirationVault")).toBe("/inspiration-vault");
     expect(toSectionPath("videoIntake")).toBe("/video-intake");
     expect(toSectionPath("publishedContent")).toBe("/published-content");
   });
 
   it("validates section ids from route segments", () => {
     expect(isAppSectionId("workspace")).toBe(true);
+    expect(isAppSectionId("inspirationVault")).toBe(true);
     expect(isAppSectionId("tutorialDocs")).toBe(true);
     expect(isAppSectionId("unknown")).toBe(false);
   });
 
   it("resolves section from canonical and legacy route segments", () => {
+    expect(resolveSectionFromSegment("inspiration-vault")).toBe("inspirationVault");
+    expect(resolveSectionFromSegment("inspirationVault")).toBe("inspirationVault");
     expect(resolveSectionFromSegment("published-content")).toBe("publishedContent");
     expect(resolveSectionFromSegment("publishedContent")).toBe("publishedContent");
     expect(resolveSectionFromSegment("")).toBe("workspace");

@@ -5,6 +5,11 @@ import { ExternalLink, RefreshCw } from "lucide-react";
 
 import type { LeftbarNavItem } from "@/components/layout/types";
 import { StatusText } from "@/components/ui/status-text";
+import {
+    finishProgressTask,
+    startProgressTask,
+    updateProgressTask,
+} from "@/lib/ui/progress-center";
 
 import { buildPublishedFootprintKey } from "./published-content-keys";
 import {
@@ -125,8 +130,18 @@ export function PublishedContentPanel({ section }: PublishedContentPanelProps) {
     const loadInventory = async () => {
         setStatus("loading");
         setMessage("Loading published content inventory...");
+        const progressTaskId = startProgressTask({
+            title: "Load Published Content",
+            description: "Loading published content inventory...",
+            scope: "download",
+            progress: 10,
+        });
 
         try {
+            updateProgressTask(progressTaskId, {
+                description: "Fetching published content data...",
+                progress: 55,
+            });
             const response = await fetch("/api/social/published-content", {
                 method: "GET",
                 cache: "no-store",
@@ -140,6 +155,13 @@ export function PublishedContentPanel({ section }: PublishedContentPanelProps) {
                     payload.error ??
                         "Could not load published content inventory.",
                 );
+                finishProgressTask({
+                    id: progressTaskId,
+                    status: "failed",
+                    description:
+                        payload.error ??
+                        "Could not load published content inventory.",
+                });
                 return;
             }
 
@@ -148,6 +170,11 @@ export function PublishedContentPanel({ section }: PublishedContentPanelProps) {
             setMessage(
                 `Loaded ${payload.data.accounts.length} accounts and ${payload.data.assets.length} asset footprints.`,
             );
+            finishProgressTask({
+                id: progressTaskId,
+                status: "success",
+                description: "Published content inventory loaded.",
+            });
         } catch (error) {
             setStatus("failed");
             setMessage(
@@ -155,6 +182,12 @@ export function PublishedContentPanel({ section }: PublishedContentPanelProps) {
                     ? error.message
                     : "Could not load inventory.",
             );
+            finishProgressTask({
+                id: progressTaskId,
+                status: "failed",
+                description: "Could not load published content inventory.",
+                error: error instanceof Error ? error.message : "Unknown error",
+            });
         }
     };
 

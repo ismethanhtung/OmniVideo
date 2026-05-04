@@ -15,6 +15,11 @@ import {
 } from "lucide-react";
 
 import type { LeftbarNavItem } from "@/components/layout/types";
+import {
+    finishProgressTask,
+    startProgressTask,
+    updateProgressTask,
+} from "@/lib/ui/progress-center";
 
 type VideoEditApiPayload =
     | {
@@ -864,10 +869,20 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
         setIsRunningEdit(true);
         setError(null);
         setResult(null);
+        const progressTaskId = startProgressTask({
+            title: "Video edit pipeline",
+            description: "Preparing mirror/edit render...",
+            scope: "system",
+            progress: 10,
+        });
 
         try {
             let inputFile = videoFile;
             if (!inputFile && selectedAssetId) {
+                updateProgressTask(progressTaskId, {
+                    description: "Downloading source asset for edit...",
+                    progress: 25,
+                });
                 const response = await fetch(
                     `/api/storage/assets/${selectedAssetId}/download`,
                 );
@@ -912,6 +927,10 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
             formData.set("subtitlePlayResY", String(videoNaturalSize.height));
             formData.set("translatedSegmentsJson", translatedSegmentsJson);
 
+            updateProgressTask(progressTaskId, {
+                description: "Running ffmpeg edit pipeline...",
+                progress: 60,
+            });
             const response = await fetch("/api/video-processing/edit", {
                 method: "POST",
                 body: formData,
@@ -925,12 +944,26 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                 );
             }
             setResult(payload.data);
+            finishProgressTask({
+                id: progressTaskId,
+                status: "success",
+                description: "Video edit pipeline completed.",
+            });
         } catch (requestError) {
             setError(
                 requestError instanceof Error
                     ? requestError.message
                     : "Video Edit request failed.",
             );
+            finishProgressTask({
+                id: progressTaskId,
+                status: "failed",
+                description: "Video edit pipeline failed.",
+                error:
+                    requestError instanceof Error
+                        ? requestError.message
+                        : "Unknown error",
+            });
         } finally {
             setIsRunningEdit(false);
         }

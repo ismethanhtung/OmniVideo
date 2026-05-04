@@ -32,6 +32,11 @@ import {
     serializeTranscriptSession,
     TRANSCRIPT_SESSION_STORAGE_KEY,
 } from "@/lib/multilingual-audio/transcript-session";
+import {
+    finishProgressTask,
+    startProgressTask,
+    updateProgressTask,
+} from "@/lib/ui/progress-center";
 
 type AiProviderOption = {
     _id: string;
@@ -501,6 +506,12 @@ export function ChineseTranscriptionPanel({
         setTranslation(null);
         setVoiceResult(null);
         setSteps([]);
+        const progressTaskId = startProgressTask({
+            title: "Audio transcript",
+            description: "Extracting audio and transcribing...",
+            scope: "system",
+            progress: 10,
+        });
 
         try {
             const formData = new FormData();
@@ -518,6 +529,10 @@ export function ChineseTranscriptionPanel({
                 formData.set("prompt", prompt.trim());
             }
 
+            updateProgressTask(progressTaskId, {
+                description: "Submitting transcription request...",
+                progress: 45,
+            });
             const response = await fetch("/api/audio/chinese-transcription", {
                 method: "POST",
                 body: formData,
@@ -535,12 +550,26 @@ export function ChineseTranscriptionPanel({
 
             setSteps(payload.data.steps);
             setResult(payload.data);
+            finishProgressTask({
+                id: progressTaskId,
+                status: "success",
+                description: "Transcription completed.",
+            });
         } catch (requestError) {
             setError(
                 requestError instanceof Error
                     ? requestError.message
                     : "Transcription failed.",
             );
+            finishProgressTask({
+                id: progressTaskId,
+                status: "failed",
+                description: "Transcription failed.",
+                error:
+                    requestError instanceof Error
+                        ? requestError.message
+                        : "Unknown error",
+            });
         } finally {
             setIsRunning(false);
         }
@@ -563,8 +592,18 @@ export function ChineseTranscriptionPanel({
         setMetadataTitleDraft("");
         setMetadataDescriptionDraft("");
         setMetadataHashtagsDraft("");
+        const progressTaskId = startProgressTask({
+            title: "Transcript translation",
+            description: "Translating transcript segments...",
+            scope: "system",
+            progress: 10,
+        });
 
         try {
+            updateProgressTask(progressTaskId, {
+                description: "Calling translation model...",
+                progress: 45,
+            });
             const response = await fetch("/api/audio/transcript-translation", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -588,12 +627,26 @@ export function ChineseTranscriptionPanel({
 
             setTranslation(payload.data);
             setSegmentView("translation");
+            finishProgressTask({
+                id: progressTaskId,
+                status: "success",
+                description: "Translation completed.",
+            });
         } catch (requestError) {
             setTranslationError(
                 requestError instanceof Error
                     ? requestError.message
                     : "Translation failed.",
             );
+            finishProgressTask({
+                id: progressTaskId,
+                status: "failed",
+                description: "Translation failed.",
+                error:
+                    requestError instanceof Error
+                        ? requestError.message
+                        : "Unknown error",
+            });
         } finally {
             setIsTranslating(false);
         }
@@ -608,8 +661,18 @@ export function ChineseTranscriptionPanel({
         setIsGeneratingVoice(true);
         setVoiceError(null);
         setVoiceResult(null);
+        const progressTaskId = startProgressTask({
+            title: "Voice generation",
+            description: "Generating Vietnamese voice audio...",
+            scope: "system",
+            progress: 10,
+        });
 
         try {
+            updateProgressTask(progressTaskId, {
+                description: "Synthesizing voice segments...",
+                progress: 50,
+            });
             const response = await fetch("/api/audio/voice-generation", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -646,12 +709,26 @@ export function ChineseTranscriptionPanel({
             }
 
             setVoiceResult(payload.data);
+            finishProgressTask({
+                id: progressTaskId,
+                status: "success",
+                description: "Voice generation completed.",
+            });
         } catch (requestError) {
             setVoiceError(
                 requestError instanceof Error
                     ? requestError.message
                     : "Voice generation failed.",
             );
+            finishProgressTask({
+                id: progressTaskId,
+                status: "failed",
+                description: "Voice generation failed.",
+                error:
+                    requestError instanceof Error
+                        ? requestError.message
+                        : "Unknown error",
+            });
         } finally {
             setIsGeneratingVoice(false);
         }

@@ -6,6 +6,11 @@ import { RefreshCw, Trash2 } from "lucide-react";
 import type { LeftbarNavItem } from "@/components/layout/types";
 import { StatusText } from "@/components/ui/status-text";
 import { getTelegramDownloadBlockedReason } from "@/lib/storage/telegram-download";
+import {
+    finishProgressTask,
+    startProgressTask,
+    updateProgressTask,
+} from "@/lib/ui/progress-center";
 
 type UploadProviderType = "telegram" | "drive";
 type IntakeQualityPreference = "best" | "1080p" | "720p" | "480p" | "360p";
@@ -503,8 +508,18 @@ export function VideoIntakePanel({ section }: VideoIntakePanelProps) {
             status: "running",
             message: "Running node pipeline...",
         });
+        const progressTaskId = startProgressTask({
+            title: "Video intake run",
+            description: "Submitting URL intake pipeline...",
+            scope: "upload",
+            progress: 10,
+        });
 
         try {
+            updateProgressTask(progressTaskId, {
+                description: "Resolving source and running storage upload...",
+                progress: 45,
+            });
             const response = await fetch("/api/video-intake/runs", {
                 method: "POST",
                 headers: {
@@ -539,6 +554,12 @@ export function VideoIntakePanel({ section }: VideoIntakePanelProps) {
                     await loadRunDetail(payload.data.runId);
                 }
                 await loadHistory(1);
+                finishProgressTask({
+                    id: progressTaskId,
+                    status: "failed",
+                    description: payload.error ?? "Video intake failed.",
+                    error: payload.errorCode ?? payload.data?.errorCode,
+                });
                 return;
             }
 
@@ -551,6 +572,11 @@ export function VideoIntakePanel({ section }: VideoIntakePanelProps) {
                 await loadRunDetail(payload.data.runId);
             }
             await loadHistory(1);
+            finishProgressTask({
+                id: progressTaskId,
+                status: "success",
+                description: "Video intake completed.",
+            });
         } catch (error) {
             setState({
                 status: "failed",
@@ -558,6 +584,12 @@ export function VideoIntakePanel({ section }: VideoIntakePanelProps) {
                     error instanceof Error
                         ? error.message
                         : "Video intake failed.",
+            });
+            finishProgressTask({
+                id: progressTaskId,
+                status: "failed",
+                description: "Video intake failed.",
+                error: error instanceof Error ? error.message : "Unknown error",
             });
         }
     };
@@ -601,8 +633,18 @@ export function VideoIntakePanel({ section }: VideoIntakePanelProps) {
             status: "running",
             message: "Retrying pipeline run...",
         });
+        const progressTaskId = startProgressTask({
+            title: "Video intake retry",
+            description: "Retrying URL intake pipeline...",
+            scope: "upload",
+            progress: 10,
+        });
 
         try {
+            updateProgressTask(progressTaskId, {
+                description: "Running retry pipeline...",
+                progress: 45,
+            });
             const response = await fetch("/api/video-intake/runs", {
                 method: "POST",
                 headers: {
@@ -637,6 +679,12 @@ export function VideoIntakePanel({ section }: VideoIntakePanelProps) {
                     await loadRunDetail(payload.data.runId);
                 }
                 await loadHistory(1);
+                finishProgressTask({
+                    id: progressTaskId,
+                    status: "failed",
+                    description: payload.error ?? "Video intake retry failed.",
+                    error: payload.errorCode ?? payload.data?.errorCode,
+                });
                 return;
             }
 
@@ -649,6 +697,11 @@ export function VideoIntakePanel({ section }: VideoIntakePanelProps) {
                 await loadRunDetail(payload.data.runId);
             }
             await loadHistory(1);
+            finishProgressTask({
+                id: progressTaskId,
+                status: "success",
+                description: "Video intake retry completed.",
+            });
         } catch (error) {
             setState({
                 status: "failed",
@@ -656,6 +709,12 @@ export function VideoIntakePanel({ section }: VideoIntakePanelProps) {
                     error instanceof Error
                         ? error.message
                         : "Video intake retry failed.",
+            });
+            finishProgressTask({
+                id: progressTaskId,
+                status: "failed",
+                description: "Video intake retry failed.",
+                error: error instanceof Error ? error.message : "Unknown error",
             });
         }
     };
@@ -1260,7 +1319,7 @@ export function VideoIntakePanel({ section }: VideoIntakePanelProps) {
                                                         Preview
                                                     </button>
                                                 ) : (
-                                                    <div className="flex h-20 w-full items-center justify-center bg-secondary text-[10px] text-muted">
+                                                    <div className="flex h-16 w-full items-center justify-center bg-secondary text-[10px] text-muted">
                                                         No preview
                                                     </div>
                                                 )}

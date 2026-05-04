@@ -1,5 +1,113 @@
 # OmniVideo Changelog
 
+## Release v0.3.0 - Inspiration Vault and Focused Progress
+
+- Bump app version from `0.2.0` to `0.3.0` as a minor release because this batch adds the user-facing `Inspiration Vault` feature and backward-compatible UX/runtime improvements.
+- Release scope includes quick capture in topbar, Inspiration Vault storage/classification/management UI, focused progress tracking for long-running operations, topbar icon polish, and final table/copy feedback refinements.
+- Release readiness hardening restored the Drive thumbnail helper expected by tests, lazy-loaded asset-only transcription API dependencies so invalid upload validation does not require DB env, and synchronized stale test expectations with current UI copy.
+- Task IDs: `P2-SOURCE-001`, `FAST-UX-010`, `FAST-UX-011`, `FAST-UX-012`, `FAST-UX-013`, `FAST-UX-014`, `FAST-UX-015`, `FAST-UX-016`, `FAST-UX-017`, `FAST-UX-018`, `FAST-UX-019`, `FAST-UX-020`, `FAST-UX-021`, `FAST-UX-022`, `FAST-UX-023`, `FAST-OPS-002`, `FAST-REL-001`.
+- Verification (FAST-REL-001): `npm test` pass (76 files / 344 tests); `npm run build` pass with existing warnings outside release scope.
+
+## FAST-UX-023 - Remove Host Subline in Inspiration Vault Content Cell
+
+- Bỏ dòng host (`item.host`) trong ô `Content` của các bảng Inspiration Vault để giao diện gọn hơn.
+- Giữ nguyên click-to-copy và feedback `Copied`.
+
+## FAST-UX-022 - Strengthen Inspiration Vault Copy Feedback
+
+- Tăng độ rõ feedback copy trong Inspiration Vault: dòng vừa copy được highlight ngắn hạn và badge `Copied` có style nổi bật hơn.
+- Thêm fallback copy bằng `document.execCommand("copy")` khi Clipboard API không khả dụng để giữ hành vi nhất quán.
+- Verification (FAST-UX-022): `npm run build` pass với warnings cũ ngoài scope ở audio/storage/video-tools/display panels.
+
+## FAST-UX-021 - Add Copy Feedback in Inspiration Vault Rows
+
+- Thêm feedback `Copied` ngắn hạn theo từng dòng sau khi click `Content` để copy.
+- Feedback tự tắt sau ~1.2 giây.
+
+## FAST-UX-020 - Use Pointer Cursor for Content Copy Hover
+
+- Đổi hover cursor ở ô `Content` từ `cursor-copy` sang `cursor-pointer` để bỏ dấu `+` và giữ pointer thường.
+
+## FAST-UX-019 - Copy on Content Click in Inspiration Vault
+
+- Bỏ nút `Copy` khỏi cột actions.
+- Cho phép click trực tiếp vào ô `Content` để copy `item.raw` (cursor copy + tooltip ngắn).
+- Verification (FAST-UX-019): `npm run build` pass với warnings cũ ngoài scope ở audio/storage/video-tools/display panels.
+
+## FAST-UX-018 - Align Outer Border Spacing for Inspiration Vault and Video Tools Lab
+
+- Đồng bộ wrapper spacing của `Inspiration Vault` và `Video Tools Lab` về chuẩn `px-5 py-5` như các trang khác, tránh cảm giác viền sát mép.
+- Giữ `Inspiration Vault` ở chế độ full-height bằng wrapper `h-full` bên trong route layout.
+- Verification (FAST-UX-018): `npm run build` pass với warnings cũ ngoài scope ở audio/storage/video-tools/display panels.
+
+## FAST-UX-017 - Make Inspiration Vault Truly Fill Viewport Height
+
+- Thêm layout branch riêng cho `inspirationVault` trong content router để section chạy trong container `h-full/min-h-0` thay vì wrapper generic gây khoảng trống đáy.
+- Đổi root panel Inspiration Vault sang `h-full min-h-0` để nhận full chiều cao khả dụng từ app shell.
+- Verification (FAST-UX-017): `npm run build` pass với warnings cũ ngoài scope ở audio/storage/video-tools/display panels.
+
+## FAST-UX-015 - Simplify Inspiration Vault Tables
+
+- Bỏ cột `Reference` trong 4 bảng Inspiration Vault.
+- Bỏ nút `Open` trong actions.
+- Giữ 4 bảng (`Video/Links/Keywords/Notes`) luôn hiển thị kể cả khi toàn bộ dữ liệu trống (mỗi bảng hiển thị `No items.` riêng).
+- Verification (FAST-UX-015): `npm run build` pass với warnings cũ ngoài scope ở audio/storage/video-tools/display panels.
+
+## FAST-UX-014 - Split Inspiration Vault into Four Full-Width Tables
+
+- Đổi Inspiration Vault từ 1 bảng tổng thành 4 bảng theo category: `Video`, `Links`, `Keywords`, `Notes`.
+- 4 bảng dùng chung vùng nội dung chính theo layout grid, mỗi bảng giữ nguyên các action quan trọng (`Copy`, `Open`, `Delete`, `Exploited`).
+- Verification (FAST-UX-014): `npm run build` pass với warnings cũ ngoài scope ở audio/storage/video-tools/display panels.
+
+## FAST-UX-013 - Finalize Topbar Icons and Remove Temporary Logo Options
+
+- Topbar icon update theo mapping mới:
+  - `Progress` -> `Rocket`
+  - `System` -> `Gauge`
+  - `Refresh` -> `Orbit`
+- Xoá khối `10 logo options` tạm ở Inspiration Vault.
+- Verification (FAST-UX-013): `npm run build` pass với warnings cũ ngoài scope ở audio/storage/video-tools/display panels.
+
+## FAST-OPS-002 - Focus Progress on Heavy Tasks and Add Logo Options
+
+- Tập trung Progress topbar vào tác vụ nặng:
+  - Video Intake: `Run Intake` và `Retry`.
+  - Audio Transcript: `Transcribe`, `Translate`, `Generate voice`.
+  - Video Tools Lab: `Mirror/Edit pipeline` (bao gồm download asset + ffmpeg edit run).
+  - Published Content: `Load Published Content`.
+- Không thêm progress cho các thao tác nhỏ (delete/load history/refresh nhẹ) để giảm nhiễu.
+- Thêm khối tạm `10 logo options` trong Inspiration Vault để user tham khảo trước khi chốt icon cuối.
+- Verification (FAST-OPS-002): `npm run test -- --run src/components/layout/navigation.test.ts src/lib/inspiration-vault/inspiration-vault.test.ts` pass (2 files / 14 tests); `npm run build` pass với warnings cũ ngoài scope ở audio/storage/video-tools/display panels.
+
+## FAST-UX-012 - Use Table Layout for Inspiration Vault and Simplify Topbar Capture
+
+- Topbar quick capture: bỏ nút `Vault`, giữ ô nhập duy nhất để submit bằng Enter.
+- Inspiration Vault: thay danh sách card bằng bảng dữ liệu để scan nhanh và gọn hơn.
+- Thêm action `Copy` theo từng dòng để copy nội dung đã lưu.
+- Bỏ khối manual capture trong trang vault, tập trung intake qua topbar.
+- Verification (FAST-UX-012): `npm run test -- --run src/lib/inspiration-vault/inspiration-vault.test.ts src/components/layout/navigation.test.ts` pass (2 files / 14 tests); `npm run build` pass với warnings cũ ngoài scope ở audio/storage/video-tools/display panels.
+
+## FAST-UX-011 - Simplify Inspiration Vault Header and Remove Stats
+
+- Xoá toàn bộ intro/stats block ở Inspiration Vault theo feedback, gồm các dòng copy và các card `Total/Fresh/Exploited/Video Sources/Keywords`.
+- Dọn logic liên quan trong component (không còn tính stats cho block đã xoá).
+- Đổi icon phần này sang `Idea` style bằng `Lightbulb` icon.
+- Verification (FAST-UX-011): `npm run test -- --run src/lib/inspiration-vault/inspiration-vault.test.ts src/components/layout/navigation.test.ts` pass (2 files / 14 tests); `npm run build` pass với warnings cũ ngoài scope ở audio/storage/video-tools/display panels.
+
+## FAST-UX-010 - Align Inspiration Vault Shell Styling
+
+- Chỉnh `Inspiration Vault` về đúng shell layout của các panel hiện có: outer `border border-main bg-main`, header/status/body nằm trong cùng khung thay vì các card rời bên ngoài.
+- Thêm status strip bên trong panel để hiển thị trạng thái filter và counters giống pattern Storage Library/Publish Records.
+- Verification (FAST-UX-010): `npm run test -- --run src/lib/inspiration-vault/inspiration-vault.test.ts src/components/layout/navigation.test.ts` pass (2 files / 14 tests); `npm run build` pass với warnings cũ ngoài scope ở audio/storage/video-tools/display panels; `git diff --check` pass.
+
+## P2-SOURCE-001 - Inspiration Vault
+
+- Thêm trang `Inspiration Vault` trong Video Pipeline để lưu và quản lý link, keyword, creator/source name và note phục vụ khai thác ý tưởng nội dung.
+- Thêm quick capture input ở topbar: nhập URL hoặc text từ bất kỳ trang nào sẽ lưu vào vault local và tự phân loại Bilibili/Douyin/YouTube/TikTok video source, generic link, keyword hoặc note.
+- Vault MVP lưu bằng `localStorage`, có counters, search, category/status filters, checkbox `Exploited`, mở link nguồn và xoá item.
+- Thêm helper/test `src/lib/inspiration-vault/inspiration-vault.test.ts` bao phủ phân loại Bilibili URL, keyword, empty input, malformed URL-like input, capture order, toggle exploited, delete và corrupted storage fallback.
+- Verification (P2-SOURCE-001): `npm run test -- --run src/lib/inspiration-vault/inspiration-vault.test.ts src/components/layout/navigation.test.ts` pass (2 files / 14 tests); `npm run build` pass với warnings cũ ngoài scope ở audio/storage/video-tools/display panels.
+
 ## FAST-WORKSPACE-011 - Move flow seed controls into Inspector with extensible seed registry
 
 - Chuyển `Seed VI Voice Mask Publish` từ header của Workspace Canvas vào phần Inspector để khu vực thao tác flow tập trung hơn.

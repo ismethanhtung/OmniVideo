@@ -1,9 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { runChineseVideoTranscription } from "@/lib/multilingual-audio/chinese-transcription";
-import { resolveAssetDownload } from "@/lib/storage/asset-download";
 import { ChineseTranscriptionError } from "@/lib/multilingual-audio/types";
-import { getIntakeDb, getVideoAssetById } from "@/lib/video-intake/repository";
 
 export const runtime = "nodejs";
 
@@ -35,6 +33,12 @@ export async function POST(request: Request) {
                 fileBytes: new Uint8Array(await file.arrayBuffer()),
             };
         } else if (assetId) {
+            const { getIntakeDb, getVideoAssetById } = await import(
+                "@/lib/video-intake/repository"
+            );
+            const { resolveAssetDownload } = await import(
+                "@/lib/storage/asset-download"
+            );
             const db = await getIntakeDb();
             const asset = await getVideoAssetById({ db, assetId });
             if (!asset) {

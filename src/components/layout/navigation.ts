@@ -10,8 +10,6 @@ import {
     Vault,
     Palette,
     Upload,
-    Share2,
-    ClipboardList,
     Send,
     BookOpen,
     Clapperboard,
@@ -22,6 +20,7 @@ import {
     ClipboardCheck,
     UserRound,
     VideoIcon,
+    Lightbulb,
 } from "lucide-react";
 
 import type { AppSectionId, LeftbarNavGroup, LeftbarNavItem } from "./types";
@@ -180,6 +179,13 @@ export const LEFTBAR_NAV: LeftbarNavGroup[] = [
                 description:
                     "Test local Piper voice model ONNX bằng CPU, không cần GPU.",
             },
+            {
+                id: "inspirationVault",
+                icon: Lightbulb,
+                label: "Inspiration Vault",
+                description:
+                    "Lưu link, keyword, creator và nguồn video để khai thác thành nội dung (lưu trữ trong local storage).",
+            },
         ],
     },
 ];
@@ -216,6 +222,7 @@ const SECTION_SLUG_BY_ID: Record<AppSectionId, string> = {
     aiProviders: "ai-providers",
     display: "display",
     notif: "notif",
+    inspirationVault: "inspiration-vault",
     videoIntake: "video-intake",
     localUploadIntake: "local-upload-intake",
     chineseTranscription: "audio-transcript",
@@ -239,6 +246,7 @@ const SECTION_SLUG_BY_ID: Record<AppSectionId, string> = {
 
 const LEGACY_SECTION_BY_CAMEL: Record<string, AppSectionId> = {
     aiProviders: "aiProviders",
+    inspirationVault: "inspirationVault",
     videoIntake: "videoIntake",
     localUploadIntake: "localUploadIntake",
     chineseTranscription: "chineseTranscription",

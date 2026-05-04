@@ -986,7 +986,7 @@ export function LocalUploadIntakePanel({
                                                     Preview
                                                 </button>
                                             ) : (
-                                                <div className="flex h-20 w-full items-center justify-center bg-secondary text-[10px] text-muted">
+                                                <div className="flex h-16 w-full items-center justify-center bg-secondary text-[10px] text-muted">
                                                     No preview
                                                 </div>
                                             )}

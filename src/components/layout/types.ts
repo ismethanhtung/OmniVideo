@@ -7,6 +7,7 @@ export type AppSectionId =
   | "aiProviders"
   | "display"
   | "notif"
+  | "inspirationVault"
   | "videoIntake"
   | "localUploadIntake"
   | "chineseTranscription"

@@ -8,12 +8,14 @@ import {
     useSyncExternalStore,
 } from "react";
 import {
-    Activity,
     AlertTriangle,
     CheckCircle2,
     Moon,
-    Cpu,
+    Gauge,
+    Lightbulb,
+    Orbit,
     RefreshCw,
+    Rocket,
     Sun,
     X,
 } from "lucide-react";
@@ -27,6 +29,10 @@ import {
     subscribeProgressTasks,
     type ProgressTask,
 } from "@/lib/ui/progress-center";
+import {
+    INSPIRATION_VAULT_UPDATED_EVENT,
+    captureInspirationVaultInput,
+} from "@/lib/inspiration-vault/inspiration-vault";
 
 type TopbarProps = {
     activeSection: AppSectionId;
@@ -44,6 +50,10 @@ export function Topbar({
     const currentSection = getNavItem(activeSection);
     const [showProgress, setShowProgress] = useState(false);
     const [showSystemSnapshot, setShowSystemSnapshot] = useState(false);
+    const [quickCapture, setQuickCapture] = useState("");
+    const [quickCaptureStatus, setQuickCaptureStatus] = useState<
+        "idle" | "saved" | "empty"
+    >("idle");
     const progressTasks = useSyncExternalStore(
         subscribeProgressTasks,
         getProgressTasksSnapshot,
@@ -57,6 +67,23 @@ export function Topbar({
         [progressTasks],
     );
 
+    const submitQuickCapture = () => {
+        const result = captureInspirationVaultInput(quickCapture);
+
+        if (!result.ok) {
+            setQuickCaptureStatus("empty");
+            return;
+        }
+
+        setQuickCapture("");
+        setQuickCaptureStatus("saved");
+        window.dispatchEvent(
+            new CustomEvent(INSPIRATION_VAULT_UPDATED_EVENT, {
+                detail: result.item,
+            }),
+        );
+    };
+
     return (
         <header className="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-main bg-main px-3 md:px-5">
             <div className="min-w-0">
@@ -69,13 +96,41 @@ export function Topbar({
             </div>
 
             <div className="ml-2 flex min-w-0 items-center gap-2 overflow-x-auto thin-scrollbar">
+                <form
+                    className="flex min-w-[180px] max-w-[360px] flex-1 items-center gap-1.5"
+                    onSubmit={(event) => {
+                        event.preventDefault();
+                        submitQuickCapture();
+                    }}
+                    title="Quick capture to Inspiration Vault"
+                >
+                    <div className="relative min-w-0 flex-1">
+                        <Lightbulb className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted" />
+                        <input
+                            type="text"
+                            value={quickCapture}
+                            onChange={(event) => {
+                                setQuickCapture(event.target.value);
+                                setQuickCaptureStatus("idle");
+                            }}
+                            placeholder={
+                                quickCaptureStatus === "saved"
+                                    ? "Saved to Inspiration Vault"
+                                    : quickCaptureStatus === "empty"
+                                      ? "Paste link or keyword first"
+                                      : "Capture link / keyword..."
+                            }
+                            className="h-7 w-full border border-main bg-secondary/45 pl-7 pr-2 text-[11px] font-medium text-main placeholder:text-muted/60 focus:border-accent/40 focus:outline-none focus:ring-1 focus:ring-accent/25"
+                        />
+                    </div>
+                </form>
                 <button
                     type="button"
                     onClick={() => setShowProgress(true)}
                     className="inline-flex shrink-0 items-center gap-1.5 border border-main bg-main px-2.5 py-1 text-[11px] font-semibold text-main transition-colors hover:bg-secondary"
                     aria-label="Open background progress"
                 >
-                    <Activity
+                    <Rocket
                         className={`h-3.5 w-3.5 ${activeCount > 0 ? "text-accent" : ""}`}
                     />
                     Progress
@@ -87,7 +142,7 @@ export function Topbar({
                     className="inline-flex shrink-0 items-center gap-1.5 border border-main bg-main px-2.5 py-1 text-[11px] font-semibold text-main transition-colors hover:bg-secondary"
                     aria-label="Open system snapshot"
                 >
-                    <Cpu className="h-3.5 w-3.5" />
+                    <Gauge className="h-3.5 w-3.5" />
                     System
                 </button>
                 <button
@@ -95,7 +150,7 @@ export function Topbar({
                     onClick={onRefreshView}
                     className="inline-flex shrink-0 items-center gap-1.5 border border-main bg-main px-2.5 py-1 text-[11px] font-semibold text-main transition-colors hover:bg-secondary"
                 >
-                    <RefreshCw className="h-3.5 w-3.5" />
+                    <Orbit className="h-3.5 w-3.5" />
                     Refresh
                 </button>
                 <button
@@ -248,6 +303,11 @@ function SystemSnapshotModal({ onClose }: { onClose: () => void }) {
                 </header>
                 <div className="min-h-0 overflow-y-auto px-4 py-4 text-[12px]">
                     {error ? <p className="text-amber-700">{error}</p> : null}
+                    {loading ? (
+                        <p className="text-[12px] text-muted">
+                            Loading system snapshot...
+                        </p>
+                    ) : null}
                     {snapshot ? (
                         <div className="space-y-4">
                             <div className="grid gap-3 lg:grid-cols-2">
