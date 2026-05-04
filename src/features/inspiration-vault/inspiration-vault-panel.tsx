@@ -1,20 +1,20 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Trash2 } from "lucide-react";
 
 import type { LeftbarNavItem } from "@/components/layout/types";
 import {
-    INSPIRATION_VAULT_STORAGE_KEY,
     INSPIRATION_VAULT_UPDATED_EVENT,
-    deleteInspirationVaultItem,
     platformLabel,
-    readInspirationVaultItems,
-    toggleInspirationVaultItem,
-    writeInspirationVaultItems,
     type InspirationCategory,
     type InspirationVaultItem,
 } from "@/lib/inspiration-vault/inspiration-vault";
+import {
+    deleteInspirationVaultItemFromApi,
+    listInspirationVaultItemsFromApi,
+    updateInspirationVaultItemFromApi,
+} from "@/lib/inspiration-vault/client";
 
 type InspirationVaultPanelProps = {
     section: LeftbarNavItem;
@@ -42,35 +42,45 @@ export function InspirationVaultPanel({ section }: InspirationVaultPanelProps) {
     void section;
     const [items, setItems] = useState<InspirationVaultItem[]>([]);
     const [copiedItemId, setCopiedItemId] = useState<string | null>(null);
+    const [status, setStatus] = useState<"loading" | "ready" | "error">(
+        "loading",
+    );
+    const [error, setError] = useState<string | null>(null);
 
-    const loadItems = () => {
-        setItems(readInspirationVaultItems());
-    };
+    const loadItems = useCallback(async () => {
+        try {
+            setStatus("loading");
+            const nextItems = await listInspirationVaultItemsFromApi();
+            setItems(nextItems);
+            setError(null);
+            setStatus("ready");
+        } catch (loadError) {
+            setError(
+                loadError instanceof Error
+                    ? loadError.message
+                    : "Unable to load Inspiration Vault.",
+            );
+            setStatus("error");
+        }
+    }, []);
 
     useEffect(() => {
-        loadItems();
+        void loadItems();
 
-        const handleVaultUpdate = () => loadItems();
-        const handleStorage = (event: StorageEvent) => {
-            if (!event.key || event.key === INSPIRATION_VAULT_STORAGE_KEY) {
-                loadItems();
-            }
-        };
+        const handleVaultUpdate = () => void loadItems();
 
         window.addEventListener(
             INSPIRATION_VAULT_UPDATED_EVENT,
             handleVaultUpdate,
         );
-        window.addEventListener("storage", handleStorage);
 
         return () => {
             window.removeEventListener(
                 INSPIRATION_VAULT_UPDATED_EVENT,
                 handleVaultUpdate,
             );
-            window.removeEventListener("storage", handleStorage);
         };
-    }, []);
+    }, [loadItems]);
 
     const groupedItems = useMemo(
         () => ({
@@ -86,25 +96,62 @@ export function InspirationVaultPanel({ section }: InspirationVaultPanelProps) {
         [items],
     );
 
-    const persistItems = (nextItems: InspirationVaultItem[]) => {
-        writeInspirationVaultItems(nextItems);
-        setItems(nextItems);
-        window.dispatchEvent(new CustomEvent(INSPIRATION_VAULT_UPDATED_EVENT));
+    const toggleItem = async (itemId: string, exploited: boolean) => {
+        const currentItems = items;
+        setItems((existingItems) =>
+            existingItems.map((item) =>
+                item.id === itemId ? { ...item, exploited } : item,
+            ),
+        );
+
+        try {
+            const updatedItem = await updateInspirationVaultItemFromApi(
+                itemId,
+                exploited,
+            );
+            setItems((existingItems) =>
+                existingItems.map((item) =>
+                    item.id === itemId ? updatedItem : item,
+                ),
+            );
+            setError(null);
+        } catch (updateError) {
+            setItems(currentItems);
+            setError(
+                updateError instanceof Error
+                    ? updateError.message
+                    : "Unable to update item.",
+            );
+        }
     };
 
-    const toggleItem = (itemId: string, exploited: boolean) => {
-        const nextItems = toggleInspirationVaultItem(items, itemId, exploited);
-        persistItems(nextItems);
-    };
+    const deleteItem = async (itemId: string) => {
+        const currentItems = items;
+        setItems((existingItems) =>
+            existingItems.filter((item) => item.id !== itemId),
+        );
 
-    const deleteItem = (itemId: string) => {
-        const nextItems = deleteInspirationVaultItem(items, itemId);
-        persistItems(nextItems);
+        try {
+            await deleteInspirationVaultItemFromApi(itemId);
+            setError(null);
+        } catch (deleteError) {
+            setItems(currentItems);
+            setError(
+                deleteError instanceof Error
+                    ? deleteError.message
+                    : "Unable to delete item.",
+            );
+        }
     };
 
     return (
         <section className="flex h-full min-h-0 flex-col overflow-hidden border border-main bg-main">
             <div className="flex h-full min-h-0 flex-col gap-4 px-5 py-5">
+                {status === "error" || error ? (
+                    <div className="border border-red-500/30 bg-red-500/10 px-3 py-2 text-[11px] font-semibold text-red-500">
+                        {error ?? "Unable to load Inspiration Vault."}
+                    </div>
+                ) : null}
                 <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-2 lg:grid-rows-2">
                     {CATEGORY_TABLES.map((categoryTable) => (
                         <div
@@ -116,7 +163,11 @@ export function InspirationVaultPanel({ section }: InspirationVaultPanelProps) {
                                     {categoryTable.title}
                                 </p>
                             </div>
-                            {groupedItems[categoryTable.key].length === 0 ? (
+                            {status === "loading" ? (
+                                <div className="flex min-h-0 flex-1 items-center justify-center px-3 py-5 text-[11px] text-muted">
+                                    Loading...
+                                </div>
+                            ) : groupedItems[categoryTable.key].length === 0 ? (
                                 <div className="flex min-h-0 flex-1 items-center justify-center px-3 py-5 text-[11px] text-muted">
                                     No items.
                                 </div>
@@ -193,8 +244,8 @@ function VaultItemRow({
     onCopied,
 }: {
     item: InspirationVaultItem;
-    onToggle: (itemId: string, exploited: boolean) => void;
-    onDelete: (itemId: string) => void;
+    onToggle: (itemId: string, exploited: boolean) => Promise<void>;
+    onDelete: (itemId: string) => Promise<void>;
     copied: boolean;
     onCopied: (itemId: string) => void;
 }) {
@@ -258,7 +309,7 @@ function VaultItemRow({
                         type="checkbox"
                         checked={item.exploited}
                         onChange={(event) =>
-                            onToggle(item.id, event.target.checked)
+                            void onToggle(item.id, event.target.checked)
                         }
                         className="h-3.5 w-3.5 accent-[var(--color-accent)]"
                     />
@@ -269,7 +320,7 @@ function VaultItemRow({
                 <div className="flex flex-wrap gap-1.5">
                     <button
                         type="button"
-                        onClick={() => onDelete(item.id)}
+                        onClick={() => void onDelete(item.id)}
                         className="inline-flex items-center gap-1 border border-main bg-main px-2 py-1 text-[10px] font-semibold text-muted hover:bg-secondary hover:text-main"
                     >
                         <Trash2 className="h-3 w-3" />

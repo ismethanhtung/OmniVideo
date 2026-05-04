@@ -42,7 +42,25 @@ Trường chính:
 - `createdFrom` (run/step refs)
 - `createdAt`
 
-## 2.3 `storage_provider_accounts`
+## 2.3 `inspiration_vault_items`
+
+Dùng để lưu ý tưởng nguồn/keyword/link/note phục vụ content research và tái khai thác.
+
+Trường chính:
+
+- `id` (stable client-facing id)
+- `raw`
+- `title`
+- `category` (`video-source`, `link`, `keyword`, `note`)
+- `platform` (`bilibili`, `douyin`, `youtube`, `tiktok`, `generic`, `unknown`)
+- `url` (nullable)
+- `host` (nullable)
+- `referenceId` (nullable)
+- `tags`
+- `exploited`
+- `createdAt`, `updatedAt`
+
+## 2.4 `storage_provider_accounts`
 
 Dùng để quản lý nhiều storage account/vault.
 
@@ -59,7 +77,7 @@ Trường chính:
 - `usage` (assetCountApprox, lastUsedAt)
 - `createdAt`, `updatedAt`
 
-## 2.4 `pipeline_definitions`
+## 2.5 `pipeline_definitions`
 
 - `_id`
 - `name`
@@ -68,7 +86,7 @@ Trường chính:
 - `status` (`draft`, `active`, `archived`)
 - `createdAt`, `updatedAt`
 
-## 2.5 `job_runs`
+## 2.6 `job_runs`
 
 - `_id`
 - `pipelineId`
@@ -80,7 +98,7 @@ Trường chính:
 - `startedAt`, `endedAt`
 - `durationMs`
 
-## 2.6 `step_runs`
+## 2.7 `step_runs`
 
 - `_id`
 - `jobRunId`
@@ -93,7 +111,7 @@ Trường chính:
 - `metrics` (latencyMs, providerCalls, tokensUsed)
 - `startedAt`, `endedAt`
 
-## 2.7 `run_events`
+## 2.8 `run_events`
 
 - `_id`
 - `jobRunId`
@@ -103,7 +121,7 @@ Trường chính:
 - `payload`
 - `timestamp`
 
-## 2.8 `ai_provider_accounts`
+## 2.9 `ai_provider_accounts`
 
 - `_id`
 - `providerName`
@@ -116,7 +134,7 @@ Trường chính:
 - `status` (`active`, `paused`, `depleted`, `error`)
 - `lastHealthCheckAt`
 
-## 2.9 `social_accounts`
+## 2.10 `social_accounts`
 
 - `_id`
 - `platform` (`tiktok`, `youtube`, `facebook`, `shopee`, `other`)
@@ -134,7 +152,7 @@ Trường chính:
 - `lastError`
 - `usage`
 
-## 2.9.1 `social_platform_capabilities`
+## 2.10.1 `social_platform_capabilities`
 
 Capability registry cho UI và validation social.
 
@@ -145,7 +163,7 @@ Capability registry cho UI và validation social.
 - `realPublishStatus` (`enabled`, `deferred`)
 - `complianceNotes`
 
-## 2.10 `publish_records`
+## 2.11 `publish_records`
 
 - `_id`
 - `assetId`
@@ -163,7 +181,7 @@ Capability registry cho UI và validation social.
 - `errorCode`
 - `errorDetail`
 
-## 2.11 `connection_checks`
+## 2.12 `connection_checks`
 
 - `_id`
 - `serviceType` (`mongodb`, `provider`, `storage`, `social_api`, `queue`)
@@ -178,6 +196,7 @@ Capability registry cho UI và validation social.
 1. `job_runs`: `{ status: 1, createdAt: -1 }`, `{ pipelineId: 1, createdAt: -1 }`.
 2. `step_runs`: `{ jobRunId: 1, nodeId: 1, attempt: -1 }`.
 3. `assets`: `{ checksumSha256: 1 }`, `{ createdAt: -1 }`.
+4. `inspiration_vault_items`: `{ createdAt: -1 }`, `{ id: 1 }` unique.
 4. `sources`: `{ sourceType: 1, originPlatform: 1, createdAt: -1 }`.
 5. `publish_records`: `{ socialAccountId: 1, publishedAt: -1 }`.
 6. `storage_provider_accounts`: `{ providerType: 1, status: 1, priority: -1 }`.

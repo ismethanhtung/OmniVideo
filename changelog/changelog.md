@@ -1,5 +1,13 @@
 # OmniVideo Changelog
 
+## FAST-SOURCE-002 - Move Inspiration Vault Persistence to MongoDB
+
+- Chuyển Inspiration Vault từ browser `localStorage` sang API backed by MongoDB collection `inspiration_vault_items`.
+- Thêm API `GET/POST /api/inspiration-vault` và `PATCH/DELETE /api/inspiration-vault/[itemId]` cho list/capture/toggle exploited/delete.
+- Đổi topbar quick capture và Inspiration Vault panel sang fetch API, giữ event refresh nội bộ để panel reload sau capture.
+- Cập nhật data model/source docs cho collection Inspiration Vault mới.
+- Verification (FAST-SOURCE-002): `npm run test -- --run src/lib/inspiration-vault/inspiration-vault.test.ts src/lib/inspiration-vault/repository.test.ts src/app/api/inspiration-vault/route.test.ts 'src/app/api/inspiration-vault/[itemId]/route.test.ts'` pass (4 files / 15 tests); `npm run build` pass với warning cũ ngoài scope ở `next.config.ts` import trace từ `video-processing/edit`.
+
 ## FAST-OPS-003 - Fix Vercel Runtime ERR_REQUIRE_ESM
 
 - Sửa production outage trên Vercel khi toàn bộ routes trả `500` với `ERR_REQUIRE_ESM`.

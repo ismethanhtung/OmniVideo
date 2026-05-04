@@ -31,8 +31,8 @@ import {
 } from "@/lib/ui/progress-center";
 import {
     INSPIRATION_VAULT_UPDATED_EVENT,
-    captureInspirationVaultInput,
 } from "@/lib/inspiration-vault/inspiration-vault";
+import { createInspirationVaultItemFromApi } from "@/lib/inspiration-vault/client";
 
 type TopbarProps = {
     activeSection: AppSectionId;
@@ -52,7 +52,7 @@ export function Topbar({
     const [showSystemSnapshot, setShowSystemSnapshot] = useState(false);
     const [quickCapture, setQuickCapture] = useState("");
     const [quickCaptureStatus, setQuickCaptureStatus] = useState<
-        "idle" | "saved" | "empty"
+        "idle" | "saving" | "saved" | "empty" | "error"
     >("idle");
     const progressTasks = useSyncExternalStore(
         subscribeProgressTasks,
@@ -67,21 +67,26 @@ export function Topbar({
         [progressTasks],
     );
 
-    const submitQuickCapture = () => {
-        const result = captureInspirationVaultInput(quickCapture);
-
-        if (!result.ok) {
+    const submitQuickCapture = async () => {
+        if (!quickCapture.trim()) {
             setQuickCaptureStatus("empty");
             return;
         }
 
-        setQuickCapture("");
-        setQuickCaptureStatus("saved");
-        window.dispatchEvent(
-            new CustomEvent(INSPIRATION_VAULT_UPDATED_EVENT, {
-                detail: result.item,
-            }),
-        );
+        try {
+            setQuickCaptureStatus("saving");
+            const item = await createInspirationVaultItemFromApi(quickCapture);
+            setQuickCapture("");
+            setQuickCaptureStatus("saved");
+            window.dispatchEvent(
+                new CustomEvent(INSPIRATION_VAULT_UPDATED_EVENT, {
+                    detail: item,
+                }),
+            );
+        } catch {
+            setQuickCaptureStatus("error");
+            return;
+        }
     };
 
     return (
@@ -100,7 +105,7 @@ export function Topbar({
                     className="flex min-w-[180px] max-w-[360px] flex-1 items-center gap-1.5"
                     onSubmit={(event) => {
                         event.preventDefault();
-                        submitQuickCapture();
+                        void submitQuickCapture();
                     }}
                     title="Quick capture to Inspiration Vault"
                 >
@@ -116,8 +121,12 @@ export function Topbar({
                             placeholder={
                                 quickCaptureStatus === "saved"
                                     ? "Saved to Inspiration Vault"
+                                    : quickCaptureStatus === "saving"
+                                      ? "Saving..."
                                     : quickCaptureStatus === "empty"
                                       ? "Paste link or keyword first"
+                                      : quickCaptureStatus === "error"
+                                        ? "Could not save"
                                       : "Capture link / keyword..."
                             }
                             className="h-7 w-full border border-main bg-secondary/45 pl-7 pr-2 text-[11px] font-medium text-main placeholder:text-muted/60 focus:border-accent/40 focus:outline-none focus:ring-1 focus:ring-accent/25"

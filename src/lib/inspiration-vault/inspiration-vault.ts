@@ -1,4 +1,3 @@
-export const INSPIRATION_VAULT_STORAGE_KEY = "omnivideo-inspiration-vault";
 export const INSPIRATION_VAULT_UPDATED_EVENT =
     "omnivideo:inspiration-vault-updated";
 
@@ -41,9 +40,7 @@ export type InspirationDraft =
           reason: "empty";
       };
 
-type StorageLike = Pick<Storage, "getItem" | "setItem">;
-
-type ClassifyOptions = {
+export type ClassifyOptions = {
     now?: Date;
     idFactory?: () => string;
 };
@@ -231,77 +228,8 @@ export function classifyInspirationInput(
     };
 }
 
-function parseStoredItems(serialized: string | null): InspirationVaultItem[] {
-    if (!serialized) {
-        return [];
-    }
-
-    try {
-        const parsed = JSON.parse(serialized) as unknown;
-
-        if (!Array.isArray(parsed)) {
-            return [];
-        }
-
-        return parsed.filter(isVaultItem);
-    } catch {
-        return [];
-    }
-}
-
-function isVaultItem(value: unknown): value is InspirationVaultItem {
-    if (!value || typeof value !== "object") {
-        return false;
-    }
-
-    const candidate = value as Partial<InspirationVaultItem>;
-    return (
-        typeof candidate.id === "string" &&
-        typeof candidate.raw === "string" &&
-        typeof candidate.title === "string" &&
-        typeof candidate.category === "string" &&
-        typeof candidate.platform === "string" &&
-        typeof candidate.exploited === "boolean" &&
-        typeof candidate.createdAt === "string"
-    );
-}
-
-export function readInspirationVaultItems(
-    storage: StorageLike | undefined = getBrowserStorage(),
-): InspirationVaultItem[] {
-    if (!storage) {
-        return [];
-    }
-
-    return parseStoredItems(storage.getItem(INSPIRATION_VAULT_STORAGE_KEY));
-}
-
-export function writeInspirationVaultItems(
-    items: InspirationVaultItem[],
-    storage: StorageLike | undefined = getBrowserStorage(),
-) {
-    if (!storage) {
-        return;
-    }
-
-    storage.setItem(INSPIRATION_VAULT_STORAGE_KEY, JSON.stringify(items));
-}
-
-export function captureInspirationVaultInput(
-    rawInput: string,
-    storage: StorageLike | undefined = getBrowserStorage(),
-    options: ClassifyOptions = {},
-): InspirationDraft {
-    const draft = classifyInspirationInput(rawInput, options);
-
-    if (!draft.ok || !storage) {
-        return draft;
-    }
-
-    const items = readInspirationVaultItems(storage);
-    writeInspirationVaultItems([draft.item, ...items], storage);
-
-    return draft;
+export function isValidInspirationVaultItemId(value: string): boolean {
+    return /^[A-Za-z0-9:_-]{6,128}$/.test(value);
 }
 
 export function toggleInspirationVaultItem(
@@ -328,12 +256,4 @@ export function deleteInspirationVaultItem(
     itemId: string,
 ): InspirationVaultItem[] {
     return items.filter((item) => item.id !== itemId);
-}
-
-function getBrowserStorage(): StorageLike | undefined {
-    if (typeof window === "undefined") {
-        return undefined;
-    }
-
-    return window.localStorage;
 }

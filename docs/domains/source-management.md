@@ -30,6 +30,7 @@ Nguồn là tài sản quan trọng nhất để duy trì content pipeline liên
 3. Tagging bắt buộc.
 4. Link source với job runs.
 5. Đánh dấu source hiệu quả cao để tái khai thác.
+6. Capture inspiration item nhanh vào `inspiration_vault_items` trước khi promote thành source/job run chính thức.
 
 ## 5. Quality Rules
 
@@ -48,4 +49,5 @@ Nguồn là tài sản quan trọng nhất để duy trì content pipeline liên
 1. P0: Source ingest + metadata normalize + list/search.
 2. P1: Channel-level source collection.
 3. P1: Trend list management.
-4. P2: Source scoring và gợi ý tái sử dụng.
+4. P2: Inspiration Vault DB persistence và promote item thành source.
+5. P2: Source scoring và gợi ý tái sử dụng.

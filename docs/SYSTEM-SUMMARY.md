@@ -55,14 +55,15 @@ Collections chính:
 
 1. `sources`
 2. `assets`
-3. `pipeline_definitions`
-4. `job_runs`
-5. `step_runs`
-6. `run_events`
-7. `ai_provider_accounts`
-8. `social_accounts`
-9. `publish_records`
-10. `connection_checks`
+3. `inspiration_vault_items`
+4. `pipeline_definitions`
+5. `job_runs`
+6. `step_runs`
+7. `run_events`
+8. `ai_provider_accounts`
+9. `social_accounts`
+10. `publish_records`
+11. `connection_checks`
 
 Nguyên tắc dữ liệu:
 
