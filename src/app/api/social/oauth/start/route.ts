@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
+import { requireWriteAccess } from "@/lib/access-control/route-guards";
 import {
   buildAuthorizationUrl,
   createOAuthState,
@@ -13,6 +14,9 @@ export const runtime = "nodejs";
 
 export async function GET(request: Request) {
   try {
+    const accessDenied = requireWriteAccess(request);
+    if (accessDenied) return accessDenied;
+
     const url = new URL(request.url);
     const platform = url.searchParams.get("platform") as SocialPlatform | null;
     const accountId = url.searchParams.get("accountId");

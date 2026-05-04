@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { requireWriteAccess } from "@/lib/access-control/route-guards";
 import {
   deleteSocialAccount,
   getEditableSocialAccountById,
@@ -55,6 +56,9 @@ export async function PATCH(
   context: { params: Promise<{ accountId: string }> },
 ) {
   try {
+    const accessDenied = requireWriteAccess(request);
+    if (accessDenied) return accessDenied;
+
     const payload = await request.json();
     const patch = validateSocialAccountUpdateInput(payload);
     const { accountId } = await context.params;
@@ -92,10 +96,13 @@ export async function PATCH(
 }
 
 export async function DELETE(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ accountId: string }> },
 ) {
   try {
+    const accessDenied = requireWriteAccess(request);
+    if (accessDenied) return accessDenied;
+
     const { accountId } = await context.params;
     const db = await getSocialDb();
     const deleted = await deleteSocialAccount({ db, accountId });

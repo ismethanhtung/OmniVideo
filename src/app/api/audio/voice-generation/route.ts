@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { applyDemoRateLimit } from "@/lib/access-control/route-guards";
 import { generateVoiceFromSegments } from "@/lib/multilingual-audio/piper-tts";
 import {
   ChineseTranscriptionError,
@@ -11,6 +12,9 @@ export const runtime = "nodejs";
 
 export async function POST(request: Request) {
   try {
+    const rateLimited = applyDemoRateLimit(request, "voice-generation");
+    if (rateLimited) return rateLimited;
+
     const payload = (await request.json()) as {
       segments?: VoiceGenerationSegment[];
       settings?: Partial<VoiceGenerationSettings>;

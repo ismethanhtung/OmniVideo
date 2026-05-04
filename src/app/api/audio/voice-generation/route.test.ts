@@ -3,6 +3,9 @@ import { PassThrough } from "node:stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  resetDemoRateLimitForTests,
+} from "@/lib/access-control/access-control";
+import {
   setPiperFfmpegRunnerForTest,
   setPiperFileExistsForTest,
   setPiperReadFileForTest,
@@ -37,6 +40,8 @@ describe("voice generation API", () => {
     setPiperReadFileForTest(null);
     setPiperFfmpegRunnerForTest(null);
     vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+    resetDemoRateLimitForTests();
   });
 
   it("rejects empty segments", async () => {
@@ -117,5 +122,31 @@ describe("voice generation API", () => {
     expect(Buffer.from(payload.data.audioBase64, "base64").toString()).toBe(
       "route-audio",
     );
+  });
+
+  it("rate limits public demo voice generation", async () => {
+    vi.stubEnv("OMNIVIDEO_APP_MODE", "public-demo");
+    vi.stubEnv("OMNIVIDEO_DEMO_AI_RATE_LIMIT", "1");
+    vi.stubEnv("OMNIVIDEO_DEMO_AI_RATE_LIMIT_WINDOW_SECONDS", "60");
+
+    const first = await POST(
+      new Request("http://localhost/api/audio/voice-generation", {
+        method: "POST",
+        headers: { "x-forwarded-for": "203.0.113.10" },
+        body: JSON.stringify({ segments: [] }),
+      }),
+    );
+    const second = await POST(
+      new Request("http://localhost/api/audio/voice-generation", {
+        method: "POST",
+        headers: { "x-forwarded-for": "203.0.113.10" },
+        body: JSON.stringify({ segments: [] }),
+      }),
+    );
+    const payload = await second.json();
+
+    expect(first.status).toBe(400);
+    expect(second.status).toBe(429);
+    expect(payload.errorCode).toBe("DEMO_RATE_LIMITED");
   });
 });

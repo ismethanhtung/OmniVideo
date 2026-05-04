@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Trash2 } from "lucide-react";
 
 import type { LeftbarNavItem } from "@/components/layout/types";
+import type { AppAccessState } from "@/lib/access-control/access-control";
+import { fetchAppAccessState } from "@/lib/access-control/client";
 import {
     INSPIRATION_VAULT_UPDATED_EVENT,
     platformLabel,
@@ -42,6 +44,7 @@ export function InspirationVaultPanel({ section }: InspirationVaultPanelProps) {
     void section;
     const [items, setItems] = useState<InspirationVaultItem[]>([]);
     const [copiedItemId, setCopiedItemId] = useState<string | null>(null);
+    const [appAccess, setAppAccess] = useState<AppAccessState | null>(null);
     const [status, setStatus] = useState<"loading" | "ready" | "error">(
         "loading",
     );
@@ -63,9 +66,15 @@ export function InspirationVaultPanel({ section }: InspirationVaultPanelProps) {
             setStatus("error");
         }
     }, []);
+    const isReadOnlyDemo = Boolean(
+        appAccess?.isPublicDemo && !appAccess.isOwner,
+    );
 
     useEffect(() => {
         void loadItems();
+        void fetchAppAccessState()
+            .then(setAppAccess)
+            .catch(() => setAppAccess(null));
 
         const handleVaultUpdate = () => void loadItems();
 
@@ -97,6 +106,8 @@ export function InspirationVaultPanel({ section }: InspirationVaultPanelProps) {
     );
 
     const toggleItem = async (itemId: string, exploited: boolean) => {
+        if (isReadOnlyDemo) return;
+
         const currentItems = items;
         setItems((existingItems) =>
             existingItems.map((item) =>
@@ -126,6 +137,8 @@ export function InspirationVaultPanel({ section }: InspirationVaultPanelProps) {
     };
 
     const deleteItem = async (itemId: string) => {
+        if (isReadOnlyDemo) return;
+
         const currentItems = items;
         setItems((existingItems) =>
             existingItems.filter((item) => item.id !== itemId),
@@ -147,6 +160,12 @@ export function InspirationVaultPanel({ section }: InspirationVaultPanelProps) {
     return (
         <section className="flex h-full min-h-0 flex-col overflow-hidden border border-main bg-main">
             <div className="flex h-full min-h-0 flex-col gap-4 px-5 py-5">
+                {isReadOnlyDemo ? (
+                    <div className="border border-main bg-secondary/35 px-3 py-2 text-[11px] font-semibold text-muted">
+                        Public demo is read-only. Capture, Exploited, and Delete
+                        actions are disabled.
+                    </div>
+                ) : null}
                 {status === "error" || error ? (
                     <div className="border border-red-500/30 bg-red-500/10 px-3 py-2 text-[11px] font-semibold text-red-500">
                         {error ?? "Unable to load Inspiration Vault."}
@@ -202,6 +221,7 @@ export function InspirationVaultPanel({ section }: InspirationVaultPanelProps) {
                                                     item={item}
                                                     onToggle={toggleItem}
                                                     onDelete={deleteItem}
+                                                    readOnly={isReadOnlyDemo}
                                                     copied={
                                                         copiedItemId === item.id
                                                     }
@@ -240,12 +260,14 @@ function VaultItemRow({
     item,
     onToggle,
     onDelete,
+    readOnly,
     copied,
     onCopied,
 }: {
     item: InspirationVaultItem;
     onToggle: (itemId: string, exploited: boolean) => Promise<void>;
     onDelete: (itemId: string) => Promise<void>;
+    readOnly: boolean;
     copied: boolean;
     onCopied: (itemId: string) => void;
 }) {
@@ -308,10 +330,11 @@ function VaultItemRow({
                     <input
                         type="checkbox"
                         checked={item.exploited}
+                        disabled={readOnly}
                         onChange={(event) =>
                             void onToggle(item.id, event.target.checked)
                         }
-                        className="h-3.5 w-3.5 accent-[var(--color-accent)]"
+                        className="h-3.5 w-3.5 accent-[var(--color-accent)] disabled:cursor-not-allowed"
                     />
                     Exploited
                 </label>
@@ -321,6 +344,7 @@ function VaultItemRow({
                     <button
                         type="button"
                         onClick={() => void onDelete(item.id)}
+                        disabled={readOnly}
                         className="inline-flex items-center gap-1 border border-main bg-main px-2 py-1 text-[10px] font-semibold text-muted hover:bg-secondary hover:text-main"
                     >
                         <Trash2 className="h-3 w-3" />

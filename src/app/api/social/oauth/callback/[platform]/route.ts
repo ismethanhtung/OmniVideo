@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
+import { requireWriteAccess } from "@/lib/access-control/route-guards";
 import { refreshFacebookPagesForAccount } from "@/lib/social/facebook-auth";
 import { exchangeOAuthCode, getSocialOAuthConfig } from "@/lib/social/oauth";
 import {
@@ -29,6 +30,9 @@ export async function GET(
   request: Request,
   context: { params: Promise<{ platform: string }> },
 ) {
+  const accessDenied = requireWriteAccess(request);
+  if (accessDenied) return accessDenied;
+
   const { platform: rawPlatform } = await context.params;
   const url = new URL(request.url);
   const code = url.searchParams.get("code");

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { requireWriteAccess } from "@/lib/access-control/route-guards";
 import {
   deleteAiProvider,
   getAiProviderById,
@@ -50,6 +51,9 @@ export async function PATCH(
   context: { params: Promise<{ providerId: string }> },
 ) {
   try {
+    const accessDenied = requireWriteAccess(request);
+    if (accessDenied) return accessDenied;
+
     const payload = await request.json();
     const patch = validateAiProviderUpdateInput(payload);
     const { providerId } = await context.params;
@@ -80,10 +84,13 @@ export async function PATCH(
 }
 
 export async function DELETE(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ providerId: string }> },
 ) {
   try {
+    const accessDenied = requireWriteAccess(request);
+    if (accessDenied) return accessDenied;
+
     const { providerId } = await context.params;
     const db = await getAiProvidersDb();
     const deleted = await deleteAiProvider({ db, providerId });

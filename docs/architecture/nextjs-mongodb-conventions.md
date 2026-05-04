@@ -54,13 +54,20 @@ src/modules/<domain>/
 2. Use-case chính phải emit run events.
 3. Integration calls phải đo latency.
 
-## 8. Testing Convention
+## 8. Public Demo Access Convention
+
+1. Public/demo restrictions phải đặt ở API route/server-side guard, không chỉ disable UI.
+2. Các route ghi DB/secrets/provider/social/storage phải gọi write guard trước khi parse/execute mutation.
+3. Các route demo được phép chạy AI/CPU-heavy phải gọi rate-limit guard trước khi xử lý payload nặng.
+4. Public demo requests không được dùng saved provider accounts trừ khi request có owner token hợp lệ.
+
+## 9. Testing Convention
 
 1. Unit test cho domain/application logic.
 2. Integration test cho repository/adapters.
 3. Smoke test cho API routes quan trọng.
 
-## 9. Config Convention
+## 10. Config Convention
 
 1. Env vars validate tại startup.
 2. Group config theo domain (`db`, `queue`, `providers`, `storage`, `social`).

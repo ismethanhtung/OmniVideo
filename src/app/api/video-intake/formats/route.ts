@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { requireWriteAccess } from "@/lib/access-control/route-guards";
 import { listMediaFormatsInternal } from "@/lib/video-intake/internal-resolver";
 import { normalizeUrl } from "@/lib/video-intake/platform";
 import type { IntakeQualityPreference } from "@/lib/video-intake/types";
@@ -16,6 +17,9 @@ const SUPPORTED_QUALITY_PREFERENCES = new Set<IntakeQualityPreference>([
 
 export async function POST(request: Request) {
   try {
+    const accessDenied = requireWriteAccess(request);
+    if (accessDenied) return accessDenied;
+
     const payload = (await request.json()) as {
       sourceUrl?: unknown;
       qualityPreference?: unknown;

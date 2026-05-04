@@ -67,6 +67,7 @@ Mọi log sự kiện run/step cần có:
 2. High: fail rate > ngưỡng, provider chính unavailable > N phút.
 3. Medium: latency tăng bất thường.
 4. Low: warning về quota approaching.
+5. Low: public demo clients repeatedly hitting `DEMO_WRITE_DISABLED` or `DEMO_RATE_LIMITED`.
 
 ## 8. Instrumentation Rule
 

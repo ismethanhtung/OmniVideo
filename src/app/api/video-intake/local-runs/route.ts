@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { requireWriteAccess } from "@/lib/access-control/route-guards";
 import { getIntakeDb, listIntakeJobRuns } from "@/lib/video-intake/repository";
 import { runLocalFileIntakePipeline } from "@/lib/video-intake/local-runner";
 import type { LocalIntakeInput } from "@/lib/video-intake/types";
@@ -90,6 +91,9 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const accessDenied = requireWriteAccess(request);
+    if (accessDenied) return accessDenied;
+
     const formData = await request.formData();
     const file = formData.get("videoFile");
 

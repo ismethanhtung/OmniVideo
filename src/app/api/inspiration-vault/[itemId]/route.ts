@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { requireWriteAccess } from "@/lib/access-control/route-guards";
 import { isValidInspirationVaultItemId } from "@/lib/inspiration-vault/inspiration-vault";
 import {
     deleteInspirationVaultItemById,
@@ -28,6 +29,9 @@ function invalidItemIdResponse() {
 
 export async function PATCH(request: Request, context: RouteContext) {
     try {
+        const accessDenied = requireWriteAccess(request);
+        if (accessDenied) return accessDenied;
+
         const { itemId } = await context.params;
 
         if (!isValidInspirationVaultItemId(itemId)) {
@@ -84,8 +88,11 @@ export async function PATCH(request: Request, context: RouteContext) {
     }
 }
 
-export async function DELETE(_request: Request, context: RouteContext) {
+export async function DELETE(request: Request, context: RouteContext) {
     try {
+        const accessDenied = requireWriteAccess(request);
+        if (accessDenied) return accessDenied;
+
         const { itemId } = await context.params;
 
         if (!isValidInspirationVaultItemId(itemId)) {

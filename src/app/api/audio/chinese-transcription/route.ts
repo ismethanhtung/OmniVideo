@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { applyDemoRateLimit } from "@/lib/access-control/route-guards";
 import { runChineseVideoTranscription } from "@/lib/multilingual-audio/chinese-transcription";
 import { ChineseTranscriptionError } from "@/lib/multilingual-audio/types";
 
@@ -12,6 +13,9 @@ function readFormValue(formData: FormData, key: string) {
 
 export async function POST(request: Request) {
     try {
+        const rateLimited = applyDemoRateLimit(request, "audio-transcription");
+        if (rateLimited) return rateLimited;
+
         const formData = await request.formData();
         const file = formData.get("videoFile");
         const assetId = readFormValue(formData, "assetId").trim();

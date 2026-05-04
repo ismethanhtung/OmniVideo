@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
+import { requireWriteAccess } from "@/lib/access-control/route-guards";
 import {
   buildDriveAuthorizationUrl,
   createDriveOAuthState,
@@ -12,6 +13,9 @@ export const runtime = "nodejs";
 
 export async function GET(request: Request) {
   try {
+    const accessDenied = requireWriteAccess(request);
+    if (accessDenied) return accessDenied;
+
     const requestOrigin = new URL(request.url).origin;
     const explicitBaseUrl =
       process.env.STORAGE_OAUTH_BASE_URL?.trim() ||

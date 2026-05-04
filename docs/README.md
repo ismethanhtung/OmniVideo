@@ -53,6 +53,7 @@ Tài liệu chính thức cho repo OmniVideo (single-user system), định hư�
 - `docs/operations/incident-playbook.md`: playbook xử lý sự cố.
 - `docs/operations/tutorial-docs.md`: hướng dẫn tích hợp dài cho OAuth/social publish và troubleshooting.
 - `docs/operations/test-execution-playbook.md`: playbook chạy test và xử lý lỗi test.
+- `docs/operations/public-demo-mode.md`: public read-only demo mode, owner access, and demo rate limits.
 
 ### Governance
 

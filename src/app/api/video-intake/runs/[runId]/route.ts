@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { requireWriteAccess } from "@/lib/access-control/route-guards";
 import {
   deleteUrlIntakeJobRunById,
   getIntakeDb,
@@ -63,10 +64,13 @@ export async function GET(
 }
 
 export async function DELETE(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ runId: string }> },
 ) {
   try {
+    const accessDenied = requireWriteAccess(request);
+    if (accessDenied) return accessDenied;
+
     const { runId } = await context.params;
     const db = await getIntakeDb();
     const deleted = await deleteUrlIntakeJobRunById({ db, runId });

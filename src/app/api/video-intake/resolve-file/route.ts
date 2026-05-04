@@ -3,6 +3,7 @@ import { Readable } from "node:stream";
 
 import { NextResponse } from "next/server";
 
+import { requireWriteAccess } from "@/lib/access-control/route-guards";
 import { downloadResolvedMediaToTempFile } from "@/lib/video-intake/internal-resolver";
 import { resolveMediaUrl } from "@/lib/video-intake/media-resolver";
 import { detectOriginPlatform, normalizeUrl } from "@/lib/video-intake/platform";
@@ -88,6 +89,9 @@ function streamFileWithCleanup(filePath: string, cleanup: () => Promise<void>) {
 
 export async function POST(request: Request) {
     try {
+        const accessDenied = requireWriteAccess(request);
+        if (accessDenied) return accessDenied;
+
         const rawBody = (await request.json()) as unknown;
         const body = readBody(rawBody);
         const canonicalUrl = normalizeUrl(body.sourceUrl);

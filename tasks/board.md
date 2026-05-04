@@ -36,6 +36,7 @@
 
 ## Done
 
+- `FAST-ACCESS-001` - Public demo access guard and AI rate limits.
 - `FAST-SOURCE-002` - Move Inspiration Vault persistence to MongoDB.
 - `FAST-OPS-003` - Fix Vercel runtime ERR_REQUIRE_ESM by removing package type module.
 - `FAST-REL-001` - Release OmniVideo 0.3.0.

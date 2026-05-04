@@ -7,6 +7,7 @@ import { randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 
+import { applyDemoRateLimit } from "@/lib/access-control/route-guards";
 import {
     VideoEditError,
     runVideoEditPipeline,
@@ -164,6 +165,9 @@ function buildBinaryHeaders(
 export async function POST(request: Request) {
     let uploadedWorkDir = "";
     try {
+        const rateLimited = applyDemoRateLimit(request, "video-edit");
+        if (rateLimited) return rateLimited;
+
         const formData = await request.formData();
         const file = formData.get("videoFile");
 

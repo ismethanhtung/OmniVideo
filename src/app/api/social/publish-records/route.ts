@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { requireWriteAccess } from "@/lib/access-control/route-guards";
 import {
   createPublishRecord,
   deleteFailedPublishRecords,
@@ -97,6 +98,9 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const accessDenied = requireWriteAccess(request);
+    if (accessDenied) return accessDenied;
+
     const payload = await request.json();
     const input = validatePublishRecordCreateInput(payload);
     const db = await getSocialDb();
@@ -141,6 +145,9 @@ export async function POST(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
+    const accessDenied = requireWriteAccess(request);
+    if (accessDenied) return accessDenied;
+
     const url = new URL(request.url);
     const status = url.searchParams.get("status");
     if (status !== "failed") {

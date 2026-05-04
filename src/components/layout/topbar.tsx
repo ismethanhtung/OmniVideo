@@ -22,6 +22,8 @@ import {
 
 import { getNavItem } from "@/components/layout/navigation";
 import type { AppSectionId } from "@/components/layout/types";
+import type { AppAccessState } from "@/lib/access-control/access-control";
+import { fetchAppAccessState } from "@/lib/access-control/client";
 import {
     clearFinishedProgressTasks,
     dismissProgressTask,
@@ -50,9 +52,11 @@ export function Topbar({
     const currentSection = getNavItem(activeSection);
     const [showProgress, setShowProgress] = useState(false);
     const [showSystemSnapshot, setShowSystemSnapshot] = useState(false);
+    const [showOwnerAccess, setShowOwnerAccess] = useState(false);
+    const [appAccess, setAppAccess] = useState<AppAccessState | null>(null);
     const [quickCapture, setQuickCapture] = useState("");
     const [quickCaptureStatus, setQuickCaptureStatus] = useState<
-        "idle" | "saving" | "saved" | "empty" | "error"
+        "idle" | "saving" | "saved" | "empty" | "error" | "readonly"
     >("idle");
     const progressTasks = useSyncExternalStore(
         subscribeProgressTasks,
@@ -66,8 +70,28 @@ export function Topbar({
             ).length,
         [progressTasks],
     );
+    const isReadOnlyDemo = Boolean(
+        appAccess?.isPublicDemo && !appAccess.isOwner,
+    );
+
+    const loadAppAccess = useCallback(async () => {
+        try {
+            setAppAccess(await fetchAppAccessState());
+        } catch {
+            setAppAccess(null);
+        }
+    }, []);
+
+    useEffect(() => {
+        void loadAppAccess();
+    }, [loadAppAccess]);
 
     const submitQuickCapture = async () => {
+        if (isReadOnlyDemo) {
+            setQuickCaptureStatus("readonly");
+            return;
+        }
+
         if (!quickCapture.trim()) {
             setQuickCaptureStatus("empty");
             return;
@@ -123,16 +147,29 @@ export function Topbar({
                                     ? "Saved to Inspiration Vault"
                                     : quickCaptureStatus === "saving"
                                       ? "Saving..."
+                                      : quickCaptureStatus === "readonly"
+                                        ? "Read-only in public demo"
                                     : quickCaptureStatus === "empty"
                                       ? "Paste link or keyword first"
                                       : quickCaptureStatus === "error"
                                         ? "Could not save"
                                       : "Capture link / keyword..."
                             }
+                            disabled={isReadOnlyDemo}
                             className="h-7 w-full border border-main bg-secondary/45 pl-7 pr-2 text-[11px] font-medium text-main placeholder:text-muted/60 focus:border-accent/40 focus:outline-none focus:ring-1 focus:ring-accent/25"
                         />
                     </div>
                 </form>
+                {appAccess?.isPublicDemo ? (
+                    <button
+                        type="button"
+                        onClick={() => setShowOwnerAccess(true)}
+                        className="inline-flex shrink-0 items-center gap-1.5 border border-main bg-main px-2.5 py-1 text-[11px] font-semibold text-main transition-colors hover:bg-secondary"
+                        aria-label="Open owner access"
+                    >
+                        {appAccess.isOwner ? "Owner" : "Demo"}
+                    </button>
+                ) : null}
                 <button
                     type="button"
                     onClick={() => setShowProgress(true)}
@@ -188,7 +225,111 @@ export function Topbar({
                     onClose={() => setShowSystemSnapshot(false)}
                 />
             ) : null}
+            {showOwnerAccess ? (
+                <OwnerAccessModal
+                    access={appAccess}
+                    onClose={() => setShowOwnerAccess(false)}
+                    onAccessChanged={() => void loadAppAccess()}
+                />
+            ) : null}
         </header>
+    );
+}
+
+function OwnerAccessModal({
+    access,
+    onClose,
+    onAccessChanged,
+}: {
+    access: AppAccessState | null;
+    onClose: () => void;
+    onAccessChanged: () => void;
+}) {
+    const [token, setToken] = useState("");
+    const [status, setStatus] = useState<"idle" | "saving" | "error">("idle");
+
+    const submitOwnerToken = async () => {
+        setStatus("saving");
+        const response = await fetch("/api/app/access", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ token }),
+        });
+
+        if (!response.ok) {
+            setStatus("error");
+            return;
+        }
+
+        setStatus("idle");
+        setToken("");
+        onAccessChanged();
+    };
+
+    const clearOwnerToken = async () => {
+        await fetch("/api/app/access", { method: "DELETE" });
+        onAccessChanged();
+    };
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-start justify-end bg-black/20 p-4">
+            <div className="w-full max-w-sm border border-main bg-main p-4 shadow-xl">
+                <div className="mb-3 flex items-start justify-between gap-3">
+                    <div>
+                        <p className="text-[13px] font-semibold text-main">
+                            Owner Access
+                        </p>
+                        <p className="mt-1 text-[11px] text-muted">
+                            {access?.isOwner
+                                ? "Owner mode is active for this browser."
+                                : "Public demo is read-only until owner access is unlocked."}
+                        </p>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="border border-main bg-main px-2 py-1 text-[11px] font-semibold text-muted hover:bg-secondary hover:text-main"
+                    >
+                        Close
+                    </button>
+                </div>
+                {access?.isOwner ? (
+                    <button
+                        type="button"
+                        onClick={() => void clearOwnerToken()}
+                        className="w-full border border-main bg-secondary px-3 py-2 text-[12px] font-semibold text-main hover:bg-secondary/75"
+                    >
+                        Lock owner access
+                    </button>
+                ) : (
+                    <div className="space-y-2">
+                        <input
+                            type="password"
+                            value={token}
+                            onChange={(event) => {
+                                setToken(event.target.value);
+                                setStatus("idle");
+                            }}
+                            placeholder="Owner token"
+                            className="h-9 w-full border border-main bg-secondary/45 px-3 text-[12px] font-medium text-main placeholder:text-muted/60 focus:border-accent/40 focus:outline-none focus:ring-1 focus:ring-accent/25"
+                        />
+                        {status === "error" ? (
+                            <p className="text-[11px] font-semibold text-red-500">
+                                Invalid owner token.
+                            </p>
+                        ) : null}
+                        <button
+                            type="button"
+                            onClick={() => void submitOwnerToken()}
+                            disabled={!token.trim() || status === "saving"}
+                            className="w-full border border-main bg-secondary px-3 py-2 text-[12px] font-semibold text-main hover:bg-secondary/75 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                            {status === "saving" ? "Unlocking..." : "Unlock"}
+                        </button>
+                    </div>
+                )}
+            </div>
+        </div>
     );
 }
 

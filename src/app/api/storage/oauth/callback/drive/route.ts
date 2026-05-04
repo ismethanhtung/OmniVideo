@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
+import { requireWriteAccess } from "@/lib/access-control/route-guards";
 import { exchangeDriveOAuthCode } from "@/lib/storage/drive-oauth";
 
 export const runtime = "nodejs";
@@ -54,6 +55,9 @@ function renderCallbackHtml({
 }
 
 export async function GET(request: Request) {
+  const accessDenied = requireWriteAccess(request);
+  if (accessDenied) return accessDenied;
+
   const url = new URL(request.url);
   const requestOrigin = url.origin;
   const explicitBaseUrl =

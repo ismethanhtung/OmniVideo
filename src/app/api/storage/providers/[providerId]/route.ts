@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { requireWriteAccess } from "@/lib/access-control/route-guards";
 import {
   deleteStorageProviderAccount,
   getStorageProviderAccountById,
@@ -56,6 +57,9 @@ export async function PATCH(
   context: { params: Promise<{ providerId: string }> },
 ) {
   try {
+    const accessDenied = requireWriteAccess(request);
+    if (accessDenied) return accessDenied;
+
     const payload = await request.json();
     const patch = validateStorageProviderUpdateInput(payload);
     const { providerId } = await context.params;
@@ -93,10 +97,13 @@ export async function PATCH(
 }
 
 export async function DELETE(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ providerId: string }> },
 ) {
   try {
+    const accessDenied = requireWriteAccess(request);
+    if (accessDenied) return accessDenied;
+
     const { providerId } = await context.params;
     const db = await getStorageProvidersDb();
     const deleted = await deleteStorageProviderAccount({ db, providerId });

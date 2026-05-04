@@ -1,5 +1,16 @@
 # OmniVideo Changelog
 
+## FAST-ACCESS-001 - Public Demo Access Guard and AI Rate Limits
+
+- Thêm `public-demo` mode qua `OMNIVIDEO_APP_MODE=public-demo` để public visitors chỉ view/read-only theo mặc định.
+- Thêm owner access endpoint `GET/POST/DELETE /api/app/access`, HTTP-only owner cookie, và header bypass `x-omnivideo-owner-token`.
+- Gắn server-side write guard cho các route ghi DB/secrets/provider/social/storage/video-intake/Inspiration Vault; public write attempts trả `DEMO_WRITE_DISABLED`.
+- Cho phép một số API demo/stateless như audio transcription, voice/Piper, video dubbing, metadata, mirror/edit chạy trong public-demo với fixed-window rate limit per IP/feature.
+- Chặn public demo requests dùng saved AI provider account để tránh đụng provider secrets và usage tracking DB.
+- Thêm UI hint/unlock owner access ở topbar và disable mutation controls trong Inspiration Vault khi đang public-demo read-only.
+- Cập nhật docs `docs/operations/public-demo-mode.md` và architecture conventions cho public demo access guard.
+- Verification (FAST-ACCESS-001): `npm test` pass (81 files / 360 tests); `npm run build` pass với warning cũ ngoài scope ở `next.config.ts` import trace từ `video-processing/edit`.
+
 ## FAST-SOURCE-002 - Move Inspiration Vault Persistence to MongoDB
 
 - Chuyển Inspiration Vault từ browser `localStorage` sang API backed by MongoDB collection `inspiration_vault_items`.

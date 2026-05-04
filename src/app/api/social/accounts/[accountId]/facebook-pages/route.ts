@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { requireWriteAccess } from "@/lib/access-control/route-guards";
 import {
   listFacebookPagesForAccount,
   refreshFacebookPagesForAccount,
@@ -62,10 +63,13 @@ export async function GET(
 }
 
 export async function POST(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ accountId: string }> },
 ) {
   try {
+    const accessDenied = requireWriteAccess(request);
+    if (accessDenied) return accessDenied;
+
     const { accountId } = await context.params;
     const db = await getSocialDb();
     const account = await getSocialAccountById({ db, accountId });

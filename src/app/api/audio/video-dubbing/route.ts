@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 
+import {
+  applyDemoRateLimit,
+  requireOwnerForProviderAccount,
+} from "@/lib/access-control/route-guards";
 import { resolveAssetDownload } from "@/lib/storage/asset-download";
 import { runVideoDubbing } from "@/lib/multilingual-audio/video-dubbing";
 import {
@@ -69,10 +73,18 @@ async function readStorageAssetVideo(assetId: string) {
 
 export async function POST(request: Request) {
   try {
+    const rateLimited = applyDemoRateLimit(request, "video-dubbing");
+    if (rateLimited) return rateLimited;
+
     const formData = await request.formData();
     const file = formData.get("videoFile");
     const assetId = readFormValue(formData, "assetId").trim();
     const providerId = readFormValue(formData, "providerId").trim();
+    const providerAccessDenied = requireOwnerForProviderAccount(
+      request,
+      providerId,
+    );
+    if (providerAccessDenied) return providerAccessDenied;
     let source:
       | {
           fileName: string;

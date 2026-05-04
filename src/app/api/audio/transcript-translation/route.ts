@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 
+import {
+  applyDemoRateLimit,
+  requireOwnerForProviderAccount,
+} from "@/lib/access-control/route-guards";
 import { translateTranscriptSegments } from "@/lib/multilingual-audio/transcript-translation";
 import { ChineseTranscriptionError } from "@/lib/multilingual-audio/types";
 import type { AudioTranscriptSegment } from "@/lib/multilingual-audio/types";
@@ -8,6 +12,9 @@ export const runtime = "nodejs";
 
 export async function POST(request: Request) {
   try {
+    const rateLimited = applyDemoRateLimit(request, "transcript-translation");
+    if (rateLimited) return rateLimited;
+
     const payload = (await request.json()) as {
       segments?: AudioTranscriptSegment[];
       sourceLanguage?: string;
@@ -20,6 +27,11 @@ export async function POST(request: Request) {
     let baseUrl: string | undefined;
     let providerName: string | undefined;
     const providerId = payload.providerId?.trim();
+    const providerAccessDenied = requireOwnerForProviderAccount(
+      request,
+      providerId,
+    );
+    if (providerAccessDenied) return providerAccessDenied;
 
     if (providerId) {
       const { getAiProviderById, getAiProvidersDb } = await import(

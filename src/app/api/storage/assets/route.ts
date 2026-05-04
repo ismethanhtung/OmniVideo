@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { requireWriteAccess } from "@/lib/access-control/route-guards";
 import {
   createManualVideoAsset,
   getIntakeDb,
@@ -48,6 +49,9 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const accessDenied = requireWriteAccess(request);
+    if (accessDenied) return accessDenied;
+
     const payload = (await request.json()) as Record<string, unknown>;
     const title =
       typeof payload.title === "string" ? payload.title.trim() : "";

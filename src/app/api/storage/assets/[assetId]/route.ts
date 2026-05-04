@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { requireWriteAccess } from "@/lib/access-control/route-guards";
 import {
   deleteVideoAssetById,
   getIntakeDb,
@@ -9,10 +10,13 @@ import {
 export const runtime = "nodejs";
 
 export async function DELETE(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ assetId: string }> },
 ) {
   try {
+    const accessDenied = requireWriteAccess(request);
+    if (accessDenied) return accessDenied;
+
     const { assetId } = await params;
     const db = await getIntakeDb();
     const deleted = await deleteVideoAssetById({ db, assetId });
@@ -53,6 +57,9 @@ export async function PATCH(
   { params }: { params: Promise<{ assetId: string }> },
 ) {
   try {
+    const accessDenied = requireWriteAccess(request);
+    if (accessDenied) return accessDenied;
+
     const { assetId } = await params;
     const payload = (await request.json()) as {
       metadata?: {

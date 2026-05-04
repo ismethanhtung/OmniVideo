@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { requireWriteAccess } from "@/lib/access-control/route-guards";
 import { fetchProviderModels } from "@/lib/ai-providers/client";
 import {
   getAiProviderById,
@@ -10,10 +11,13 @@ import { AiProviderError } from "@/lib/ai-providers/types";
 export const runtime = "nodejs";
 
 export async function GET(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ providerId: string }> },
 ) {
   try {
+    const accessDenied = requireWriteAccess(request);
+    if (accessDenied) return accessDenied;
+
     const { providerId } = await context.params;
     const db = await getAiProvidersDb();
     const provider = await getAiProviderById({ db, providerId });

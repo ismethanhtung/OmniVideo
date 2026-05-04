@@ -16,6 +16,7 @@ Tài liệu này là bản tổng hợp chuẩn, đầy đủ và dùng làm "si
 3. Quản lý tập trung tài nguyên AI/social/storage.
 4. Quan sát vận hành và lỗi tập trung qua observability + connection center.
 5. Tạo nền tảng mở để tiến lên workspace kéo-thả dạng n8n-like.
+6. Public demo read-only để người ngoài xem và thử tính năng an toàn trong khi owner vẫn dùng bình thường.
 
 ## 3. Biên giới scope hiện tại
 
@@ -48,6 +49,7 @@ Tài liệu này là bản tổng hợp chuẩn, đầy đủ và dùng làm "si
 3. Worker services.
 4. MongoDB.
 5. Binary storage providers.
+6. Access guard layer cho `owner` / `public-demo`.
 
 ## 5. Mô hình dữ liệu lõi (MongoDB)
 
@@ -101,6 +103,7 @@ Nguyên tắc dữ liệu:
 1. Observability: metrics/logs/traces theo run/step/provider/system.
 2. Connection Center: kiểm tra trạng thái DB/provider/storage/social.
 3. Incident Playbook: quy trình detect/triage/mitigate/recover/postmortem.
+4. Public Demo Mode: server-side guard chặn DB mutations, owner token bypass, và rate limit các API demo AI/stateless.
 
 ## 9. Governance framework
 
@@ -185,6 +188,7 @@ Nguyên tắc dữ liệu:
 2. `docs/operations/connection-management.md`
 3. `docs/operations/incident-playbook.md`
 4. `docs/operations/test-execution-playbook.md`
+5. `docs/operations/public-demo-mode.md`
 
 ### Governance
 

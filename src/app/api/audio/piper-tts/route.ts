@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { applyDemoRateLimit } from "@/lib/access-control/route-guards";
 import { generatePiperSpeech } from "@/lib/multilingual-audio/piper-tts";
 import { ChineseTranscriptionError } from "@/lib/multilingual-audio/types";
 
@@ -7,6 +8,9 @@ export const runtime = "nodejs";
 
 export async function POST(request: Request) {
   try {
+    const rateLimited = applyDemoRateLimit(request, "piper-tts");
+    if (rateLimited) return rateLimited;
+
     const payload = await request.json();
     const result = await generatePiperSpeech({
       text: payload.text ?? "",

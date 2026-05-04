@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { requireWriteAccess } from "@/lib/access-control/route-guards";
 import { chatCompletion } from "@/lib/ai-providers/client";
 import {
   extractAssistantCompletionText,
@@ -22,6 +23,9 @@ export async function POST(
   context: { params: Promise<{ providerId: string }> },
 ) {
   try {
+    const accessDenied = requireWriteAccess(request);
+    if (accessDenied) return accessDenied;
+
     const { providerId } = await context.params;
     const json = (await request.json().catch(() => null)) as unknown;
     const { model, messages, temperature } = parseChatCompletionTestBody(json);

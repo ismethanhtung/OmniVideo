@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { applyDemoRateLimit } from "@/lib/access-control/route-guards";
 import {
     MirrorVideoError,
     runMirrorVideo,
@@ -14,6 +15,9 @@ function readFormValue(formData: FormData, key: string) {
 
 export async function POST(request: Request) {
     try {
+        const rateLimited = applyDemoRateLimit(request, "video-mirror");
+        if (rateLimited) return rateLimited;
+
         const formData = await request.formData();
         const file = formData.get("videoFile");
 

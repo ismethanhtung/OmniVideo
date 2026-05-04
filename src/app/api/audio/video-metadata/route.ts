@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 
+import {
+  applyDemoRateLimit,
+  requireOwnerForProviderAccount,
+} from "@/lib/access-control/route-guards";
 import { generateVietnameseVideoMetadata } from "@/lib/multilingual-audio/video-metadata";
 import { ChineseTranscriptionError, type TranscriptTranslationSegment } from "@/lib/multilingual-audio/types";
 
@@ -7,6 +11,9 @@ export const runtime = "nodejs";
 
 export async function POST(request: Request) {
   try {
+    const rateLimited = applyDemoRateLimit(request, "video-metadata");
+    if (rateLimited) return rateLimited;
+
     const payload = (await request.json()) as {
       translatedSegments?: TranscriptTranslationSegment[];
       sourceTitle?: string;
@@ -19,6 +26,11 @@ export async function POST(request: Request) {
     let baseUrl: string | undefined;
     let providerName: string | undefined;
     const providerId = payload.providerId?.trim();
+    const providerAccessDenied = requireOwnerForProviderAccount(
+      request,
+      providerId,
+    );
+    if (providerAccessDenied) return providerAccessDenied;
 
     if (providerId) {
       const { getAiProviderById, getAiProvidersDb } = await import("@/lib/ai-providers/repository");
