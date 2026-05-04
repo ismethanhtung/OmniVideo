@@ -2,8 +2,6 @@ import { Db, MongoClient } from "mongodb";
 
 import { getAppEnv } from "@/lib/config/env";
 
-const { MONGODB_URI, MONGODB_DB_NAME } = getAppEnv();
-
 const mongoClientOptions = {
   maxPoolSize: 10,
 };
@@ -13,6 +11,7 @@ declare global {
 }
 
 function createMongoClientPromise(): Promise<MongoClient> {
+  const { MONGODB_URI } = getAppEnv();
   const client = new MongoClient(MONGODB_URI, mongoClientOptions);
   return client.connect();
 }
@@ -29,6 +28,7 @@ export async function getMongoClient(): Promise<MongoClient> {
 }
 
 export async function getMongoDb(): Promise<Db> {
+  const { MONGODB_DB_NAME } = getAppEnv();
   const client = await getMongoClient();
   return client.db(MONGODB_DB_NAME);
 }
