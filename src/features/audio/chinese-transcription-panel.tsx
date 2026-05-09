@@ -32,6 +32,7 @@ import {
     serializeTranscriptSession,
     TRANSCRIPT_SESSION_STORAGE_KEY,
 } from "@/lib/multilingual-audio/transcript-session";
+import { buildWordAwareVoiceSegments } from "@/lib/multilingual-audio/voice-segment-timing";
 import {
     finishProgressTask,
     startProgressTask,
@@ -138,7 +139,7 @@ function formatDurationMs(ms: number) {
 
 function formatSpeedFactor(value: number) {
     if (!Number.isFinite(value)) return "n/a";
-    return `${value.toFixed(2)}x`;
+    return `${Math.max(1.25, value).toFixed(2)}x`;
 }
 
 function parseHashtagInput(value: string) {
@@ -155,7 +156,7 @@ function stepTone(status: AudioTranscriptionStep["status"]) {
 }
 
 const PIPER_TTS_SETUP_ROWS = [
-    ["Alignment mode", DEFAULT_PIPER_TTS_SETTINGS.alignmentMode],
+    ["Audio Transcript mode", "strict timestamp sync"],
     [
         "Preserve timing",
         String(DEFAULT_PIPER_TTS_SETTINGS.preserveTimestampGaps),
@@ -195,7 +196,7 @@ const PIPER_TTS_SETUP_ROWS = [
 ] as const;
 
 function StepTracePanel({ steps }: { steps: AudioTranscriptionStep[] }) {
-    const [collapsed, setCollapsed] = useState(false);
+    const [collapsed, setCollapsed] = useState(true);
     if (steps.length === 0) return null;
 
     return (
@@ -347,10 +348,16 @@ export function ChineseTranscriptionPanel({
         "json" | "text" | null
     >(null);
     const [isHydrated, setIsHydrated] = useState(false);
-    const [isTranscriptCollapsed, setIsTranscriptCollapsed] = useState(false);
+    const [isTranscriptCollapsed, setIsTranscriptCollapsed] = useState(true);
+    const [isWordsCollapsed, setIsWordsCollapsed] = useState(true);
     const [isDubPreviewPaused, setIsDubPreviewPaused] = useState(false);
+    const [activeVoiceSegmentId, setActiveVoiceSegmentId] = useState<
+        number | null
+    >(null);
     const videoPreviewRef = useRef<HTMLVideoElement | null>(null);
     const voicePreviewRef = useRef<HTMLAudioElement | null>(null);
+    const segmentsScrollRef = useRef<HTMLDivElement | null>(null);
+    const segmentRefs = useRef(new Map<number, HTMLDivElement>());
 
     useEffect(() => {
         fetch("/api/ai-providers")
@@ -677,12 +684,10 @@ export function ChineseTranscriptionPanel({
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                    segments: translation.translatedSegments.map((segment) => ({
-                        id: segment.id,
-                        start: segment.start,
-                        end: segment.end,
-                        text: segment.translatedText,
-                    })),
+                    segments: buildWordAwareVoiceSegments({
+                        translatedSegments: translation.translatedSegments,
+                        words: result?.words ?? [],
+                    }),
                     settings: {
                         binaryPath: ttsBinaryPath,
                         modelPath: ttsModelPath,
@@ -693,7 +698,7 @@ export function ChineseTranscriptionPanel({
                         noiseW: ttsNoiseW,
                         sentenceSilence: ttsSentenceSilence,
                         preserveTimestampGaps: ttsPreserveTimestampGaps,
-                        alignmentMode: "balanced",
+                        alignmentMode: "strict",
                     },
                 }),
             });
@@ -844,6 +849,16 @@ export function ChineseTranscriptionPanel({
         ? `data:${voiceResult.mimeType};base64,${voiceResult.audioBase64}`
         : null;
     const voiceTimelineDiagnostics = voiceResult?.alignment.timeline ?? [];
+    const voiceTimelineBySegmentId = useMemo(
+        () =>
+            new Map(
+                voiceTimelineDiagnostics.map((chunk) => [
+                    chunk.segmentId,
+                    chunk,
+                ]),
+            ),
+        [voiceTimelineDiagnostics],
+    );
     const voiceWarningSegments = voiceTimelineDiagnostics
         .filter(
             (chunk) =>
@@ -894,6 +909,43 @@ export function ChineseTranscriptionPanel({
         if (!file || !sourceVideoPreviewUrl) return;
         return () => URL.revokeObjectURL(sourceVideoPreviewUrl);
     }, [file, sourceVideoPreviewUrl]);
+
+    useEffect(() => {
+        if (activeVoiceSegmentId === null) return;
+        const container = segmentsScrollRef.current;
+        const segmentNode = segmentRefs.current.get(activeVoiceSegmentId);
+        if (!container || !segmentNode) return;
+
+        const containerRect = container.getBoundingClientRect();
+        const segmentRect = segmentNode.getBoundingClientRect();
+        const segmentTop =
+            segmentRect.top - containerRect.top + container.scrollTop;
+        const segmentBottom = segmentTop + segmentRect.height;
+        const containerTop = container.scrollTop;
+        const containerBottom = containerTop + container.clientHeight;
+
+        if (
+            segmentTop < containerTop ||
+            segmentBottom > containerBottom
+        ) {
+            const targetTop = segmentBottom - container.clientHeight;
+            container.scrollTo({
+                top: Math.max(0, targetTop),
+                behavior: "smooth",
+            });
+        }
+    }, [activeVoiceSegmentId]);
+
+    const updateActiveVoiceSegment = (currentTime: number) => {
+        if (voiceTimelineDiagnostics.length === 0) return;
+        const activeChunk =
+            voiceTimelineDiagnostics.find((chunk) => {
+                const start = chunk.scheduledStartSeconds ?? chunk.start;
+                const end = chunk.scheduledEndSeconds ?? chunk.end;
+                return currentTime >= start && currentTime < end;
+            }) ?? null;
+        setActiveVoiceSegmentId(activeChunk?.segmentId ?? null);
+    };
 
     const playDubPreview = async () => {
         const video = videoPreviewRef.current;
@@ -1088,17 +1140,28 @@ export function ChineseTranscriptionPanel({
                                                                             asset.sizeBytes ??
                                                                                 0,
                                                                         ),
-                                                                        asset.metadata
+                                                                        asset
+                                                                            .metadata
                                                                             ?.originPlatform,
-                                                                        asset.metadata
+                                                                        asset
+                                                                            .metadata
                                                                             ?.actualQuality,
                                                                     ]
-                                                                        .filter(Boolean)
-                                                                        .join(" · ")}
+                                                                        .filter(
+                                                                            Boolean,
+                                                                        )
+                                                                        .join(
+                                                                            " · ",
+                                                                        )}
                                                                 </p>
-                                                                {asset.metadata?.sourceUrl ? (
+                                                                {asset.metadata
+                                                                    ?.sourceUrl ? (
                                                                     <p className="mt-1 truncate text-[10px] text-muted">
-                                                                        {asset.metadata.sourceUrl}
+                                                                        {
+                                                                            asset
+                                                                                .metadata
+                                                                                .sourceUrl
+                                                                        }
                                                                     </p>
                                                                 ) : null}
                                                             </button>
@@ -1752,6 +1815,55 @@ export function ChineseTranscriptionPanel({
                                     </div>
                                 ) : null}
                             </div>
+                            {result.words.length > 0 ? (
+                                <div className="border border-main bg-main">
+                                    <div className="flex items-center justify-between border-b border-main bg-secondary/30 px-4 py-2">
+                                        <p className="text-[12px] font-semibold text-main">
+                                            Words
+                                        </p>
+                                        <button
+                                            type="button"
+                                            onClick={() =>
+                                                setIsWordsCollapsed(
+                                                    (previous) => !previous,
+                                                )
+                                            }
+                                            className="inline-flex items-center gap-1 border border-main bg-main px-2 py-1 text-[10px] font-semibold text-main hover:bg-secondary"
+                                        >
+                                            {isWordsCollapsed ? (
+                                                <>
+                                                    <ChevronDown className="h-3.5 w-3.5" />
+                                                    Show
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <ChevronUp className="h-3.5 w-3.5" />
+                                                    Hide
+                                                </>
+                                            )}
+                                        </button>
+                                    </div>
+                                    {!isWordsCollapsed ? (
+                                        <div className="thin-scrollbar max-h-60 overflow-auto p-4">
+                                            <div className="flex flex-wrap gap-1.5">
+                                                {result.words.map(
+                                                    (word, index) => (
+                                                        <span
+                                                            key={`${word.word}-${index}-${word.start}`}
+                                                            title={`${formatTime(word.start)} -> ${formatTime(
+                                                                word.end,
+                                                            )}`}
+                                                            className="border border-main bg-secondary/25 px-2 py-1 text-[11px] text-main"
+                                                        >
+                                                            {word.word}
+                                                        </span>
+                                                    ),
+                                                )}
+                                            </div>
+                                        </div>
+                                    ) : null}
+                                </div>
+                            ) : null}
 
                             <div className="border border-main bg-main">
                                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-main bg-secondary/30 px-4 py-2">
@@ -1794,7 +1906,10 @@ export function ChineseTranscriptionPanel({
                                         </button>
                                     </div>
                                 </div>
-                                <div className="thin-scrollbar max-h-[420px] overflow-auto">
+                                <div
+                                    ref={segmentsScrollRef}
+                                    className="thin-scrollbar max-h-[420px] overflow-auto"
+                                >
                                     {result.segments.map((segment) =>
                                         (() => {
                                             const translated =
@@ -1806,10 +1921,42 @@ export function ChineseTranscriptionPanel({
                                                 translated
                                                     ? translated.translatedText
                                                     : segment.text;
+                                            const voiceChunk =
+                                                voiceTimelineBySegmentId.get(
+                                                    segment.id,
+                                                );
+                                            const hasVoiceResult =
+                                                Boolean(voiceResult);
+                                            const missingGeneratedVoice =
+                                                hasVoiceResult &&
+                                                (!voiceChunk ||
+                                                    (translated &&
+                                                        !translated.translatedText.trim()));
+                                            const isActiveVoiceSegment =
+                                                activeVoiceSegmentId ===
+                                                segment.id;
+                                            const segmentTone =
+                                                missingGeneratedVoice
+                                                    ? "border-rose-500/50 bg-rose-500/10"
+                                                    : isActiveVoiceSegment
+                                                      ? "border-accent bg-accent/10"
+                                                      : "border-main";
                                             return (
                                                 <div
                                                     key={segment.id}
-                                                    className="grid gap-3 border-b border-main px-4 py-3 last:border-b-0 md:grid-cols-[190px_minmax(0,1fr)]"
+                                                    ref={(node) => {
+                                                        if (node) {
+                                                            segmentRefs.current.set(
+                                                                segment.id,
+                                                                node,
+                                                            );
+                                                            return;
+                                                        }
+                                                        segmentRefs.current.delete(
+                                                            segment.id,
+                                                        );
+                                                    }}
+                                                    className={`grid gap-3 border-b px-4 py-3 last:border-b-0 md:grid-cols-[190px_minmax(0,1fr)] ${segmentTone}`}
                                                 >
                                                     <div className="space-y-1">
                                                         <p className="text-[11px] font-bold text-main">
@@ -1825,6 +1972,38 @@ export function ChineseTranscriptionPanel({
                                                                 segment.end,
                                                             )}
                                                         </p>
+                                                        {voiceChunk ? (
+                                                            <div className="mt-1 space-y-1">
+                                                                <p className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700">
+                                                                    <span>
+                                                                        Voice
+                                                                        speed
+                                                                    </span>
+                                                                    <span>
+                                                                        {formatSpeedFactor(
+                                                                            voiceChunk.speedFactor,
+                                                                        )}
+                                                                    </span>
+                                                                </p>
+                                                                <p className="block text-[10px] font-semibold text-green-700">
+                                                                    Voice{" "}
+                                                                    {formatTime(
+                                                                        voiceChunk.scheduledStartSeconds ??
+                                                                            voiceChunk.start,
+                                                                    )}{" "}
+                                                                    →{" "}
+                                                                    {formatTime(
+                                                                        voiceChunk.scheduledEndSeconds ??
+                                                                            voiceChunk.end,
+                                                                    )}
+                                                                </p>
+                                                            </div>
+                                                        ) : hasVoiceResult ? (
+                                                            <p className="text-[10px] font-semibold text-rose-700">
+                                                                Missing
+                                                                generated voice
+                                                            </p>
+                                                        ) : null}
                                                     </div>
                                                     <div className="min-w-0">
                                                         {segmentView ===
@@ -1891,52 +2070,65 @@ export function ChineseTranscriptionPanel({
                                     )}
                                 </div>
                             </div>
-
-                            {result.words.length > 0 ? (
-                                <div className="border border-main bg-main">
-                                    <div className="border-b border-main bg-secondary/30 px-4 py-2">
-                                        <p className="text-[12px] font-semibold text-main">
-                                            Words
-                                        </p>
-                                    </div>
-                                    <div className="thin-scrollbar max-h-60 overflow-auto p-4">
-                                        <div className="flex flex-wrap gap-1.5">
-                                            {result.words.map((word, index) => (
-                                                <span
-                                                    key={`${word.word}-${index}-${word.start}`}
-                                                    title={`${formatTime(word.start)} -> ${formatTime(
-                                                        word.end,
-                                                    )}`}
-                                                    className="border border-main bg-secondary/25 px-2 py-1 text-[11px] text-main"
-                                                >
-                                                    {word.word}
-                                                </span>
-                                            ))}
-                                        </div>
-                                    </div>
-                                </div>
-                            ) : null}
                         </>
                     )}
                     {voiceResult && voiceAudioUrl ? (
                         <div className="grid gap-3 border border-emerald-500/30 bg-emerald-500/10 p-3 lg:grid-cols-2">
                             <div className="space-y-2">
-                                <p className="text-[11px] font-semibold text-emerald-700">Voice ready · {formatBytes(voiceResult.byteLength)} · Created in {formatDurationMs(voiceResult.generationDurationMs)}</p>
-                                <p className="text-[10px] leading-4 text-emerald-700">Piper · {voiceResult.segmentCount} segment(s) · {voiceResult.alignment.mode}{voiceResult.alignment.targetDurationSeconds ? ` · target ${formatTime(voiceResult.alignment.targetDurationSeconds)}` : ""}</p>
+                                <p className="text-[11px] font-semibold text-emerald-700">
+                                    Voice ready ·{" "}
+                                    {formatBytes(voiceResult.byteLength)} ·
+                                    Created in{" "}
+                                    {formatDurationMs(
+                                        voiceResult.generationDurationMs,
+                                    )}
+                                </p>
+                                <p className="text-[10px] leading-4 text-emerald-700">
+                                    Piper · {voiceResult.segmentCount}{" "}
+                                    segment(s) · {voiceResult.alignment.mode}
+                                    {voiceResult.alignment.targetDurationSeconds
+                                        ? ` · target ${formatTime(voiceResult.alignment.targetDurationSeconds)}`
+                                        : ""}
+                                </p>
                                 {voiceTimelineDiagnostics.length > 0 ? (
                                     <div className="space-y-2 border border-emerald-500/25 bg-white/55 p-2 text-[10px] leading-4 text-emerald-800">
                                         <div className="flex flex-wrap items-center gap-2">
-                                            <span className="font-semibold">Speech rate diagnostics</span>
-                                            <span>max {formatSpeedFactor(maxVoiceSpeedFactor ?? 1)}</span>
-                                            <span>borrowed {totalBorrowedGapSeconds.toFixed(2)}s</span>
-                                            <span>warnings {voiceWarningSegments.length}</span>
-                                            <span>slow {voiceSlowSegments.length}</span>
+                                            <span className="font-semibold">
+                                                Speech rate diagnostics
+                                            </span>
+                                            <span>
+                                                max{" "}
+                                                {formatSpeedFactor(
+                                                    maxVoiceSpeedFactor ?? 1,
+                                                )}
+                                            </span>
+                                            <span>
+                                                borrowed{" "}
+                                                {totalBorrowedGapSeconds.toFixed(
+                                                    2,
+                                                )}
+                                                s
+                                            </span>
+                                            <span>
+                                                warnings{" "}
+                                                {voiceWarningSegments.length}
+                                            </span>
+                                            <span>
+                                                slow {voiceSlowSegments.length}
+                                            </span>
                                         </div>
                                         {voiceWarningSegments.length > 0 ? (
                                             <div className="space-y-1 border border-amber-500/30 bg-amber-500/10 p-2 text-amber-800">
                                                 <div className="flex items-start gap-2">
                                                     <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                                                    <p>Một số segment vẫn cần nói nhanh vì bản dịch dài hơn timeline/gap hiện có. Rút gọn text ở các segment này sẽ cho giọng tự nhiên hơn.</p>
+                                                    <p>
+                                                        Một số segment vẫn cần
+                                                        nói nhanh vì bản dịch
+                                                        dài hơn timeline/gap
+                                                        hiện có. Rút gọn text ở
+                                                        các segment này sẽ cho
+                                                        giọng tự nhiên hơn.
+                                                    </p>
                                                 </div>
                                                 <div className="grid gap-1 sm:grid-cols-2">
                                                     {voiceWarningSegments
@@ -1975,27 +2167,78 @@ export function ChineseTranscriptionPanel({
                                         ) : null}
                                     </div>
                                 ) : null}
-                                <audio controls src={voiceAudioUrl} ref={voicePreviewRef} className="w-full" />
+
                                 <div className="flex items-center gap-2 overflow-x-auto whitespace-nowrap">
                                     {sourceVideoPreviewUrl ? (
                                         <>
-                                            <button type="button" onClick={() => { void playDubPreview(); }} className="border border-main bg-main px-2 py-1 text-[10px] font-semibold text-main hover:bg-secondary">Play sync preview</button>
-                                            <button type="button" onClick={() => { void toggleDubPreviewPause(); }} className="border border-main bg-main px-2 py-1 text-[10px] font-semibold text-main hover:bg-secondary">{isDubPreviewPaused ? "Resume" : "Pause"}</button>
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    void playDubPreview();
+                                                }}
+                                                className="border border-main bg-main px-2 py-1 text-[10px] font-semibold text-main hover:bg-secondary"
+                                            >
+                                                Play sync preview
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    void toggleDubPreviewPause();
+                                                }}
+                                                className="border border-main bg-main px-2 py-1 text-[10px] font-semibold text-main hover:bg-secondary"
+                                            >
+                                                {isDubPreviewPaused
+                                                    ? "Resume"
+                                                    : "Pause"}
+                                            </button>
                                         </>
                                     ) : null}
-                                    <a href={voiceAudioUrl} download={voiceResult.fileName} className="inline-flex items-center gap-2 border border-emerald-500/35 bg-main px-2 py-1 text-[10px] font-semibold text-emerald-700 hover:bg-secondary">
+                                    <a
+                                        href={voiceAudioUrl}
+                                        download={voiceResult.fileName}
+                                        className="inline-flex items-center gap-2 border border-emerald-500/35 bg-main px-2 py-1 text-[10px] font-semibold text-emerald-700 hover:bg-secondary"
+                                    >
                                         <Download className="h-3.5 w-3.5" />
                                         Download {voiceResult.extension}
                                     </a>
                                 </div>
                             </div>
                             <div className="space-y-2">
-                                <p className="text-[11px] font-semibold text-main">Dub preview (source video + generated voice)</p>
+                                <p className="text-[11px] font-semibold text-main">
+                                    Dub preview (source video + generated voice)
+                                </p>
                                 {sourceVideoPreviewUrl ? (
-                                    <video ref={videoPreviewRef} controls muted src={sourceVideoPreviewUrl} className="w-full border border-main bg-black" />
+                                    <video
+                                        ref={videoPreviewRef}
+                                        controls
+                                        muted
+                                        src={sourceVideoPreviewUrl}
+                                        className="w-full border border-main bg-black"
+                                    />
                                 ) : (
-                                    <div className="border border-dashed border-main bg-main px-3 py-8 text-[11px] text-muted">No source video preview.</div>
+                                    <div className="border border-dashed border-main bg-main px-3 py-8 text-[11px] text-muted">
+                                        No source video preview.
+                                    </div>
                                 )}
+                                <audio
+                                    controls
+                                    src={voiceAudioUrl}
+                                    ref={voicePreviewRef}
+                                    onTimeUpdate={(event) =>
+                                        updateActiveVoiceSegment(
+                                            event.currentTarget.currentTime,
+                                        )
+                                    }
+                                    onEnded={() =>
+                                        setActiveVoiceSegmentId(null)
+                                    }
+                                    onPause={() => {
+                                        if (voicePreviewRef.current?.ended) {
+                                            setActiveVoiceSegmentId(null);
+                                        }
+                                    }}
+                                    className="w-full"
+                                />
                             </div>
                         </div>
                     ) : null}

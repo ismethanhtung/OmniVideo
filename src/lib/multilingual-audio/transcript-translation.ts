@@ -60,21 +60,36 @@ export function normalizeTranslationPayload(
 
     return sourceSegments.map((sourceSegment) => {
         const translated = translatedById.get(sourceSegment.id);
+        const translatedText =
+            translated?.translatedText ?? translated?.text ?? sourceSegment.text;
         return {
             id: sourceSegment.id,
             start: numberOrFallback(translated?.start, sourceSegment.start),
             end: numberOrFallback(translated?.end, sourceSegment.end),
             sourceText: translated?.sourceText ?? sourceSegment.text,
-            translatedText:
-                translated?.translatedText ??
-                translated?.text ??
-                sourceSegment.text,
+            translatedText: normalizeVietnameseTtsText(translatedText),
         };
     });
 }
 
 function containsCjk(value: string) {
     return /[\u3400-\u9fff\uf900-\ufaff]/u.test(value);
+}
+
+export function normalizeVietnameseTtsText(value: string) {
+    return value
+        .replace(/\bwasabi\b/giu, "wa sa bi")
+        .replace(/\b(\d+(?:[.,]\d+)?)\s*cm\b/giu, "$1 xen ti mét")
+        .replace(/\b(\d+(?:[.,]\d+)?)\s*mm\b/giu, "$1 mi li mét")
+        .replace(/\b(\d+(?:[.,]\d+)?)\s*km\b/giu, "$1 ki lô mét")
+        .replace(/\b(\d+(?:[.,]\d+)?)\s*kg\b/giu, "$1 ki lô gam")
+        .replace(/\b(\d+(?:[.,]\d+)?)\s*ml\b/giu, "$1 mi li lít")
+        .replace(/\b(\d+(?:[.,]\d+)?)\s*g\b/giu, "$1 gam")
+        .replace(/\b(\d+(?:[.,]\d+)?)\s*m\b/giu, "$1 mét")
+        .replace(/\b(\d+(?:[.,]\d+)?)\s*l\b/giu, "$1 lít")
+        .replace(/(\d+(?:[.,]\d+)?)\s*%/gu, "$1 phần trăm")
+        .replace(/\s{2,}/gu, " ")
+        .trim();
 }
 
 function needsTranslationRetry(segment: TranscriptTranslationSegment) {
@@ -155,6 +170,7 @@ function buildTranslationPrompt(input: {
         "For very short segments, use the shortest natural equivalent. Avoid explanatory additions, filler words, and verbose literal phrasing that would force the TTS to speak too fast.",
         "If a literal translation is too long for the duration, compress the wording while preserving the core meaning and tone.",
         "Normalize standalone Arabic numerals into spoken Vietnamese words in translatedText (example: 20 -> hai mươi, 125 -> một trăm hai mươi lăm). Keep numbers as digits only for codes/IDs/measurements where spelling out is unnatural.",
+        "Make translatedText friendly for Vietnamese TTS pronunciation. Spell foreign food/brand-like terms phonetically when they are likely to be misread (example: wasabi -> wa sa bi). Expand compact measurement abbreviations into spoken Vietnamese units while preserving the number when useful (examples: 50cm -> 50 xen ti mét, 12kg -> 12 ki lô gam, 5ml -> 5 mi li lít).",
         "Every translatedText must be in the target language. Do not copy the source text unless it is a proper noun, code, or number.",
         input.retryMode
             ? "This is a retry for segments that were missing or left untranslated. Be extra strict: translate all non-name Chinese text into Vietnamese."

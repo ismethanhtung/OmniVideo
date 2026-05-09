@@ -36,6 +36,16 @@
 
 ## Done
 
+- `FAST-AUDIO-030` - Raise voice speed floor and TTS translation normalization.
+- `FAST-AUDIO-029` - Fix strict voice timeline drift.
+- `FAST-AUDIO-028` - Align voice segment onsets with word timestamps.
+- `FAST-AUDIO-027` - Snap active segment scroll to exact bottom edge.
+- `FAST-AUDIO-026` - Mark red only for actual voice text loss.
+- `FAST-AUDIO-025` - Detect truncation-risk segments and raise min speed floor.
+- `FAST-AUDIO-024` - Refine Segment Bottom-Follow Scroll and Voice Speed Display.
+- `FAST-AUDIO-023` - Tighten Segment Auto-Scroll and Voice Speed Guardrails.
+- `FAST-AUDIO-022` - Restore Audio Transcript timestamp sync and segment playback UX.
+- `FAST-AUDIO-021` - Optimize Piper TTS voice generation performance.
 - `FAST-GOV-004` - Add mandatory automated version bump guard.
 - `FAST-UX-024` - Auto-sort exploited Inspiration items to bottom.
 - `FAST-ACCESS-004` - Fix View Mode error visibility without eager Inspiration warnings.

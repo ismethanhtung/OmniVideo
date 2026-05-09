@@ -1,4 +1,5 @@
 import { EventEmitter } from "node:events";
+import { readFileSync } from "node:fs";
 import { PassThrough } from "node:stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -15,7 +16,7 @@ import {
 import { POST } from "./route";
 
 function mockPiperSpawn() {
-  return vi.fn(() => {
+  return vi.fn((_command: string, args: string[]) => {
     const child = new EventEmitter() as EventEmitter & {
       stdin: PassThrough;
       stdout: PassThrough;
@@ -27,7 +28,23 @@ function mockPiperSpawn() {
     child.stderr = new PassThrough();
     child.kill = vi.fn();
 
-    setTimeout(() => child.emit("close", 0), 0);
+    setTimeout(() => {
+      const inputPathIndex = args.indexOf("--input_file");
+      const outputDirIndex = args.indexOf("--output_dir");
+      const inputPath =
+        inputPathIndex >= 0 ? args[inputPathIndex + 1] : undefined;
+      const outputDir =
+        outputDirIndex >= 0 ? args[outputDirIndex + 1] : undefined;
+      if (inputPath && outputDir) {
+        const lineCount = readFileSync(inputPath, "utf8")
+          .split(/\r?\n/u)
+          .filter(Boolean).length;
+        for (let index = 0; index < lineCount; index += 1) {
+          child.stderr.write(`INFO:__main__:Wrote ${outputDir}/${index}.wav\n`);
+        }
+      }
+      child.emit("close", 0);
+    }, 0);
 
     return child;
   });

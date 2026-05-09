@@ -1,8 +1,10 @@
 import { EventEmitter } from "node:events";
+import { readFileSync } from "node:fs";
 import { PassThrough } from "node:stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  buildPiperBatchArgs,
   buildPiperArgs,
   buildAtempoFilterChain,
   buildTimelineAlignmentChunk,
@@ -20,7 +22,7 @@ import {
 } from "./piper-tts";
 
 function createMockSpawn(output = "wav-bytes", exitCode = 0) {
-  return vi.fn(() => {
+  return vi.fn((_command: string, args: string[]) => {
     const child = new EventEmitter() as EventEmitter & {
       stdin: PassThrough;
       stdout: PassThrough;
@@ -34,6 +36,20 @@ function createMockSpawn(output = "wav-bytes", exitCode = 0) {
 
     setTimeout(() => {
       if (exitCode !== 0) child.stderr.write("piper failed");
+      const inputPathIndex = args.indexOf("--input_file");
+      const outputDirIndex = args.indexOf("--output_dir");
+      const inputPath =
+        inputPathIndex >= 0 ? args[inputPathIndex + 1] : undefined;
+      const outputDir =
+        outputDirIndex >= 0 ? args[outputDirIndex + 1] : undefined;
+      if (inputPath && outputDir) {
+        const lineCount = readFileSync(inputPath, "utf8")
+          .split(/\r?\n/u)
+          .filter(Boolean).length;
+        for (let index = 0; index < lineCount; index += 1) {
+          child.stderr.write(`INFO:__main__:Wrote ${outputDir}/${index}.wav\n`);
+        }
+      }
       child.stdout.write(Buffer.from(output));
       child.emit("close", exitCode);
     }, 0);
@@ -135,6 +151,48 @@ describe("Piper TTS adapter", () => {
       "/models/voice.onnx",
       "--output_file",
       "/tmp/speech.wav",
+      "--config",
+      "/models/voice.onnx.json",
+      "--speaker",
+      "0",
+      "--length_scale",
+      "1",
+      "--noise_scale",
+      "0.667",
+      "--noise_w",
+      "0.8",
+      "--sentence_silence",
+      "0.2",
+    ]);
+  });
+
+  it("builds batch Piper CLI args for one model load across many text chunks", () => {
+    setPiperFileExistsForTest(() => true);
+
+    const input = validatePiperTtsInput({
+      text: "Hello",
+      binaryPath: "piper",
+      modelPath: "/models/voice.onnx",
+      configPath: "/models/voice.onnx.json",
+      speaker: 0,
+      lengthScale: 1,
+      noiseScale: 0.667,
+      noiseW: 0.8,
+      sentenceSilence: 0.2,
+    });
+
+    expect(
+      buildPiperBatchArgs(input, {
+        inputPath: "/tmp/input.txt",
+        outputDir: "/tmp/out",
+      }),
+    ).toEqual([
+      "--model",
+      "/models/voice.onnx",
+      "--input_file",
+      "/tmp/input.txt",
+      "--output_dir",
+      "/tmp/out",
       "--config",
       "/models/voice.onnx.json",
       "--speaker",
@@ -269,7 +327,7 @@ describe("Piper TTS adapter", () => {
     ).toMatchObject({
       targetDurationSeconds: 1.15,
       borrowedGapSeconds: expect.closeTo(0.15, 4),
-      speedFactor: expect.closeTo(2.6087, 4),
+      speedFactor: 1.75,
       warningCodes: [
         "HIGH_SPEED_FACTOR",
         "INSUFFICIENT_GAP_FOR_NATURAL_SPEED",
@@ -277,7 +335,21 @@ describe("Piper TTS adapter", () => {
     });
   });
 
-  it("returns balanced timeline Piper voice audio from segments", async () => {
+  it("uses a 1.25x speed floor when timeline acceleration is needed", () => {
+    expect(
+      buildTimelineAlignmentChunk({
+        segment: { id: 9, start: 0, end: 1, text: "Nhanh hơn một chút" },
+        rawDurationSeconds: 1.1,
+        nextSegmentStart: 1,
+      }),
+    ).toMatchObject({
+      targetDurationSeconds: 1,
+      speedFactor: 1.25,
+      tempoFilter: "atempo=1.25",
+    });
+  });
+
+  it("batches balanced timeline Piper voice synthesis into one model load", async () => {
     const spawnMock = createMockSpawn();
     setPiperSpawnForTest(spawnMock as never);
     setPiperFileExistsForTest(() => true);
@@ -298,10 +370,17 @@ describe("Piper TTS adapter", () => {
       },
     });
 
-    expect(spawnMock).toHaveBeenCalledTimes(2);
+    expect(spawnMock).toHaveBeenCalledTimes(1);
     expect(spawnMock).toHaveBeenCalledWith(
       expect.any(String),
-      expect.arrayContaining(["--sentence_silence", "0.05"]),
+      expect.arrayContaining([
+        "--input_file",
+        expect.any(String),
+        "--output_dir",
+        expect.any(String),
+        "--sentence_silence",
+        "0.05",
+      ]),
       expect.any(Object),
     );
     expect(result).toMatchObject({
@@ -337,7 +416,86 @@ describe("Piper TTS adapter", () => {
     });
   });
 
-  it("synthesizes multi-sentence segments in smaller Piper calls", async () => {
+  it("keeps strict timeline metadata on original segment timestamps", async () => {
+    const spawnMock = createMockSpawn();
+    setPiperSpawnForTest(spawnMock as never);
+    setPiperFileExistsForTest(() => true);
+    setPiperReadFileForTest(async () => Buffer.from("strict-audio"));
+    setPiperFfmpegRunnerForTest(async () => ({
+      stderr: "Duration: 00:00:00.500",
+    }));
+
+    const result = await generateVoiceFromSegments({
+      segments: [
+        { id: 217, start: 420.432, end: 421.532, text: "Đoạn cuối" },
+      ],
+      settings: {
+        binaryPath: "piper",
+        modelPath: "/models/voice.onnx",
+        preserveTimestampGaps: true,
+        alignmentMode: "strict",
+      },
+    });
+
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+    expect(result.alignment).toMatchObject({
+      mode: "timeline",
+      targetDurationSeconds: 421.532,
+      timeline: [
+        expect.objectContaining({
+          segmentId: 217,
+          scheduledStartSeconds: 420.432,
+          scheduledEndSeconds: 421.532,
+          pauseBeforeSeconds: 420.432,
+          driftSeconds: 0,
+        }),
+      ],
+    });
+  });
+
+  it("places strict timeline chunks by absolute timestamp instead of serial concat", async () => {
+    const spawnMock = createMockSpawn();
+    const ffmpegCalls: string[][] = [];
+    setPiperSpawnForTest(spawnMock as never);
+    setPiperFileExistsForTest(() => true);
+    setPiperReadFileForTest(async () => Buffer.from("strict-mixed-audio"));
+    setPiperFfmpegRunnerForTest(async (args) => {
+      ffmpegCalls.push(args);
+      return { stderr: "Duration: 00:00:02.000" };
+    });
+
+    await generateVoiceFromSegments({
+      segments: [
+        { id: 16, start: 16.6, end: 18, text: "Câu trước rất dài" },
+        { id: 17, start: 18.8, end: 19.8, text: "Thằng ngốc, lại đây!" },
+        {
+          id: 18,
+          start: 20.1,
+          end: 20.86,
+          text: "Sợ thì gọi thêm hai đứa xuống!",
+        },
+      ],
+      settings: {
+        binaryPath: "piper",
+        modelPath: "/models/voice.onnx",
+        preserveTimestampGaps: true,
+        alignmentMode: "strict",
+      },
+    });
+
+    const finalMixCall = ffmpegCalls.at(-1) ?? [];
+    const filterComplex =
+      finalMixCall[finalMixCall.indexOf("-filter_complex") + 1] ?? "";
+
+    expect(finalMixCall).not.toContain("concat");
+    expect(filterComplex).toContain("adelay=16600:all=1");
+    expect(filterComplex).toContain("adelay=18800:all=1");
+    expect(filterComplex).toContain("adelay=20100:all=1");
+    expect(filterComplex).toContain("amix=inputs=3");
+    expect(filterComplex).toContain("atrim=0:20.860");
+  });
+
+  it("keeps multi-sentence chunking without spawning Piper for every chunk", async () => {
     const spawnMock = createMockSpawn();
     setPiperSpawnForTest(spawnMock as never);
     setPiperFileExistsForTest(() => true);
@@ -362,6 +520,6 @@ describe("Piper TTS adapter", () => {
       },
     });
 
-    expect(spawnMock).toHaveBeenCalledTimes(2);
+    expect(spawnMock).toHaveBeenCalledTimes(1);
   });
 });

@@ -1,5 +1,63 @@
 # OmniVideo Changelog
 
+## FAST-AUDIO-030 - Raise Voice Speed Floor and TTS Translation Normalization
+
+- Bumped app version from `0.4.9` to `0.4.10` as a patch release for Audio Transcript voice pacing and Vietnamese TTS text quality.
+- Raised Piper timeline acceleration floor from `1.10x` to `1.25x` and updated the Audio Transcript speed display floor to match.
+- Added Vietnamese TTS normalization for translated text, including `wasabi -> wa sa bi` and compact measurement units like `50cm -> 50 xen ti mét`, `12kg -> 12 ki lô gam`, and `5ml -> 5 mi li lít`.
+- Strengthened the translation prompt to request TTS-friendly phonetic spellings and spoken measurement units.
+- Verification (FAST-AUDIO-030): `npm run test -- --run src/lib/multilingual-audio/piper-tts.test.ts src/lib/multilingual-audio/transcript-translation.test.ts src/features/audio/chinese-transcription-panel.test.ts` pass (3 files / 31 tests); `npm run build` pass with existing Turbopack warning outside scope; `npm run guard:version` pass.
+
+## FAST-AUDIO-029 - Fix Strict Voice Timeline Drift
+
+- Bumped app version from `0.4.8` to `0.4.9` as a patch release for Audio Transcript strict voice sync.
+- Fixed strict Piper timeline assembly so generated chunks are delayed to absolute source timestamps and mixed, instead of being concatenated serially where earlier chunks could push later speech behind the displayed `Voice` time.
+- Strict voice output is now padded/trimmed to the transcript target duration after mixing, keeping physical audio placement aligned with word-aware timeline metadata.
+- Verification (FAST-AUDIO-029): `npm run test -- --run src/lib/multilingual-audio/piper-tts.test.ts src/app/api/audio/voice-generation/route.test.ts src/features/audio/chinese-transcription-panel.test.ts src/lib/multilingual-audio/voice-segment-timing.test.ts` pass (4 files / 26 tests); `npm run build` pass with existing Turbopack warning outside scope; `npm run guard:version` pass.
+
+## FAST-AUDIO-028 - Align Voice Segment Onsets with Word Timestamps
+
+- Bumped app version from `0.4.7` to `0.4.8` as a patch release for Audio Transcript word-aware voice timing.
+- Added word-aware voice segment timing so generated voice starts at the first source word timestamp inside a segment instead of blindly using the segment container start.
+- Audio Transcript now sends word-aware voice segments to `/api/audio/voice-generation`; if no word timing exists, it falls back to the original segment timestamps.
+- Verification (FAST-AUDIO-028): `npm run test -- --run src/lib/multilingual-audio/voice-segment-timing.test.ts src/features/audio/chinese-transcription-panel.test.ts src/lib/multilingual-audio/piper-tts.test.ts src/app/api/audio/voice-generation/route.test.ts` pass (4 files / 25 tests); `npm run build` pass with existing Turbopack warning outside scope.
+
+## FAST-AUDIO-027 - Snap Active Segment to Exact Bottom Edge
+
+- Bumped app version from `0.4.6` to `0.4.7` as a patch release for segment-follow precision.
+- Active segment follow scroll now snaps to exact bottom edge of the Segments viewport (removed previous safety gap/padding behavior).
+- Verification (FAST-AUDIO-027): `npm run test -- --run src/features/audio/chinese-transcription-panel.test.ts` pass (1 file / 3 tests); `npm run guard:version` pass.
+
+## FAST-AUDIO-023 - Tighten Segment Auto-Scroll and Voice Speed Guardrails
+
+- Bumped app version from `0.4.3` to `0.4.4` as a patch release for Audio Transcript playback UX guardrails.
+- Segment auto-scroll now only scrolls inside the `Segments` container instead of shifting the full page viewport.
+- Segment auto-follow now keeps the active segment near the bottom edge of the `Segments` container.
+- Timeline speed-up is now clamped when accelerating speech to `min 1.1x` and `max 1.75x`, preventing extreme factors like `2.96x`.
+- Segment-level `Voice speed` and generated `Voice` timestamp labels were restyled for better readability with green emphasis.
+- Verification (FAST-AUDIO-023): `npm run test -- --run src/lib/multilingual-audio/piper-tts.test.ts src/features/audio/chinese-transcription-panel.test.ts src/app/api/audio/voice-generation/route.test.ts` pass (3 files / 23 tests); `npm run build` pass with existing Turbopack warning outside scope.
+
+## FAST-AUDIO-024 - Refine Bottom-Follow Scroll and Speed Floor
+
+- Follow-up refinement keeps active segment auto-scroll anchored to the bottom region of the `Segments` frame using container-relative coordinates.
+- Segment `Voice speed` display no longer shows `1.00x`; display floor is now `1.10x`.
+- Verification (FAST-AUDIO-024): `npm run test -- --run src/features/audio/chinese-transcription-panel.test.ts src/lib/multilingual-audio/piper-tts.test.ts` pass (2 files / 19 tests); `npm run guard:version` pass.
+
+## FAST-AUDIO-022 - Restore Audio Transcript Timestamp Sync and Segment Playback UX
+
+- Bumped app version from `0.4.2` to `0.4.3` as a patch release for Audio Transcript timestamp sync and playback diagnostics.
+- Root cause: Audio Transcript forced Piper voice generation to `alignmentMode: "balanced"`; that mode intentionally compresses long pauses, so late source timestamps could be unreachable in the generated audio even when `preserveTimestampGaps` was enabled.
+- Audio Transcript now requests strict timestamp alignment so generated voice keeps source timestamp scale; strict timeline metadata now includes generated start/end, speed factor, pause-before, and drift per segment.
+- Words, Run steps, and Transcript panels now default hidden with show/hide controls; segment rows show generated voice speed/timestamp, highlight and auto-scroll while voice plays, and mark missing generated voice/text in red.
+- Verification (FAST-AUDIO-022): `npm run test -- --run src/lib/multilingual-audio/piper-tts.test.ts src/app/api/audio/voice-generation/route.test.ts src/features/audio/chinese-transcription-panel.test.ts` pass (3 files / 23 tests); `npm run build` pass with existing Turbopack warning outside scope; `npm run guard:version` pass; `npm test` pass (85 files / 373 tests).
+
+## FAST-AUDIO-021 - Optimize Piper TTS Voice Generation Performance
+
+- Bumped app version from `0.4.1` to `0.4.2` as a patch bugfix release for Audio Transcript Piper voice generation performance.
+- Root cause: Audio Transcript synthesized every translated segment, and every sentence chunk inside a segment, by spawning a fresh Piper process. With the repo-local Python Piper runtime, that repeatedly loaded Python + ONNX model and then ran ffmpeg probes/alignment, causing long `Generating voice...` waits and high CPU/heat on longer transcripts.
+- Voice generation now batches all segment/sentence chunks into one Piper `--input_file` / `--output_dir` invocation per request, preserving existing sentence chunking and timeline alignment while avoiding repeated model-load churn.
+- Verification (FAST-AUDIO-021): `npm run test -- --run src/lib/multilingual-audio/piper-tts.test.ts src/app/api/audio/voice-generation/route.test.ts` pass (2 files / 19 tests); `npm test` pass (85 files / 370 tests); `npm run build` pass with existing Turbopack warning outside scope; `npm run guard:version` pass; real Piper batch smoke generated 5 WAV files in 1.329s with one process.
+
 ## Release v0.4.1 - View Mode Error Visibility
 
 - Bump app version from `0.4.0` to `0.4.1` as a patch release for View Mode UX bugfixes without public API contract changes.

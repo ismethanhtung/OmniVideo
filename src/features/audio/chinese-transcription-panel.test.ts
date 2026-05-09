@@ -13,4 +13,23 @@ describe("Audio Transcript asset picker preview", () => {
     expect(source).toContain("preload=\"metadata\"");
     expect(source).toContain("<video");
   });
+
+  it("keeps heavy transcript panels collapsed by default", () => {
+    expect(source).toContain("useState(true)");
+    expect(source).toContain("function StepTracePanel");
+    expect(source).toContain("const [isTranscriptCollapsed, setIsTranscriptCollapsed] = useState(true)");
+    expect(source).toContain("const [isWordsCollapsed, setIsWordsCollapsed] = useState(true)");
+  });
+
+  it("uses strict timestamp sync for Audio Transcript voice generation", () => {
+    expect(source).toContain('["Audio Transcript mode", "strict timestamp sync"]');
+    expect(source).toContain('alignmentMode: "strict"');
+    expect(source).toContain("voiceChunk.speedFactor");
+    expect(source).toContain("scheduledStartSeconds");
+    expect(source).toContain("Missing");
+    expect(source).toContain("generated voice");
+    expect(source).toContain("activeVoiceSegmentId");
+    expect(source).toContain("segmentsScrollRef");
+    expect(source).toContain("scrollTo");
+  });
 });

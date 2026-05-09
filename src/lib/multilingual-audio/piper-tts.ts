@@ -22,6 +22,8 @@ const {
   maxTimelineGapBorrowSeconds: MAX_TIMELINE_GAP_BORROW_SECONDS,
   timelineSegmentSentenceSilenceSeconds:
     TIMELINE_SEGMENT_SENTENCE_SILENCE_SECONDS,
+  timelineMinSpeedFactor: TIMELINE_MIN_SPEED_FACTOR,
+  timelineMaxSpeedFactor: TIMELINE_MAX_SPEED_FACTOR,
   highTimelineSpeedFactor: HIGH_TIMELINE_SPEED_FACTOR,
   balancedMaxPauseSeconds: BALANCED_MAX_PAUSE_SECONDS,
   balancedMaxSpeedFactor: BALANCED_MAX_SPEED_FACTOR,
@@ -42,6 +44,9 @@ const REQUIRED_PIPER_DYLIBS = [
   "libpiper_phonemize.1.dylib",
   "libonnxruntime.1.14.1.dylib",
 ];
+const BATCH_TIMEOUT_BASE_MS = 60000;
+const BATCH_TIMEOUT_PER_TEXT_MS = 5000;
+const BATCH_TIMEOUT_MAX_MS = 15 * 60 * 1000;
 
 type PiperSpawn = typeof spawn;
 
@@ -314,6 +319,35 @@ export function buildPiperArgs(
   return args;
 }
 
+export function buildPiperBatchArgs(
+  input: ReturnType<typeof validatePiperTtsInput>,
+  paths: { inputPath: string; outputDir: string },
+) {
+  const args = [
+    "--model",
+    input.modelPath,
+    "--input_file",
+    paths.inputPath,
+    "--output_dir",
+    paths.outputDir,
+  ];
+
+  if (input.configPath) args.push("--config", input.configPath);
+  if (input.speaker !== undefined) args.push("--speaker", String(input.speaker));
+  if (input.lengthScale !== undefined) {
+    args.push("--length_scale", String(input.lengthScale));
+  }
+  if (input.noiseScale !== undefined) {
+    args.push("--noise_scale", String(input.noiseScale));
+  }
+  if (input.noiseW !== undefined) args.push("--noise_w", String(input.noiseW));
+  if (input.sentenceSilence !== undefined) {
+    args.push("--sentence_silence", String(input.sentenceSilence));
+  }
+
+  return args;
+}
+
 function buildPiperEnv(binaryPath: string) {
   if (binaryPath.includes(`${path.sep}.venv${path.sep}`)) {
     return process.env;
@@ -339,6 +373,14 @@ function buildPiperEnv(binaryPath: string) {
   };
 }
 
+function clampTimelineSpeedFactor(speedFactor: number) {
+  if (!Number.isFinite(speedFactor) || speedFactor <= 1) return 1;
+  return Math.min(
+    TIMELINE_MAX_SPEED_FACTOR,
+    Math.max(TIMELINE_MIN_SPEED_FACTOR, speedFactor),
+  );
+}
+
 function formatPiperFailure(stderr: string, code: number | null) {
   const message = stderr.trim();
   if (
@@ -350,6 +392,87 @@ function formatPiperFailure(stderr: string, code: number | null) {
   }
 
   return message || `Piper exited with code ${code}.`;
+}
+
+function piperTimeoutForTextCount(textCount: number) {
+  return Math.min(
+    BATCH_TIMEOUT_MAX_MS,
+    Math.max(
+      DEFAULT_TIMEOUT_MS,
+      BATCH_TIMEOUT_BASE_MS + textCount * BATCH_TIMEOUT_PER_TEXT_MS,
+    ),
+  );
+}
+
+async function runPiperCommand(input: {
+  binaryPath: string;
+  args: string[];
+  stdinText?: string;
+  timeoutMs: number;
+}) {
+  const spawnImpl = piperSpawnForTest ?? spawn;
+
+  return await new Promise<{ stderr: string }>((resolve, reject) => {
+    const child = spawnImpl(input.binaryPath, input.args, {
+      stdio: ["pipe", "pipe", "pipe"],
+      env: buildPiperEnv(input.binaryPath),
+    });
+    let stderr = "";
+    let settled = false;
+
+    const finishReject = (error: unknown) => {
+      if (settled) return;
+      settled = true;
+      reject(
+        error instanceof ChineseTranscriptionError
+          ? error
+          : new ChineseTranscriptionError(
+              "PRV_PIPER_TTS_FAILED",
+              error instanceof Error ? error.message : "Piper TTS failed.",
+              500,
+            ),
+      );
+    };
+
+    const timeout = setTimeout(() => {
+      child.kill("SIGTERM");
+      finishReject(
+        new ChineseTranscriptionError(
+          "PRV_PIPER_TTS_FAILED",
+          "Piper TTS timed out.",
+          504,
+        ),
+      );
+    }, input.timeoutMs);
+
+    child.stderr.on("data", (chunk: Buffer) => {
+      stderr += chunk.toString("utf8");
+    });
+    child.on("error", (error) => {
+      clearTimeout(timeout);
+      finishReject(error);
+    });
+    child.on("close", (code) => {
+      clearTimeout(timeout);
+      if (settled) return;
+      settled = true;
+
+      if (code !== 0) {
+        reject(
+          new ChineseTranscriptionError(
+            "PRV_PIPER_TTS_FAILED",
+            formatPiperFailure(stderr, code),
+            502,
+          ),
+        );
+        return;
+      }
+
+      resolve({ stderr });
+    });
+
+    child.stdin.end(input.stdinText ?? "");
+  });
 }
 
 function segmentText(segment: VoiceGenerationSegment) {
@@ -538,6 +661,40 @@ async function concatWavFiles(input: {
   ]);
 }
 
+async function mixWavFilesOnAbsoluteTimeline(input: {
+  filePaths: string[];
+  startsSeconds: number[];
+  outputPath: string;
+  targetDurationSeconds: number;
+}) {
+  const filterLabels = input.filePaths.map((_, index) => `delayed${index}`);
+  const delayFilters = input.startsSeconds.map((startSeconds, index) => {
+    const delayMs = Math.max(0, Math.round(startSeconds * 1000));
+    return `[${index}:a]adelay=${delayMs}:all=1[${filterLabels[index]}]`;
+  });
+  const mixInputs = filterLabels.map((label) => `[${label}]`).join("");
+  const filterComplex = [
+    ...delayFilters,
+    `${mixInputs}amix=inputs=${input.filePaths.length}:duration=longest:normalize=0,apad,atrim=0:${input.targetDurationSeconds.toFixed(3)},asetpts=PTS-STARTPTS[out]`,
+  ].join(";");
+
+  await runFfmpeg([
+    "-y",
+    ...input.filePaths.flatMap((filePath) => ["-i", filePath]),
+    "-filter_complex",
+    filterComplex,
+    "-map",
+    "[out]",
+    "-ac",
+    "1",
+    "-ar",
+    "22050",
+    "-c:a",
+    "pcm_s16le",
+    input.outputPath,
+  ]);
+}
+
 export function splitTextForPiperSynthesis(text: string) {
   const normalized = text.replace(/\s+/gu, " ").trim();
   if (!normalized) return [];
@@ -554,7 +711,6 @@ export async function generatePiperSpeech(
   input: PiperTtsInput,
 ): Promise<PiperTtsResult> {
   const normalized = validatePiperTtsInput(input);
-  const spawnImpl = piperSpawnForTest ?? spawn;
   const startedAt = Date.now();
   const workDir = path.join(tmpdir(), `omnivideo-piper-${randomUUID()}`);
   const outputPath = path.join(workDir, "speech.wav");
@@ -563,118 +719,132 @@ export async function generatePiperSpeech(
   await mkdir(workDir, { recursive: true });
 
   try {
-    return await new Promise((resolve, reject) => {
-      const child = spawnImpl(normalized.binaryPath, args, {
-        stdio: ["pipe", "pipe", "pipe"],
-        env: buildPiperEnv(normalized.binaryPath),
-      });
-      let stderr = "";
-      let settled = false;
-
-      const finishReject = (error: unknown) => {
-        if (settled) return;
-        settled = true;
-        reject(
-          error instanceof ChineseTranscriptionError
-            ? error
-            : new ChineseTranscriptionError(
-                "PRV_PIPER_TTS_FAILED",
-                error instanceof Error ? error.message : "Piper TTS failed.",
-                500,
-              ),
-        );
-      };
-
-      const timeout = setTimeout(() => {
-        child.kill("SIGTERM");
-        finishReject(
-          new ChineseTranscriptionError(
-            "PRV_PIPER_TTS_FAILED",
-            "Piper TTS timed out.",
-            504,
-          ),
-        );
-      }, normalized.timeoutMs);
-
-      child.stderr.on("data", (chunk: Buffer) => {
-        stderr += chunk.toString("utf8");
-      });
-      child.on("error", (error) => {
-        clearTimeout(timeout);
-        finishReject(error);
-      });
-      child.on("close", async (code) => {
-        clearTimeout(timeout);
-        if (settled) return;
-        settled = true;
-
-        if (code !== 0) {
-          reject(
-            new ChineseTranscriptionError(
-              "PRV_PIPER_TTS_FAILED",
-              formatPiperFailure(stderr, code),
-              502,
-            ),
-          );
-          return;
-        }
-
-        let audioBytes: Buffer;
-        try {
-          audioBytes = piperReadFileForTest
-            ? await piperReadFileForTest(outputPath)
-            : await readFile(outputPath);
-        } catch (error) {
-          reject(
-            new ChineseTranscriptionError(
-              "PRV_PIPER_TTS_FAILED",
-              error instanceof Error
-                ? `Piper output file could not be read: ${error.message}`
-                : "Piper output file could not be read.",
-              502,
-            ),
-          );
-          return;
-        }
-
-        if (audioBytes.byteLength === 0) {
-          reject(
-            new ChineseTranscriptionError(
-              "PRV_PIPER_TTS_FAILED",
-              "Piper returned an empty audio payload.",
-              502,
-            ),
-          );
-          return;
-        }
-
-        resolve({
-          audioBase64: audioBytes.toString("base64"),
-          mimeType: "audio/wav",
-          extension: "wav",
-          byteLength: audioBytes.byteLength,
-          durationMs: Date.now() - startedAt,
-          settings: {
-            modelPath: normalized.modelPath,
-            configPath: normalized.configPath,
-            speaker: normalized.speaker,
-            lengthScale: normalized.lengthScale,
-            noiseScale: normalized.noiseScale,
-            noiseW: normalized.noiseW,
-            sentenceSilence: normalized.sentenceSilence,
-          },
-          provider: {
-            name: "piper",
-            mode: "local-cli",
-          },
-        });
-      });
-
-      child.stdin.end(`${normalized.text}\n`);
+    await runPiperCommand({
+      binaryPath: normalized.binaryPath,
+      args,
+      stdinText: `${normalized.text}\n`,
+      timeoutMs: normalized.timeoutMs,
     });
+
+    let audioBytes: Buffer;
+    try {
+      audioBytes = piperReadFileForTest
+        ? await piperReadFileForTest(outputPath)
+        : await readFile(outputPath);
+    } catch (error) {
+      throw new ChineseTranscriptionError(
+        "PRV_PIPER_TTS_FAILED",
+        error instanceof Error
+          ? `Piper output file could not be read: ${error.message}`
+          : "Piper output file could not be read.",
+        502,
+      );
+    }
+
+    if (audioBytes.byteLength === 0) {
+      throw new ChineseTranscriptionError(
+        "PRV_PIPER_TTS_FAILED",
+        "Piper returned an empty audio payload.",
+        502,
+      );
+    }
+
+    return {
+      audioBase64: audioBytes.toString("base64"),
+      mimeType: "audio/wav",
+      extension: "wav",
+      byteLength: audioBytes.byteLength,
+      durationMs: Date.now() - startedAt,
+      settings: {
+        modelPath: normalized.modelPath,
+        configPath: normalized.configPath,
+        speaker: normalized.speaker,
+        lengthScale: normalized.lengthScale,
+        noiseScale: normalized.noiseScale,
+        noiseW: normalized.noiseW,
+        sentenceSilence: normalized.sentenceSilence,
+      },
+      provider: {
+        name: "piper",
+        mode: "local-cli",
+      },
+    };
   } finally {
     await rm(workDir, { force: true, recursive: true });
   }
+}
+
+function parsePiperBatchOutputPaths(stderr: string) {
+  return stderr
+    .split(/\r?\n/u)
+    .map((line) => {
+      const match = /Wrote\s+(.+\.wav)\s*$/u.exec(line.trim());
+      return match?.[1];
+    })
+    .filter((filePath): filePath is string => Boolean(filePath));
+}
+
+async function generatePiperSpeechBatch(input: {
+  texts: string[];
+  settings: NormalizedPiperVoiceSettings;
+  workDir: string;
+  outputDir: string;
+}) {
+  const texts = input.texts.map((text) => text.replace(/\s+/gu, " ").trim());
+  if (texts.length === 0) return [];
+
+  for (const text of texts) {
+    if (!text) {
+      throw new ChineseTranscriptionError(
+        "VAL_PIPER_TTS_TEXT_REQUIRED",
+        "Text input is required for Piper TTS.",
+        400,
+      );
+    }
+    if (text.length > MAX_PIPER_TEXT_LENGTH) {
+      throw new ChineseTranscriptionError(
+        "VAL_PIPER_TTS_TEXT_REQUIRED",
+        `Piper TTS text chunks are limited to ${MAX_PIPER_TEXT_LENGTH} characters.`,
+        400,
+      );
+    }
+  }
+
+  const normalized = validatePiperTtsInput({
+    text: texts[0],
+    binaryPath: input.settings.binaryPath,
+    modelPath: input.settings.modelPath,
+    configPath: input.settings.configPath,
+    speaker: input.settings.speaker,
+    lengthScale: input.settings.lengthScale,
+    noiseScale: input.settings.noiseScale,
+    noiseW: input.settings.noiseW,
+    sentenceSilence: input.settings.sentenceSilence,
+    timeoutMs: piperTimeoutForTextCount(texts.length),
+  });
+  const inputPath = path.join(input.workDir, "piper-batch-input.txt");
+  await mkdir(input.outputDir, { recursive: true });
+  await writeFile(inputPath, `${texts.join("\n")}\n`);
+
+  const { stderr } = await runPiperCommand({
+    binaryPath: normalized.binaryPath,
+    args: buildPiperBatchArgs(normalized, {
+      inputPath,
+      outputDir: input.outputDir,
+    }),
+    timeoutMs: normalized.timeoutMs,
+  });
+  const outputPaths = parsePiperBatchOutputPaths(stderr);
+
+  if (outputPaths.length !== texts.length) {
+    throw new ChineseTranscriptionError(
+      "PRV_PIPER_TTS_FAILED",
+      `Piper batch generated ${outputPaths.length} file(s) for ${texts.length} text chunk(s).`,
+      502,
+    );
+  }
+
+  return outputPaths;
 }
 
 async function synthesizeSegmentFiles(input: {
@@ -684,6 +854,11 @@ async function synthesizeSegmentFiles(input: {
   timelineMode?: boolean;
 }) {
   const files: Array<{ segment: VoiceGenerationSegment; filePath: string }> = [];
+  const batchItems: Array<{
+    segment: VoiceGenerationSegment;
+    outputPath: string;
+    textChunks: string[];
+  }> = [];
   const sentenceSilence =
     input.timelineMode && input.settings.sentenceSilence !== undefined
       ? Math.min(
@@ -693,50 +868,44 @@ async function synthesizeSegmentFiles(input: {
       : input.settings.sentenceSilence;
 
   for (const segment of input.segments) {
-    const filePath = path.join(input.workDir, `segment-${segment.id}.wav`);
-    const textChunks = splitTextForPiperSynthesis(segment.text);
+    batchItems.push({
+      segment,
+      outputPath: path.join(input.workDir, `segment-${segment.id}.wav`),
+      textChunks: splitTextForPiperSynthesis(segment.text),
+    });
+  }
 
-    if (textChunks.length <= 1) {
-      const result = await generatePiperSpeech({
-        text: segment.text,
-        binaryPath: input.settings.binaryPath,
-        modelPath: input.settings.modelPath,
-        configPath: input.settings.configPath,
-        speaker: input.settings.speaker,
-        lengthScale: input.settings.lengthScale,
-        noiseScale: input.settings.noiseScale,
-        noiseW: input.settings.noiseW,
-        sentenceSilence,
-      });
-      await writeFile(filePath, Buffer.from(result.audioBase64, "base64"));
+  const batchSettings = { ...input.settings, sentenceSilence };
+  const batchOutputPaths = await generatePiperSpeechBatch({
+    texts: batchItems.flatMap((item) => item.textChunks),
+    settings: batchSettings,
+    workDir: input.workDir,
+    outputDir: path.join(input.workDir, "piper-batch-output"),
+  });
+  let batchIndex = 0;
+
+  for (const item of batchItems) {
+    const chunkPaths = batchOutputPaths.slice(
+      batchIndex,
+      batchIndex + item.textChunks.length,
+    );
+    batchIndex += item.textChunks.length;
+
+    if (chunkPaths.length === 1) {
+      await writeFile(
+        item.outputPath,
+        piperReadFileForTest
+          ? await piperReadFileForTest(chunkPaths[0])
+          : await readFile(chunkPaths[0]),
+      );
     } else {
-      const chunkPaths: string[] = [];
-      for (const [chunkIndex, text] of textChunks.entries()) {
-        const result = await generatePiperSpeech({
-          text,
-          binaryPath: input.settings.binaryPath,
-          modelPath: input.settings.modelPath,
-          configPath: input.settings.configPath,
-          speaker: input.settings.speaker,
-          lengthScale: input.settings.lengthScale,
-          noiseScale: input.settings.noiseScale,
-          noiseW: input.settings.noiseW,
-          sentenceSilence,
-        });
-        const chunkPath = path.join(
-          input.workDir,
-          `segment-${segment.id}-${chunkIndex}.wav`,
-        );
-        await writeFile(chunkPath, Buffer.from(result.audioBase64, "base64"));
-        chunkPaths.push(chunkPath);
-      }
       await concatWavFiles({
         workDir: input.workDir,
         filePaths: chunkPaths,
-        outputPath: filePath,
+        outputPath: item.outputPath,
       });
     }
-    files.push({ segment, filePath });
+    files.push({ segment: item.segment, filePath: item.outputPath });
   }
 
   return files;
@@ -768,7 +937,9 @@ export function buildTimelineAlignmentChunk(input: {
   const speedFactor =
     input.rawDurationSeconds > targetDurationSeconds &&
     targetDurationSeconds > 0
-      ? input.rawDurationSeconds / targetDurationSeconds
+      ? clampTimelineSpeedFactor(
+          input.rawDurationSeconds / targetDurationSeconds,
+        )
       : 1;
   const tempoFilter = buildAtempoFilterChain(speedFactor);
   const warningCodes: string[] = [];
@@ -802,34 +973,13 @@ async function alignPiperFilesToTimeline(input: {
   workDir: string;
   outputPath: string;
 }) {
-  const concatPaths: string[] = [];
-  let cursor = 0;
+  const timelinePaths: string[] = [];
+  const timelineStarts: number[] = [];
   const chunks: TimelineAlignmentChunk[] = [];
 
   for (const [index, item] of input.files.entries()) {
     const duration = segmentDuration(item.segment);
     if (duration <= 0) continue;
-
-    const gap = Math.max(0, item.segment.start - cursor);
-    if (gap > 0.01) {
-      const silencePath = path.join(
-        input.workDir,
-        `silence-${item.segment.id}.wav`,
-      );
-      await runFfmpeg([
-        "-y",
-        "-f",
-        "lavfi",
-        "-i",
-        "anullsrc=r=22050:cl=mono",
-        "-t",
-        gap.toFixed(3),
-        "-c:a",
-        "pcm_s16le",
-        silencePath,
-      ]);
-      concatPaths.push(silencePath);
-    }
 
     const rawDuration = await probeAudioDuration(item.filePath);
     const chunk = buildTimelineAlignmentChunk({
@@ -837,7 +987,13 @@ async function alignPiperFilesToTimeline(input: {
       rawDurationSeconds: rawDuration,
       nextSegmentStart: input.files[index + 1]?.segment.start,
     });
-    chunks.push(chunk);
+    chunks.push({
+      ...chunk,
+      scheduledStartSeconds: item.segment.start,
+      scheduledEndSeconds: item.segment.start + chunk.targetDurationSeconds,
+      pauseBeforeSeconds: item.segment.start,
+      driftSeconds: 0,
+    });
     const alignedPath = path.join(
       input.workDir,
       `aligned-${item.segment.id}.wav`,
@@ -856,11 +1012,11 @@ async function alignPiperFilesToTimeline(input: {
       "pcm_s16le",
       alignedPath,
     ]);
-    concatPaths.push(alignedPath);
-    cursor = Math.max(cursor, item.segment.start + chunk.targetDurationSeconds);
+    timelinePaths.push(alignedPath);
+    timelineStarts.push(item.segment.start);
   }
 
-  if (concatPaths.length === 0) {
+  if (timelinePaths.length === 0) {
     await concatWavFiles({
       workDir: input.workDir,
       filePaths: input.files.map((file) => file.filePath),
@@ -869,10 +1025,13 @@ async function alignPiperFilesToTimeline(input: {
     return { chunks: [], warnings: [] };
   }
 
-  await concatWavFiles({
-    workDir: input.workDir,
-    filePaths: concatPaths,
+  await mixWavFilesOnAbsoluteTimeline({
+    filePaths: timelinePaths,
+    startsSeconds: timelineStarts,
     outputPath: input.outputPath,
+    targetDurationSeconds: Math.max(
+      ...input.files.map((file) => file.segment.end),
+    ),
   });
   return {
     chunks,
@@ -929,7 +1088,9 @@ async function alignPiperFilesToBalancedTimeline(input: {
         : 1;
     const speedFactor =
       requiredSpeedFactor > 1
-        ? Math.min(requiredSpeedFactor, BALANCED_MAX_SPEED_FACTOR)
+        ? clampTimelineSpeedFactor(
+            Math.min(requiredSpeedFactor, BALANCED_MAX_SPEED_FACTOR),
+          )
         : 1;
     const targetDurationSeconds =
       speedFactor > 1 ? rawDurationSeconds / speedFactor : rawDurationSeconds;

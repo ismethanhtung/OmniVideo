@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  normalizeVietnameseTtsText,
   normalizeTranslationPayload,
   translateTranscriptSegments,
   validateTranslationSegments,
@@ -55,6 +56,30 @@ describe("transcript translation", () => {
     expect(() => validateTranslationSegments([])).toThrow(
       "At least one transcript segment",
     );
+  });
+
+  it("normalizes translated text for Vietnamese TTS pronunciation", () => {
+    expect(
+      normalizeVietnameseTtsText(
+        "Thêm wasabi lên miếng cá dài 50cm, nặng 12kg và còn 5ml sốt.",
+      ),
+    ).toBe(
+      "Thêm wa sa bi lên miếng cá dài 50 xen ti mét, nặng 12 ki lô gam và còn 5 mi li lít sốt.",
+    );
+
+    expect(
+      normalizeTranslationPayload(
+        {
+          segments: [
+            {
+              id: 0,
+              translatedText: "Ăn wasabi với lát cá 50cm.",
+            },
+          ],
+        },
+        sourceSegments,
+      )[0].translatedText,
+    ).toBe("Ăn wa sa bi với lát cá 50 xen ti mét.");
   });
 
   it("calls Groq chat completions with JSON mode and default model", async () => {
@@ -118,6 +143,8 @@ describe("transcript translation", () => {
     expect(prompt).toContain("Do not force Vietnamese to match the source character count exactly");
     expect(prompt).toContain("short Chinese segments need short Vietnamese");
     expect(prompt).toContain("20 -> hai mươi");
+    expect(prompt).toContain("wasabi -> wa sa bi");
+    expect(prompt).toContain("50cm -> 50 xen ti mét");
     expect(prompt).toContain("durationSeconds");
   });
 
