@@ -69,7 +69,7 @@ export function resolveFfmpegPath(
 }
 
 function runFfmpeg(args: string[]) {
-    return new Promise<void>((resolve, reject) => {
+    return new Promise<{ stderr: string }>((resolve, reject) => {
         let ffmpegPath: string;
         try {
             ffmpegPath = resolveFfmpegPath();
@@ -89,7 +89,7 @@ function runFfmpeg(args: string[]) {
         child.on("error", (error) => reject(error));
         child.on("close", (code) => {
             if (code === 0) {
-                resolve();
+                resolve({ stderr });
                 return;
             }
             reject(
@@ -99,7 +99,31 @@ function runFfmpeg(args: string[]) {
     });
 }
 
-export async function extractSpeechReadyWav(input: {
+export function parseFfmpegDurationSeconds(stderr: string) {
+    const match = /Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/u.exec(stderr);
+    if (!match) return undefined;
+    const duration =
+        Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3]);
+    return Number.isFinite(duration) && duration > 0 ? duration : undefined;
+}
+
+async function probeAudioDurationSeconds(filePath: string) {
+    try {
+        const { stderr } = await runFfmpeg([
+            "-hide_banner",
+            "-i",
+            filePath,
+            "-f",
+            "null",
+            "-",
+        ]);
+        return parseFfmpegDurationSeconds(stderr);
+    } catch {
+        return undefined;
+    }
+}
+
+export async function extractSpeechReadyAudio(input: {
     fileName: string;
     fileBytes: Uint8Array;
 }) {
@@ -114,7 +138,10 @@ export async function extractSpeechReadyWav(input: {
         await mkdir(workDir, { recursive: true });
         await writeFile(inputPath, input.fileBytes);
         await runFfmpeg(buildSpeechReadyFfmpegArgs(inputPath, outputPath));
-        return await readFile(outputPath);
+        return {
+            audioBytes: await readFile(outputPath),
+            durationSeconds: await probeAudioDurationSeconds(outputPath),
+        };
     } catch (error) {
         throw new ChineseTranscriptionError(
             "SYS_AUDIO_EXTRACTION_FAILED",
@@ -126,4 +153,12 @@ export async function extractSpeechReadyWav(input: {
     } finally {
         await rm(workDir, { force: true, recursive: true });
     }
+}
+
+export async function extractSpeechReadyWav(input: {
+    fileName: string;
+    fileBytes: Uint8Array;
+}) {
+    const result = await extractSpeechReadyAudio(input);
+    return result.audioBytes;
 }

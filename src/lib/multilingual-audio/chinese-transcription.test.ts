@@ -3,14 +3,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ChineseTranscriptionError } from "./types";
 
 vi.mock("./audio-extraction", () => ({
-  extractSpeechReadyWav: vi.fn(),
+  extractSpeechReadyAudio: vi.fn(),
 }));
 
 vi.mock("./groq-transcription", () => ({
   transcribeWithGroq: vi.fn(),
 }));
 
-const { extractSpeechReadyWav } = await import("./audio-extraction");
+const { extractSpeechReadyAudio } = await import("./audio-extraction");
 const { transcribeWithGroq } = await import("./groq-transcription");
 const { runChineseVideoTranscription } = await import("./chinese-transcription");
 
@@ -22,7 +22,10 @@ describe("runChineseVideoTranscription", () => {
 
   it("returns step trace with extracted audio size on success", async () => {
     vi.stubEnv("GROQ_API_KEY", "test-key");
-    vi.mocked(extractSpeechReadyWav).mockResolvedValue(new Uint8Array(2048));
+    vi.mocked(extractSpeechReadyAudio).mockResolvedValue({
+      audioBytes: new Uint8Array(2048),
+      durationSeconds: 229,
+    });
     vi.mocked(transcribeWithGroq).mockResolvedValue({
       text: "hello",
       language: "en",
@@ -44,6 +47,7 @@ describe("runChineseVideoTranscription", () => {
       format: "mp3",
       bitrateKbps: 64,
       fileSizeBytes: 2048,
+      durationSeconds: 229,
     });
     expect(result.steps.map((step) => step.id)).toEqual([
       "validate",
@@ -54,12 +58,19 @@ describe("runChineseVideoTranscription", () => {
     expect(result.steps[1].metrics).toMatchObject({
       audioSizeBytes: 2048,
       audioSize: "2.00 KB",
+      audioDurationSeconds: 229,
     });
+    expect(transcribeWithGroq).toHaveBeenCalledWith(
+      expect.objectContaining({ audioDurationSeconds: 229 }),
+    );
   });
 
   it("attaches step trace when Groq rejects the extracted audio", async () => {
     vi.stubEnv("GROQ_API_KEY", "test-key");
-    vi.mocked(extractSpeechReadyWav).mockResolvedValue(new Uint8Array(4096));
+    vi.mocked(extractSpeechReadyAudio).mockResolvedValue({
+      audioBytes: new Uint8Array(4096),
+      durationSeconds: 60,
+    });
     vi.mocked(transcribeWithGroq).mockRejectedValue(
       new ChineseTranscriptionError(
         "PRV_GROQ_TRANSCRIPTION_FAILED",

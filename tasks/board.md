@@ -36,6 +36,10 @@
 
 ## Done
 
+- `FAST-AUDIO-034` - Enforce 1.3x minimum speech tempo.
+- `FAST-AUDIO-033` - Split merged transcript segments for voice timing.
+- `FAST-AUDIO-032` - Increase min speed to 1.3 and scientific TTS normalization.
+- `FAST-AUDIO-031` - Harden Groq timestamp bounds by audio duration.
 - `FAST-AUDIO-030` - Raise voice speed floor and TTS translation normalization.
 - `FAST-AUDIO-029` - Fix strict voice timeline drift.
 - `FAST-AUDIO-028` - Align voice segment onsets with word timestamps.

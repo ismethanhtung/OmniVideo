@@ -79,6 +79,10 @@ function containsCjk(value: string) {
 export function normalizeVietnameseTtsText(value: string) {
     return value
         .replace(/\bwasabi\b/giu, "wa sa bi")
+        .replace(/\bisothiocyanate\b/giu, "ai sô thio xai a nết")
+        .replace(/\bmyrosinase\b/giu, "mai rô si nâyz")
+        .replace(/\benzyme\b/giu, "en zim")
+        .replace(/\benzym\b/giu, "en zim")
         .replace(/\b(\d+(?:[.,]\d+)?)\s*cm\b/giu, "$1 xen ti mét")
         .replace(/\b(\d+(?:[.,]\d+)?)\s*mm\b/giu, "$1 mi li mét")
         .replace(/\b(\d+(?:[.,]\d+)?)\s*km\b/giu, "$1 ki lô mét")
@@ -171,6 +175,7 @@ function buildTranslationPrompt(input: {
         "If a literal translation is too long for the duration, compress the wording while preserving the core meaning and tone.",
         "Normalize standalone Arabic numerals into spoken Vietnamese words in translatedText (example: 20 -> hai mươi, 125 -> một trăm hai mươi lăm). Keep numbers as digits only for codes/IDs/measurements where spelling out is unnatural.",
         "Make translatedText friendly for Vietnamese TTS pronunciation. Spell foreign food/brand-like terms phonetically when they are likely to be misread (example: wasabi -> wa sa bi). Expand compact measurement abbreviations into spoken Vietnamese units while preserving the number when useful (examples: 50cm -> 50 xen ti mét, 12kg -> 12 ki lô gam, 5ml -> 5 mi li lít).",
+        "For scientific/biochemical terms that sound unnatural if read as raw English, use a Vietnamese phonetic rendering (examples: isothiocyanate -> ai sô thio xai a nết, myrosinase -> mai rô si nâyz, enzyme/enzym -> en zim).",
         "Every translatedText must be in the target language. Do not copy the source text unless it is a proper noun, code, or number.",
         input.retryMode
             ? "This is a retry for segments that were missing or left untranslated. Be extra strict: translate all non-name Chinese text into Vietnamese."

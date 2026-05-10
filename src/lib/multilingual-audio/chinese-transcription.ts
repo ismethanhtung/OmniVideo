@@ -1,4 +1,4 @@
-import { extractSpeechReadyWav } from "./audio-extraction";
+import { extractSpeechReadyAudio } from "./audio-extraction";
 import { transcribeWithGroq } from "./groq-transcription";
 import {
     readGroqApiKey,
@@ -69,11 +69,14 @@ export async function runChineseVideoTranscription(
 
     const language = input.language?.trim() || "zh";
     let audioBytes: Uint8Array;
+    let audioDurationSeconds: number | undefined;
     try {
-        audioBytes = await extractSpeechReadyWav({
+        const audio = await extractSpeechReadyAudio({
             fileName: input.fileName,
             fileBytes: input.fileBytes,
         });
+        audioBytes = audio.audioBytes;
+        audioDurationSeconds = audio.durationSeconds;
         steps.push({
             id: "extract-audio",
             label: "Extract audio",
@@ -86,6 +89,9 @@ export async function runChineseVideoTranscription(
                 bitrateKbps: 64,
                 audioSizeBytes: audioBytes.byteLength,
                 audioSize: formatBytes(audioBytes.byteLength),
+                ...(audioDurationSeconds
+                    ? { audioDurationSeconds }
+                    : {}),
             },
         });
     } catch (error) {
@@ -137,6 +143,7 @@ export async function runChineseVideoTranscription(
             audioBytes,
             language,
             prompt: input.prompt,
+            audioDurationSeconds,
             timestampGranularities: input.includeWordTimestamps
                 ? ["segment", "word"]
                 : ["segment"],
@@ -151,6 +158,9 @@ export async function runChineseVideoTranscription(
                 language: transcript.language,
                 segments: transcript.segments.length,
                 words: transcript.words.length,
+                ...(audioDurationSeconds
+                    ? { audioDurationSeconds }
+                    : {}),
             },
         });
     } catch (error) {
@@ -187,6 +197,7 @@ export async function runChineseVideoTranscription(
             channels: 1,
             bitrateKbps: 64,
             fileSizeBytes: audioBytes.byteLength,
+            durationSeconds: audioDurationSeconds,
             audioPreviewBase64: Buffer.from(audioBytes).toString("base64"),
         },
         steps,

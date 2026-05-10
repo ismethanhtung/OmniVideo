@@ -1,5 +1,36 @@
 # OmniVideo Changelog
 
+## FAST-AUDIO-034 - Enforce 1.3x Minimum Speech Tempo
+
+- Bumped app version from `0.4.13` to `0.4.14` as a patch release for Audio Transcript voice pacing.
+- Fixed min speed semantics: timeline-aligned Piper speech now uses at least `atempo=1.3` for every valid speech chunk, even when raw Piper audio already fits inside the timeline slot.
+- Balanced timeline alignment now also applies the `1.3x` floor before adding any silence/pause needed to preserve placement.
+- Verification (FAST-AUDIO-034): `npm run test -- --run src/lib/multilingual-audio/piper-tts.test.ts src/features/audio/chinese-transcription-panel.test.ts src/app/api/audio/voice-generation/route.test.ts` pass (3 files / 25 tests); `npm run build` pass with existing Turbopack warning outside scope; `npm run guard:version` pass.
+
+## FAST-AUDIO-033 - Split Merged Transcript Segments for Voice Timing
+
+- Bumped app version from `0.4.12` to `0.4.13` as a patch release for Audio Transcript voice timing.
+- Voice generation now splits merged translated segments into multiple Piper chunks when sentence boundaries and source word timing gaps indicate separate utterances.
+- Added `sourceSegmentId` metadata so sub-chunks keep diagnostics attached to the original transcript segment in the Audio Transcript UI.
+- Segment-row voice diagnostics now aggregate sub-chunks by parent segment, avoiding false missing-voice states while preserving accurate internal voice timing.
+- Verification (FAST-AUDIO-033): `npm run test -- --run src/lib/multilingual-audio/voice-segment-timing.test.ts src/lib/multilingual-audio/piper-tts.test.ts src/features/audio/chinese-transcription-panel.test.ts src/app/api/audio/voice-generation/route.test.ts` pass (4 files / 28 tests); `npm run build` pass with existing Turbopack warning outside scope; `npm run guard:version` pass.
+
+## FAST-AUDIO-032 - Increase Min Speed to 1.3 and Scientific TTS Normalization
+
+- Bumped app version from `0.4.11` to `0.4.12` as a patch release for Audio Transcript voice pacing and scientific-term readability.
+- Raised timeline minimum speed floor from `1.25x` to `1.3x` and updated Audio Transcript speed display floor accordingly.
+- Expanded Vietnamese TTS text normalization for scientific terms, including `isothiocyanate -> ai sô thio xai a nết`, `myrosinase -> mai rô si nâyz`, and `enzyme/enzym -> en zim`.
+- Strengthened translation prompt guidance so model output stays readable for Vietnamese TTS on biochemical terms.
+- Verification (FAST-AUDIO-032): `npm run test -- --run src/lib/multilingual-audio/transcript-translation.test.ts src/lib/multilingual-audio/piper-tts.test.ts src/features/audio/chinese-transcription-panel.test.ts` pass (3 files / 31 tests); `npm run build` pass with existing Turbopack warning outside scope; `npm run guard:version` pass.
+
+## FAST-AUDIO-031 - Harden Groq Timestamp Bounds by Audio Duration
+
+- Bumped app version from `0.4.10` to `0.4.11` as a patch release for Audio Transcript timestamp hardening.
+- Audio extraction now records the actual extracted audio duration from ffmpeg and passes it into Groq transcription normalization.
+- Groq transcript segments are clamped to extracted audio duration, and word timestamps starting beyond the audio duration are dropped, preventing impossible final segments like `03:47.670 -> 04:17.650` on a `03:49` source.
+- Transcription result/step metrics now include `audioDurationSeconds` when available for diagnostics.
+- Verification (FAST-AUDIO-031): `npm run test -- --run src/lib/multilingual-audio/audio-extraction.test.ts src/lib/multilingual-audio/groq-transcription.test.ts src/lib/multilingual-audio/chinese-transcription.test.ts src/features/audio/chinese-transcription-panel.test.ts src/lib/multilingual-audio/voice-segment-timing.test.ts src/lib/multilingual-audio/piper-tts.test.ts` pass (6 files / 34 tests); `npm run build` pass with existing Turbopack warning outside scope; `npm run guard:version` pass.
+
 ## FAST-AUDIO-030 - Raise Voice Speed Floor and TTS Translation Normalization
 
 - Bumped app version from `0.4.9` to `0.4.10` as a patch release for Audio Transcript voice pacing and Vietnamese TTS text quality.

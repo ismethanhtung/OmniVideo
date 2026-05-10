@@ -74,6 +74,7 @@ type NormalizedPiperVoiceSettings = VoiceGenerationSettings;
 
 type TimelineAlignmentChunk = {
   segmentId: number;
+  sourceSegmentId?: number;
   start: number;
   end: number;
   slotDurationSeconds: number;
@@ -374,7 +375,7 @@ function buildPiperEnv(binaryPath: string) {
 }
 
 function clampTimelineSpeedFactor(speedFactor: number) {
-  if (!Number.isFinite(speedFactor) || speedFactor <= 1) return 1;
+  if (!Number.isFinite(speedFactor) || speedFactor <= 0) return 1;
   return Math.min(
     TIMELINE_MAX_SPEED_FACTOR,
     Math.max(TIMELINE_MIN_SPEED_FACTOR, speedFactor),
@@ -490,6 +491,9 @@ function normalizeVoiceSegments(segments: VoiceGenerationSegment[]) {
   return segments
     .map((segment, index) => ({
       id: Number.isFinite(segment.id) ? segment.id : index,
+      sourceSegmentId: Number.isFinite(segment.sourceSegmentId)
+        ? segment.sourceSegmentId
+        : undefined,
       start: Number.isFinite(segment.start) ? segment.start : 0,
       end: Number.isFinite(segment.end) ? segment.end : 0,
       text: segmentText(segment),
@@ -935,7 +939,7 @@ export function buildTimelineAlignmentChunk(input: {
   );
   const targetDurationSeconds = slotDurationSeconds + borrowedGapSeconds;
   const speedFactor =
-    input.rawDurationSeconds > targetDurationSeconds &&
+    input.rawDurationSeconds > 0 &&
     targetDurationSeconds > 0
       ? clampTimelineSpeedFactor(
           input.rawDurationSeconds / targetDurationSeconds,
@@ -956,6 +960,7 @@ export function buildTimelineAlignmentChunk(input: {
 
   return {
     segmentId: input.segment.id,
+    sourceSegmentId: input.segment.sourceSegmentId,
     start: input.segment.start,
     end: input.segment.end,
     slotDurationSeconds,
@@ -1087,7 +1092,7 @@ async function alignPiperFilesToBalancedTimeline(input: {
         ? rawDurationSeconds / slotDurationSeconds
         : 1;
     const speedFactor =
-      requiredSpeedFactor > 1
+      rawDurationSeconds > 0
         ? clampTimelineSpeedFactor(
             Math.min(requiredSpeedFactor, BALANCED_MAX_SPEED_FACTOR),
           )

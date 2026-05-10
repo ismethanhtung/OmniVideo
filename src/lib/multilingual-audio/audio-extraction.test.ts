@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildSpeechReadyFfmpegArgs,
   getFfmpegCandidates,
+  parseFfmpegDurationSeconds,
   resolveFfmpegPath,
 } from "./audio-extraction";
 
@@ -55,5 +56,13 @@ describe("audio extraction command", () => {
         fileExists: () => false,
       }),
     ).toBe("ffmpeg");
+  });
+
+  it("parses ffmpeg duration from stderr", () => {
+    expect(
+      parseFfmpegDurationSeconds(
+        "Input #0\n  Duration: 00:03:49.12, start: 0.000000",
+      ),
+    ).toBe(229.12);
   });
 });

@@ -61,10 +61,10 @@ describe("transcript translation", () => {
   it("normalizes translated text for Vietnamese TTS pronunciation", () => {
     expect(
       normalizeVietnameseTtsText(
-        "Thêm wasabi lên miếng cá dài 50cm, nặng 12kg và còn 5ml sốt.",
+        "Thêm wasabi với isothiocyanate, enzym myrosinase, lát cá dài 50cm, nặng 12kg và còn 5ml sốt.",
       ),
     ).toBe(
-      "Thêm wa sa bi lên miếng cá dài 50 xen ti mét, nặng 12 ki lô gam và còn 5 mi li lít sốt.",
+      "Thêm wa sa bi với ai sô thio xai a nết, en zim mai rô si nâyz, lát cá dài 50 xen ti mét, nặng 12 ki lô gam và còn 5 mi li lít sốt.",
     );
 
     expect(
@@ -145,6 +145,9 @@ describe("transcript translation", () => {
     expect(prompt).toContain("20 -> hai mươi");
     expect(prompt).toContain("wasabi -> wa sa bi");
     expect(prompt).toContain("50cm -> 50 xen ti mét");
+    expect(prompt).toContain("isothiocyanate -> ai sô thio xai a nết");
+    expect(prompt).toContain("myrosinase -> mai rô si nâyz");
+    expect(prompt).toContain("enzyme/enzym -> en zim");
     expect(prompt).toContain("durationSeconds");
   });
 

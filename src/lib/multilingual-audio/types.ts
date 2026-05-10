@@ -50,7 +50,7 @@ export const PIPER_TTS_ALIGNMENT_SETTINGS = {
     timelineGapBorrowRatio: 0.75,
     maxTimelineGapBorrowSeconds: 0.75,
     timelineSegmentSentenceSilenceSeconds: 0.05,
-    timelineMinSpeedFactor: 1.25,
+    timelineMinSpeedFactor: 1.3,
     timelineMaxSpeedFactor: 1.75,
     highTimelineSpeedFactor: 1.35,
     balancedMaxPauseSeconds: 0.3,
@@ -143,6 +143,7 @@ export type VoiceGenerationSettings = {
 
 export type VoiceGenerationSegment = {
     id: number;
+    sourceSegmentId?: number;
     start: number;
     end: number;
     text: string;
@@ -166,6 +167,7 @@ export type VoiceGenerationResult = {
         chunks: number;
         timeline?: {
             segmentId: number;
+            sourceSegmentId?: number;
             start: number;
             end: number;
             slotDurationSeconds: number;
@@ -206,6 +208,7 @@ export type ChineseTranscriptionResult = {
         channels: 1;
         bitrateKbps: 64;
         fileSizeBytes: number;
+        durationSeconds?: number;
         audioPreviewBase64?: string;
     };
     steps: AudioTranscriptionStep[];

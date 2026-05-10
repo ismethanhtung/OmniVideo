@@ -24,6 +24,29 @@ describe("Groq transcription adapter", () => {
     });
   });
 
+  it("clamps impossible Groq timestamps to the extracted audio duration", () => {
+    expect(
+      normalizeGroqTranscription(
+        {
+          text: "谢谢大家",
+          language: "zh",
+          segments: [
+            { id: 118, start: 227.67, end: 257.65, text: "谢谢大家" },
+          ],
+          words: [
+            { word: "谢谢", start: 227.67, end: 254.01001 },
+            { word: "大家", start: 254.01001, end: 256.21 },
+          ],
+        },
+        "zh",
+        { audioDurationSeconds: 229 },
+      ),
+    ).toMatchObject({
+      segments: [{ id: 118, start: 227.67, end: 229, text: "谢谢大家" }],
+      words: [{ word: "谢谢", start: 227.67, end: 229 }],
+    });
+  });
+
   it("posts Groq transcription request with verbose timestamps", async () => {
     const fetchImpl = vi.fn(async () => {
       return new Response(
@@ -44,6 +67,7 @@ describe("Groq transcription adapter", () => {
       language: "zh",
       prompt: "短视频",
       timestampGranularities: ["segment", "word"],
+      audioDurationSeconds: 3,
       fetchImpl,
     });
 

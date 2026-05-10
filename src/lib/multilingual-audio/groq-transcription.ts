@@ -32,29 +32,83 @@ export type NormalizedGroqTranscription = {
     requestId?: string;
 };
 
+type GroqTranscriptionNormalizationOptions = {
+    audioDurationSeconds?: number;
+};
+
 function numberOrZero(value: unknown) {
     return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function boundedDuration(value: number | undefined) {
+    return typeof value === "number" && Number.isFinite(value) && value > 0
+        ? value
+        : undefined;
+}
+
+function clampTimestampToDuration(
+    value: number,
+    audioDurationSeconds: number | undefined,
+) {
+    const timestamp = numberOrZero(value);
+    if (audioDurationSeconds === undefined) return timestamp;
+    return Math.min(timestamp, audioDurationSeconds);
 }
 
 export function normalizeGroqTranscription(
     payload: GroqVerboseTranscription,
     fallbackLanguage = "zh",
+    options: GroqTranscriptionNormalizationOptions = {},
 ): NormalizedGroqTranscription {
+    const audioDurationSeconds = boundedDuration(options.audioDurationSeconds);
     return {
         text: payload.text ?? "",
         language: payload.language ?? fallbackLanguage,
         requestId: payload.x_groq?.id,
-        segments: (payload.segments ?? []).map((segment, index) => ({
-            id: typeof segment.id === "number" ? segment.id : index,
-            start: numberOrZero(segment.start),
-            end: numberOrZero(segment.end),
-            text: segment.text ?? "",
-        })),
-        words: (payload.words ?? []).map((word) => ({
-            word: word.word ?? "",
-            start: numberOrZero(word.start),
-            end: numberOrZero(word.end),
-        })),
+        segments: (payload.segments ?? [])
+            .map((segment, index) => {
+                const start = clampTimestampToDuration(
+                    numberOrZero(segment.start),
+                    audioDurationSeconds,
+                );
+                const end = clampTimestampToDuration(
+                    numberOrZero(segment.end),
+                    audioDurationSeconds,
+                );
+                return {
+                    id: typeof segment.id === "number" ? segment.id : index,
+                    start,
+                    end: Math.max(start, end),
+                    text: segment.text ?? "",
+                };
+            })
+            .filter(
+                (segment) =>
+                    audioDurationSeconds === undefined ||
+                    segment.start < audioDurationSeconds,
+            ),
+        words: (payload.words ?? [])
+            .map((word) => {
+                const start = clampTimestampToDuration(
+                    numberOrZero(word.start),
+                    audioDurationSeconds,
+                );
+                const end = clampTimestampToDuration(
+                    numberOrZero(word.end),
+                    audioDurationSeconds,
+                );
+                return {
+                    word: word.word ?? "",
+                    start,
+                    end: Math.max(start, end),
+                };
+            })
+            .filter(
+                (word) =>
+                    word.end > word.start &&
+                    (audioDurationSeconds === undefined ||
+                        word.start < audioDurationSeconds),
+            ),
     };
 }
 
@@ -64,6 +118,7 @@ export async function transcribeWithGroq(input: {
     language: string;
     prompt?: string;
     timestampGranularities: AudioTimestampGranularity[];
+    audioDurationSeconds?: number;
     fetchImpl?: typeof fetch;
 }) {
     const fetcher = input.fetchImpl ?? fetch;
@@ -117,5 +172,6 @@ export async function transcribeWithGroq(input: {
     return normalizeGroqTranscription(
         payload as GroqVerboseTranscription,
         input.language,
+        { audioDurationSeconds: input.audioDurationSeconds },
     );
 }

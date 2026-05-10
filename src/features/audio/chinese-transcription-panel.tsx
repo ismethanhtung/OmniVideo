@@ -139,7 +139,7 @@ function formatDurationMs(ms: number) {
 
 function formatSpeedFactor(value: number) {
     if (!Number.isFinite(value)) return "n/a";
-    return `${Math.max(1.25, value).toFixed(2)}x`;
+    return `${Math.max(1.3, value).toFixed(2)}x`;
 }
 
 function parseHashtagInput(value: string) {
@@ -849,16 +849,46 @@ export function ChineseTranscriptionPanel({
         ? `data:${voiceResult.mimeType};base64,${voiceResult.audioBase64}`
         : null;
     const voiceTimelineDiagnostics = voiceResult?.alignment.timeline ?? [];
-    const voiceTimelineBySegmentId = useMemo(
-        () =>
-            new Map(
-                voiceTimelineDiagnostics.map((chunk) => [
-                    chunk.segmentId,
-                    chunk,
-                ]),
-            ),
-        [voiceTimelineDiagnostics],
-    );
+    const voiceTimelineBySegmentId = useMemo(() => {
+        const grouped = new Map<
+            number,
+            (typeof voiceTimelineDiagnostics)[number]
+        >();
+        for (const chunk of voiceTimelineDiagnostics) {
+            const parentId = chunk.sourceSegmentId ?? chunk.segmentId;
+            const previous = grouped.get(parentId);
+            if (!previous) {
+                grouped.set(parentId, { ...chunk, segmentId: parentId });
+                continue;
+            }
+
+            grouped.set(parentId, {
+                ...previous,
+                start: Math.min(previous.start, chunk.start),
+                end: Math.max(previous.end, chunk.end),
+                scheduledStartSeconds: Math.min(
+                    previous.scheduledStartSeconds ?? previous.start,
+                    chunk.scheduledStartSeconds ?? chunk.start,
+                ),
+                scheduledEndSeconds: Math.max(
+                    previous.scheduledEndSeconds ?? previous.end,
+                    chunk.scheduledEndSeconds ?? chunk.end,
+                ),
+                rawDurationSeconds:
+                    previous.rawDurationSeconds + chunk.rawDurationSeconds,
+                targetDurationSeconds:
+                    previous.targetDurationSeconds +
+                    chunk.targetDurationSeconds,
+                borrowedGapSeconds:
+                    previous.borrowedGapSeconds + chunk.borrowedGapSeconds,
+                speedFactor: Math.max(previous.speedFactor, chunk.speedFactor),
+                warningCodes: Array.from(
+                    new Set([...previous.warningCodes, ...chunk.warningCodes]),
+                ),
+            });
+        }
+        return grouped;
+    }, [voiceTimelineDiagnostics]);
     const voiceWarningSegments = voiceTimelineDiagnostics
         .filter(
             (chunk) =>
@@ -924,10 +954,7 @@ export function ChineseTranscriptionPanel({
         const containerTop = container.scrollTop;
         const containerBottom = containerTop + container.clientHeight;
 
-        if (
-            segmentTop < containerTop ||
-            segmentBottom > containerBottom
-        ) {
+        if (segmentTop < containerTop || segmentBottom > containerBottom) {
             const targetTop = segmentBottom - container.clientHeight;
             container.scrollTo({
                 top: Math.max(0, targetTop),
@@ -944,7 +971,11 @@ export function ChineseTranscriptionPanel({
                 const end = chunk.scheduledEndSeconds ?? chunk.end;
                 return currentTime >= start && currentTime < end;
             }) ?? null;
-        setActiveVoiceSegmentId(activeChunk?.segmentId ?? null);
+        setActiveVoiceSegmentId(
+            activeChunk
+                ? (activeChunk.sourceSegmentId ?? activeChunk.segmentId)
+                : null,
+        );
     };
 
     const playDubPreview = async () => {
@@ -1771,6 +1802,9 @@ export function ChineseTranscriptionPanel({
                                         </p>
                                     </div>
                                     <div className="flex items-center gap-2">
+                                        <span className="border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-[10px] font-bold uppercase text-emerald-700">
+                                            {result.segments.length} segments
+                                        </span>
                                         <button
                                             type="button"
                                             onClick={() =>
@@ -1792,9 +1826,6 @@ export function ChineseTranscriptionPanel({
                                                 </>
                                             )}
                                         </button>
-                                        <span className="border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-[10px] font-bold uppercase text-emerald-700">
-                                            {result.segments.length} segments
-                                        </span>
                                     </div>
                                 </div>
                                 {!isTranscriptCollapsed ? (
