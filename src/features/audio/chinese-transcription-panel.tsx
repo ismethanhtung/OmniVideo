@@ -22,6 +22,7 @@ import type {
     TranscriptTranslationResult,
     VietnameseVideoMetadataResult,
     VoiceGenerationResult,
+    VoiceSegmentTimingDiagnostic,
 } from "@/lib/multilingual-audio/types";
 import {
     DEFAULT_PIPER_TTS_SETTINGS,
@@ -32,7 +33,7 @@ import {
     serializeTranscriptSession,
     TRANSCRIPT_SESSION_STORAGE_KEY,
 } from "@/lib/multilingual-audio/transcript-session";
-import { buildWordAwareVoiceSegments } from "@/lib/multilingual-audio/voice-segment-timing";
+import { buildWordAwareVoiceSegmentsWithDiagnostics } from "@/lib/multilingual-audio/voice-segment-timing";
 import {
     finishProgressTask,
     startProgressTask,
@@ -78,6 +79,8 @@ type AssetPreviewState = {
     assetId: string;
     src: string;
 };
+
+type VoiceTimelineFilter = "all" | "warnings" | "overlap" | "fast" | "slow";
 
 type ApiPayload =
     | {
@@ -139,7 +142,14 @@ function formatDurationMs(ms: number) {
 
 function formatSpeedFactor(value: number) {
     if (!Number.isFinite(value)) return "n/a";
-    return `${Math.max(1.3, value).toFixed(2)}x`;
+    return `${Math.max(1.25, value).toFixed(2)}x`;
+}
+
+function timelineTickStep(seconds: number) {
+    if (seconds <= 60) return 5;
+    if (seconds <= 180) return 10;
+    if (seconds <= 600) return 30;
+    return 60;
 }
 
 function parseHashtagInput(value: string) {
@@ -153,6 +163,16 @@ function stepTone(status: AudioTranscriptionStep["status"]) {
     if (status === "success") return "text-emerald-700";
     if (status === "failed") return "text-rose-700";
     return "text-muted";
+}
+
+function formatMediaPlaybackError(error: unknown) {
+    if (error instanceof DOMException && error.name === "NotSupportedError") {
+        return "Dub preview không phát được vì browser không nhận source video/audio hiện tại. Thử reload preview hoặc chọn lại asset.";
+    }
+    if (error instanceof Error && error.message) {
+        return `Dub preview không phát được: ${error.message}`;
+    }
+    return "Dub preview không phát được vì source video/audio chưa sẵn sàng.";
 }
 
 const PIPER_TTS_SETUP_ROWS = [
@@ -326,6 +346,9 @@ export function ChineseTranscriptionPanel({
         null,
     );
     const [voiceError, setVoiceError] = useState<string | null>(null);
+    const [dubPreviewError, setDubPreviewError] = useState<string | null>(
+        null,
+    );
     const [metadataError, setMetadataError] = useState<string | null>(null);
     const [metadataSaveMessage, setMetadataSaveMessage] = useState<
         string | null
@@ -337,6 +360,9 @@ export function ChineseTranscriptionPanel({
         useState<TranscriptTranslationResult | null>(null);
     const [voiceResult, setVoiceResult] =
         useState<VoiceGenerationResult | null>(null);
+    const [voiceTimingDiagnostics, setVoiceTimingDiagnostics] = useState<
+        VoiceSegmentTimingDiagnostic[]
+    >([]);
     const [videoMetadata, setVideoMetadata] =
         useState<VietnameseVideoMetadataResult | null>(null);
     const [metadataTitleDraft, setMetadataTitleDraft] = useState("");
@@ -354,6 +380,12 @@ export function ChineseTranscriptionPanel({
     const [activeVoiceSegmentId, setActiveVoiceSegmentId] = useState<
         number | null
     >(null);
+    const [selectedVoiceChunkId, setSelectedVoiceChunkId] = useState<
+        number | null
+    >(null);
+    const [voiceTimelineFilter, setVoiceTimelineFilter] =
+        useState<VoiceTimelineFilter>("all");
+    const [voiceTimelineZoom, setVoiceTimelineZoom] = useState(1);
     const videoPreviewRef = useRef<HTMLVideoElement | null>(null);
     const voicePreviewRef = useRef<HTMLAudioElement | null>(null);
     const segmentsScrollRef = useRef<HTMLDivElement | null>(null);
@@ -509,9 +541,11 @@ export function ChineseTranscriptionPanel({
         setError(null);
         setTranslationError(null);
         setVoiceError(null);
+        setDubPreviewError(null);
         setResult(null);
         setTranslation(null);
         setVoiceResult(null);
+        setVoiceTimingDiagnostics([]);
         setSteps([]);
         const progressTaskId = startProgressTask({
             title: "Audio transcript",
@@ -667,7 +701,9 @@ export function ChineseTranscriptionPanel({
 
         setIsGeneratingVoice(true);
         setVoiceError(null);
+        setDubPreviewError(null);
         setVoiceResult(null);
+        setVoiceTimingDiagnostics([]);
         const progressTaskId = startProgressTask({
             title: "Voice generation",
             description: "Generating Vietnamese voice audio...",
@@ -680,14 +716,16 @@ export function ChineseTranscriptionPanel({
                 description: "Synthesizing voice segments...",
                 progress: 50,
             });
+            const voiceTiming = buildWordAwareVoiceSegmentsWithDiagnostics({
+                translatedSegments: translation.translatedSegments,
+                words: result?.words ?? [],
+            });
+            setVoiceTimingDiagnostics(voiceTiming.diagnostics);
             const response = await fetch("/api/audio/voice-generation", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                    segments: buildWordAwareVoiceSegments({
-                        translatedSegments: translation.translatedSegments,
-                        words: result?.words ?? [],
-                    }),
+                    segments: voiceTiming.segments,
                     settings: {
                         binaryPath: ttsBinaryPath,
                         modelPath: ttsModelPath,
@@ -889,10 +927,21 @@ export function ChineseTranscriptionPanel({
         }
         return grouped;
     }, [voiceTimelineDiagnostics]);
+    const voiceTimingDiagnosticsBySegmentId = useMemo(() => {
+        const grouped = new Map<number, VoiceSegmentTimingDiagnostic[]>();
+        for (const diagnostic of voiceTimingDiagnostics) {
+            const current = grouped.get(diagnostic.segmentId) ?? [];
+            current.push(diagnostic);
+            grouped.set(diagnostic.segmentId, current);
+        }
+        return grouped;
+    }, [voiceTimingDiagnostics]);
     const voiceWarningSegments = voiceTimelineDiagnostics
         .filter(
             (chunk) =>
-                chunk.warningCodes.length > 0 || chunk.speedFactor > 1.25,
+                chunk.warningCodes.length > 0 ||
+                chunk.speedFactor >
+                    PIPER_TTS_ALIGNMENT_SETTINGS.highTimelineSpeedFactor,
         )
         .sort((left, right) => right.speedFactor - left.speedFactor);
     const voiceSlowSegments = voiceTimelineDiagnostics
@@ -922,6 +971,119 @@ export function ChineseTranscriptionPanel({
         (sum, chunk) => sum + chunk.borrowedGapSeconds,
         0,
     );
+    const voiceTimelineWorkbench = useMemo(() => {
+        const timelineEnd = Math.max(
+            voiceResult?.alignment.targetDurationSeconds ?? 0,
+            ...voiceTimelineDiagnostics.map(
+                (chunk) =>
+                    chunk.scheduledEndSeconds ??
+                    chunk.end ??
+                    chunk.start + chunk.targetDurationSeconds,
+            ),
+            1,
+        );
+        const sorted = [...voiceTimelineDiagnostics].sort(
+            (left, right) =>
+                (left.scheduledStartSeconds ?? left.start) -
+                    (right.scheduledStartSeconds ?? right.start) ||
+                left.segmentId - right.segmentId,
+        );
+        const laneEnds: number[] = [];
+        const items = sorted.map((chunk, index) => {
+            const start = chunk.scheduledStartSeconds ?? chunk.start;
+            const end =
+                chunk.scheduledEndSeconds ??
+                start + chunk.targetDurationSeconds;
+            const hasOverlap = sorted.some((other, otherIndex) => {
+                if (otherIndex === index) return false;
+                const otherStart = other.scheduledStartSeconds ?? other.start;
+                const otherEnd =
+                    other.scheduledEndSeconds ??
+                    otherStart + other.targetDurationSeconds;
+                return start < otherEnd - 0.01 && end > otherStart + 0.01;
+            });
+            let lane = laneEnds.findIndex((laneEnd) => start >= laneEnd - 0.01);
+            if (lane < 0) {
+                lane = laneEnds.length;
+                laneEnds.push(end);
+            } else {
+                laneEnds[lane] = end;
+            }
+            const padded =
+                chunk.targetDurationSeconds > chunk.rawDurationSeconds * 1.2;
+            const fast =
+                chunk.speedFactor >=
+                PIPER_TTS_ALIGNMENT_SETTINGS.highTimelineSpeedFactor;
+            const status = hasOverlap
+                ? "overlap"
+                : chunk.warningCodes.length > 0
+                  ? "warning"
+                  : fast
+                    ? "fast"
+                    : padded
+                      ? "slow"
+                      : "ok";
+            const parentId = chunk.sourceSegmentId ?? chunk.segmentId;
+            return {
+                ...chunk,
+                parentId,
+                start,
+                end,
+                lane,
+                duration: Math.max(0.05, end - start),
+                hasOverlap,
+                padded,
+                fast,
+                status,
+                leftPercent: (start / timelineEnd) * 100,
+                widthPercent: (Math.max(0.05, end - start) / timelineEnd) * 100,
+            };
+        });
+        const filteredItems = items.filter((item) => {
+            if (voiceTimelineFilter === "all") return true;
+            if (voiceTimelineFilter === "warnings") {
+                return item.warningCodes.length > 0;
+            }
+            if (voiceTimelineFilter === "overlap") return item.hasOverlap;
+            if (voiceTimelineFilter === "fast") return item.fast;
+            return item.padded;
+        });
+        const tickStep = timelineTickStep(timelineEnd);
+        const ticks = [];
+        for (let second = 0; second <= timelineEnd; second += tickStep) {
+            ticks.push(second);
+        }
+        if (ticks[ticks.length - 1] !== timelineEnd) ticks.push(timelineEnd);
+
+        return {
+            items,
+            filteredItems,
+            issues: items
+                .filter(
+                    (item) =>
+                        item.status !== "ok" ||
+                        item.warningCodes.length > 0,
+                )
+                .slice(0, 12),
+            laneCount: Math.max(1, laneEnds.length),
+            timelineEnd,
+            timelineWidth: Math.max(
+                960,
+                timelineEnd * 12 * voiceTimelineZoom,
+            ),
+            ticks,
+            overlapCount: items.filter((item) => item.hasOverlap).length,
+            warningCount: items.filter((item) => item.warningCodes.length > 0)
+                .length,
+            fastCount: items.filter((item) => item.fast).length,
+            slowCount: items.filter((item) => item.padded).length,
+        };
+    }, [
+        voiceResult?.alignment.targetDurationSeconds,
+        voiceTimelineDiagnostics,
+        voiceTimelineFilter,
+        voiceTimelineZoom,
+    ]);
     const extractedAudioUrl = result?.audio.audioPreviewBase64
         ? `data:audio/mpeg;base64,${result.audio.audioPreviewBase64}`
         : null;
@@ -982,11 +1144,20 @@ export function ChineseTranscriptionPanel({
         const video = videoPreviewRef.current;
         const audio = voicePreviewRef.current;
         if (!video || !audio) return;
-        video.muted = true;
-        video.currentTime = 0;
-        audio.currentTime = 0;
-        await Promise.all([video.play(), audio.play()]);
-        setIsDubPreviewPaused(false);
+        setDubPreviewError(null);
+        try {
+            video.muted = true;
+            video.currentTime = 0;
+            audio.currentTime = 0;
+            await video.play();
+            await audio.play();
+            setIsDubPreviewPaused(false);
+        } catch (playError) {
+            video.pause();
+            audio.pause();
+            setIsDubPreviewPaused(true);
+            setDubPreviewError(formatMediaPlaybackError(playError));
+        }
     };
 
     const toggleDubPreviewPause = async () => {
@@ -994,9 +1165,18 @@ export function ChineseTranscriptionPanel({
         const audio = voicePreviewRef.current;
         if (!video || !audio) return;
         if (isDubPreviewPaused) {
-            video.muted = true;
-            await Promise.all([video.play(), audio.play()]);
-            setIsDubPreviewPaused(false);
+            setDubPreviewError(null);
+            try {
+                video.muted = true;
+                await video.play();
+                await audio.play();
+                setIsDubPreviewPaused(false);
+            } catch (playError) {
+                video.pause();
+                audio.pause();
+                setIsDubPreviewPaused(true);
+                setDubPreviewError(formatMediaPlaybackError(playError));
+            }
             return;
         }
         video.pause();
@@ -1956,6 +2136,10 @@ export function ChineseTranscriptionPanel({
                                                 voiceTimelineBySegmentId.get(
                                                     segment.id,
                                                 );
+                                            const timingDiagnostics =
+                                                voiceTimingDiagnosticsBySegmentId.get(
+                                                    segment.id,
+                                                ) ?? [];
                                             const hasVoiceResult =
                                                 Boolean(voiceResult);
                                             const missingGeneratedVoice =
@@ -2035,6 +2219,38 @@ export function ChineseTranscriptionPanel({
                                                                 generated voice
                                                             </p>
                                                         ) : null}
+                                                        {timingDiagnostics.map(
+                                                            (diagnostic) => (
+                                                                <p
+                                                                    key={`${diagnostic.code}-${diagnostic.repairedStart}-${diagnostic.repairedEnd}`}
+                                                                    className="mt-1 text-[10px] font-semibold leading-4 text-amber-700"
+                                                                    title={diagnostic.suspiciousWords
+                                                                        .map(
+                                                                            (
+                                                                                word,
+                                                                            ) =>
+                                                                                `${word.word}: ${formatTime(
+                                                                                    word.start,
+                                                                                )} -> ${formatTime(
+                                                                                    word.end,
+                                                                                )}`,
+                                                                        )
+                                                                        .join(
+                                                                            "\n",
+                                                                        )}
+                                                                >
+                                                                    Timing
+                                                                    repaired{" "}
+                                                                    {formatTime(
+                                                                        diagnostic.repairedStart,
+                                                                    )}{" "}
+                                                                    →{" "}
+                                                                    {formatTime(
+                                                                        diagnostic.repairedEnd,
+                                                                    )}
+                                                                </p>
+                                                            ),
+                                                        )}
                                                     </div>
                                                     <div className="min-w-0">
                                                         {segmentView ===
@@ -2244,6 +2460,11 @@ export function ChineseTranscriptionPanel({
                                         controls
                                         muted
                                         src={sourceVideoPreviewUrl}
+                                        onError={() =>
+                                            setDubPreviewError(
+                                                "Dub preview không load được source video hiện tại.",
+                                            )
+                                        }
                                         className="w-full border border-main bg-black"
                                     />
                                 ) : (
@@ -2255,11 +2476,16 @@ export function ChineseTranscriptionPanel({
                                     controls
                                     src={voiceAudioUrl}
                                     ref={voicePreviewRef}
-                                    onTimeUpdate={(event) =>
-                                        updateActiveVoiceSegment(
-                                            event.currentTarget.currentTime,
+                                    onError={() =>
+                                        setDubPreviewError(
+                                            "Dub preview không load được generated voice audio.",
                                         )
                                     }
+                                    onTimeUpdate={(event) => {
+                                        const currentTime =
+                                            event.currentTarget.currentTime;
+                                        updateActiveVoiceSegment(currentTime);
+                                    }}
                                     onEnded={() =>
                                         setActiveVoiceSegmentId(null)
                                     }
@@ -2270,7 +2496,325 @@ export function ChineseTranscriptionPanel({
                                     }}
                                     className="w-full"
                                 />
+                                {dubPreviewError ? (
+                                    <p className="border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-[11px] leading-5 text-rose-700">
+                                        {dubPreviewError}
+                                    </p>
+                                ) : null}
                             </div>
+                            {voiceTimelineDiagnostics.length > 0 ? (
+                                <div className="space-y-3 border border-main bg-main p-3 lg:col-span-2">
+                                    <div className="flex flex-wrap items-start justify-between gap-3">
+                                        <div>
+                                            <p className="text-[12px] font-semibold text-main">
+                                                Audio Timeline Workbench
+                                            </p>
+                                            <p className="mt-1 text-[10px] leading-4 text-muted">
+                                                {voiceTimelineWorkbench.items.length}{" "}
+                                                chunks ·{" "}
+                                                {voiceTimelineWorkbench.laneCount}{" "}
+                                                lane(s) ·{" "}
+                                                {formatTime(
+                                                    voiceTimelineWorkbench.timelineEnd,
+                                                )}{" "}
+                                                total
+                                            </p>
+                                        </div>
+                                        <div className="flex flex-wrap items-center gap-1.5">
+                                            {(
+                                                [
+                                                    "all",
+                                                    "warnings",
+                                                    "overlap",
+                                                    "fast",
+                                                    "slow",
+                                                ] as const
+                                            ).map((filter) => (
+                                                <button
+                                                    key={filter}
+                                                    type="button"
+                                                    onClick={() =>
+                                                        setVoiceTimelineFilter(
+                                                            filter,
+                                                        )
+                                                    }
+                                                    className={`border px-2 py-1 text-[10px] font-semibold capitalize ${
+                                                        voiceTimelineFilter ===
+                                                        filter
+                                                            ? "border-accent bg-accent/10 text-accent"
+                                                            : "border-main bg-main text-main hover:bg-secondary"
+                                                    }`}
+                                                >
+                                                    {filter}
+                                                </button>
+                                            ))}
+                                            <div className="ml-1 flex items-center gap-1 border border-main bg-secondary/40 px-2 py-1 text-[10px] text-muted">
+                                                <span>Zoom</span>
+                                                <input
+                                                    type="range"
+                                                    min="0.7"
+                                                    max="2.2"
+                                                    step="0.1"
+                                                    value={voiceTimelineZoom}
+                                                    onChange={(event) =>
+                                                        setVoiceTimelineZoom(
+                                                            Number(
+                                                                event
+                                                                    .currentTarget
+                                                                    .value,
+                                                            ),
+                                                        )
+                                                    }
+                                                    className="h-4 w-24 accent-[var(--color-accent)]"
+                                                />
+                                                <span>
+                                                    {voiceTimelineZoom.toFixed(
+                                                        1,
+                                                    )}
+                                                    x
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid gap-2 text-[10px] text-main sm:grid-cols-4">
+                                        <div className="border border-main bg-secondary/25 px-2 py-1.5">
+                                            <p className="font-semibold">
+                                                Warnings
+                                            </p>
+                                            <p className="text-muted">
+                                                {
+                                                    voiceTimelineWorkbench.warningCount
+                                                }{" "}
+                                                chunk(s)
+                                            </p>
+                                        </div>
+                                        <div className="border border-main bg-secondary/25 px-2 py-1.5">
+                                            <p className="font-semibold">
+                                                Overlap
+                                            </p>
+                                            <p className="text-muted">
+                                                {
+                                                    voiceTimelineWorkbench.overlapCount
+                                                }{" "}
+                                                chunk(s)
+                                            </p>
+                                        </div>
+                                        <div className="border border-main bg-secondary/25 px-2 py-1.5">
+                                            <p className="font-semibold">
+                                                Fast
+                                            </p>
+                                            <p className="text-muted">
+                                                {voiceTimelineWorkbench.fastCount}{" "}
+                                                chunk(s)
+                                            </p>
+                                        </div>
+                                        <div className="border border-main bg-secondary/25 px-2 py-1.5">
+                                            <p className="font-semibold">
+                                                Padded
+                                            </p>
+                                            <p className="text-muted">
+                                                {voiceTimelineWorkbench.slowCount}{" "}
+                                                chunk(s)
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    <div className="thin-scrollbar overflow-x-auto border border-main bg-white p-2">
+                                        <div
+                                            className="relative"
+                                            style={{
+                                                width: `${voiceTimelineWorkbench.timelineWidth}px`,
+                                                height:
+                                                    voiceTimelineWorkbench.laneCount *
+                                                        42 +
+                                                    44,
+                                            }}
+                                        >
+                                            <div className="absolute left-0 right-0 top-0 h-8 border-b border-main bg-secondary/30">
+                                                {voiceTimelineWorkbench.ticks.map(
+                                                    (tick) => (
+                                                        <div
+                                                            key={tick}
+                                                            className="absolute top-0 h-full border-l border-main pl-1 text-[10px] text-muted"
+                                                            style={{
+                                                                left: `${(tick / voiceTimelineWorkbench.timelineEnd) * 100}%`,
+                                                            }}
+                                                        >
+                                                            {formatTime(tick)}
+                                                        </div>
+                                                    ),
+                                                )}
+                                            </div>
+                                            {Array.from({
+                                                length: voiceTimelineWorkbench.laneCount,
+                                            }).map((_, lane) => (
+                                                <div
+                                                    key={lane}
+                                                    className="absolute left-0 right-0 border-b border-main/60 bg-secondary/10"
+                                                    style={{
+                                                        top: 44 + lane * 42,
+                                                    }}
+                                                />
+                                            ))}
+                                            {voiceTimelineWorkbench.filteredItems.map(
+                                                (chunk) => {
+                                                    const tone =
+                                                        chunk.status ===
+                                                        "overlap"
+                                                            ? "border-rose-300 bg-rose-500/80 text-white"
+                                                            : chunk.status ===
+                                                                "warning"
+                                                              ? "border-amber-200 bg-amber-500/85 text-neutral-950"
+                                                              : chunk.status ===
+                                                                  "fast"
+                                                                ? "border-sky-200 bg-sky-500/85 text-white"
+                                                                : chunk.status ===
+                                                                    "slow"
+                                                                  ? "border-violet-200 bg-violet-500/85 text-white"
+                                                                  : "border-cyan-100 bg-cyan-600/85 text-white";
+                                                    const selected =
+                                                        selectedVoiceChunkId ===
+                                                        chunk.segmentId;
+                                                    return (
+                                                        <button
+                                                            key={
+                                                                chunk.segmentId
+                                                            }
+                                                            type="button"
+                                                            title={`#${chunk.parentId} · ${formatTime(chunk.start)} -> ${formatTime(chunk.end)} · ${formatSpeedFactor(chunk.speedFactor)} · raw ${chunk.rawDurationSeconds.toFixed(2)}s / target ${chunk.targetDurationSeconds.toFixed(2)}s`}
+                                                            onClick={() => {
+                                                                setSelectedVoiceChunkId(
+                                                                    chunk.segmentId,
+                                                                );
+                                                                setActiveVoiceSegmentId(
+                                                                    chunk.parentId,
+                                                                );
+                                                            }}
+                                                            className={`absolute overflow-hidden border px-1.5 py-1 text-left text-[10px] leading-3 shadow-sm transition ${tone} ${
+                                                                selected
+                                                                    ? "ring-2 ring-white"
+                                                                    : "hover:brightness-110"
+                                                            }`}
+                                                            style={{
+                                                                left: `${chunk.leftPercent}%`,
+                                                                top:
+                                                                    48 +
+                                                                    chunk.lane *
+                                                                        42,
+                                                                width: `${Math.max(0.45, chunk.widthPercent)}%`,
+                                                                minWidth: 34,
+                                                                height: 30,
+                                                            }}
+                                                        >
+                                                            <span className="block truncate font-bold">
+                                                                #
+                                                                {
+                                                                    chunk.parentId
+                                                                }{" "}
+                                                                {formatSpeedFactor(
+                                                                    chunk.speedFactor,
+                                                                )}
+                                                            </span>
+                                                            <span className="block truncate opacity-85">
+                                                                {formatTime(
+                                                                    chunk.start,
+                                                                )}{" "}
+                                                                →{" "}
+                                                                {formatTime(
+                                                                    chunk.end,
+                                                                )}
+                                                            </span>
+                                                        </button>
+                                                    );
+                                                },
+                                            )}
+                                            {voiceTimelineWorkbench
+                                                .filteredItems.length === 0 ? (
+                                                <div className="absolute left-4 top-14 text-[11px] text-muted">
+                                                    No chunks match this filter.
+                                                </div>
+                                            ) : null}
+                                        </div>
+                                    </div>
+
+                                    <div className="grid gap-2 lg:grid-cols-[minmax(0,1fr)_320px]">
+                                        <div className="flex flex-wrap gap-2 text-[10px] text-muted">
+                                            <span className="border border-cyan-500/30 bg-cyan-500/10 px-2 py-1 text-cyan-700">
+                                                Normal chunk
+                                            </span>
+                                            <span className="border border-sky-500/30 bg-sky-500/10 px-2 py-1 text-sky-700">
+                                                Fast
+                                            </span>
+                                            <span className="border border-violet-500/30 bg-violet-500/10 px-2 py-1 text-violet-700">
+                                                Padded/sparse
+                                            </span>
+                                            <span className="border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-amber-700">
+                                                Warning
+                                            </span>
+                                            <span className="border border-rose-500/30 bg-rose-500/10 px-2 py-1 text-rose-700">
+                                                Overlap
+                                            </span>
+                                        </div>
+                                        <div className="max-h-36 overflow-auto border border-main bg-secondary/25 p-2 text-[10px] leading-4">
+                                            <p className="mb-1 font-semibold text-main">
+                                                Timeline issues
+                                            </p>
+                                            {voiceTimelineWorkbench.issues
+                                                .length > 0 ? (
+                                                <div className="space-y-1">
+                                                    {voiceTimelineWorkbench.issues.map(
+                                                        (chunk) => (
+                                                            <button
+                                                                key={
+                                                                    chunk.segmentId
+                                                                }
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    setSelectedVoiceChunkId(
+                                                                        chunk.segmentId,
+                                                                    );
+                                                                    setActiveVoiceSegmentId(
+                                                                        chunk.parentId,
+                                                                    );
+                                                                }}
+                                                                className="block w-full border border-main bg-main px-2 py-1 text-left hover:bg-secondary"
+                                                            >
+                                                                <span className="font-semibold text-main">
+                                                                    #
+                                                                    {
+                                                                        chunk.parentId
+                                                                    }{" "}
+                                                                    {
+                                                                        chunk.status
+                                                                    }
+                                                                </span>{" "}
+                                                                <span className="text-muted">
+                                                                    {formatSpeedFactor(
+                                                                        chunk.speedFactor,
+                                                                    )}{" "}
+                                                                    ·{" "}
+                                                                    {formatTime(
+                                                                        chunk.start,
+                                                                    )}{" "}
+                                                                    →{" "}
+                                                                    {formatTime(
+                                                                        chunk.end,
+                                                                    )}
+                                                                </span>
+                                                            </button>
+                                                        ),
+                                                    )}
+                                                </div>
+                                            ) : (
+                                                <p className="text-muted">
+                                                    No timeline issues detected.
+                                                </p>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            ) : null}
                         </div>
                     ) : null}
                 </main>

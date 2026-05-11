@@ -1,5 +1,36 @@
 # OmniVideo Changelog
 
+## FAST-AUDIO-038 - Repair Suspicious Word Timestamp Voice Timing
+
+- Bumped app version from `0.4.17` to `0.4.18` as a patch release for Audio Transcript voice timing reliability.
+- Added suspicious word timestamp detection so impossible long word spans, such as one Chinese character lasting many seconds, are not trusted as TTS voice anchors.
+- Voice generation now repairs affected segment timing by anchoring to reliable nearby words, or estimating a conservative late segment window when all words are suspicious.
+- Audio Transcript shows per-segment `Timing repaired` diagnostics so repaired segments are visible during review.
+- Verification (FAST-AUDIO-038): `npm run test -- --run src/lib/multilingual-audio/voice-segment-timing.test.ts src/features/audio/chinese-transcription-panel.test.ts` pass (2 files / 11 tests); `npm run build` pass with existing Turbopack warning outside scope; `npm run guard:version` pass.
+
+## FAST-AUDIO-037 - Harden Dub Preview Media Playback Errors
+
+- Bumped app version from `0.4.16` to `0.4.17` as a patch release for Audio Transcript Dub preview stability.
+- Wrapped Dub preview play and resume flows in guarded media playback handling so rejected browser `play()` promises no longer become unhandled runtime errors.
+- Added video/audio source `onError` handling and a local Dub preview error message for unsupported or unavailable media sources.
+- Verification (FAST-AUDIO-037): `npm run test -- --run src/features/audio/chinese-transcription-panel.test.ts` pass (1 file / 5 tests); `npm run build` pass with existing Turbopack warning outside scope; `npm run guard:version` pass.
+
+## FAST-AUDIO-036 - Light Timeline Workbench and Restore 1.25x Min Speed
+
+- Bumped app version from `0.4.15` to `0.4.16` as a patch release for Audio Transcript timeline controls.
+- Switched Audio Timeline Workbench from a dark canvas to a white/light surface.
+- Removed the vertical playhead line from the workbench while preserving audio playback segment highlighting.
+- Restored Piper timeline min speed floor and Audio Transcript speed display floor from `1.3x` to `1.25x`.
+- Verification (FAST-AUDIO-036): `npm run test -- --run src/features/audio/chinese-transcription-panel.test.ts src/lib/multilingual-audio/piper-tts.test.ts` pass (2 files / 22 tests); `npm run build` pass with existing Turbopack warning outside scope; `npm run guard:version` pass.
+
+## FAST-AUDIO-035 - Add Pro Audio Timeline Workbench
+
+- Bumped app version from `0.4.14` to `0.4.15` as a patch release for Audio Transcript voice management.
+- Added an Audio Timeline Workbench after voice generation with a ruler, zoom control, playhead, multi-lane chunk layout, status colors, and chunk click-to-segment navigation.
+- Added timeline filters for all/warnings/overlap/fast/slow chunks plus diagnostic counters and an issue list for actionable chunk review.
+- Timeline blocks are derived from real `alignment.timeline` metadata, including scheduled start/end, speed factor, warnings, overlap detection, and parent segment mapping.
+- Verification (FAST-AUDIO-035): `npm run test -- --run src/features/audio/chinese-transcription-panel.test.ts src/lib/multilingual-audio/piper-tts.test.ts src/lib/multilingual-audio/voice-segment-timing.test.ts` pass (3 files / 25 tests); `npm run build` pass with existing Turbopack warning outside scope; `npm run guard:version` pass.
+
 ## FAST-AUDIO-034 - Enforce 1.3x Minimum Speech Tempo
 
 - Bumped app version from `0.4.13` to `0.4.14` as a patch release for Audio Transcript voice pacing.

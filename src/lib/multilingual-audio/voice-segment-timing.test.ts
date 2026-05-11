@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { buildWordAwareVoiceSegments } from "./voice-segment-timing";
+import {
+    buildWordAwareVoiceSegments,
+    buildWordAwareVoiceSegmentsWithDiagnostics,
+} from "./voice-segment-timing";
 
 describe("word-aware voice segment timing", () => {
     it("moves a delayed single-word segment voice onset to the source word timestamp", () => {
@@ -134,5 +137,89 @@ describe("word-aware voice segment timing", () => {
                 text: "Sao lại vậy, ông ấy đâu có tìm tôi?",
             },
         ]);
+    });
+
+    it("repairs a short segment when Groq returns a hallucinated long first-word timestamp", () => {
+        const result = buildWordAwareVoiceSegmentsWithDiagnostics({
+            translatedSegments: [
+                {
+                    id: 7,
+                    start: 60,
+                    end: 86.18,
+                    sourceText: "这位公子",
+                    translatedText: "Công tử này",
+                },
+                {
+                    id: 8,
+                    start: 86.18,
+                    end: 88.06,
+                    sourceText: "吃饭还是住店呀",
+                    translatedText: "Dùng bữa hay trọ quán ạ?",
+                },
+            ],
+            words: [
+                { word: "这", start: 60, end: 80 },
+                { word: "位", start: 80.05, end: 80.22 },
+                { word: "公子", start: 80.22, end: 80.74 },
+                { word: "吃饭", start: 86.18, end: 86.58 },
+                { word: "还是", start: 86.58, end: 86.96 },
+                { word: "住店", start: 86.96, end: 87.35 },
+                { word: "呀", start: 87.35, end: 87.52 },
+            ],
+        });
+
+        expect(result.segments[0]).toEqual({
+            id: 7,
+            start: 80.05,
+            end: 86.18,
+            text: "Công tử này",
+        });
+        expect(result.segments[1]).toEqual({
+            id: 8,
+            start: 86.18,
+            end: 88.06,
+            text: "Dùng bữa hay trọ quán ạ?",
+        });
+        expect(result.diagnostics).toEqual([
+            expect.objectContaining({
+                segmentId: 7,
+                code: "SUSPICIOUS_WORD_TIMESTAMP_REPAIRED",
+                originalStart: 60,
+                repairedStart: 80.05,
+                suspiciousWords: [
+                    {
+                        word: "这",
+                        start: 60,
+                        end: 80,
+                        durationSeconds: 20,
+                    },
+                ],
+            }),
+        ]);
+    });
+
+    it("estimates timing near segment end when all word timestamps are suspicious", () => {
+        const result = buildWordAwareVoiceSegmentsWithDiagnostics({
+            translatedSegments: [
+                {
+                    id: 12,
+                    start: 60,
+                    end: 86,
+                    sourceText: "这",
+                    translatedText: "Này",
+                },
+            ],
+            words: [{ word: "这", start: 60, end: 86 }],
+        });
+
+        expect(result.segments).toEqual([
+            {
+                id: 12,
+                start: 85.55,
+                end: 86,
+                text: "Này",
+            },
+        ]);
+        expect(result.diagnostics).toHaveLength(1);
     });
 });

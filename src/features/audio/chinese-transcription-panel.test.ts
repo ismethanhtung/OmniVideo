@@ -32,4 +32,33 @@ describe("Audio Transcript asset picker preview", () => {
     expect(source).toContain("segmentsScrollRef");
     expect(source).toContain("scrollTo");
   });
+
+  it("renders a professional generated voice timeline workbench", () => {
+    expect(source).toContain("Audio Timeline Workbench");
+    expect(source).toContain("voiceTimelineFilter");
+    expect(source).toContain("voiceTimelineZoom");
+    expect(source).toContain("voiceTimelineWorkbench");
+    expect(source).toContain("selectedVoiceChunkId");
+    expect(source).toContain("sourceSegmentId");
+    expect(source).toContain("Timeline issues");
+    expect(source).toContain("No chunks match this filter.");
+  });
+
+  it("guards Dub preview playback and source load errors", () => {
+    expect(source).toContain("formatMediaPlaybackError");
+    expect(source).toContain("NotSupportedError");
+    expect(source).toContain("dubPreviewError");
+    expect(source).toContain("setDubPreviewError(formatMediaPlaybackError(playError))");
+    expect(source).toContain("Dub preview không load được source video hiện tại.");
+    expect(source).toContain("Dub preview không load được generated voice audio.");
+    expect(source).not.toContain("Promise.all([video.play(), audio.play()])");
+  });
+
+  it("shows repaired voice timing diagnostics for suspicious timestamps", () => {
+    expect(source).toContain("buildWordAwareVoiceSegmentsWithDiagnostics");
+    expect(source).toContain("voiceTimingDiagnostics");
+    expect(source).toContain("voiceTimingDiagnosticsBySegmentId");
+    expect(source).toContain("Timing");
+    expect(source).toContain("repaired");
+  });
 });

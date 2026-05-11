@@ -36,6 +36,10 @@
 
 ## Done
 
+- `FAST-AUDIO-038` - Repair suspicious word timestamp voice timing.
+- `FAST-AUDIO-037` - Harden Dub preview media playback errors.
+- `FAST-AUDIO-036` - Light timeline workbench and restore 1.25x min speed.
+- `FAST-AUDIO-035` - Add pro audio timeline workbench.
 - `FAST-AUDIO-034` - Enforce 1.3x minimum speech tempo.
 - `FAST-AUDIO-033` - Split merged transcript segments for voice timing.
 - `FAST-AUDIO-032` - Increase min speed to 1.3 and scientific TTS normalization.
