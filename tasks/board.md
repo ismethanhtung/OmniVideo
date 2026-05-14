@@ -22,6 +22,12 @@
 
 ## Review
 
+- `FAST-AUDIO-051` - Audio Transcript 2 clone and video speed preprocess.
+- `FAST-AUDIO-050` - Console log transcript translation provider exchanges and larger chunks.
+- `FAST-AUDIO-049` - Prompt-driven gender consistency for transcript translation.
+- `FAST-AUDIO-048` - Raise Audio Transcript voice speed floor to 1.40x.
+- `FAST-AUDIO-047` - Raise Audio Transcript voice speed floor to 1.35x.
+- `FAST-AUDIO-046` - Harden Piper voice generation against empty-phoneme wave header failures.
 - `FAST-UX-007` - Redesign AI Provider Chat Test Modal in English.
 - `FAST-VIDEO-004` - Keep Video Tools preview controls outside blur frame.
 - `FAST-AUDIO-019` - Smooth Piper dubbing speech rate.

@@ -11,6 +11,7 @@ export type AppSectionId =
   | "videoIntake"
   | "localUploadIntake"
   | "chineseTranscription"
+  | "chineseTranscription2"
   | "piperTtsSandbox"
   | "videoToolsLab"
   | "storageProviders"

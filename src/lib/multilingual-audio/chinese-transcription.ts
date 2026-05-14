@@ -36,7 +36,9 @@ export async function runChineseVideoTranscription(
     input: ChineseTranscriptionRequest,
 ): Promise<ChineseTranscriptionResult> {
     const steps: AudioTranscriptionStep[] = [];
+    const now = () => Date.now();
     try {
+        const startedAt = now();
         validateChineseTranscriptionRequest(input);
         steps.push({
             id: "validate",
@@ -47,6 +49,7 @@ export async function runChineseVideoTranscription(
                 fileName: input.fileName,
                 mimeType: input.mimeType ?? "unknown",
                 sourceSize: formatBytes(input.fileSizeBytes),
+                stepDurationMs: now() - startedAt,
             },
         });
     } catch (error) {
@@ -71,9 +74,11 @@ export async function runChineseVideoTranscription(
     let audioBytes: Uint8Array;
     let audioDurationSeconds: number | undefined;
     try {
+        const startedAt = now();
         const audio = await extractSpeechReadyAudio({
             fileName: input.fileName,
             fileBytes: input.fileBytes,
+            speedFactor: input.videoSpeedFactor,
         });
         audioBytes = audio.audioBytes;
         audioDurationSeconds = audio.durationSeconds;
@@ -92,6 +97,11 @@ export async function runChineseVideoTranscription(
                 ...(audioDurationSeconds
                     ? { audioDurationSeconds }
                     : {}),
+                ...(input.videoSpeedFactor &&
+                Math.abs(input.videoSpeedFactor - 1) > 0.0001
+                    ? { videoSpeedFactor: input.videoSpeedFactor }
+                    : {}),
+                stepDurationMs: now() - startedAt,
             },
         });
     } catch (error) {
@@ -108,6 +118,7 @@ export async function runChineseVideoTranscription(
     }
 
     try {
+        const startedAt = now();
         validateGroqAudioPayloadSize(audioBytes);
         steps.push({
             id: "check-upload-size",
@@ -117,6 +128,7 @@ export async function runChineseVideoTranscription(
             metrics: {
                 audioSizeBytes: audioBytes.byteLength,
                 audioSize: formatBytes(audioBytes.byteLength),
+                stepDurationMs: now() - startedAt,
             },
         });
     } catch (error) {
@@ -138,6 +150,7 @@ export async function runChineseVideoTranscription(
 
     let transcript;
     try {
+        const startedAt = now();
         transcript = await transcribeWithGroq({
             apiKey,
             audioBytes,
@@ -161,6 +174,7 @@ export async function runChineseVideoTranscription(
                 ...(audioDurationSeconds
                     ? { audioDurationSeconds }
                     : {}),
+                stepDurationMs: now() - startedAt,
             },
         });
     } catch (error) {

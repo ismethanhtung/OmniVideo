@@ -28,6 +28,32 @@ describe("audio extraction command", () => {
     ]);
   });
 
+  it("adds atempo filter when speed preprocess is configured", () => {
+    expect(
+      buildSpeechReadyFfmpegArgs("/tmp/in.mp4", "/tmp/out.mp3", {
+        speedFactor: 0.6,
+      }),
+    ).toEqual([
+      "-y",
+      "-i",
+      "/tmp/in.mp4",
+      "-vn",
+      "-ac",
+      "1",
+      "-ar",
+      "16000",
+      "-filter:a",
+      "atempo=0.6",
+      "-map",
+      "0:a:0",
+      "-c:a",
+      "libmp3lame",
+      "-b:a",
+      "64k",
+      "/tmp/out.mp3",
+    ]);
+  });
+
   it("prefers existing ffmpeg-static path", () => {
     expect(
       resolveFfmpegPath({

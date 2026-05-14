@@ -160,6 +160,7 @@ export async function POST(request: Request) {
       ttsSettings,
       originalAudioVolume: readOptionalNumber(formData, "originalAudioVolume"),
       voiceVolume: readOptionalNumber(formData, "voiceVolume"),
+      videoSpeedFactor: readOptionalNumber(formData, "videoSpeedFactor"),
     });
 
     const totalTokensUsed =

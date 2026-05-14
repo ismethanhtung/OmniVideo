@@ -8,6 +8,7 @@ import { resolveFfmpegPath } from "./audio-extraction";
 import { runChineseVideoTranscription } from "./chinese-transcription";
 import { generateVoiceFromSegments } from "./piper-tts";
 import { translateTranscriptSegments } from "./transcript-translation";
+import { preprocessVideoSpeed } from "./video-preprocess";
 import {
     ChineseTranscriptionError,
     DEFAULT_PIPER_TTS_SETTINGS,
@@ -41,6 +42,7 @@ export type VideoDubbingInput = {
     ttsSettings?: Partial<VoiceGenerationSettings>;
     originalAudioVolume?: number;
     voiceVolume?: number;
+    videoSpeedFactor?: number;
 };
 
 export type VideoDubbingResult = {
@@ -221,14 +223,21 @@ export async function runVideoDubbing(
         );
     }
 
+    const processedSource = await preprocessVideoSpeed({
+        fileName: input.fileName,
+        fileBytes: input.fileBytes,
+        speedFactor: input.videoSpeedFactor ?? 1,
+    });
+
     const transcript = await runChineseVideoTranscription({
         fileName: input.fileName,
         mimeType: input.mimeType,
-        fileSizeBytes: input.fileSizeBytes,
-        fileBytes: input.fileBytes,
+        fileSizeBytes: processedSource.fileBytes.byteLength,
+        fileBytes: new Uint8Array(processedSource.fileBytes),
         language: input.language,
         prompt: input.prompt,
         includeWordTimestamps: input.includeWordTimestamps,
+        videoSpeedFactor: 1,
     });
     const translation = await translateTranscriptSegments({
         segments: transcript.segments,
@@ -260,7 +269,7 @@ export async function runVideoDubbing(
     );
     const voiceVolume = normalizeVolume(input.voiceVolume, 1);
     const videoBytes = await muxDubbedVideo({
-        videoBytes: input.fileBytes,
+        videoBytes: new Uint8Array(processedSource.fileBytes),
         voiceBytes: Buffer.from(voice.audioBase64, "base64"),
         fileName: input.fileName,
         originalAudioVolume,

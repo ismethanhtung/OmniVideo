@@ -39,6 +39,7 @@ describe("runChineseVideoTranscription", () => {
       mimeType: "video/mp4",
       fileSizeBytes: 240 * 1024 * 1024,
       fileBytes: new Uint8Array([1, 2, 3]),
+      videoSpeedFactor: 0.6,
       language: "en",
       includeWordTimestamps: false,
     });
@@ -59,7 +60,11 @@ describe("runChineseVideoTranscription", () => {
       audioSizeBytes: 2048,
       audioSize: "2.00 KB",
       audioDurationSeconds: 229,
+      videoSpeedFactor: 0.6,
     });
+    expect(extractSpeechReadyAudio).toHaveBeenCalledWith(
+      expect.objectContaining({ speedFactor: 0.6 }),
+    );
     expect(transcribeWithGroq).toHaveBeenCalledWith(
       expect.objectContaining({ audioDurationSeconds: 229 }),
     );

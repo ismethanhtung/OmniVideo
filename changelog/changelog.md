@@ -1,5 +1,65 @@
 # OmniVideo Changelog
 
+## FAST-AUDIO-051 - Audio Transcript 2 Clone and Video Speed Preprocess
+
+- Added a new `Audio Transcript 2` page in navigation (`/audio-transcript-2`) as a clone track for testing new transcript features.
+- Added a `Video Preprocess` block right after `Source Video` on Audio Transcript 2 with selectable speed options, defaulting to `0.6x`.
+- Wired preprocess speed into transcription runtime through `videoSpeedFactor` (`UI -> API -> extraction`) so ffmpeg applies audio tempo before Groq transcription.
+- Updated Dub preview to apply source video playback rate from preprocess speed, so preview timeline matches generated voice timing (e.g. `0.5x` shows a 7-minute source as ~14-minute playback).
+- Replaced playback-rate-only preview fallback with real server-side video preprocessing (`/api/audio/video-preprocess`) that renders a new slowed video stream using ffmpeg `setpts` + `atempo`; Dub preview now consumes this processed source URL so video duration itself expands (not just play speed).
+- Aligned video dubbing runtime with preprocess semantics by preprocessing source bytes before transcription/mux when `videoSpeedFactor` is provided, preventing downstream timeline drift.
+- Added a compact `Processing summary` block under Dub preview controls, including processed video size and step timing from preprocess through extract/transcribe/translate/voice/metadata.
+- Added test coverage for navigation registration, speed-aware ffmpeg args, transcription speed propagation, and preprocess UI wiring.
+- Verification (FAST-AUDIO-051): `npm run test -- --run src/components/layout/navigation.test.ts src/lib/multilingual-audio/audio-extraction.test.ts src/lib/multilingual-audio/chinese-transcription.test.ts src/features/audio/chinese-transcription-panel.test.ts` pass (4 files / 22 tests); `npm run guard:version` pass.
+
+## FAST-AUDIO-050 - Console Log Translation Provider Exchanges and Larger Chunks
+
+- Removed the previous in-page provider debug surface from Audio Transcript translation and switched to server-side console logging for provider request/response bodies.
+- Raised transcript translation chunk targets to about `100` segments per request with a larger source character budget.
+- Strengthened the gender prompt to infer a cast/gender map across the chunk, resolve ambiguous `他` from context, and use neutral Vietnamese wording when gender is unclear.
+- Verification (FAST-AUDIO-050): `npm run test -- --run src/lib/multilingual-audio/transcript-translation.test.ts src/lib/multilingual-audio/transcript-session.test.ts src/features/audio/chinese-transcription-panel.test.ts` pass (3 files / 23 tests); `npm run guard:version` pass.
+
+## FAST-AUDIO-049 - Prompt-driven Gender Consistency for Transcript Translation
+
+- Simplified translation flow for gender handling: remove brittle pronoun-rewrite behavior and enforce consistency through prompt rules.
+- Added explicit Chinese gender cue guidance in prompt (`她/师妹/...` as female, `他/师兄/...` as male) and continuity requirements across nearby segments.
+- Added malformed-word guard instruction to prevent merged-token outputs such as `thấnàng` and `nànàng`.
+- Updated tests to verify the new gender prompt contract and fallback prompt behavior.
+- Verification (FAST-AUDIO-049): `npm run test -- --run src/lib/multilingual-audio/transcript-translation.test.ts` pass (1 file / 14 tests); `npm run guard:version` pass.
+
+## FAST-AUDIO-048 - Raise Audio Transcript Voice Speed Floor to 1.40x
+
+- Bumped app version from `0.4.21` to `0.4.22` as a patch release for Audio Transcript voice pacing.
+- Raised runtime timeline speed floor from `1.35x` to `1.40x` (`timelineMinSpeedFactor`).
+- Raised Audio Transcript `Voice speed` display floor from `1.35x` to `1.40x`.
+- Updated Piper timeline test expectations for the new speed floor behavior.
+- Verification (FAST-AUDIO-048): `npm run test -- --run src/lib/multilingual-audio/piper-tts.test.ts src/features/audio/chinese-transcription-panel.test.ts` pass (2 files / 26 tests); `npm run build` pass with existing Turbopack warning outside scope.
+
+## FAST-AUDIO-047 - Raise Audio Transcript Voice Speed Floor to 1.35x
+
+- Bumped app version from `0.4.20` to `0.4.21` as a patch release for Audio Transcript voice pacing.
+- Raised runtime timeline speed floor from `1.25x` to `1.35x` via `timelineMinSpeedFactor`.
+- Raised Audio Transcript `Voice speed` UI display floor from `1.25x` to `1.35x`.
+- Updated Piper timeline tests to match the new floor behavior in strict and balanced alignment.
+- Verification (FAST-AUDIO-047): `npm run test -- --run src/lib/multilingual-audio/piper-tts.test.ts src/features/audio/chinese-transcription-panel.test.ts` pass (2 files / 26 tests); `npm run build` pass with existing Turbopack warning outside scope.
+
+## FAST-AUDIO-046 (Follow-up) - Auto Fallback to .venv Piper When Bundled Runtime Is Incomplete
+
+- Bumped app version from `0.4.19` to `0.4.20` as a patch release for local Piper runtime compatibility.
+- Updated `Piper executable = piper` auto-resolution:
+  - Use bundled `piper/piper` only when all required dylibs exist beside it.
+  - Automatically fallback to `piper/.venv/bin/piper` when bundled dylibs are missing.
+- Keeps previous empty-phoneme hardening, while preventing `CFG_PIPER_TTS_RUNTIME_MISSING` on machines that only have `.venv` runtime complete.
+- Verification (FAST-AUDIO-046 follow-up): `npm run test -- --run src/lib/multilingual-audio/piper-tts.test.ts src/app/api/audio/voice-generation/route.test.ts` pass (2 files / 24 tests); `npm run build` pass with existing Turbopack warning outside scope.
+
+## FAST-AUDIO-046 - Harden Piper Voice Generation Against Empty-Phoneme Wave Header Failures
+
+- Bumped app version from `0.4.18` to `0.4.19` as a patch release for Audio Transcript voice generation stability.
+- Changed default `Piper executable` resolution to prefer bundled local binary `piper/piper` when available, instead of prioritizing `.venv/bin/piper`.
+- Added guard in text chunking to drop non-speakable punctuation-only chunks before synthesis.
+- Added silence WAV fallback for segments that end up with no speakable chunks, so voice generation no longer crashes on edge text with `wave.Error: # channels not specified`.
+- Verification (FAST-AUDIO-046): `npm run test -- --run src/lib/multilingual-audio/piper-tts.test.ts src/app/api/audio/voice-generation/route.test.ts` pass (2 files / 23 tests).
+
 ## FAST-AUDIO-038 - Repair Suspicious Word Timestamp Voice Timing
 
 - Bumped app version from `0.4.17` to `0.4.18` as a patch release for Audio Transcript voice timing reliability.

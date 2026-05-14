@@ -54,6 +54,8 @@ type AiModelOption = {
 
 type ChineseTranscriptionPanelProps = {
     section: LeftbarNavItem;
+    enableVideoPreprocess?: boolean;
+    defaultVideoSpeedFactor?: number;
 };
 
 type StoredVideoAsset = {
@@ -78,6 +80,12 @@ type StoredVideoAsset = {
 type AssetPreviewState = {
     assetId: string;
     src: string;
+};
+
+type ProcessedSourceMeta = {
+    byteLength: number;
+    speedFactor: number;
+    generationDurationMs: number;
 };
 
 type VoiceTimelineFilter = "all" | "warnings" | "overlap" | "fast" | "slow";
@@ -142,7 +150,12 @@ function formatDurationMs(ms: number) {
 
 function formatSpeedFactor(value: number) {
     if (!Number.isFinite(value)) return "n/a";
-    return `${Math.max(1.25, value).toFixed(2)}x`;
+    return `${Math.max(1.4, value).toFixed(2)}x`;
+}
+
+function clampVideoSpeedFactor(value: number) {
+    if (!Number.isFinite(value)) return 1;
+    return Math.min(2, Math.max(0.5, value));
 }
 
 function timelineTickStep(seconds: number) {
@@ -289,6 +302,8 @@ function StepTracePanel({ steps }: { steps: AudioTranscriptionStep[] }) {
 
 export function ChineseTranscriptionPanel({
     section,
+    enableVideoPreprocess = false,
+    defaultVideoSpeedFactor = 1,
 }: ChineseTranscriptionPanelProps) {
     const Icon = section.icon;
     const [file, setFile] = useState<File | null>(null);
@@ -301,6 +316,21 @@ export function ChineseTranscriptionPanel({
     const [language, setLanguage] = useState("zh");
     const [prompt, setPrompt] = useState("");
     const [includeWordTimestamps, setIncludeWordTimestamps] = useState(true);
+    const [videoSpeedFactor, setVideoSpeedFactor] = useState(
+        clampVideoSpeedFactor(defaultVideoSpeedFactor),
+    );
+    const [processedSourceVideoUrl, setProcessedSourceVideoUrl] = useState<
+        string | null
+    >(null);
+    const [isPreparingProcessedSource, setIsPreparingProcessedSource] =
+        useState(false);
+    const [processedSourceError, setProcessedSourceError] = useState<
+        string | null
+    >(null);
+    const [processedSourceMeta, setProcessedSourceMeta] =
+        useState<ProcessedSourceMeta | null>(null);
+    const [metadataGenerationDurationMs, setMetadataGenerationDurationMs] =
+        useState<number | null>(null);
 
     const [aiProviders, setAiProviders] = useState<AiProviderOption[]>([]);
     const [selectedProviderId, setSelectedProviderId] = useState("");
@@ -346,9 +376,7 @@ export function ChineseTranscriptionPanel({
         null,
     );
     const [voiceError, setVoiceError] = useState<string | null>(null);
-    const [dubPreviewError, setDubPreviewError] = useState<string | null>(
-        null,
-    );
+    const [dubPreviewError, setDubPreviewError] = useState<string | null>(null);
     const [metadataError, setMetadataError] = useState<string | null>(null);
     const [metadataSaveMessage, setMetadataSaveMessage] = useState<
         string | null
@@ -542,6 +570,8 @@ export function ChineseTranscriptionPanel({
         setTranslationError(null);
         setVoiceError(null);
         setDubPreviewError(null);
+        setProcessedSourceError(null);
+        setProcessedSourceMeta(null);
         setResult(null);
         setTranslation(null);
         setVoiceResult(null);
@@ -566,6 +596,9 @@ export function ChineseTranscriptionPanel({
                 "includeWordTimestamps",
                 String(includeWordTimestamps),
             );
+            if (enableVideoPreprocess) {
+                formData.set("videoSpeedFactor", String(videoSpeedFactor));
+            }
             if (prompt.trim()) {
                 formData.set("prompt", prompt.trim());
             }
@@ -629,6 +662,7 @@ export function ChineseTranscriptionPanel({
         setVoiceResult(null);
         setMetadataError(null);
         setMetadataSaveMessage(null);
+        setMetadataGenerationDurationMs(null);
         setVideoMetadata(null);
         setMetadataTitleDraft("");
         setMetadataDescriptionDraft("");
@@ -788,6 +822,7 @@ export function ChineseTranscriptionPanel({
         setMetadataSaveMessage(null);
 
         try {
+            const startedAt = Date.now();
             const response = await fetch("/api/audio/video-metadata", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -819,6 +854,7 @@ export function ChineseTranscriptionPanel({
             setMetadataHashtagsDraft(
                 (payload.data.hashtags ?? []).map((tag) => `#${tag}`).join(" "),
             );
+            setMetadataGenerationDurationMs(Date.now() - startedAt);
         } catch (requestError) {
             setMetadataError(
                 requestError instanceof Error
@@ -982,6 +1018,11 @@ export function ChineseTranscriptionPanel({
             ),
             1,
         );
+        const timelineWidth = Math.max(
+            960,
+            timelineEnd * 12 * voiceTimelineZoom,
+        );
+        const minChunkWidthPx = 34;
         const sorted = [...voiceTimelineDiagnostics].sort(
             (left, right) =>
                 (left.scheduledStartSeconds ?? left.start) -
@@ -989,11 +1030,21 @@ export function ChineseTranscriptionPanel({
                 left.segmentId - right.segmentId,
         );
         const laneEnds: number[] = [];
+        const laneEndsPx: number[] = [];
         const items = sorted.map((chunk, index) => {
             const start = chunk.scheduledStartSeconds ?? chunk.start;
             const end =
                 chunk.scheduledEndSeconds ??
                 start + chunk.targetDurationSeconds;
+            const duration = Math.max(0.05, end - start);
+            const leftPercent = (start / timelineEnd) * 100;
+            const widthPercent = (duration / timelineEnd) * 100;
+            const leftPx = (start / timelineEnd) * timelineWidth;
+            const widthPx = Math.max(
+                minChunkWidthPx,
+                (duration / timelineEnd) * timelineWidth,
+            );
+            const rightPx = leftPx + widthPx;
             const hasOverlap = sorted.some((other, otherIndex) => {
                 if (otherIndex === index) return false;
                 const otherStart = other.scheduledStartSeconds ?? other.start;
@@ -1002,12 +1053,16 @@ export function ChineseTranscriptionPanel({
                     otherStart + other.targetDurationSeconds;
                 return start < otherEnd - 0.01 && end > otherStart + 0.01;
             });
-            let lane = laneEnds.findIndex((laneEnd) => start >= laneEnd - 0.01);
+            let lane = laneEndsPx.findIndex(
+                (laneEndPx) => leftPx >= laneEndPx - 1,
+            );
             if (lane < 0) {
                 lane = laneEnds.length;
                 laneEnds.push(end);
+                laneEndsPx.push(rightPx);
             } else {
                 laneEnds[lane] = end;
+                laneEndsPx[lane] = rightPx;
             }
             const padded =
                 chunk.targetDurationSeconds > chunk.rawDurationSeconds * 1.2;
@@ -1030,13 +1085,13 @@ export function ChineseTranscriptionPanel({
                 start,
                 end,
                 lane,
-                duration: Math.max(0.05, end - start),
+                duration,
                 hasOverlap,
                 padded,
                 fast,
                 status,
-                leftPercent: (start / timelineEnd) * 100,
-                widthPercent: (Math.max(0.05, end - start) / timelineEnd) * 100,
+                leftPercent,
+                widthPercent,
             };
         });
         const filteredItems = items.filter((item) => {
@@ -1061,16 +1116,12 @@ export function ChineseTranscriptionPanel({
             issues: items
                 .filter(
                     (item) =>
-                        item.status !== "ok" ||
-                        item.warningCodes.length > 0,
+                        item.status !== "ok" || item.warningCodes.length > 0,
                 )
                 .slice(0, 12),
             laneCount: Math.max(1, laneEnds.length),
             timelineEnd,
-            timelineWidth: Math.max(
-                960,
-                timelineEnd * 12 * voiceTimelineZoom,
-            ),
+            timelineWidth,
             ticks,
             overlapCount: items.filter((item) => item.hasOverlap).length,
             warningCount: items.filter((item) => item.warningCodes.length > 0)
@@ -1096,11 +1147,139 @@ export function ChineseTranscriptionPanel({
         }
         return null;
     }, [file, selectedAssetId]);
+    const activeSourceVideoPreviewUrl =
+        processedSourceVideoUrl ?? sourceVideoPreviewUrl;
+    const dubPreviewPlaybackRate =
+        enableVideoPreprocess && !processedSourceVideoUrl
+            ? clampVideoSpeedFactor(videoSpeedFactor)
+            : 1;
 
     useEffect(() => {
         if (!file || !sourceVideoPreviewUrl) return;
         return () => URL.revokeObjectURL(sourceVideoPreviewUrl);
     }, [file, sourceVideoPreviewUrl]);
+
+    useEffect(() => {
+        if (!processedSourceVideoUrl) return;
+        return () => URL.revokeObjectURL(processedSourceVideoUrl);
+    }, [processedSourceVideoUrl]);
+
+    useEffect(() => {
+        if (!enableVideoPreprocess) return;
+        if (!sourceVideoPreviewUrl || (!file && !selectedAssetId)) {
+            setProcessedSourceVideoUrl(null);
+            setProcessedSourceError(null);
+            setProcessedSourceMeta(null);
+            return;
+        }
+
+        const speedFactor = clampVideoSpeedFactor(videoSpeedFactor);
+        if (Math.abs(speedFactor - 1) < 0.0001) {
+            setProcessedSourceVideoUrl(null);
+            setProcessedSourceError(null);
+            setProcessedSourceMeta(null);
+            return;
+        }
+
+        const controller = new AbortController();
+        let cancelled = false;
+        const run = async () => {
+            setIsPreparingProcessedSource(true);
+            setProcessedSourceError(null);
+            try {
+                const formData = new FormData();
+                if (file) {
+                    formData.set("videoFile", file);
+                } else if (selectedAssetId) {
+                    formData.set("assetId", selectedAssetId);
+                }
+                formData.set("videoSpeedFactor", String(speedFactor));
+                const response = await fetch("/api/audio/video-preprocess", {
+                    method: "POST",
+                    body: formData,
+                    signal: controller.signal,
+                });
+                const payload = (await response.json()) as
+                    | {
+                          ok: true;
+                          data: {
+                              mimeType: string;
+                              videoBase64: string;
+                              byteLength: number;
+                              speedFactor: number;
+                              generationDurationMs: number;
+                          };
+                      }
+                    | {
+                          ok: false;
+                          error?: string;
+                          errorCode?: string;
+                      };
+                if (!response.ok || !payload.ok) {
+                    throw new Error(
+                        payload.errorCode
+                            ? `${payload.errorCode}: ${payload.error ?? "Video preprocess failed."}`
+                            : (payload.error ?? "Video preprocess failed."),
+                    );
+                }
+                const bin = atob(payload.data.videoBase64);
+                const bytes = new Uint8Array(bin.length);
+                for (let i = 0; i < bin.length; i += 1) {
+                    bytes[i] = bin.charCodeAt(i);
+                }
+                const blob = new Blob([bytes], {
+                    type: payload.data.mimeType || "video/mp4",
+                });
+                const nextUrl = URL.createObjectURL(blob);
+                if (!cancelled) {
+                    setProcessedSourceMeta({
+                        byteLength: payload.data.byteLength,
+                        speedFactor: payload.data.speedFactor,
+                        generationDurationMs: payload.data.generationDurationMs,
+                    });
+                    setProcessedSourceVideoUrl((previous) => {
+                        if (previous) URL.revokeObjectURL(previous);
+                        return nextUrl;
+                    });
+                } else {
+                    URL.revokeObjectURL(nextUrl);
+                }
+            } catch (error) {
+                if (cancelled || controller.signal.aborted) return;
+                setProcessedSourceError(
+                    error instanceof Error
+                        ? error.message
+                        : "Video preprocess failed.",
+                );
+                setProcessedSourceVideoUrl(null);
+                setProcessedSourceMeta(null);
+            } finally {
+                if (!cancelled) {
+                    setIsPreparingProcessedSource(false);
+                }
+            }
+        };
+
+        void run();
+
+        return () => {
+            cancelled = true;
+            controller.abort();
+        };
+    }, [
+        enableVideoPreprocess,
+        file,
+        selectedAssetId,
+        sourceVideoPreviewUrl,
+        videoSpeedFactor,
+    ]);
+
+    useEffect(() => {
+        const video = videoPreviewRef.current;
+        if (!video) return;
+        video.playbackRate = dubPreviewPlaybackRate;
+        video.defaultPlaybackRate = dubPreviewPlaybackRate;
+    }, [dubPreviewPlaybackRate, activeSourceVideoPreviewUrl]);
 
     useEffect(() => {
         if (activeVoiceSegmentId === null) return;
@@ -1147,6 +1326,7 @@ export function ChineseTranscriptionPanel({
         setDubPreviewError(null);
         try {
             video.muted = true;
+            video.playbackRate = dubPreviewPlaybackRate;
             video.currentTime = 0;
             audio.currentTime = 0;
             await video.play();
@@ -1168,6 +1348,7 @@ export function ChineseTranscriptionPanel({
             setDubPreviewError(null);
             try {
                 video.muted = true;
+                video.playbackRate = dubPreviewPlaybackRate;
                 await video.play();
                 await audio.play();
                 setIsDubPreviewPaused(false);
@@ -1423,6 +1604,43 @@ export function ChineseTranscriptionPanel({
                             ) : null}
                         </div>
                     </div>
+
+                    {enableVideoPreprocess ? (
+                        <div className="border border-main bg-secondary/20 p-4">
+                            <p className="text-[12px] font-semibold text-main">
+                                Video Preprocess
+                            </p>
+                            <p className="mt-1 text-[10px] leading-4 text-muted">
+                                Tốc độ này sẽ áp dụng trước bước extract audio.
+                            </p>
+                            <label className="mt-3 block">
+                                <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                    Video speed
+                                </span>
+                                <select
+                                    value={videoSpeedFactor}
+                                    disabled={isRunning}
+                                    onChange={(event) =>
+                                        setVideoSpeedFactor(
+                                            clampVideoSpeedFactor(
+                                                Number(
+                                                    event.currentTarget.value,
+                                                ),
+                                            ),
+                                        )
+                                    }
+                                    className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main"
+                                >
+                                    <option value={0.5}>0.5x</option>
+                                    <option value={0.6}>0.6x</option>
+                                    <option value={0.75}>0.75x</option>
+                                    <option value={1}>1.0x</option>
+                                    <option value={1.25}>1.25x</option>
+                                    <option value={1.5}>1.5x</option>
+                                </select>
+                            </label>
+                        </div>
+                    ) : null}
 
                     <div className="space-y-3 border border-main bg-secondary/20 p-4">
                         <label className="block">
@@ -2414,9 +2632,93 @@ export function ChineseTranscriptionPanel({
                                         ) : null}
                                     </div>
                                 ) : null}
+                                {voiceAudioUrl ? (
+                                    <div className="border border-main bg-main px-3 py-2 text-[10px] leading-4 text-muted">
+                                        <p className="text-[11px] font-semibold text-main">
+                                            Processing summary
+                                        </p>
+                                        <div className="mt-1 grid gap-1 sm:grid-cols-2">
+                                            <p>
+                                                Processed video size:{" "}
+                                                {processedSourceMeta
+                                                    ? formatBytes(
+                                                          processedSourceMeta.byteLength,
+                                                      )
+                                                    : "n/a"}
+                                            </p>
+                                            <p>
+                                                Processed source speed:{" "}
+                                                {processedSourceMeta
+                                                    ? `${processedSourceMeta.speedFactor.toFixed(2)}x`
+                                                    : "1.00x"}
+                                            </p>
+                                            <p>
+                                                Preprocess time:{" "}
+                                                {processedSourceMeta
+                                                    ? formatDurationMs(
+                                                          processedSourceMeta.generationDurationMs,
+                                                      )
+                                                    : "skipped"}
+                                            </p>
+                                            <p>
+                                                Extract audio time:{" "}
+                                                {formatDurationMs(
+                                                    Number(
+                                                        result?.steps.find(
+                                                            (step) =>
+                                                                step.id ===
+                                                                "extract-audio",
+                                                        )?.metrics
+                                                            ?.stepDurationMs ??
+                                                            Number.NaN,
+                                                    ),
+                                                )}
+                                            </p>
+                                            <p>
+                                                Transcribe time:{" "}
+                                                {formatDurationMs(
+                                                    Number(
+                                                        result?.steps.find(
+                                                            (step) =>
+                                                                step.id ===
+                                                                "groq-transcribe",
+                                                        )?.metrics
+                                                            ?.stepDurationMs ??
+                                                            Number.NaN,
+                                                    ),
+                                                )}
+                                            </p>
+                                            <p>
+                                                Translate time:{" "}
+                                                {translation
+                                                    ? formatDurationMs(
+                                                          translation.generationDurationMs,
+                                                      )
+                                                    : "n/a"}
+                                            </p>
+                                            <p>
+                                                Voice generation time:{" "}
+                                                {voiceResult
+                                                    ? formatDurationMs(
+                                                          voiceResult.generationDurationMs,
+                                                      )
+                                                    : "n/a"}
+                                            </p>
+                                            <p>
+                                                Metadata time:{" "}
+                                                {metadataGenerationDurationMs !==
+                                                null
+                                                    ? formatDurationMs(
+                                                          metadataGenerationDurationMs,
+                                                      )
+                                                    : "n/a"}
+                                            </p>
+                                        </div>
+                                    </div>
+                                ) : null}
 
                                 <div className="flex items-center gap-2 overflow-x-auto whitespace-nowrap">
-                                    {sourceVideoPreviewUrl ? (
+                                    {activeSourceVideoPreviewUrl ? (
                                         <>
                                             <button
                                                 type="button"
@@ -2454,12 +2756,18 @@ export function ChineseTranscriptionPanel({
                                 <p className="text-[11px] font-semibold text-main">
                                     Dub preview (source video + generated voice)
                                 </p>
-                                {sourceVideoPreviewUrl ? (
+                                {enableVideoPreprocess ? (
+                                    <p className="text-[10px] text-muted">
+                                        Source preview speed:{" "}
+                                        {dubPreviewPlaybackRate.toFixed(2)}x
+                                    </p>
+                                ) : null}
+                                {activeSourceVideoPreviewUrl ? (
                                     <video
                                         ref={videoPreviewRef}
                                         controls
                                         muted
-                                        src={sourceVideoPreviewUrl}
+                                        src={activeSourceVideoPreviewUrl}
                                         onError={() =>
                                             setDubPreviewError(
                                                 "Dub preview không load được source video hiện tại.",
@@ -2472,6 +2780,17 @@ export function ChineseTranscriptionPanel({
                                         No source video preview.
                                     </div>
                                 )}
+                                {isPreparingProcessedSource ? (
+                                    <p className="text-[10px] text-muted">
+                                        Preparing processed source video...
+                                    </p>
+                                ) : null}
+                                {processedSourceError ? (
+                                    <p className="border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-[11px] leading-5 text-rose-700">
+                                        {processedSourceError}
+                                    </p>
+                                ) : null}
+
                                 <audio
                                     controls
                                     src={voiceAudioUrl}
@@ -2510,9 +2829,14 @@ export function ChineseTranscriptionPanel({
                                                 Audio Timeline Workbench
                                             </p>
                                             <p className="mt-1 text-[10px] leading-4 text-muted">
-                                                {voiceTimelineWorkbench.items.length}{" "}
+                                                {
+                                                    voiceTimelineWorkbench.items
+                                                        .length
+                                                }{" "}
                                                 chunks ·{" "}
-                                                {voiceTimelineWorkbench.laneCount}{" "}
+                                                {
+                                                    voiceTimelineWorkbench.laneCount
+                                                }{" "}
                                                 lane(s) ·{" "}
                                                 {formatTime(
                                                     voiceTimelineWorkbench.timelineEnd,
@@ -2605,7 +2929,9 @@ export function ChineseTranscriptionPanel({
                                                 Fast
                                             </p>
                                             <p className="text-muted">
-                                                {voiceTimelineWorkbench.fastCount}{" "}
+                                                {
+                                                    voiceTimelineWorkbench.fastCount
+                                                }{" "}
                                                 chunk(s)
                                             </p>
                                         </div>
@@ -2614,7 +2940,9 @@ export function ChineseTranscriptionPanel({
                                                 Padded
                                             </p>
                                             <p className="text-muted">
-                                                {voiceTimelineWorkbench.slowCount}{" "}
+                                                {
+                                                    voiceTimelineWorkbench.slowCount
+                                                }{" "}
                                                 chunk(s)
                                             </p>
                                         </div>
@@ -2709,9 +3037,7 @@ export function ChineseTranscriptionPanel({
                                                         >
                                                             <span className="block truncate font-bold">
                                                                 #
-                                                                {
-                                                                    chunk.parentId
-                                                                }{" "}
+                                                                {chunk.parentId}{" "}
                                                                 {formatSpeedFactor(
                                                                     chunk.speedFactor,
                                                                 )}

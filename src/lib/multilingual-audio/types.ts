@@ -50,7 +50,7 @@ export const PIPER_TTS_ALIGNMENT_SETTINGS = {
     timelineGapBorrowRatio: 0.75,
     maxTimelineGapBorrowSeconds: 0.75,
     timelineSegmentSentenceSilenceSeconds: 0.05,
-    timelineMinSpeedFactor: 1.25,
+    timelineMinSpeedFactor: 1.4,
     timelineMaxSpeedFactor: 1.75,
     highTimelineSpeedFactor: 1.35,
     balancedMaxPauseSeconds: 0.3,
@@ -64,6 +64,7 @@ export type ChineseTranscriptionRequest = {
     mimeType?: string;
     fileSizeBytes: number;
     fileBytes: Uint8Array;
+    videoSpeedFactor?: number;
     language?: string;
     prompt?: string;
     includeWordTimestamps?: boolean;

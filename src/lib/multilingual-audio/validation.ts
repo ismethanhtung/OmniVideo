@@ -44,6 +44,19 @@ export function validateChineseTranscriptionRequest(
             400,
         );
     }
+
+    if (
+        input.videoSpeedFactor !== undefined &&
+        (!Number.isFinite(input.videoSpeedFactor) ||
+            input.videoSpeedFactor < 0.5 ||
+            input.videoSpeedFactor > 2)
+    ) {
+        throw new ChineseTranscriptionError(
+            "VAL_AUDIO_FILE_UNSUPPORTED",
+            "Video speed factor must be between 0.5x and 2.0x.",
+            400,
+        );
+    }
 }
 
 export function validateGroqAudioPayloadSize(audioBytes: Uint8Array) {

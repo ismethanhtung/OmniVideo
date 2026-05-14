@@ -11,6 +11,13 @@ function readFormValue(formData: FormData, key: string) {
     return typeof value === "string" ? value : "";
 }
 
+function readNumberFormValue(formData: FormData, key: string) {
+    const raw = readFormValue(formData, key).trim();
+    if (!raw) return undefined;
+    const value = Number(raw);
+    return Number.isFinite(value) ? value : undefined;
+}
+
 export async function POST(request: Request) {
     try {
         const rateLimited = applyDemoRateLimit(request, "audio-transcription");
@@ -104,6 +111,7 @@ export async function POST(request: Request) {
             prompt: readFormValue(formData, "prompt") || undefined,
             includeWordTimestamps:
                 readFormValue(formData, "includeWordTimestamps") === "true",
+            videoSpeedFactor: readNumberFormValue(formData, "videoSpeedFactor"),
         });
 
         return NextResponse.json({ ok: true, data: result });

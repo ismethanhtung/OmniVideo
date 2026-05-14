@@ -1,8 +1,9 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   normalizeVietnameseTtsText,
   normalizeTranslationPayload,
+  parseTranslationModelContent,
   translateTranscriptSegments,
   validateTranslationSegments,
 } from "./transcript-translation";
@@ -14,8 +15,13 @@ const sourceSegments = [
 ];
 
 describe("transcript translation", () => {
+  beforeEach(() => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+  });
+
   afterEach(() => {
     vi.unstubAllEnvs();
+    vi.restoreAllMocks();
   });
 
   it("normalizes translation payload while preserving timestamps", () => {
@@ -82,6 +88,63 @@ describe("transcript translation", () => {
     ).toBe("Ăn wa sa bi với lát cá 50 xen ti mét.");
   });
 
+  it("normalizes branding bumper text to a short neutral Vietnamese phrase", () => {
+    expect(
+      normalizeTranslationPayload(
+        {
+          segments: [
+            {
+              id: 0,
+              translatedText: "YoYo Television Series Exclusive",
+            },
+          ],
+        },
+        [{ id: 0, start: 0, end: 1, text: "YoYo Television Series Exclusive" }],
+      )[0].translatedText,
+    ).toBe("Phim ngắn.");
+  });
+
+  it("parses model JSON when providers wrap it in markdown or prose", () => {
+    expect(
+      parseTranslationModelContent(
+        '```json\n{"segments":[{"id":0,"translatedText":"Xin chào"}]}\n```',
+      ),
+    ).toEqual({
+      segments: [{ id: 0, translatedText: "Xin chào" }],
+    });
+
+    expect(
+      parseTranslationModelContent(
+        'Sure, here is the JSON:\n{"segments":[{"id":1,"translatedText":"Tạm biệt"}]}\nDone.',
+      ),
+    ).toEqual({
+      segments: [{ id: 1, translatedText: "Tạm biệt" }],
+    });
+
+    expect(
+      parseTranslationModelContent(
+        '[{"id":2,"translatedText":"Một mảng segment"}]',
+      ),
+    ).toEqual({
+      segments: [{ id: 2, translatedText: "Một mảng segment" }],
+    });
+
+    expect(
+      parseTranslationModelContent(
+        '{"translations":{"0":"Xin chào","1":"Tạm biệt"}}',
+      ),
+    ).toEqual({
+      segments: [
+        { id: 0, text: "Xin chào" },
+        { id: 1, text: "Tạm biệt" },
+      ],
+    });
+
+    expect(() =>
+      parseTranslationModelContent("sure, here you go -> not-json-response"),
+    ).toThrow(/Raw model content:/);
+  });
+
   it("calls Groq chat completions with JSON mode and default model", async () => {
     const fetchImpl = vi.fn(async () => {
       return new Response(
@@ -134,12 +197,35 @@ describe("transcript translation", () => {
       end: 1.34,
       translatedText: "Người dẫn đường có nằm mơ cũng không ngờ tới",
     });
+    expect(console.log).toHaveBeenCalledWith(
+      "[AudioTranscript Translation] provider request",
+      expect.objectContaining({
+        mode: "chunk-json",
+        segmentIds: [0, 1],
+        body: expect.stringContaining("寻导人做梦都想不到"),
+      }),
+    );
+    expect(console.log).toHaveBeenCalledWith(
+      "[AudioTranscript Translation] provider response",
+      expect.objectContaining({
+        mode: "chunk-json",
+        status: 200,
+        requestId: "chat_123",
+        body: expect.stringContaining("Người dẫn đường"),
+      }),
+    );
     const [, init] = fetchImpl.mock.calls[0];
     const body = JSON.parse(init.body as string);
     const prompt = body.messages[1].content as string;
     expect(body.model).toBe("llama-3.1-8b-instant");
     expect(body.response_format).toEqual({ type: "json_object" });
     expect(prompt).toContain("fits the segment duration");
+    expect(prompt).toContain("infer a small cast/gender map");
+    expect(prompt).toContain("do not translate 他 mechanically");
+    expect(prompt).toContain("Female cues:");
+    expect(prompt).toContain("Male cues:");
+    expect(prompt).toContain("prefer a neutral Vietnamese wording");
+    expect(prompt).toContain("Never insert pronouns inside another word");
     expect(prompt).toContain("Do not force Vietnamese to match the source character count exactly");
     expect(prompt).toContain("short Chinese segments need short Vietnamese");
     expect(prompt).toContain("20 -> hai mươi");
@@ -148,7 +234,8 @@ describe("transcript translation", () => {
     expect(prompt).toContain("isothiocyanate -> ai sô thio xai a nết");
     expect(prompt).toContain("myrosinase -> mai rô si nâyz");
     expect(prompt).toContain("enzyme/enzym -> en zim");
-    expect(prompt).toContain("durationSeconds");
+    expect(prompt).toContain('"translations"');
+    expect(prompt).not.toContain("durationSeconds");
   });
 
   it("maps Groq provider errors", async () => {
@@ -169,6 +256,158 @@ describe("transcript translation", () => {
       code: "PRV_GROQ_TRANSLATION_FAILED",
       message: "rate limit",
     });
+  });
+
+  it("splits chunks and recovers when a limited provider returns invalid JSON", async () => {
+    let callCount = 0;
+    const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
+      callCount += 1;
+      const body = JSON.parse(init.body as string);
+      const content = body.messages[1].content as string;
+      const requestSegments = JSON.parse(
+        content.slice(content.indexOf("Segments:\n") + "Segments:\n".length),
+      ) as Array<{ id: number; start: number; end: number; text: string }>;
+
+      if (callCount === 1) {
+        return new Response(
+          JSON.stringify({
+            id: "chat_bad",
+            choices: [{ message: { content: "Here is JSON: { bad" } }],
+          }),
+          { status: 200 },
+        );
+      }
+
+      return new Response(
+        JSON.stringify({
+          id: `chat_${callCount}`,
+          choices: [
+            {
+              message: {
+                content: `\`\`\`json\n${JSON.stringify({
+                  segments: requestSegments.map((segment) => ({
+                    id: segment.id,
+                    start: segment.start,
+                    end: segment.end,
+                    sourceText: segment.text,
+                    translatedText: `Bản dịch ${segment.id}`,
+                  })),
+                })}\n\`\`\``,
+              },
+            },
+          ],
+        }),
+        { status: 200 },
+      );
+    });
+
+    const result = await translateTranscriptSegments({
+      segments: sourceSegments,
+      apiKey: "secret",
+      baseUrl: "https://openrouter.ai/api/v1",
+      providerName: "openrouter",
+      fetchImpl,
+    });
+
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+    expect(result.provider.name).toBe("openrouter");
+    expect(result.translatedSegments.map((segment) => segment.translatedText)).toEqual([
+      "Bản dịch 0",
+      "Bản dịch 1",
+    ]);
+  });
+
+  it("keeps short provider chunks near one hundred segments per request", async () => {
+    const manySegments = Array.from({ length: 101 }, (_, index) => ({
+      id: index,
+      start: index,
+      end: index + 0.5,
+      text: `短句${index}`,
+    }));
+    const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(init.body as string);
+      const content = body.messages[1].content as string;
+      const requestSegments = JSON.parse(
+        content.slice(content.indexOf("Segments:\n") + "Segments:\n".length),
+      ) as Array<{ id: number; text: string }>;
+
+      return new Response(
+        JSON.stringify({
+          id: `chat_${requestSegments[0].id}`,
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  segments: requestSegments.map((segment) => ({
+                    id: segment.id,
+                    translatedText: `Bản dịch ${segment.id}`,
+                  })),
+                }),
+              },
+            },
+          ],
+        }),
+        { status: 200 },
+      );
+    });
+
+    const result = await translateTranscriptSegments({
+      segments: manySegments,
+      apiKey: "secret",
+      baseUrl: "https://openrouter.ai/api/v1",
+      fetchImpl,
+    });
+
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(result.chunks.map((chunk) => chunk.segmentCount)).toEqual([100, 1]);
+  });
+
+  it("falls back to plain-text translation for a single segment after invalid JSON retries", async () => {
+    let callCount = 0;
+    const fetchImpl = vi.fn(async () => {
+      callCount += 1;
+      if (callCount <= 2) {
+        return new Response(
+          JSON.stringify({
+            id: `chat_bad_${callCount}`,
+            choices: [{ message: { content: "not-json" } }],
+          }),
+          { status: 200 },
+        );
+      }
+
+      return new Response(
+        JSON.stringify({
+          id: "chat_fallback",
+          choices: [{ message: { content: "YoYo Television Series Exclusive" } }],
+        }),
+        { status: 200 },
+      );
+    });
+
+    const result = await translateTranscriptSegments({
+      segments: [{ id: 7, start: 10, end: 11, text: "YoYo Television Series Exclusive" }],
+      apiKey: "secret",
+      baseUrl: "https://openrouter.ai/api/v1",
+      providerName: "9router",
+      fetchImpl,
+    });
+
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+    const [, fallbackInit] = fetchImpl.mock.calls[2];
+    const fallbackBody = JSON.parse(fallbackInit.body as string);
+    expect(fallbackBody.messages[0].content).toContain(
+      "Keep gender pronouns consistent with Chinese context cues.",
+    );
+    expect(result.translatedSegments).toEqual([
+      {
+        id: 7,
+        start: 10,
+        end: 11,
+        sourceText: "YoYo Television Series Exclusive",
+        translatedText: "Phim ngắn.",
+      },
+    ]);
   });
 
   it("splits translation chunks when Groq reports request too large", async () => {

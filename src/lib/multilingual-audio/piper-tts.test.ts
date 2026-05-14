@@ -123,8 +123,28 @@ describe("Piper TTS adapter", () => {
     ).toThrow("libespeak-ng.1.dylib");
   });
 
-  it("maps default `piper` command to local bundled binary path", () => {
-    setPiperFileExistsForTest((filePath) => filePath.includes(".venv"));
+  it("maps default `piper` command to bundled binary when runtime libs exist", () => {
+    setPiperFileExistsForTest((filePath) => {
+      if (filePath.includes(".venv")) return true;
+      if (filePath.endsWith("/piper/piper")) return true;
+      if (filePath.endsWith("libespeak-ng.1.dylib")) return true;
+      if (filePath.endsWith("libpiper_phonemize.1.dylib")) return true;
+      if (filePath.endsWith("libonnxruntime.1.14.1.dylib")) return true;
+      return false;
+    });
+
+    expect(resolvePiperBinaryPath("piper")).toBe(
+      `${process.cwd()}/piper/piper`,
+    );
+  });
+
+  it("falls back to .venv piper when bundled binary misses dylibs", () => {
+    setPiperFileExistsForTest((filePath) => {
+      if (filePath.includes(".venv")) return true;
+      if (filePath.endsWith("/piper/piper")) return true;
+      // Simulate missing bundled dylibs.
+      return false;
+    });
 
     expect(resolvePiperBinaryPath("piper")).toBe(
       `${process.cwd()}/piper/.venv/bin/piper`,
@@ -221,7 +241,7 @@ describe("Piper TTS adapter", () => {
     });
 
     expect(spawnMock).toHaveBeenCalledWith(
-      `${process.cwd()}/piper/.venv/bin/piper`,
+      `${process.cwd()}/piper/piper`,
       expect.arrayContaining(["--model", "/models/voice.onnx"]),
       expect.objectContaining({
         stdio: ["pipe", "pipe", "pipe"],
@@ -296,6 +316,31 @@ describe("Piper TTS adapter", () => {
       "mạch máu bị cắt đứt ngay.",
       "Mất nguồn máu và dinh dưỡng, các tế bào chết đi.",
     ]);
+
+    expect(splitTextForPiperSynthesis("... !!! ???")).toEqual([]);
+  });
+
+  it("keeps voice generation alive when a segment has only punctuation", async () => {
+    const spawnMock = createMockSpawn();
+    setPiperSpawnForTest(spawnMock as never);
+    setPiperFileExistsForTest(() => true);
+    setPiperReadFileForTest(async () => Buffer.from("silence-safe-audio"));
+    setPiperFfmpegRunnerForTest(async () => ({
+      stderr: "Duration: 00:00:00.120",
+    }));
+
+    const result = await generateVoiceFromSegments({
+      segments: [{ id: 0, start: 0, end: 0.8, text: "... !!! ???" }],
+      settings: {
+        binaryPath: "piper",
+        modelPath: "/models/voice.onnx",
+        preserveTimestampGaps: false,
+      },
+    });
+
+    expect(spawnMock).not.toHaveBeenCalled();
+    expect(result.byteLength).toBe("silence-safe-audio".length);
+    expect(result.segmentCount).toBe(1);
   });
 
   it("borrows safe following gaps before speeding up timeline segments", () => {
@@ -311,9 +356,9 @@ describe("Piper TTS adapter", () => {
       rawDurationSeconds: 1.5,
       targetDurationSeconds: 1.5,
       borrowedGapSeconds: 0.5,
-      speedFactor: 1.25,
-      tempoFilter: "atempo=1.25",
-      warningCodes: [],
+      speedFactor: 1.4,
+      tempoFilter: "atempo=1.4",
+      warningCodes: ["HIGH_SPEED_FACTOR"],
     });
   });
 
@@ -335,7 +380,7 @@ describe("Piper TTS adapter", () => {
     });
   });
 
-  it("uses a 1.25x speed floor when timeline acceleration is needed", () => {
+  it("uses a 1.40x speed floor when timeline acceleration is needed", () => {
     expect(
       buildTimelineAlignmentChunk({
         segment: { id: 9, start: 0, end: 1, text: "Nhanh hơn một chút" },
@@ -344,8 +389,8 @@ describe("Piper TTS adapter", () => {
       }),
     ).toMatchObject({
       targetDurationSeconds: 1,
-      speedFactor: 1.25,
-      tempoFilter: "atempo=1.25",
+      speedFactor: 1.4,
+      tempoFilter: "atempo=1.4",
     });
   });
 
@@ -397,17 +442,17 @@ describe("Piper TTS adapter", () => {
           expect.objectContaining({
             segmentId: 0,
             rawDurationSeconds: 0.5,
-            targetDurationSeconds: 0.4,
+            targetDurationSeconds: expect.closeTo(0.35714, 4),
             scheduledStartSeconds: 0,
-            speedFactor: 1.25,
+            speedFactor: 1.4,
           }),
           expect.objectContaining({
             segmentId: 1,
             rawDurationSeconds: 0.5,
-            targetDurationSeconds: 0.4,
-            scheduledStartSeconds: 0.7,
+            targetDurationSeconds: expect.closeTo(0.35714, 4),
+            scheduledStartSeconds: expect.closeTo(0.65714, 4),
             pauseBeforeSeconds: 0.3,
-            speedFactor: 1.25,
+            speedFactor: 1.4,
           }),
         ],
         warnings: [],

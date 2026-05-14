@@ -16,7 +16,11 @@ function safeExtension(fileName: string) {
 export function buildSpeechReadyFfmpegArgs(
     inputPath: string,
     outputPath: string,
+    options: {
+        speedFactor?: number;
+    } = {},
 ) {
+    const speedFilters = buildAtempoFilters(options.speedFactor ?? 1);
     return [
         "-y",
         "-i",
@@ -26,6 +30,9 @@ export function buildSpeechReadyFfmpegArgs(
         "1",
         "-ar",
         "16000",
+        ...(speedFilters.length
+            ? ["-filter:a", speedFilters.join(",")]
+            : []),
         "-map",
         "0:a:0",
         "-c:a",
@@ -34,6 +41,28 @@ export function buildSpeechReadyFfmpegArgs(
         "64k",
         outputPath,
     ];
+}
+
+function buildAtempoFilters(speedFactor: number) {
+    if (!Number.isFinite(speedFactor) || Math.abs(speedFactor - 1) < 0.0001) {
+        return [] as string[];
+    }
+
+    const filters: string[] = [];
+    let remaining = speedFactor;
+    while (remaining < 0.5) {
+        filters.push("atempo=0.5");
+        remaining /= 0.5;
+    }
+    while (remaining > 2) {
+        filters.push("atempo=2");
+        remaining /= 2;
+    }
+    if (Math.abs(remaining - 1) >= 0.0001) {
+        filters.push(`atempo=${remaining.toFixed(4).replace(/\.?0+$/u, "")}`);
+    }
+
+    return filters;
 }
 
 export function getFfmpegCandidates(staticPath = ffmpegStaticPath) {
@@ -126,6 +155,7 @@ async function probeAudioDurationSeconds(filePath: string) {
 export async function extractSpeechReadyAudio(input: {
     fileName: string;
     fileBytes: Uint8Array;
+    speedFactor?: number;
 }) {
     const workDir = path.join(tmpdir(), `omnivideo-audio-${randomUUID()}`);
     const inputPath = path.join(
@@ -137,7 +167,11 @@ export async function extractSpeechReadyAudio(input: {
     try {
         await mkdir(workDir, { recursive: true });
         await writeFile(inputPath, input.fileBytes);
-        await runFfmpeg(buildSpeechReadyFfmpegArgs(inputPath, outputPath));
+        await runFfmpeg(
+            buildSpeechReadyFfmpegArgs(inputPath, outputPath, {
+                speedFactor: input.speedFactor,
+            }),
+        );
         return {
             audioBytes: await readFile(outputPath),
             durationSeconds: await probeAudioDurationSeconds(outputPath),

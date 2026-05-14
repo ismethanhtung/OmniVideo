@@ -112,13 +112,30 @@ export type PiperTtsResult = {
 };
 
 export function resolvePiperBinaryPath(binaryPath: string) {
+  const bundledRuntimeReady = (() => {
+    if (!fileExists(FALLBACK_LOCAL_PIPER_BINARY)) return false;
+    const piperDir = path.dirname(FALLBACK_LOCAL_PIPER_BINARY);
+    return REQUIRED_PIPER_DYLIBS.every((fileName) =>
+      fileExists(path.join(piperDir, fileName)),
+    );
+  })();
+
   const trimmed = binaryPath.trim();
   if (!trimmed || trimmed === "piper") {
+    if (bundledRuntimeReady) return FALLBACK_LOCAL_PIPER_BINARY;
     if (fileExists(DEFAULT_LOCAL_PIPER_BINARY)) return DEFAULT_LOCAL_PIPER_BINARY;
+    if (fileExists(FALLBACK_LOCAL_PIPER_BINARY)) return FALLBACK_LOCAL_PIPER_BINARY;
+    return "piper";
+  }
+  if (
+    trimmed === DEFAULT_LOCAL_PIPER_BINARY &&
+    bundledRuntimeReady
+  ) {
     return FALLBACK_LOCAL_PIPER_BINARY;
   }
   if (
     trimmed === FALLBACK_LOCAL_PIPER_BINARY &&
+    !bundledRuntimeReady &&
     fileExists(DEFAULT_LOCAL_PIPER_BINARY)
   ) {
     return DEFAULT_LOCAL_PIPER_BINARY;
@@ -706,9 +723,35 @@ export function splitTextForPiperSynthesis(text: string) {
   const chunks = normalized.match(/[^.!?。！？]+[.!?。！？]+|[^.!?。！？]+$/gu) ?? [
     normalized,
   ];
+
+  const hasSpeakableToken = (value: string) => /[\p{L}\p{N}]/u.test(value);
   return chunks
     .map((chunk) => chunk.trim())
-    .filter(Boolean);
+    .filter(Boolean)
+    .filter(hasSpeakableToken);
+}
+
+async function createSilenceWav(input: {
+  outputPath: string;
+  durationSeconds: number;
+}) {
+  const durationSeconds = Math.min(1.5, Math.max(0.08, input.durationSeconds));
+  await runFfmpeg([
+    "-y",
+    "-f",
+    "lavfi",
+    "-i",
+    "anullsrc=r=22050:cl=mono",
+    "-t",
+    durationSeconds.toFixed(3),
+    "-ac",
+    "1",
+    "-ar",
+    "22050",
+    "-c:a",
+    "pcm_s16le",
+    input.outputPath,
+  ]);
 }
 
 export async function generatePiperSpeech(
@@ -872,44 +915,106 @@ async function synthesizeSegmentFiles(input: {
       : input.settings.sentenceSilence;
 
   for (const segment of input.segments) {
+    const textChunks = splitTextForPiperSynthesis(segment.text);
+    const outputPath = path.join(input.workDir, `segment-${segment.id}.wav`);
+    if (textChunks.length === 0) {
+      await createSilenceWav({
+        outputPath,
+        durationSeconds: segmentDuration(segment) || 0.12,
+      });
+      files.push({ segment, filePath: outputPath });
+      continue;
+    }
+
     batchItems.push({
       segment,
-      outputPath: path.join(input.workDir, `segment-${segment.id}.wav`),
-      textChunks: splitTextForPiperSynthesis(segment.text),
+      outputPath,
+      textChunks,
     });
+  }
+  if (batchItems.length === 0) {
+    return files;
   }
 
   const batchSettings = { ...input.settings, sentenceSilence };
-  const batchOutputPaths = await generatePiperSpeechBatch({
-    texts: batchItems.flatMap((item) => item.textChunks),
-    settings: batchSettings,
-    workDir: input.workDir,
-    outputDir: path.join(input.workDir, "piper-batch-output"),
-  });
-  let batchIndex = 0;
+  try {
+    const batchOutputPaths = await generatePiperSpeechBatch({
+      texts: batchItems.flatMap((item) => item.textChunks),
+      settings: batchSettings,
+      workDir: input.workDir,
+      outputDir: path.join(input.workDir, "piper-batch-output"),
+    });
+    let batchIndex = 0;
 
-  for (const item of batchItems) {
-    const chunkPaths = batchOutputPaths.slice(
-      batchIndex,
-      batchIndex + item.textChunks.length,
-    );
-    batchIndex += item.textChunks.length;
-
-    if (chunkPaths.length === 1) {
-      await writeFile(
-        item.outputPath,
-        piperReadFileForTest
-          ? await piperReadFileForTest(chunkPaths[0])
-          : await readFile(chunkPaths[0]),
+    for (const item of batchItems) {
+      const chunkPaths = batchOutputPaths.slice(
+        batchIndex,
+        batchIndex + item.textChunks.length,
       );
-    } else {
-      await concatWavFiles({
-        workDir: input.workDir,
-        filePaths: chunkPaths,
-        outputPath: item.outputPath,
-      });
+      batchIndex += item.textChunks.length;
+
+      if (chunkPaths.length === 1) {
+        await writeFile(
+          item.outputPath,
+          piperReadFileForTest
+            ? await piperReadFileForTest(chunkPaths[0])
+            : await readFile(chunkPaths[0]),
+        );
+      } else {
+        await concatWavFiles({
+          workDir: input.workDir,
+          filePaths: chunkPaths,
+          outputPath: item.outputPath,
+        });
+      }
+      files.push({ segment: item.segment, filePath: item.outputPath });
     }
-    files.push({ segment: item.segment, filePath: item.outputPath });
+  } catch (error) {
+    // Piper batch mode can intermittently fail near the end even after writing many
+    // wav files (e.g. wave.Error "# channels not specified"). Fallback to per-item
+    // synthesis to keep voice generation resilient.
+    for (const item of batchItems) {
+      const chunkOutputs: string[] = [];
+      for (let index = 0; index < item.textChunks.length; index += 1) {
+        const chunkText = item.textChunks[index];
+        const chunkResult = await generatePiperSpeech({
+          text: chunkText,
+          binaryPath: batchSettings.binaryPath,
+          modelPath: batchSettings.modelPath,
+          configPath: batchSettings.configPath,
+          speaker: batchSettings.speaker,
+          lengthScale: batchSettings.lengthScale,
+          noiseScale: batchSettings.noiseScale,
+          noiseW: batchSettings.noiseW,
+          sentenceSilence: batchSettings.sentenceSilence,
+        });
+        const chunkOutputPath = path.join(
+          input.workDir,
+          `segment-${item.segment.id}-chunk-${index}.wav`,
+        );
+        await writeFile(
+          chunkOutputPath,
+          Buffer.from(chunkResult.audioBase64, "base64"),
+        );
+        chunkOutputs.push(chunkOutputPath);
+      }
+
+      if (chunkOutputs.length === 1) {
+        await writeFile(
+          item.outputPath,
+          piperReadFileForTest
+            ? await piperReadFileForTest(chunkOutputs[0])
+            : await readFile(chunkOutputs[0]),
+        );
+      } else {
+        await concatWavFiles({
+          workDir: input.workDir,
+          filePaths: chunkOutputs,
+          outputPath: item.outputPath,
+        });
+      }
+      files.push({ segment: item.segment, filePath: item.outputPath });
+    }
   }
 
   return files;
