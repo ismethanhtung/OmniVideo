@@ -65,11 +65,17 @@ describe("Audio Transcript asset picker preview", () => {
   it("supports optional video preprocess speed control for Audio Transcript 2", () => {
     expect(source).toContain("enableVideoPreprocess");
     expect(source).toContain("Video Preprocess");
+    expect(source).toContain("Enable preprocess");
+    expect(source).toContain("useVideoPreprocess");
+    expect(source).not.toContain("disabled={isRunning || !useVideoPreprocess}");
     expect(source).toContain("Video speed");
+    expect(source).toContain("<option value={0.7}>0.7x</option>");
+    expect(source).toContain("<option value={0.8}>0.8x</option>");
     expect(source).toContain('formData.set("videoSpeedFactor"');
     expect(source).toContain("video.playbackRate = dubPreviewPlaybackRate");
     expect(source).toContain("Source preview speed:");
     expect(source).toContain("/api/audio/video-preprocess");
+    expect(source).toContain("Prepare source");
     expect(source).toContain("Preparing processed source video...");
     expect(source).toContain("Processing summary");
     expect(source).toContain("Processed video size:");
@@ -77,5 +83,8 @@ describe("Audio Transcript asset picker preview", () => {
     expect(source).toContain("Transcribe time:");
     expect(source).toContain("Translate time:");
     expect(source).toContain("Voice generation time:");
+    expect(source).toContain("Metadata generation time");
+    expect(source).toContain("Total time:");
+    expect(source).toContain("Completed timed steps:");
   });
 });

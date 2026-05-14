@@ -9,6 +9,10 @@
 - Replaced playback-rate-only preview fallback with real server-side video preprocessing (`/api/audio/video-preprocess`) that renders a new slowed video stream using ffmpeg `setpts` + `atempo`; Dub preview now consumes this processed source URL so video duration itself expands (not just play speed).
 - Aligned video dubbing runtime with preprocess semantics by preprocessing source bytes before transcription/mux when `videoSpeedFactor` is provided, preventing downstream timeline drift.
 - Added a compact `Processing summary` block under Dub preview controls, including processed video size and step timing from preprocess through extract/transcribe/translate/voice/metadata.
+- Updated Video Preprocess to be optional via `Enable preprocess` toggle, added `0.7x` and `0.8x` speed options, and switched Audio Transcript 2 default speed to `0.7x`.
+- Expanded summary with `Total time` and `Completed timed steps`, and relabeled metadata timing as optional metadata generation time.
+- Removed eager preprocess execution: users can now pick speed first, then preprocess runs on demand (`Prepare source` or first `Play sync preview`) instead of auto-running immediately on toggle.
+- Fixed Video Preprocess UX so speed selector is always editable (even when preprocess toggle is off); toggle now controls whether selected speed is applied, not whether speed can be chosen.
 - Added test coverage for navigation registration, speed-aware ffmpeg args, transcription speed propagation, and preprocess UI wiring.
 - Verification (FAST-AUDIO-051): `npm run test -- --run src/components/layout/navigation.test.ts src/lib/multilingual-audio/audio-extraction.test.ts src/lib/multilingual-audio/chinese-transcription.test.ts src/features/audio/chinese-transcription-panel.test.ts` pass (4 files / 22 tests); `npm run guard:version` pass.
 

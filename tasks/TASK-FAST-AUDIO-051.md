@@ -141,6 +141,6 @@
 - Test results summary:
   - tests pass (`4 files`, `22 tests`).
   - preprocess/dubbing tests pass (`3 files`, `12 tests`).
-  - summary/timing tests pass (`3 files`, `10 tests`).
+  - summary/timing tests pass (`3 files`, `10 tests`), including optional preprocess toggle + extra timing metrics.
 - Version guard command/result (if runtime changed):
   - `npm run guard:version` pass (`[version-guard] OK`).

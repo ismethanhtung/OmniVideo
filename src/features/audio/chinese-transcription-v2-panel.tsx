@@ -14,7 +14,7 @@ export function ChineseTranscriptionV2Panel({
         <ChineseTranscriptionPanel
             section={section}
             enableVideoPreprocess
-            defaultVideoSpeedFactor={0.6}
+            defaultVideoSpeedFactor={0.7}
         />
     );
 }

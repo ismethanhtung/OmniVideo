@@ -158,6 +158,21 @@ function clampVideoSpeedFactor(value: number) {
     return Math.min(2, Math.max(0.5, value));
 }
 
+async function decodeBase64VideoToBlobUrl(
+    base64: string,
+    mimeType: string,
+): Promise<string> {
+    const bin = atob(base64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i += 1) {
+        bytes[i] = bin.charCodeAt(i);
+    }
+    const blob = new Blob([bytes], {
+        type: mimeType || "video/mp4",
+    });
+    return URL.createObjectURL(blob);
+}
+
 function timelineTickStep(seconds: number) {
     if (seconds <= 60) return 5;
     if (seconds <= 180) return 10;
@@ -319,6 +334,7 @@ export function ChineseTranscriptionPanel({
     const [videoSpeedFactor, setVideoSpeedFactor] = useState(
         clampVideoSpeedFactor(defaultVideoSpeedFactor),
     );
+    const [useVideoPreprocess, setUseVideoPreprocess] = useState(false);
     const [processedSourceVideoUrl, setProcessedSourceVideoUrl] = useState<
         string | null
     >(null);
@@ -596,7 +612,7 @@ export function ChineseTranscriptionPanel({
                 "includeWordTimestamps",
                 String(includeWordTimestamps),
             );
-            if (enableVideoPreprocess) {
+            if (enableVideoPreprocess && useVideoPreprocess) {
                 formData.set("videoSpeedFactor", String(videoSpeedFactor));
             }
             if (prompt.trim()) {
@@ -1147,10 +1163,13 @@ export function ChineseTranscriptionPanel({
         }
         return null;
     }, [file, selectedAssetId]);
-    const activeSourceVideoPreviewUrl =
-        processedSourceVideoUrl ?? sourceVideoPreviewUrl;
+    const activeSourceVideoPreviewUrl = useVideoPreprocess
+        ? (processedSourceVideoUrl ?? sourceVideoPreviewUrl)
+        : sourceVideoPreviewUrl;
     const dubPreviewPlaybackRate =
-        enableVideoPreprocess && !processedSourceVideoUrl
+        enableVideoPreprocess &&
+        useVideoPreprocess &&
+        !processedSourceVideoUrl
             ? clampVideoSpeedFactor(videoSpeedFactor)
             : 1;
 
@@ -1165,114 +1184,139 @@ export function ChineseTranscriptionPanel({
     }, [processedSourceVideoUrl]);
 
     useEffect(() => {
-        if (!enableVideoPreprocess) return;
-        if (!sourceVideoPreviewUrl || (!file && !selectedAssetId)) {
-            setProcessedSourceVideoUrl(null);
-            setProcessedSourceError(null);
+        if (!enableVideoPreprocess || !useVideoPreprocess) {
+            setProcessedSourceVideoUrl((previous) => {
+                if (previous) URL.revokeObjectURL(previous);
+                return null;
+            });
             setProcessedSourceMeta(null);
+            setProcessedSourceError(null);
             return;
         }
+        setProcessedSourceVideoUrl((previous) => {
+            if (previous) URL.revokeObjectURL(previous);
+            return null;
+        });
+        setProcessedSourceMeta(null);
+        setProcessedSourceError(null);
+    }, [enableVideoPreprocess, useVideoPreprocess, file, selectedAssetId, videoSpeedFactor]);
 
+    const prepareProcessedSource = async () => {
+        if (!enableVideoPreprocess || !useVideoPreprocess) {
+            return false;
+        }
+        if (!sourceVideoPreviewUrl || (!file && !selectedAssetId)) {
+            return false;
+        }
         const speedFactor = clampVideoSpeedFactor(videoSpeedFactor);
         if (Math.abs(speedFactor - 1) < 0.0001) {
-            setProcessedSourceVideoUrl(null);
-            setProcessedSourceError(null);
+            setProcessedSourceVideoUrl((previous) => {
+                if (previous) URL.revokeObjectURL(previous);
+                return null;
+            });
             setProcessedSourceMeta(null);
-            return;
+            setProcessedSourceError(null);
+            return true;
         }
 
-        const controller = new AbortController();
-        let cancelled = false;
-        const run = async () => {
-            setIsPreparingProcessedSource(true);
-            setProcessedSourceError(null);
-            try {
-                const formData = new FormData();
-                if (file) {
-                    formData.set("videoFile", file);
-                } else if (selectedAssetId) {
-                    formData.set("assetId", selectedAssetId);
-                }
-                formData.set("videoSpeedFactor", String(speedFactor));
-                const response = await fetch("/api/audio/video-preprocess", {
-                    method: "POST",
-                    body: formData,
-                    signal: controller.signal,
-                });
-                const payload = (await response.json()) as
-                    | {
-                          ok: true;
-                          data: {
-                              mimeType: string;
-                              videoBase64: string;
-                              byteLength: number;
-                              speedFactor: number;
-                              generationDurationMs: number;
-                          };
-                      }
-                    | {
-                          ok: false;
-                          error?: string;
-                          errorCode?: string;
-                      };
-                if (!response.ok || !payload.ok) {
-                    throw new Error(
-                        payload.errorCode
-                            ? `${payload.errorCode}: ${payload.error ?? "Video preprocess failed."}`
-                            : (payload.error ?? "Video preprocess failed."),
-                    );
-                }
-                const bin = atob(payload.data.videoBase64);
-                const bytes = new Uint8Array(bin.length);
-                for (let i = 0; i < bin.length; i += 1) {
-                    bytes[i] = bin.charCodeAt(i);
-                }
-                const blob = new Blob([bytes], {
-                    type: payload.data.mimeType || "video/mp4",
-                });
-                const nextUrl = URL.createObjectURL(blob);
-                if (!cancelled) {
-                    setProcessedSourceMeta({
-                        byteLength: payload.data.byteLength,
-                        speedFactor: payload.data.speedFactor,
-                        generationDurationMs: payload.data.generationDurationMs,
-                    });
-                    setProcessedSourceVideoUrl((previous) => {
-                        if (previous) URL.revokeObjectURL(previous);
-                        return nextUrl;
-                    });
-                } else {
-                    URL.revokeObjectURL(nextUrl);
-                }
-            } catch (error) {
-                if (cancelled || controller.signal.aborted) return;
-                setProcessedSourceError(
-                    error instanceof Error
-                        ? error.message
-                        : "Video preprocess failed.",
-                );
-                setProcessedSourceVideoUrl(null);
-                setProcessedSourceMeta(null);
-            } finally {
-                if (!cancelled) {
-                    setIsPreparingProcessedSource(false);
-                }
+        setIsPreparingProcessedSource(true);
+        setProcessedSourceError(null);
+        try {
+            const formData = new FormData();
+            if (file) {
+                formData.set("videoFile", file);
+            } else if (selectedAssetId) {
+                formData.set("assetId", selectedAssetId);
             }
-        };
+            formData.set("videoSpeedFactor", String(speedFactor));
+            const response = await fetch("/api/audio/video-preprocess", {
+                method: "POST",
+                body: formData,
+            });
+            const payload = (await response.json()) as
+                | {
+                      ok: true;
+                      data: {
+                          mimeType: string;
+                          videoBase64: string;
+                          byteLength: number;
+                          speedFactor: number;
+                          generationDurationMs: number;
+                      };
+                  }
+                | {
+                      ok: false;
+                      error?: string;
+                      errorCode?: string;
+                  };
+            if (!response.ok || !payload.ok) {
+                throw new Error(
+                    payload.errorCode
+                        ? `${payload.errorCode}: ${payload.error ?? "Video preprocess failed."}`
+                        : (payload.error ?? "Video preprocess failed."),
+                );
+            }
+            const nextUrl = await decodeBase64VideoToBlobUrl(
+                payload.data.videoBase64,
+                payload.data.mimeType,
+            );
+            setProcessedSourceMeta({
+                byteLength: payload.data.byteLength,
+                speedFactor: payload.data.speedFactor,
+                generationDurationMs: payload.data.generationDurationMs,
+            });
+            setProcessedSourceVideoUrl((previous) => {
+                if (previous) URL.revokeObjectURL(previous);
+                return nextUrl;
+            });
+            return true;
+        } catch (error) {
+            setProcessedSourceError(
+                error instanceof Error
+                    ? error.message
+                    : "Video preprocess failed.",
+            );
+            setProcessedSourceVideoUrl((previous) => {
+                if (previous) URL.revokeObjectURL(previous);
+                return null;
+            });
+            setProcessedSourceMeta(null);
+            return false;
+        } finally {
+            setIsPreparingProcessedSource(false);
+        }
+    };
 
-        void run();
-
-        return () => {
-            cancelled = true;
-            controller.abort();
-        };
-    }, [
-        enableVideoPreprocess,
-        file,
-        selectedAssetId,
-        sourceVideoPreviewUrl,
-        videoSpeedFactor,
-    ]);
+    const extractAudioDurationMs = Number(
+        result?.steps.find((step) => step.id === "extract-audio")?.metrics
+            ?.stepDurationMs ?? Number.NaN,
+    );
+    const transcribeDurationMs = Number(
+        result?.steps.find((step) => step.id === "groq-transcribe")?.metrics
+            ?.stepDurationMs ?? Number.NaN,
+    );
+    const preprocessDurationMs =
+        useVideoPreprocess && processedSourceMeta
+            ? processedSourceMeta.generationDurationMs
+            : Number.NaN;
+    const translateDurationMs = translation?.generationDurationMs ?? Number.NaN;
+    const voiceDurationMs = voiceResult?.generationDurationMs ?? Number.NaN;
+    const metadataDurationMs = metadataGenerationDurationMs ?? Number.NaN;
+    const timingDurations = [
+        preprocessDurationMs,
+        extractAudioDurationMs,
+        transcribeDurationMs,
+        translateDurationMs,
+        voiceDurationMs,
+        metadataDurationMs,
+    ];
+    const completedTimingSteps = timingDurations.filter((value) =>
+        Number.isFinite(value),
+    ).length;
+    const totalPipelineDurationMs = timingDurations.reduce(
+        (sum, value) => (Number.isFinite(value) ? sum + value : sum),
+        0,
+    );
 
     useEffect(() => {
         const video = videoPreviewRef.current;
@@ -1320,6 +1364,14 @@ export function ChineseTranscriptionPanel({
     };
 
     const playDubPreview = async () => {
+        if (
+            enableVideoPreprocess &&
+            useVideoPreprocess &&
+            !processedSourceVideoUrl
+        ) {
+            const prepared = await prepareProcessedSource();
+            if (!prepared) return;
+        }
         const video = videoPreviewRef.current;
         const audio = voicePreviewRef.current;
         if (!video || !audio) return;
@@ -1611,8 +1663,30 @@ export function ChineseTranscriptionPanel({
                                 Video Preprocess
                             </p>
                             <p className="mt-1 text-[10px] leading-4 text-muted">
-                                Tốc độ này sẽ áp dụng trước bước extract audio.
+                                Optional: bạn có thể bật/tắt trước khi chạy.
                             </p>
+                            <label className="mt-3 flex items-center justify-between gap-3 border border-main bg-main px-3 py-2">
+                                <span>
+                                    <span className="block text-[11px] font-semibold text-main">
+                                        Enable preprocess
+                                    </span>
+                                    <span className="block text-[10px] text-muted">
+                                        Bật để làm chậm/tăng tốc source trước
+                                        pipeline.
+                                    </span>
+                                </span>
+                                <input
+                                    type="checkbox"
+                                    checked={useVideoPreprocess}
+                                    disabled={isRunning}
+                                    onChange={(event) =>
+                                        setUseVideoPreprocess(
+                                            event.currentTarget.checked,
+                                        )
+                                    }
+                                    className="h-4 w-4 accent-[var(--color-accent)]"
+                                />
+                            </label>
                             <label className="mt-3 block">
                                 <span className="mb-1 block text-[10px] font-semibold text-muted">
                                     Video speed
@@ -1633,6 +1707,8 @@ export function ChineseTranscriptionPanel({
                                 >
                                     <option value={0.5}>0.5x</option>
                                     <option value={0.6}>0.6x</option>
+                                    <option value={0.7}>0.7x</option>
+                                    <option value={0.8}>0.8x</option>
                                     <option value={0.75}>0.75x</option>
                                     <option value={1}>1.0x</option>
                                     <option value={1.25}>1.25x</option>
@@ -2632,94 +2708,27 @@ export function ChineseTranscriptionPanel({
                                         ) : null}
                                     </div>
                                 ) : null}
-                                {voiceAudioUrl ? (
-                                    <div className="border border-main bg-main px-3 py-2 text-[10px] leading-4 text-muted">
-                                        <p className="text-[11px] font-semibold text-main">
-                                            Processing summary
-                                        </p>
-                                        <div className="mt-1 grid gap-1 sm:grid-cols-2">
-                                            <p>
-                                                Processed video size:{" "}
-                                                {processedSourceMeta
-                                                    ? formatBytes(
-                                                          processedSourceMeta.byteLength,
-                                                      )
-                                                    : "n/a"}
-                                            </p>
-                                            <p>
-                                                Processed source speed:{" "}
-                                                {processedSourceMeta
-                                                    ? `${processedSourceMeta.speedFactor.toFixed(2)}x`
-                                                    : "1.00x"}
-                                            </p>
-                                            <p>
-                                                Preprocess time:{" "}
-                                                {processedSourceMeta
-                                                    ? formatDurationMs(
-                                                          processedSourceMeta.generationDurationMs,
-                                                      )
-                                                    : "skipped"}
-                                            </p>
-                                            <p>
-                                                Extract audio time:{" "}
-                                                {formatDurationMs(
-                                                    Number(
-                                                        result?.steps.find(
-                                                            (step) =>
-                                                                step.id ===
-                                                                "extract-audio",
-                                                        )?.metrics
-                                                            ?.stepDurationMs ??
-                                                            Number.NaN,
-                                                    ),
-                                                )}
-                                            </p>
-                                            <p>
-                                                Transcribe time:{" "}
-                                                {formatDurationMs(
-                                                    Number(
-                                                        result?.steps.find(
-                                                            (step) =>
-                                                                step.id ===
-                                                                "groq-transcribe",
-                                                        )?.metrics
-                                                            ?.stepDurationMs ??
-                                                            Number.NaN,
-                                                    ),
-                                                )}
-                                            </p>
-                                            <p>
-                                                Translate time:{" "}
-                                                {translation
-                                                    ? formatDurationMs(
-                                                          translation.generationDurationMs,
-                                                      )
-                                                    : "n/a"}
-                                            </p>
-                                            <p>
-                                                Voice generation time:{" "}
-                                                {voiceResult
-                                                    ? formatDurationMs(
-                                                          voiceResult.generationDurationMs,
-                                                      )
-                                                    : "n/a"}
-                                            </p>
-                                            <p>
-                                                Metadata time:{" "}
-                                                {metadataGenerationDurationMs !==
-                                                null
-                                                    ? formatDurationMs(
-                                                          metadataGenerationDurationMs,
-                                                      )
-                                                    : "n/a"}
-                                            </p>
-                                        </div>
-                                    </div>
-                                ) : null}
-
                                 <div className="flex items-center gap-2 overflow-x-auto whitespace-nowrap">
                                     {activeSourceVideoPreviewUrl ? (
                                         <>
+                                            {enableVideoPreprocess &&
+                                            useVideoPreprocess &&
+                                            !processedSourceVideoUrl ? (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        void prepareProcessedSource();
+                                                    }}
+                                                    disabled={
+                                                        isPreparingProcessedSource
+                                                    }
+                                                    className="border border-main bg-main px-2 py-1 text-[10px] font-semibold text-main hover:bg-secondary disabled:opacity-60"
+                                                >
+                                                    {isPreparingProcessedSource
+                                                        ? "Preparing..."
+                                                        : "Prepare source"}
+                                                </button>
+                                            ) : null}
                                             <button
                                                 type="button"
                                                 onClick={() => {
@@ -2751,6 +2760,80 @@ export function ChineseTranscriptionPanel({
                                         Download {voiceResult.extension}
                                     </a>
                                 </div>
+                                {voiceAudioUrl ? (
+                                    <div className="border border-main bg-main px-3 py-2 text-[10px] leading-4 text-muted">
+                                        <p className="text-[11px] font-semibold text-main">
+                                            Processing summary
+                                        </p>
+                                        <div className="mt-1 grid gap-1 sm:grid-cols-2">
+                                            <p>
+                                                Processed video size:{" "}
+                                                {processedSourceMeta
+                                                    ? formatBytes(
+                                                          processedSourceMeta.byteLength,
+                                                      )
+                                                    : "n/a"}
+                                            </p>
+                                            <p>
+                                                Processed source speed:{" "}
+                                                {useVideoPreprocess
+                                                    ? `${videoSpeedFactor.toFixed(2)}x`
+                                                    : "off"}
+                                            </p>
+                                            <p>
+                                                Preprocess time:{" "}
+                                                {useVideoPreprocess
+                                                    ? formatDurationMs(
+                                                          preprocessDurationMs,
+                                                      )
+                                                    : "off"}
+                                            </p>
+                                            <p>
+                                                Extract audio time:{" "}
+                                                {formatDurationMs(
+                                                    extractAudioDurationMs,
+                                                )}
+                                            </p>
+                                            <p>
+                                                Transcribe time:{" "}
+                                                {formatDurationMs(
+                                                    transcribeDurationMs,
+                                                )}
+                                            </p>
+                                            <p>
+                                                Translate time:{" "}
+                                                {formatDurationMs(
+                                                    translateDurationMs,
+                                                )}
+                                            </p>
+                                            <p>
+                                                Voice generation time:{" "}
+                                                {formatDurationMs(
+                                                    voiceDurationMs,
+                                                )}
+                                            </p>
+                                            <p>
+                                                Metadata generation time
+                                                (optional):{" "}
+                                                {formatDurationMs(
+                                                    metadataDurationMs,
+                                                )}
+                                            </p>
+                                            <p>
+                                                Total time:{" "}
+                                                {completedTimingSteps > 0
+                                                    ? formatDurationMs(
+                                                          totalPipelineDurationMs,
+                                                      )
+                                                    : "n/a"}
+                                            </p>
+                                            <p>
+                                                Completed timed steps:{" "}
+                                                {completedTimingSteps}/6
+                                            </p>
+                                        </div>
+                                    </div>
+                                ) : null}
                             </div>
                             <div className="space-y-2">
                                 <p className="text-[11px] font-semibold text-main">
@@ -2759,7 +2842,9 @@ export function ChineseTranscriptionPanel({
                                 {enableVideoPreprocess ? (
                                     <p className="text-[10px] text-muted">
                                         Source preview speed:{" "}
-                                        {dubPreviewPlaybackRate.toFixed(2)}x
+                                        {useVideoPreprocess
+                                            ? `${videoSpeedFactor.toFixed(2)}x`
+                                            : "off"}
                                     </p>
                                 ) : null}
                                 {activeSourceVideoPreviewUrl ? (
