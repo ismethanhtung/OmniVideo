@@ -32,11 +32,10 @@ import {
     dismissProgressTask,
     getProgressTasksSnapshot,
     subscribeProgressTasks,
+    type ProgressTaskStep,
     type ProgressTask,
 } from "@/lib/ui/progress-center";
-import {
-    INSPIRATION_VAULT_UPDATED_EVENT,
-} from "@/lib/inspiration-vault/inspiration-vault";
+import { INSPIRATION_VAULT_UPDATED_EVENT } from "@/lib/inspiration-vault/inspiration-vault";
 import { createInspirationVaultItemFromApi } from "@/lib/inspiration-vault/client";
 
 type TopbarProps = {
@@ -152,11 +151,11 @@ export function Topbar({
                                       ? "Saving..."
                                       : quickCaptureStatus === "locked"
                                         ? VIEW_MODE_LOCKED_NOTE
-                                    : quickCaptureStatus === "empty"
-                                      ? "Paste link or keyword first"
-                                      : quickCaptureStatus === "error"
-                                        ? "Could not save"
-                                      : "Capture link / keyword..."
+                                        : quickCaptureStatus === "empty"
+                                          ? "Paste link or keyword first"
+                                          : quickCaptureStatus === "error"
+                                            ? "Could not save"
+                                            : "Capture link / keyword..."
                             }
                             readOnly={isReadOnlyDemo}
                             onClick={() => {
@@ -682,9 +681,19 @@ function ProgressModal({
     tasks: ProgressTask[];
     onClose: () => void;
 }) {
+    const [now, setNow] = useState(() => Date.now());
+
+    useEffect(() => {
+        const intervalId = window.setInterval(() => {
+            setNow(Date.now());
+        }, 1000);
+
+        return () => window.clearInterval(intervalId);
+    }, []);
+
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-4 md:p-6">
-            <section className="flex max-h-[90vh] w-full max-w-3xl flex-col border border-main bg-main shadow-xl">
+            <section className="flex max-h-[90vh] w-full max-w-4xl flex-col border border-main bg-main shadow-xl">
                 <header className="flex items-start justify-between gap-3 border-b border-main bg-secondary/35 px-4 py-3">
                     <div>
                         <p className="text-[14px] font-semibold text-main">
@@ -764,28 +773,20 @@ function ProgressModal({
                                             ) : null}
                                         </div>
                                     </div>
-                                    <div className="mt-3 h-2 overflow-hidden border border-main bg-secondary">
-                                        <div
-                                            className={`h-full ${
-                                                task.status === "failed"
-                                                    ? "bg-rose-500"
-                                                    : "bg-emerald-500"
-                                            } transition-all`}
-                                            style={{
-                                                width: `${task.progress}%`,
-                                            }}
-                                        />
-                                    </div>
+                                    <TaskProgressBar task={task} />
                                     <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[10px] text-muted">
-                                        <span>{task.progress}%</span>
+                                        <span>
+                                            {task.progressMode === "determinate"
+                                                ? `${task.progress}%`
+                                                : formatStepSummary(task.steps)}
+                                        </span>
                                         <span>
                                             {task.status} · updated{" "}
                                             {formatProgressTime(task.updatedAt)}{" "}
                                             · duration{" "}
                                             {formatDurationMs(
                                                 task.startedAt,
-                                                task.finishedAt ??
-                                                    task.updatedAt,
+                                                task.finishedAt ?? now,
                                             )}
                                         </span>
                                     </div>
@@ -794,12 +795,145 @@ function ProgressModal({
                                             {task.error}
                                         </p>
                                     ) : null}
+                                    {task.steps.length > 0 ? (
+                                        <div className="mt-3 border border-main bg-secondary/15">
+                                            <div className="flex items-center justify-between gap-2 border-b border-main px-3 py-2">
+                                                <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">
+                                                    Flow steps
+                                                </p>
+                                                <p className="text-[10px] text-muted">
+                                                    {formatStepSummary(
+                                                        task.steps,
+                                                    )}
+                                                </p>
+                                            </div>
+                                            <div className="divide-y divide-[var(--border)]">
+                                                {task.steps.map((step) => (
+                                                    <ProgressStepRow
+                                                        key={step.id}
+                                                        step={step}
+                                                        now={now}
+                                                    />
+                                                ))}
+                                            </div>
+                                        </div>
+                                    ) : null}
                                 </article>
                             ))}
                         </div>
                     )}
                 </div>
             </section>
+        </div>
+    );
+}
+
+function formatStepSummary(steps: ProgressTaskStep[]) {
+    if (steps.length === 0) {
+        return "No step timeline";
+    }
+
+    const successCount = steps.filter(
+        (step) => step.status === "success",
+    ).length;
+    const failedCount = steps.filter((step) => step.status === "failed").length;
+    const runningCount = steps.filter(
+        (step) => step.status === "running",
+    ).length;
+    const pieces = [`${successCount}/${steps.length} complete`];
+    if (runningCount > 0) pieces.push(`${runningCount} running`);
+    if (failedCount > 0) pieces.push(`${failedCount} failed`);
+    return pieces.join(" · ");
+}
+
+function TaskProgressBar({ task }: { task: ProgressTask }) {
+    const isFinished = task.status === "success" || task.status === "failed";
+    return (
+        <div className="mt-3 h-2 overflow-hidden border border-main bg-secondary">
+            {task.progressMode === "determinate" || isFinished ? (
+                <div
+                    className={`h-full ${
+                        task.status === "failed"
+                            ? "bg-rose-500"
+                            : "bg-emerald-500"
+                    } transition-all`}
+                    style={{
+                        width: `${isFinished ? 100 : task.progress}%`,
+                    }}
+                />
+            ) : (
+                <div
+                    className={`h-full w-full animate-pulse ${
+                        task.status === "failed"
+                            ? "bg-rose-500/35"
+                            : "bg-accent/35"
+                    }`}
+                />
+            )}
+        </div>
+    );
+}
+
+function ProgressStepRow({
+    step,
+    now,
+}: {
+    step: ProgressTaskStep;
+    now: number;
+}) {
+    return (
+        <div className="px-3 py-2.5">
+            <div className="flex items-start justify-between gap-3">
+                <div className="flex min-w-0 gap-2">
+                    <StepStatusIcon step={step} />
+                    <div className="min-w-0">
+                        <p className="truncate text-[11px] font-semibold text-main">
+                            {step.title}
+                        </p>
+                        <p className="mt-0.5 text-[10px] leading-4 text-muted">
+                            {step.description ?? "Waiting to start."}
+                        </p>
+                    </div>
+                </div>
+                <div className="shrink-0 text-right text-[10px] text-muted">
+                    <p className="font-mono uppercase tracking-wide">
+                        {step.status}
+                    </p>
+                    <p className="mt-0.5">
+                        {step.startedAt
+                            ? formatDurationMs(
+                                  step.startedAt,
+                                  step.finishedAt ?? now,
+                              )
+                            : "--:--"}
+                    </p>
+                </div>
+            </div>
+
+            {step.progressMode === "determinate" &&
+            (step.status === "running" || step.progress > 0) ? (
+                <div className="mt-2">
+                    <div className="h-1.5 overflow-hidden border border-main bg-secondary">
+                        <div
+                            className={`h-full ${
+                                step.status === "failed"
+                                    ? "bg-rose-500"
+                                    : "bg-accent"
+                            } transition-all`}
+                            style={{ width: `${step.progress}%` }}
+                        />
+                    </div>
+                    <p className="mt-1 text-[10px] text-muted">
+                        {step.progress}% measured progress
+                    </p>
+                </div>
+            ) : null}
+
+            {step.error ? (
+                <p className="mt-1.5 text-[10px] leading-4 text-rose-600">
+                    {step.error}
+                </p>
+            ) : null}
         </div>
     );
 }
@@ -814,4 +948,22 @@ function TaskStatusIcon({ task }: { task: ProgressTask }) {
     }
 
     return <RefreshCw className="h-4 w-4 animate-spin text-accent" />;
+}
+
+function StepStatusIcon({ step }: { step: ProgressTaskStep }) {
+    if (step.status === "success") {
+        return <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 text-emerald-600" />;
+    }
+
+    if (step.status === "failed") {
+        return <AlertTriangle className="mt-0.5 h-3.5 w-3.5 text-rose-600" />;
+    }
+
+    if (step.status === "running") {
+        return (
+            <RefreshCw className="mt-0.5 h-3.5 w-3.5 animate-spin text-accent" />
+        );
+    }
+
+    return <Gauge className="mt-0.5 h-3.5 w-3.5 text-muted" />;
 }

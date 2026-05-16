@@ -60,6 +60,9 @@ Mọi log sự kiện run/step cần có:
 3. Provider health và quota alerts.
 4. Social publish success/failure.
 5. Connection Center status snapshot.
+6. User-facing progress surfaces phải phân biệt rõ:
+   - `determinate` progress khi runtime có số đo thật (ví dụ bytes downloaded / total bytes).
+   - `indeterminate` progress khi backend/provider không expose tiến độ đáng tin cậy; trường hợp này vẫn phải hiển thị step status + elapsed time thay vì dựng phần trăm giả.
 
 ## 7. Alert Policy (Initial)
 

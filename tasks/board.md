@@ -22,6 +22,8 @@
 
 ## Review
 
+- `FAST-AUDIO-054` - Lower minimum voice speed floor to 1.30x.
+- `FAST-OPS-004` - Upgrade Background Progress to step-aware real runtime telemetry.
 - `FAST-WORKSPACE-024` - Fix dubbing voice timeline drift for preprocess (0.7x) flows by enforcing strict alignment in Workspace runtime.
 - `FAST-WORKSPACE-023` - Fix mirror/blur mismatch when mask setup comes from Storage Asset and upstream video path includes mirror transforms.
 - `FAST-WORKSPACE-021` - Persist generated VI metadata on stored artifacts and align mask runtime setup sourcing with Video Tools Lab.

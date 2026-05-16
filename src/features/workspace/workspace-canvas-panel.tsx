@@ -17,8 +17,11 @@ import {
 
 import type { LeftbarNavItem } from "@/components/layout/types";
 import {
+    finishProgressStep,
     finishProgressTask,
+    startProgressStep,
     startProgressTask,
+    updateProgressStep,
     updateProgressTask,
 } from "@/lib/ui/progress-center";
 import {
@@ -167,6 +170,12 @@ type WorkspaceRuntimeArtifact = {
     byteLength: number;
     kind: "audio" | "video";
     detail: string;
+};
+
+type WorkspaceFileProgress = {
+    loadedBytes: number;
+    totalBytes?: number;
+    percent?: number;
 };
 
 type WorkspaceVideoEditSetup = NonNullable<
@@ -553,6 +562,7 @@ async function fetchWorkspaceFile(input: {
     url: string;
     actionLabel: string;
     init?: RequestInit;
+    onProgress?: (progress: WorkspaceFileProgress) => void;
 }) {
     let response: Response;
     try {
@@ -583,7 +593,7 @@ async function fetchWorkspaceFile(input: {
         );
     }
 
-    const blob = await response.blob();
+    const blob = await readWorkspaceResponseBlob(response, input.onProgress);
     const fileName = decodeURIComponent(
         response.headers.get("X-OmniVideo-File-Name") || "workspace-output.mp4",
     );
@@ -600,6 +610,65 @@ async function fetchWorkspaceFile(input: {
         objectUrl: URL.createObjectURL(file),
         transformHeader: response.headers.get("X-OmniVideo-Transform"),
     };
+}
+
+async function readWorkspaceResponseBlob(
+    response: Response,
+    onProgress?: (progress: WorkspaceFileProgress) => void,
+) {
+    const totalBytes = Number(
+        response.headers.get("content-length") ??
+            response.headers.get("X-OmniVideo-Byte-Length"),
+    );
+    const canMeasure = Number.isFinite(totalBytes) && totalBytes > 0;
+    if (!response.body || !onProgress || !canMeasure) {
+        return response.blob();
+    }
+
+    const reader = response.body.getReader();
+    const chunks: Uint8Array<ArrayBuffer>[] = [];
+    let loadedBytes = 0;
+    let lastPercent = -1;
+    let lastUpdateAt = 0;
+
+    onProgress({
+        loadedBytes,
+        totalBytes,
+        percent: 0,
+    });
+
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (!value) continue;
+        const chunk =
+            value.buffer instanceof ArrayBuffer
+                ? (value as Uint8Array<ArrayBuffer>)
+                : Uint8Array.from(value);
+        chunks.push(chunk);
+        loadedBytes += chunk.byteLength;
+        const percent = Math.min(
+            100,
+            Math.round((loadedBytes / totalBytes) * 100),
+        );
+        const now = Date.now();
+        if (
+            percent === 100 ||
+            (percent !== lastPercent && now - lastUpdateAt >= 250)
+        ) {
+            lastPercent = percent;
+            lastUpdateAt = now;
+            onProgress({
+                loadedBytes,
+                totalBytes,
+                percent,
+            });
+        }
+    }
+
+    return new Blob(chunks, {
+        type: response.headers.get("content-type") ?? undefined,
+    });
 }
 
 function statusClass(status: WorkspaceNodeTemplate["status"]) {
@@ -1545,11 +1614,21 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
         setIsRunningFlow(true);
 
         const totalSteps = plan.steps.length;
+        const progressStepDescriptors = plan.steps.map((step) =>
+            describeStep(step, graph.nodes),
+        );
         const progressTaskId = startProgressTask({
             title: "Workspace flow",
             scope: "system",
             description: `Running ${totalSteps} step(s)...`,
             progress: 0,
+            progressMode: "indeterminate",
+            steps: progressStepDescriptors.map((descriptor) => ({
+                id: descriptor.key,
+                title: descriptor.label,
+                description: descriptor.subtitle,
+                progressMode: "indeterminate",
+            })),
         });
 
         const assetByProducer: Record<string, string> =
@@ -1611,7 +1690,6 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                       ),
                   )
                 : {};
-        let stepIndex = 0;
         let completedPublishes = 0;
         let failedPublishes = 0;
         const summary: string[] = [];
@@ -1627,14 +1705,63 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
             }
         > = {};
 
-        const advanceProgress = (description: string) => {
-            stepIndex += 1;
+        let currentProgressStep: WorkspaceFlowStep | null = null;
+        const advanceProgress = (
+            description: string,
+            status: "success" | "failed" | "skipped" = "success",
+        ) => {
             updateProgressTask(progressTaskId, {
-                progress: Math.min(
-                    95,
-                    Math.round((stepIndex / totalSteps) * 95),
-                ),
                 description,
+            });
+            if (currentProgressStep) {
+                finishWorkspaceProgressStep(currentProgressStep, {
+                    status,
+                    description,
+                });
+            }
+        };
+
+        const getProgressDescriptor = (step: WorkspaceFlowStep) =>
+            describeStep(step, graph.nodes);
+
+        const markProgressStepRunning = (
+            step: WorkspaceFlowStep,
+            description?: string,
+        ) => {
+            const descriptor = getProgressDescriptor(step);
+            startProgressStep({
+                taskId: progressTaskId,
+                stepId: descriptor.key,
+                description: description ?? descriptor.subtitle,
+                progressMode: "indeterminate",
+            });
+        };
+
+        const updateProgressStepDetail = (
+            step: WorkspaceFlowStep,
+            input: {
+                description: string;
+                progress?: number;
+                progressMode?: "determinate" | "indeterminate";
+            },
+        ) => {
+            const descriptor = getProgressDescriptor(step);
+            updateProgressStep(progressTaskId, descriptor.key, input);
+        };
+
+        const finishWorkspaceProgressStep = (
+            step: WorkspaceFlowStep,
+            input: {
+                status: "success" | "failed" | "skipped";
+                description?: string;
+                error?: string;
+            },
+        ) => {
+            const descriptor = getProgressDescriptor(step);
+            finishProgressStep({
+                taskId: progressTaskId,
+                stepId: descriptor.key,
+                ...input,
             });
         };
 
@@ -1794,6 +1921,16 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
             const resolvedFile = await fetchWorkspaceFile({
                 url: "/api/video-intake/resolve-file",
                 actionLabel: "Resolve URL video",
+                onProgress: (progress) => {
+                    if (!currentProgressStep || progress.percent === undefined) {
+                        return;
+                    }
+                    updateProgressStepDetail(currentProgressStep, {
+                        progressMode: "determinate",
+                        progress: progress.percent,
+                        description: `Downloading resolved source · ${formatBytes(progress.loadedBytes)} / ${formatBytes(progress.totalBytes ?? 0)}.`,
+                    });
+                },
                 init: {
                     method: "POST",
                     headers: { "content-type": "application/json" },
@@ -1881,6 +2018,19 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                 const downloaded = await fetchWorkspaceFile({
                     url: `/api/storage/assets/${assetId}/download?disposition=inline`,
                     actionLabel: "Download storage asset source",
+                    onProgress: (progress) => {
+                        if (
+                            !currentProgressStep ||
+                            progress.percent === undefined
+                        ) {
+                            return;
+                        }
+                        updateProgressStepDetail(currentProgressStep, {
+                            progressMode: "determinate",
+                            progress: progress.percent,
+                            description: `Downloading asset source · ${formatBytes(progress.loadedBytes)} / ${formatBytes(progress.totalBytes ?? 0)}.`,
+                        });
+                    },
                 });
                 resolvedAssetDownloadsByNodeId[sourceNode.id] = {
                     file: downloaded.file,
@@ -1990,6 +2140,8 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
             } else if (abortRemaining) {
                 continue;
             }
+            currentProgressStep = step;
+            markProgressStepRunning(step);
 
             if (mode === "resume") {
                 const checkpoint = getResumeCheckpoint(step);
@@ -2113,6 +2265,11 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         "running",
                         `Saving to ${storageAccount.label}...`,
                     );
+                    updateProgressStepDetail(step, {
+                        progressMode: "indeterminate",
+                        progress: 0,
+                        description: `Uploading ${file.name} and saving to ${storageAccount.label}...`,
+                    });
 
                     const formData = new FormData();
                     formData.set("videoFile", file);
@@ -2242,6 +2399,11 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         "running",
                         `Saving to ${storageAccount.label}...`,
                     );
+                    updateProgressStepDetail(step, {
+                        progressMode: "indeterminate",
+                        progress: 0,
+                        description: `Resolving source URL and saving to ${storageAccount.label}...`,
+                    });
 
                     const payload = {
                         sourceUrl,
@@ -2371,6 +2533,11 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         "running",
                         "Preprocessing video speed with ffmpeg...",
                     );
+                    updateProgressStepDetail(step, {
+                        progressMode: "indeterminate",
+                        progress: 0,
+                        description: "Preprocessing video speed with ffmpeg...",
+                    });
                     const preprocessPayload = await fetchWorkspaceJson<{
                         ok: true;
                         data: {
@@ -2433,6 +2600,11 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         "running",
                         "Extracting audio and calling Groq...",
                     );
+                    updateProgressStepDetail(step, {
+                        progressMode: "indeterminate",
+                        progress: 0,
+                        description: "Extracting audio and transcribing timestamps...",
+                    });
 
                     const formData = new FormData();
                     const source = await appendWorkspaceVideoInput({
@@ -2520,6 +2692,11 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         "running",
                         "Translating transcript segments with Groq...",
                     );
+                    updateProgressStepDetail(step, {
+                        progressMode: "indeterminate",
+                        progress: 0,
+                        description: "Translating transcript segments...",
+                    });
 
                     const translationPayload = await fetchWorkspaceJson<{
                         ok: true;
@@ -2588,6 +2765,11 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         "running",
                         "Generating Vietnamese metadata...",
                     );
+                    updateProgressStepDetail(step, {
+                        progressMode: "indeterminate",
+                        progress: 0,
+                        description: "Generating Vietnamese metadata...",
+                    });
                     const metadataPayload = await fetchWorkspaceJson<{
                         ok: true;
                         data: VietnameseVideoMetadataResult;
@@ -2661,6 +2843,11 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         "running",
                         "Generating Vietnamese voice with Piper...",
                     );
+                    updateProgressStepDetail(step, {
+                        progressMode: "indeterminate",
+                        progress: 0,
+                        description: "Generating Vietnamese voice with Piper...",
+                    });
                     const voicePayload = await fetchWorkspaceJson<{
                         ok: true;
                         data: VoiceGenerationResult;
@@ -2889,6 +3076,12 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         "running",
                         "Transcribing, translating, generating voice and muxing MP4...",
                     );
+                    updateProgressStepDetail(step, {
+                        progressMode: "indeterminate",
+                        progress: 0,
+                        description:
+                            "Transcribing, translating, generating voice, and muxing MP4...",
+                    });
                     const dubbingPayload = await fetchWorkspaceJson<{
                         ok: true;
                         data: VideoDubbingResult;
@@ -2959,6 +3152,11 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         "running",
                         "Mirroring video horizontally with ffmpeg...",
                     );
+                    updateProgressStepDetail(step, {
+                        progressMode: "indeterminate",
+                        progress: 0,
+                        description: "Mirroring video horizontally with ffmpeg...",
+                    });
                     const mirrorPayload = await fetchWorkspaceJson<{
                         ok: true;
                         data: {
@@ -3130,6 +3328,12 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         "running",
                         "Blurring region and burning Vietnamese subtitles...",
                     );
+                    updateProgressStepDetail(step, {
+                        progressMode: "indeterminate",
+                        progress: 0,
+                        description:
+                            "Blurring regions and burning Vietnamese subtitles...",
+                    });
                     const editFile = await fetchWorkspaceFile({
                         url: "/api/video-processing/edit",
                         actionLabel: "Video edit",
@@ -3209,6 +3413,11 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         "running",
                         `Saving generated video to ${storageAccount.label}...`,
                     );
+                    updateProgressStepDetail(step, {
+                        progressMode: "indeterminate",
+                        progress: 0,
+                        description: `Saving generated video to ${storageAccount.label}...`,
+                    });
                     const uploadForm = new FormData();
                     uploadForm.set("videoFile", base64ToFile(artifact));
                     uploadForm.set(
@@ -3334,6 +3543,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         failedPublishes += 1;
                         advanceProgress(
                             `Skip publish ${publishNode.label}: thiếu asset.`,
+                            "skipped",
                         );
                         continue;
                     }
@@ -3354,6 +3564,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         failedPublishes += 1;
                         advanceProgress(
                             `Publish ${publishNode.label} thiếu social account.`,
+                            "failed",
                         );
                         continue;
                     }
@@ -3385,6 +3596,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         failedPublishes += 1;
                         advanceProgress(
                             `Publish ${publishNode.label} thiếu Facebook Page ID.`,
+                            "failed",
                         );
                         continue;
                     }
@@ -3422,6 +3634,11 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         "running",
                         `Publishing via ${socialAccount.label} (${publishType})...`,
                     );
+                    updateProgressStepDetail(step, {
+                        progressMode: "indeterminate",
+                        progress: 0,
+                        description: `Publishing via ${socialAccount.label} (${publishType})...`,
+                    });
 
                     const publishPayload = await fetchWorkspaceJson<{
                         ok: true;
@@ -3468,6 +3685,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         failedPublishes += 1;
                         advanceProgress(
                             `Publish ${publishNode.label} failed: ${reason}.`,
+                            "failed",
                         );
                     } else {
                         setNodeStatus(
@@ -3490,6 +3708,11 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     error instanceof Error
                         ? error.message
                         : "Workspace step failed.";
+                finishWorkspaceProgressStep(step, {
+                    status: "failed",
+                    description: message,
+                    error: message,
+                });
                 if (
                     step.kind === "use-existing-asset" ||
                     step.kind === "upload-and-store" ||

@@ -1,5 +1,21 @@
 # OmniVideo Changelog
 
+## FAST-AUDIO-054 - Lower Minimum Voice Speed Floor to 1.30x
+
+- Bumped app version from `0.8.0` to `0.8.1` as a patch release for audio timing polish.
+- Lowered the shared Piper timeline minimum speed floor from `1.40x` to `1.30x`.
+- Lowered the Audio Transcript `Voice speed` display floor from `1.40x` to `1.30x`.
+- Workspace audio nodes automatically inherit the same `1.30x` runtime floor because they use the shared Piper alignment settings.
+- Verification (FAST-AUDIO-054): `npm run test -- --run src/lib/multilingual-audio/piper-tts.test.ts src/features/audio/chinese-transcription-panel.test.ts src/features/workspace/workspace-canvas-panel.test.ts` pass (3 files / 39 tests); `npm run build` pass with existing ESLint circular-config warning; `npm run guard:version` pass.
+
+## FAST-OPS-004 - Step-aware Background Progress Telemetry
+
+- Bumped app version from `0.7.0` to `0.8.0` as a backward-compatible feature release for richer runtime progress visibility.
+- Upgraded `Background Progress` from a flat task list to a step-aware flow timeline with per-step status, live elapsed duration, and explicit failure details.
+- Workspace flow progress no longer fabricates overall percentages from completed step count; flows now use honest indeterminate task progress plus real step completion summaries.
+- Added lightweight measured download progress for Workspace file downloads when response size is known, while keeping non-measurable processing steps truthful with status text + elapsed time instead of fake percentages.
+- Verification (FAST-OPS-004): `npm run test -- --run src/lib/ui/progress-center.test.ts src/components/layout/topbar.test.ts src/features/workspace/workspace-canvas-panel.test.ts` pass (3 files / 15 tests); `npm run build` pass with existing ESLint circular-config warning; `npm run guard:version` pass. Browser QA against `http://localhost:3000` was not completed because the in-app browser policy blocked that local target in this session.
+
 ## FAST-WORKSPACE-024 - Fix Dubbing Voice Timeline Drift for Preprocess Flows
 
 - Fixed Workspace dubbing timeline drift for preprocess flows (for example `0.7x`) where voice could end noticeably earlier than slowed video timeline.

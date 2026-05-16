@@ -1,4 +1,24 @@
 export type ProgressTaskStatus = "queued" | "running" | "success" | "failed";
+export type ProgressStepStatus =
+  | "queued"
+  | "running"
+  | "success"
+  | "failed"
+  | "skipped";
+export type ProgressMode = "determinate" | "indeterminate";
+
+export type ProgressTaskStep = {
+  id: string;
+  title: string;
+  description?: string;
+  status: ProgressStepStatus;
+  progress: number;
+  progressMode: ProgressMode;
+  startedAt?: number;
+  updatedAt: number;
+  finishedAt?: number;
+  error?: string;
+};
 
 export type ProgressTask = {
   id: string;
@@ -7,10 +27,20 @@ export type ProgressTask = {
   scope: "publish" | "upload" | "download" | "system";
   status: ProgressTaskStatus;
   progress: number;
+  progressMode: ProgressMode;
+  steps: ProgressTaskStep[];
   startedAt: number;
   updatedAt: number;
   finishedAt?: number;
   error?: string;
+};
+
+type ProgressTaskStepInput = {
+  id: string;
+  title: string;
+  description?: string;
+  progress?: number;
+  progressMode?: ProgressMode;
 };
 
 type ProgressTaskInput = {
@@ -19,6 +49,8 @@ type ProgressTaskInput = {
   description?: string;
   scope: ProgressTask["scope"];
   progress?: number;
+  progressMode?: ProgressMode;
+  steps?: ProgressTaskStepInput[];
 };
 
 const listeners = new Set<() => void>();
@@ -47,6 +79,36 @@ function createTaskId(scope: ProgressTask["scope"]) {
       : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
   return `${scope}-${random}`;
+}
+
+function createInitialStep(
+  input: ProgressTaskStepInput,
+  now: number,
+): ProgressTaskStep {
+  return {
+    id: input.id,
+    title: input.title,
+    description: input.description,
+    status: "queued",
+    progress: clampProgress(input.progress ?? 0),
+    progressMode: input.progressMode ?? "indeterminate",
+    updatedAt: now,
+  };
+}
+
+function updateTask(
+  id: string,
+  updater: (task: ProgressTask, now: number) => ProgressTask,
+) {
+  const existing = tasks.get(id);
+
+  if (!existing) {
+    return;
+  }
+
+  const now = Date.now();
+  tasks.set(id, updater(existing, now));
+  emit();
 }
 
 export function subscribeProgressTasks(listener: () => void) {
@@ -84,6 +146,8 @@ export function startProgressTask(input: ProgressTaskInput) {
     scope: input.scope,
     status: "running",
     progress: clampProgress(input.progress ?? 0),
+    progressMode: input.progressMode ?? "determinate",
+    steps: (input.steps ?? []).map((step) => createInitialStep(step, now)),
     startedAt: now,
     updatedAt: now,
   });
@@ -94,24 +158,120 @@ export function startProgressTask(input: ProgressTaskInput) {
 
 export function updateProgressTask(
   id: string,
-  patch: Partial<Pick<ProgressTask, "title" | "description" | "progress" | "status">>,
+  patch: Partial<
+    Pick<
+      ProgressTask,
+      "title" | "description" | "progress" | "progressMode" | "status"
+    >
+  >,
 ) {
-  const existing = tasks.get(id);
-
-  if (!existing) {
-    return;
-  }
-
-  tasks.set(id, {
+  updateTask(id, (existing, now) => ({
     ...existing,
     ...patch,
     progress:
       typeof patch.progress === "number"
         ? clampProgress(patch.progress)
         : existing.progress,
-    updatedAt: Date.now(),
-  });
-  emit();
+    updatedAt: now,
+  }));
+}
+
+export function startProgressStep({
+  taskId,
+  stepId,
+  description,
+  progress,
+  progressMode,
+}: {
+  taskId: string;
+  stepId: string;
+  description?: string;
+  progress?: number;
+  progressMode?: ProgressMode;
+}) {
+  updateTask(taskId, (existing, now) => ({
+    ...existing,
+    steps: existing.steps.map((step) =>
+      step.id === stepId
+        ? {
+            ...step,
+            description: description ?? step.description,
+            status: "running",
+            progress:
+              typeof progress === "number"
+                ? clampProgress(progress)
+                : step.progress,
+            progressMode: progressMode ?? step.progressMode,
+            startedAt: step.startedAt ?? now,
+            updatedAt: now,
+            finishedAt: undefined,
+            error: undefined,
+          }
+        : step,
+    ),
+    updatedAt: now,
+  }));
+}
+
+export function updateProgressStep(
+  taskId: string,
+  stepId: string,
+  patch: Partial<
+    Pick<
+      ProgressTaskStep,
+      "title" | "description" | "progress" | "progressMode" | "status"
+    >
+  >,
+) {
+  updateTask(taskId, (existing, now) => ({
+    ...existing,
+    steps: existing.steps.map((step) =>
+      step.id === stepId
+        ? {
+            ...step,
+            ...patch,
+            progress:
+              typeof patch.progress === "number"
+                ? clampProgress(patch.progress)
+                : step.progress,
+            updatedAt: now,
+          }
+        : step,
+    ),
+    updatedAt: now,
+  }));
+}
+
+export function finishProgressStep({
+  taskId,
+  stepId,
+  status,
+  description,
+  error,
+}: {
+  taskId: string;
+  stepId: string;
+  status: Extract<ProgressStepStatus, "success" | "failed" | "skipped">;
+  description?: string;
+  error?: string;
+}) {
+  updateTask(taskId, (existing, now) => ({
+    ...existing,
+    steps: existing.steps.map((step) =>
+      step.id === stepId
+        ? {
+            ...step,
+            description: description ?? step.description,
+            error,
+            status,
+            progress: status === "success" ? 100 : step.progress,
+            updatedAt: now,
+            finishedAt: now,
+          }
+        : step,
+    ),
+    updatedAt: now,
+  }));
 }
 
 export function finishProgressTask({

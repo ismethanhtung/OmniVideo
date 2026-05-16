@@ -111,4 +111,15 @@ describe("WorkspaceCanvasPanel canvas interactions", () => {
         expect(source).toContain("vietnameseDescription");
         expect(source).toContain("vietnameseHashtags");
     });
+
+    it("publishes step-aware background progress without fake step percentages", () => {
+        expect(source).toContain("progressMode: \"indeterminate\"");
+        expect(source).toContain("startProgressStep");
+        expect(source).toContain("finishProgressStep");
+        expect(source).toContain("readWorkspaceResponseBlob");
+        expect(source).toContain("Downloading asset source");
+        expect(source).not.toContain(
+            "Math.round((stepIndex / totalSteps) * 95)",
+        );
+    });
 });

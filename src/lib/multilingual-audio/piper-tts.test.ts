@@ -356,9 +356,9 @@ describe("Piper TTS adapter", () => {
       rawDurationSeconds: 1.5,
       targetDurationSeconds: 1.5,
       borrowedGapSeconds: 0.5,
-      speedFactor: 1.4,
-      tempoFilter: "atempo=1.4",
-      warningCodes: ["HIGH_SPEED_FACTOR"],
+      speedFactor: 1.3,
+      tempoFilter: "atempo=1.3",
+      warningCodes: [],
     });
   });
 
@@ -380,7 +380,7 @@ describe("Piper TTS adapter", () => {
     });
   });
 
-  it("uses a 1.40x speed floor when timeline acceleration is needed", () => {
+  it("uses a 1.30x speed floor when timeline acceleration is needed", () => {
     expect(
       buildTimelineAlignmentChunk({
         segment: { id: 9, start: 0, end: 1, text: "Nhanh hơn một chút" },
@@ -389,8 +389,8 @@ describe("Piper TTS adapter", () => {
       }),
     ).toMatchObject({
       targetDurationSeconds: 1,
-      speedFactor: 1.4,
-      tempoFilter: "atempo=1.4",
+      speedFactor: 1.3,
+      tempoFilter: "atempo=1.3",
     });
   });
 
@@ -442,17 +442,17 @@ describe("Piper TTS adapter", () => {
           expect.objectContaining({
             segmentId: 0,
             rawDurationSeconds: 0.5,
-            targetDurationSeconds: expect.closeTo(0.35714, 4),
+            targetDurationSeconds: expect.closeTo(0.38462, 4),
             scheduledStartSeconds: 0,
-            speedFactor: 1.4,
+            speedFactor: 1.3,
           }),
           expect.objectContaining({
             segmentId: 1,
             rawDurationSeconds: 0.5,
-            targetDurationSeconds: expect.closeTo(0.35714, 4),
-            scheduledStartSeconds: expect.closeTo(0.65714, 4),
+            targetDurationSeconds: expect.closeTo(0.38462, 4),
+            scheduledStartSeconds: expect.closeTo(0.68462, 4),
             pauseBeforeSeconds: 0.3,
-            speedFactor: 1.4,
+            speedFactor: 1.3,
           }),
         ],
         warnings: [],
