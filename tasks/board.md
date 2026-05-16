@@ -22,6 +22,8 @@
 
 ## Review
 
+- `FAST-WORKSPACE-024` - Fix dubbing voice timeline drift for preprocess (0.7x) flows by enforcing strict alignment in Workspace runtime.
+- `FAST-WORKSPACE-023` - Fix mirror/blur mismatch when mask setup comes from Storage Asset and upstream video path includes mirror transforms.
 - `FAST-WORKSPACE-021` - Persist generated VI metadata on stored artifacts and align mask runtime setup sourcing with Video Tools Lab.
 - `FAST-WORKSPACE-020` - Persist Workspace resume checkpoints and strengthen publish-only continuation after navigation.
 - `FAST-WORKSPACE-019` - Publish fallback to Generate VI metadata when overrides are empty.

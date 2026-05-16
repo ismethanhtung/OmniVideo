@@ -67,7 +67,7 @@ describe("workspace graph helpers", () => {
         });
     });
 
-    it("creates Piper workspace nodes with balanced timing defaults", () => {
+    it("creates Piper workspace nodes with strict timing defaults", () => {
         for (const nodeType of [
             "audio.voice-generation",
             "audio.video-dubbing",
@@ -89,7 +89,7 @@ describe("workspace graph helpers", () => {
                 ttsNoiseW: 0.8,
                 ttsSentenceSilence: 0.2,
                 ttsPreserveTimestampGaps: true,
-                ttsAlignmentMode: "balanced",
+                ttsAlignmentMode: "strict",
             });
         }
     });

@@ -235,6 +235,11 @@ function formatBytes(bytes: number) {
     return `${bytes} B`;
 }
 
+function clampNumber(value: number, min: number, max: number) {
+    if (!Number.isFinite(value)) return min;
+    return Math.min(max, Math.max(min, value));
+}
+
 function findUpstreamNodeByTemplateType(
     graph: WorkspaceGraph,
     targetNodeId: string,
@@ -272,6 +277,116 @@ function findUpstreamMetadataNode(graph: WorkspaceGraph, targetNodeId: string) {
     return findUpstreamNodeByTemplateType(graph, targetNodeId, [
         "text.generate-vi-metadata",
     ]);
+}
+
+function findMaskUpstreamVideoNode(
+    graph: WorkspaceGraph,
+    maskNodeId: string,
+) {
+    const videoSourceNodeTypes = new Set([
+        "source.file",
+        "source.url",
+        "source.asset",
+        "video.preprocess",
+        "audio.video-dubbing",
+        "edit.mirror",
+        "edit.mask-region",
+    ]);
+    const candidates = graph.edges
+        .filter(
+            (edge) => edge.toNodeId === maskNodeId && edge.toPortId !== "transcript",
+        )
+        .map((edge) => graph.nodes.find((node) => node.id === edge.fromNodeId))
+        .filter(
+            (node): node is WorkspaceNodeInstance =>
+                node !== undefined &&
+                videoSourceNodeTypes.has(node.templateNodeType),
+        );
+
+    if (candidates.length === 1) {
+        return candidates[0];
+    }
+    return null;
+}
+
+function findMirrorParityToAncestorNode(
+    graph: WorkspaceGraph,
+    startNodeId: string,
+    ancestorNodeId: string,
+) {
+    const startNode = graph.nodes.find((node) => node.id === startNodeId);
+    if (!startNode) return null;
+    const stack: Array<{ nodeId: string; parity: number }> = [
+        {
+            nodeId: startNodeId,
+            parity: startNode.templateNodeType === "edit.mirror" ? 1 : 0,
+        },
+    ];
+    const visited = new Set<string>();
+
+    while (stack.length > 0) {
+        const current = stack.pop() as { nodeId: string; parity: number };
+        const key = `${current.nodeId}:${current.parity}`;
+        if (visited.has(key)) continue;
+        visited.add(key);
+
+        if (current.nodeId === ancestorNodeId) {
+            return current.parity;
+        }
+
+        const incomingEdges = graph.edges.filter(
+            (edge) => edge.toNodeId === current.nodeId,
+        );
+        for (const edge of incomingEdges) {
+            const parentNode = graph.nodes.find(
+                (node) => node.id === edge.fromNodeId,
+            );
+            if (!parentNode) continue;
+            stack.push({
+                nodeId: parentNode.id,
+                parity:
+                    current.parity ^
+                    (parentNode.templateNodeType === "edit.mirror" ? 1 : 0),
+            });
+        }
+    }
+    return null;
+}
+
+function mirrorBlurRegionsHorizontally(
+    regions: NonNullable<WorkspaceVideoEditSetup["blurRegions"]>,
+) {
+    return regions.map((region) => {
+        const width = clampNumber(Number(region.width), 0.5, 100);
+        const x = clampNumber(Number(region.x), 0, 100);
+        return {
+            ...region,
+            x: clampNumber(100 - (x + width), 0, Math.max(0, 100 - width)),
+        };
+    });
+}
+
+function buildEffectiveMaskSetup(
+    node: WorkspaceNodeInstance,
+    setup: WorkspaceVideoEditSetup | null,
+    options?: { mirrorSetupRegions?: boolean },
+) {
+    if (!setup) return null;
+    const shouldMirrorSetupRegions = options?.mirrorSetupRegions === true;
+    const hasUserBlurRegionsOverride =
+        getStringConfig(node, "blurRegionsJson").trim().length > 0;
+    if (
+        !shouldMirrorSetupRegions ||
+        hasUserBlurRegionsOverride ||
+        !Array.isArray(setup.blurRegions) ||
+        setup.blurRegions.length === 0
+    ) {
+        return setup;
+    }
+    return {
+        ...setup,
+        blurRegions: mirrorBlurRegionsHorizontally(setup.blurRegions),
+    };
 }
 
 async function probeVideoDimensionsFromFile(file: File): Promise<{
@@ -2733,13 +2848,30 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                             ),
                         ),
                     );
+                    const configuredAlignmentMode = getStringConfig(
+                        dubbingNode,
+                        "ttsAlignmentMode",
+                        "strict",
+                    );
+                    const preprocessSpeedFactor =
+                        sourceNode.templateNodeType === "video.preprocess"
+                            ? getNumberConfig(sourceNode, "speedFactor", 1)
+                            : 1;
+                    const preprocessEnabled =
+                        sourceNode.templateNodeType === "video.preprocess"
+                            ? getBooleanConfig(sourceNode, "enabled", true)
+                            : false;
+                    const shouldForceStrictAlignment =
+                        sourceNode.templateNodeType === "video.preprocess" &&
+                        preprocessEnabled &&
+                        Math.abs(preprocessSpeedFactor - 1) > 0.0001 &&
+                        configuredAlignmentMode === "balanced";
+                    const effectiveAlignmentMode = shouldForceStrictAlignment
+                        ? "strict"
+                        : configuredAlignmentMode;
                     formData.set(
                         "ttsAlignmentMode",
-                        getStringConfig(
-                            dubbingNode,
-                            "ttsAlignmentMode",
-                            DEFAULT_PIPER_TTS_SETTINGS.alignmentMode,
-                        ),
+                        effectiveAlignmentMode,
                     );
                     formData.set(
                         "ttsPreserveTimestampGaps",
@@ -2793,11 +2925,16 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     setNodeStatus(
                         dubbingNode.id,
                         "success",
-                        `${formatBytes(dubbingPayload.data.byteLength)} MP4.`,
+                        `${formatBytes(dubbingPayload.data.byteLength)} MP4 · ${effectiveAlignmentMode} alignment.`,
                     );
                     summary.push(
                         `Dubbed video ready: ${formatBytes(dubbingPayload.data.byteLength)}.`,
                     );
+                    if (shouldForceStrictAlignment) {
+                        summary.push(
+                            `Auto-forced strict alignment for ${dubbingNode.label} because source came from preprocess ${preprocessSpeedFactor.toFixed(2)}x.`,
+                        );
+                    }
                     advanceProgress(`Dubbing ${dubbingNode.label} complete.`);
                 } else if (step.kind === "mirror-video") {
                     const sourceNode = findNode(step.sourceNodeId);
@@ -2894,7 +3031,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
 
                     const upstreamSourceAssetNode =
                         findUpstreamSourceAssetNode(graph, sourceNode.id);
-                    const sourceAssetSetup = upstreamSourceAssetNode
+                    const sourceAssetSetupRaw = upstreamSourceAssetNode
                         ? (storageAssets.find(
                               (item) =>
                                   item._id ===
@@ -2904,6 +3041,20 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                                   ),
                           )?.metadata?.videoEditSetup ?? null)
                         : null;
+                    const sourceMirrorParity = upstreamSourceAssetNode
+                        ? findMirrorParityToAncestorNode(
+                              graph,
+                              sourceNode.id,
+                              upstreamSourceAssetNode.id,
+                          )
+                        : null;
+                    const sourceAssetSetup = buildEffectiveMaskSetup(
+                        editNode,
+                        sourceAssetSetupRaw,
+                        {
+                            mirrorSetupRegions: (sourceMirrorParity ?? 0) % 2 === 1,
+                        },
+                    );
                     const maskConfig = resolveMaskRegionConfig(
                         editNode,
                         sourceAssetSetup,
@@ -5015,10 +5166,10 @@ function NodeRuntimeConfig({
     }
 
     if (node.templateNodeType === "edit.mask-region") {
-        const upstreamSourceAssetNode = findUpstreamSourceAssetNode(
-            graph,
-            node.id,
-        );
+        const upstreamVideoNode = findMaskUpstreamVideoNode(graph, node.id);
+        const upstreamSourceAssetNode = upstreamVideoNode
+            ? findUpstreamSourceAssetNode(graph, upstreamVideoNode.id)
+            : findUpstreamSourceAssetNode(graph, node.id);
         const upstreamSourceAsset = upstreamSourceAssetNode
             ? storageAssets.find(
                   (asset) =>
@@ -5026,7 +5177,22 @@ function NodeRuntimeConfig({
                       getStringConfig(upstreamSourceAssetNode, "assetId"),
               )
             : undefined;
-        const sourceAssetSetup = upstreamSourceAsset?.metadata?.videoEditSetup ?? null;
+        const sourceAssetSetupRaw =
+            upstreamSourceAsset?.metadata?.videoEditSetup ?? null;
+        const sourceMirrorParity =
+            upstreamVideoNode && upstreamSourceAssetNode
+                ? findMirrorParityToAncestorNode(
+                      graph,
+                      upstreamVideoNode.id,
+                      upstreamSourceAssetNode.id,
+                  )
+                : null;
+        const shouldMirrorSetupRegions = (sourceMirrorParity ?? 0) % 2 === 1;
+        const sourceAssetSetup = buildEffectiveMaskSetup(
+            node,
+            sourceAssetSetupRaw,
+            { mirrorSetupRegions: shouldMirrorSetupRegions },
+        );
         const maskConfig = resolveMaskRegionConfig(node, sourceAssetSetup);
         const setupAssetLabel =
             upstreamSourceAsset?.metadata?.title ??
@@ -5047,15 +5213,23 @@ function NodeRuntimeConfig({
                                 Node values keep user overrides first; untouched
                                 default fields fallback to this saved setup.
                             </p>
+                            {shouldMirrorSetupRegions ? (
+                                <p className="mt-1 text-[10px] leading-4 text-emerald-700/90">
+                                    Upstream video path has Mirror transform, so
+                                    fallback blur regions from this setup are auto
+                                    mirrored horizontally to match runtime video.
+                                </p>
+                            ) : null}
                         </div>
                     ) : null}
                     <label className="flex items-center justify-between gap-3 border border-main bg-main px-3 py-2">
                         <span>
                             <span className="block text-[11px] font-semibold text-main">
-                                Mirror before blur
+                                Mirror output video
                             </span>
                             <span className="block text-[10px] text-muted">
-                                Kết hợp hflip trong cùng edit request.
+                                Hflip output trong edit request (sau blur, trước
+                                subtitle burn).
                             </span>
                         </span>
                         <input
@@ -6069,15 +6243,15 @@ function NodeRuntimeConfig({
                         value={getStringConfig(
                             node,
                             "ttsAlignmentMode",
-                            DEFAULT_PIPER_TTS_SETTINGS.alignmentMode,
+                            "strict",
                         )}
                         disabled={isRunningFlow}
                         onChange={(value) =>
                             setConfig({ ttsAlignmentMode: value })
                         }
                     >
-                        <option value="balanced">balanced</option>
                         <option value="strict">strict</option>
+                        <option value="balanced">balanced</option>
                     </RuntimeSelect>
                     <label className="flex items-center justify-between gap-3 border border-main bg-main px-3 py-2">
                         <span>
@@ -6088,6 +6262,13 @@ function NodeRuntimeConfig({
                                 Giữ thứ tự/timeline tương đối, nhưng giới hạn
                                 pause dài và speed-up quá mạnh.
                             </span>
+                            {isDubbing ? (
+                                <span className="mt-1 block text-[10px] text-muted">
+                                    Nếu source đi qua Video Preprocess khác 1x,
+                                    runtime sẽ tự dùng strict alignment để tránh
+                                    voice kết thúc sớm hơn timeline.
+                                </span>
+                            ) : null}
                         </span>
                         <input
                             type="checkbox"

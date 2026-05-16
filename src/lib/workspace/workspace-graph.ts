@@ -692,7 +692,7 @@ export const WORKSPACE_NODE_TEMPLATES: WorkspaceNodeTemplate[] = [
                 label: "Alignment mode",
                 type: "select",
                 required: false,
-                defaultValue: "balanced",
+                defaultValue: "strict",
             },
         ],
         timeoutMs: 900000,
@@ -816,7 +816,7 @@ export const WORKSPACE_NODE_TEMPLATES: WorkspaceNodeTemplate[] = [
                 label: "Alignment mode",
                 type: "select",
                 required: false,
-                defaultValue: "balanced",
+                defaultValue: "strict",
             },
         ],
         timeoutMs: 1800000,
@@ -2680,7 +2680,7 @@ export function createUploadDubbingToSocialSampleGraph(): WorkspaceGraph {
                     originalAudioVolume: 0.18,
                     voiceVolume: 1,
                     ttsPreserveTimestampGaps: true,
-                    ttsAlignmentMode: "balanced",
+                    ttsAlignmentMode: "strict",
                 },
             },
             {
@@ -2752,7 +2752,7 @@ export function createUploadVietnameseMaskPublishSampleGraph(): WorkspaceGraph {
                     originalAudioVolume: 0.18,
                     voiceVolume: 1,
                     ttsPreserveTimestampGaps: true,
-                    ttsAlignmentMode: "balanced",
+                    ttsAlignmentMode: "strict",
                 },
             },
             {
@@ -2868,7 +2868,7 @@ export function createAssetPreprocessDubbingSampleGraph(): WorkspaceGraph {
                     ttsNoiseW: 0.8,
                     ttsSentenceSilence: 0.2,
                     ttsPreserveTimestampGaps: true,
-                    ttsAlignmentMode: "balanced",
+                    ttsAlignmentMode: "strict",
                 },
             },
             {
@@ -2943,7 +2943,7 @@ export function createAssetTranscriptFullProcessingSampleGraph(): WorkspaceGraph
                     ttsNoiseW: 0.8,
                     ttsSentenceSilence: 0.2,
                     ttsPreserveTimestampGaps: true,
-                    ttsAlignmentMode: "balanced",
+                    ttsAlignmentMode: "strict",
                 },
             },
             {

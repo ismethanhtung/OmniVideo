@@ -52,6 +52,13 @@ describe("WorkspaceCanvasPanel canvas interactions", () => {
         expect(source).toContain("resolveMaskRegionConfig");
         expect(source).toContain("Using saved video setup from Storage Asset");
         expect(source).toContain("sourceAssetSetup");
+        expect(source).toContain("findMaskUpstreamVideoNode");
+        expect(source).toContain("findMirrorParityToAncestorNode");
+        expect(source).toContain("buildEffectiveMaskSetup");
+        expect(source).toContain(
+            "fallback blur regions from this setup are auto",
+        );
+        expect(source).toContain("Mirror output video");
     });
 
     it("supports enable toggle for preprocess and passthrough behavior", () => {
@@ -60,6 +67,11 @@ describe("WorkspaceCanvasPanel canvas interactions", () => {
         expect(source).toContain('"enabled"');
         expect(source).toContain("Preprocess disabled (passthrough source)");
         expect(source).toContain("Bypassed preprocess.");
+        expect(source).toContain("shouldForceStrictAlignment");
+        expect(source).toContain(
+            "runtime sẽ tự dùng strict alignment để tránh",
+        );
+        expect(source).toContain("Auto-forced strict alignment for");
     });
 
     it("documents publish fallback from Generate VI metadata when publish fields are empty", () => {

@@ -1,5 +1,21 @@
 # OmniVideo Changelog
 
+## FAST-WORKSPACE-024 - Fix Dubbing Voice Timeline Drift for Preprocess Flows
+
+- Fixed Workspace dubbing timeline drift for preprocess flows (for example `0.7x`) where voice could end noticeably earlier than slowed video timeline.
+- Workspace runtime now auto-forces `ttsAlignmentMode=strict` when `audio.video-dubbing` consumes a `video.preprocess` source with speed different from `1x` and node mode is still `balanced`.
+- Updated Workspace node defaults/seeds for `audio.voice-generation` and `audio.video-dubbing` to `strict` alignment to match Audio Transcript timing expectations out of the box.
+- Added explicit UI hint in Workspace dubbing config: preprocess speed changes can trigger strict alignment at runtime to avoid early voice completion.
+- Verification (FAST-WORKSPACE-024): `npm run test -- --run src/features/workspace/workspace-canvas-panel.test.ts src/lib/workspace/workspace-graph.test.ts src/lib/workspace/workspace-seeds.test.ts` pass; `npm run build` pass with existing ESLint circular-config warning; `npm run guard:version` pass.
+
+## FAST-WORKSPACE-023 - Fix Mirror/Blur Mismatch for Saved Setup Fallback
+
+- Fixed Workspace `edit.mask-region` runtime mismatch where saved blur regions from Storage Asset setup could target the wrong side when upstream video had already passed through `Mirror video`.
+- Added upstream video mirror-parity detection and auto-horizontal-mirror for **fallback** setup blur regions so they align with the runtime video orientation.
+- Preserved explicit user overrides: if node `blurRegionsJson` is set manually, Workspace does not auto-mirror it.
+- Updated `edit.mask-region` runtime config copy to clarify mirror behavior and show when fallback blur regions are auto-mirrored due to upstream mirror transforms.
+- Verification (FAST-WORKSPACE-023): `npm run test -- --run src/features/workspace/workspace-canvas-panel.test.ts src/lib/workspace/workspace-graph.test.ts src/lib/workspace/workspace-seeds.test.ts` pass (55 tests); `npm run build` pass with existing ESLint circular-config warning; `npm run guard:version` pass.
+
 ## FAST-WORKSPACE-021 - Persist VI Metadata on Stored Artifacts and Align Workspace Edit Runtime with Video Tools Lab
 
 - Fixed Workspace artifact storage metadata gap: after `store-artifact` succeeds, Workspace now patches the newly created Storage Asset with generated Vietnamese metadata (`vietnameseTitle`, `vietnameseDescription`, `vietnameseHashtags`) when `Generate VI metadata` output exists.
