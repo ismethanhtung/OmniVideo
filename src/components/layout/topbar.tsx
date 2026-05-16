@@ -733,7 +733,7 @@ function ProgressModal({
                             Không có tác vụ nền nào đang chạy.
                         </p>
                     ) : (
-                        <div className="divide-y divide-[var(--border)]">
+                        <div className="divide-y divide-soft">
                             {tasks.map((task) => (
                                 <article key={task.id} className="px-4 py-3">
                                     <div className="flex items-start justify-between gap-3">
@@ -807,7 +807,7 @@ function ProgressModal({
                                                     )}
                                                 </p>
                                             </div>
-                                            <div className="divide-y divide-[var(--border)]">
+                                            <div className="divide-y divide-soft">
                                                 {task.steps.map((step) => (
                                                     <ProgressStepRow
                                                         key={step.id}

@@ -55,6 +55,7 @@ import {
 import {
     getWorkspaceFlowSetupNodes,
     getWorkspaceNodeSetupIssues,
+    getWorkspaceNodeSetupWarnings,
     type WorkspaceFlowSetupNode,
 } from "@/lib/workspace/workspace-flow-setup";
 import {
@@ -1138,6 +1139,11 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                 socialAccounts.map((account) => account._id),
             ),
             storageAssetIds: new Set(storageAssets.map((asset) => asset._id)),
+            storageAssetMaskSetupIds: new Set(
+                storageAssets
+                    .filter((asset) => Boolean(asset.metadata?.videoEditSetup))
+                    .map((asset) => asset._id),
+            ),
         }),
         [
             runtimeFilesByNodeId,
@@ -1159,6 +1165,21 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                 ]),
             ) as Record<string, string[]>,
         [flowPlan, flowSetupNodes, flowSetupValidationContext],
+    );
+    const flowSetupWarningsByNodeId = useMemo(
+        () =>
+            Object.fromEntries(
+                flowSetupNodes.map(({ node }) => [
+                    node.id,
+                    getWorkspaceNodeSetupWarnings({
+                        node,
+                        graph,
+                        plan: flowPlan,
+                        context: flowSetupValidationContext,
+                    }),
+                ]),
+            ) as Record<string, string[]>,
+        [flowPlan, flowSetupNodes, flowSetupValidationContext, graph],
     );
     const flowSetupIssueCount = Object.values(
         flowSetupIssuesByNodeId,
@@ -4328,6 +4349,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     flowPlan={flowPlan}
                     setupNodes={flowSetupNodes}
                     issuesByNodeId={flowSetupIssuesByNodeId}
+                    warningsByNodeId={flowSetupWarningsByNodeId}
                     graph={graph}
                     storageAccounts={storageAccounts}
                     socialAccounts={socialAccounts}
@@ -4360,6 +4382,7 @@ function WorkspaceFlowSetupModal({
     flowPlan,
     setupNodes,
     issuesByNodeId,
+    warningsByNodeId,
     graph,
     storageAccounts,
     socialAccounts,
@@ -4384,6 +4407,7 @@ function WorkspaceFlowSetupModal({
     flowPlan: WorkspaceFlowPlan;
     setupNodes: WorkspaceFlowSetupNode[];
     issuesByNodeId: Record<string, string[]>;
+    warningsByNodeId: Record<string, string[]>;
     graph: WorkspaceGraph;
     storageAccounts: WorkspaceStorageAccount[];
     socialAccounts: WorkspaceSocialAccount[];
@@ -4417,6 +4441,10 @@ function WorkspaceFlowSetupModal({
 }) {
     const issueCount = Object.values(issuesByNodeId).reduce(
         (total, issues) => total + issues.length,
+        0,
+    );
+    const warningCount = Object.values(warningsByNodeId).reduce(
+        (total, warnings) => total + warnings.length,
         0,
     );
     const readyCount = setupNodes.filter(
@@ -4464,7 +4492,7 @@ function WorkspaceFlowSetupModal({
                         <p className="text-[11px] font-semibold text-main">
                             Run readiness
                         </p>
-                        <div className="mt-3 grid grid-cols-2 gap-2">
+                        <div className="mt-3 grid grid-cols-3 gap-2">
                             <div className="border border-emerald-500/30 bg-emerald-500/10 p-2">
                                 <p className="text-[18px] font-semibold text-emerald-700">
                                     {readyCount}
@@ -4502,6 +4530,35 @@ function WorkspaceFlowSetupModal({
                                     Need attention
                                 </p>
                             </div>
+                            <div
+                                className={cn(
+                                    "border p-2",
+                                    warningCount > 0
+                                        ? "border-sky-500/30 bg-sky-500/10"
+                                        : "border-main bg-main",
+                                )}
+                            >
+                                <p
+                                    className={cn(
+                                        "text-[18px] font-semibold",
+                                        warningCount > 0
+                                            ? "text-sky-700"
+                                            : "text-main",
+                                    )}
+                                >
+                                    {warningCount}
+                                </p>
+                                <p
+                                    className={cn(
+                                        "text-[10px]",
+                                        warningCount > 0
+                                            ? "text-sky-700"
+                                            : "text-muted",
+                                    )}
+                                >
+                                    Warnings
+                                </p>
+                            </div>
                         </div>
 
                         <div className="mt-3 border border-main bg-main p-3">
@@ -4527,6 +4584,8 @@ function WorkspaceFlowSetupModal({
                         <div className="mt-3 space-y-2">
                             {setupNodes.map(({ node }, index) => {
                                 const issues = issuesByNodeId[node.id] ?? [];
+                                const warnings =
+                                    warningsByNodeId[node.id] ?? [];
                                 return (
                                     <div
                                         key={node.id}
@@ -4550,11 +4609,15 @@ function WorkspaceFlowSetupModal({
                                                 "mt-2 inline-flex border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide",
                                                 issues.length > 0
                                                     ? "border-amber-500/30 bg-amber-500/10 text-amber-700"
+                                                    : warnings.length > 0
+                                                      ? "border-sky-500/30 bg-sky-500/10 text-sky-700"
                                                     : "border-emerald-500/30 bg-emerald-500/10 text-emerald-700",
                                             )}
                                         >
                                             {issues.length > 0
                                                 ? "needs input"
+                                                : warnings.length > 0
+                                                  ? "review"
                                                 : "ready"}
                                         </span>
                                     </div>
@@ -4566,6 +4629,7 @@ function WorkspaceFlowSetupModal({
                     <div className="thin-scrollbar min-h-0 space-y-3 overflow-y-auto pr-1">
                         {setupNodes.map(({ node, template }, index) => {
                             const issues = issuesByNodeId[node.id] ?? [];
+                            const warnings = warningsByNodeId[node.id] ?? [];
                             return (
                                 <article
                                     key={node.id}
@@ -4591,11 +4655,15 @@ function WorkspaceFlowSetupModal({
                                                 "inline-flex border px-2 py-1 text-[10px] font-bold uppercase tracking-wide",
                                                 issues.length > 0
                                                     ? "border-amber-500/30 bg-amber-500/10 text-amber-700"
+                                                    : warnings.length > 0
+                                                      ? "border-sky-500/30 bg-sky-500/10 text-sky-700"
                                                     : "border-emerald-500/30 bg-emerald-500/10 text-emerald-700",
                                             )}
                                         >
                                             {issues.length > 0
                                                 ? "Needs input"
+                                                : warnings.length > 0
+                                                  ? "Review"
                                                 : "Ready"}
                                         </span>
                                     </header>
@@ -4611,6 +4679,23 @@ function WorkspaceFlowSetupModal({
                                                         className="border border-amber-500/30 bg-main px-2 py-1 text-[10px] font-semibold text-amber-700"
                                                     >
                                                         {issue}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    ) : null}
+                                    {warnings.length > 0 ? (
+                                        <div className="border-b border-sky-500/20 bg-sky-500/10 px-4 py-3">
+                                            <p className="text-[10px] font-bold uppercase tracking-wide text-sky-700">
+                                                Review before run
+                                            </p>
+                                            <div className="mt-2 flex flex-wrap gap-1.5">
+                                                {warnings.map((warning) => (
+                                                    <span
+                                                        key={warning}
+                                                        className="border border-sky-500/30 bg-main px-2 py-1 text-[10px] font-semibold text-sky-700"
+                                                    >
+                                                        {warning}
                                                     </span>
                                                 ))}
                                             </div>
@@ -4674,6 +4759,8 @@ function WorkspaceFlowSetupModal({
                     <p className="text-[11px] leading-4 text-muted">
                         {issueCount > 0
                             ? `Resolve ${issueCount} issue(s) before running this flow.`
+                            : warningCount > 0
+                              ? `Flow can run, but review ${warningCount} warning(s) first.`
                             : "All executable nodes are ready. You can run the flow now."}
                     </p>
                     <div className="flex items-center justify-end gap-2">

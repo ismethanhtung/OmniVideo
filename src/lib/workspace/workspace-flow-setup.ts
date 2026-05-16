@@ -17,6 +17,7 @@ export type WorkspaceFlowSetupValidationContext = {
     storageAccountIds: ReadonlySet<string>;
     socialAccountIds: ReadonlySet<string>;
     storageAssetIds: ReadonlySet<string>;
+    storageAssetMaskSetupIds: ReadonlySet<string>;
 };
 
 function getStepNodeIds(step: WorkspaceFlowStep): string[] {
@@ -117,6 +118,33 @@ function addIssue(issues: string[], issue: string) {
     }
 }
 
+function findUpstreamSourceAssetNode(
+    graph: WorkspaceGraph,
+    startNodeId: string,
+) {
+    const visited = new Set<string>();
+    const pending = [startNodeId];
+
+    while (pending.length > 0) {
+        const currentId = pending.shift();
+        if (!currentId || visited.has(currentId)) continue;
+        visited.add(currentId);
+
+        const currentNode = graph.nodes.find((node) => node.id === currentId);
+        if (currentNode?.templateNodeType === "source.asset") {
+            return currentNode;
+        }
+
+        for (const edge of graph.edges) {
+            if (edge.toNodeId === currentId) {
+                pending.push(edge.fromNodeId);
+            }
+        }
+    }
+
+    return undefined;
+}
+
 export function getWorkspaceNodeSetupIssues(input: {
     node: WorkspaceNodeInstance;
     plan: WorkspaceFlowPlan;
@@ -199,4 +227,52 @@ export function getWorkspaceNodeSetupIssues(input: {
     }
 
     return issues;
+}
+
+export function getWorkspaceNodeSetupWarnings(input: {
+    node: WorkspaceNodeInstance;
+    graph: WorkspaceGraph;
+    plan: WorkspaceFlowPlan;
+    context: WorkspaceFlowSetupValidationContext;
+}): string[] {
+    const { node, graph, plan, context } = input;
+    const warnings: string[] = [];
+
+    if (node.templateNodeType !== "edit.mask-region") {
+        return warnings;
+    }
+
+    const editStep = plan.steps.find(
+        (
+            step,
+        ): step is Extract<WorkspaceFlowStep, { kind: "edit-video" }> =>
+            step.kind === "edit-video" && step.editNodeId === node.id,
+    );
+    if (!editStep) {
+        return warnings;
+    }
+
+    const upstreamSourceAssetNode = findUpstreamSourceAssetNode(
+        graph,
+        editStep.sourceNodeId,
+    );
+    if (!upstreamSourceAssetNode) {
+        return warnings;
+    }
+
+    const assetId = getStringConfig(upstreamSourceAssetNode, "assetId").trim();
+    if (
+        !assetId ||
+        !context.storageAssetIds.has(assetId) ||
+        context.storageAssetMaskSetupIds.has(assetId)
+    ) {
+        return warnings;
+    }
+
+    addIssue(
+        warnings,
+        "Source video has no saved Blur + subtitle overlay setup from Video Tools Lab.",
+    );
+
+    return warnings;
 }

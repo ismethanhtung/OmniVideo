@@ -238,6 +238,10 @@ html[data-app-font="figtree"] {
     border-color: var(--border-color);
 }
 
+.divide-soft > :not(:last-child) {
+    border-color: color-mix(in srgb, var(--border-color) 58%, transparent);
+}
+
 .text-main {
     color: var(--text-main);
 }

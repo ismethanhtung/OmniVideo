@@ -1,5 +1,13 @@
 # OmniVideo Changelog
 
+## FAST-WORKSPACE-025 - Warn Missing Mask Setup in Flow Setup and Soften Progress Separators
+
+- Bumped app version from `0.8.1` to `0.8.2` as a patch release for Workspace/UI polish.
+- Softened internal `Background Progress` separators so row dividers no longer visually compete with main card borders.
+- Added a non-blocking `Flow Setup` warning when `Blur + subtitle overlay` uses an upstream Storage Asset that has no saved `videoEditSetup` from `Video Tools Lab`.
+- `Flow Setup` now distinguishes blocking issues from review-only warnings; warnings remain visible but do not disable `Run Flow`.
+- Verification (FAST-WORKSPACE-025): `npm run test -- --run src/lib/workspace/workspace-flow-setup.test.ts src/features/workspace/workspace-canvas-panel.test.ts src/components/layout/topbar.test.ts` pass (3 files / 19 tests); `npm run build` pass with existing ESLint circular-config warning; `npm run guard:version` pass.
+
 ## FAST-AUDIO-054 - Lower Minimum Voice Speed Floor to 1.30x
 
 - Bumped app version from `0.8.0` to `0.8.1` as a patch release for audio timing polish.

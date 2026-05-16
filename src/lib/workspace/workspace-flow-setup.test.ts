@@ -11,7 +11,9 @@ import {
 import {
     getWorkspaceFlowSetupNodes,
     getWorkspaceNodeSetupIssues,
+    getWorkspaceNodeSetupWarnings,
 } from "./workspace-flow-setup";
+import type { WorkspaceFlowPlan } from "./workspace-graph";
 
 function template(nodeType: string) {
     const result = WORKSPACE_NODE_TEMPLATES.find(
@@ -47,6 +49,7 @@ function context(overrides?: Partial<Parameters<typeof getWorkspaceNodeSetupIssu
         storageAccountIds: new Set<string>(),
         socialAccountIds: new Set<string>(),
         storageAssetIds: new Set<string>(),
+        storageAssetMaskSetupIds: new Set<string>(),
         ...overrides,
     };
 }
@@ -208,5 +211,62 @@ describe("workspace flow setup helpers", () => {
                 context: validationContext,
             }),
         ).toEqual(["Choose a Facebook Page."]);
+    });
+
+    it("warns when a mask node uses an upstream storage asset without saved video setup", () => {
+        let graph = createEmptyWorkspaceGraph("Mask warning");
+        graph = addWorkspaceNode(graph, template("source.asset"), {
+            x: 0,
+            y: 0,
+        });
+        graph = addWorkspaceNode(graph, template("edit.mask-region"), {
+            x: 220,
+            y: 0,
+        });
+        graph = connectWorkspaceNodes(graph, "source-asset-1", "edit-mask-region-1");
+        graph = updateWorkspaceNodeConfig(graph, "source-asset-1", {
+            assetId: "asset-1",
+        });
+        const maskNode = graph.nodes.find(
+            (node) => node.id === "edit-mask-region-1",
+        );
+        if (!maskNode) throw new Error("Missing mask node");
+        const plan: WorkspaceFlowPlan = {
+            ok: true,
+            errors: [],
+            steps: [
+                {
+                    kind: "edit-video",
+                    sourceNodeId: "source-asset-1",
+                    translationNodeId: "text-translate-transcript-1",
+                    editNodeId: "edit-mask-region-1",
+                },
+            ],
+        };
+
+        expect(
+            getWorkspaceNodeSetupWarnings({
+                node: maskNode,
+                graph,
+                plan,
+                context: context({
+                    storageAssetIds: new Set(["asset-1"]),
+                }),
+            }),
+        ).toEqual([
+            "Source video has no saved Blur + subtitle overlay setup from Video Tools Lab.",
+        ]);
+
+        expect(
+            getWorkspaceNodeSetupWarnings({
+                node: maskNode,
+                graph,
+                plan,
+                context: context({
+                    storageAssetIds: new Set(["asset-1"]),
+                    storageAssetMaskSetupIds: new Set(["asset-1"]),
+                }),
+            }),
+        ).toEqual([]);
     });
 });

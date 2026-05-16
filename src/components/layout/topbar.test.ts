@@ -13,5 +13,6 @@ describe("Topbar background progress modal", () => {
         expect(source).toContain("step.progressMode === \"determinate\"");
         expect(source).toContain("setInterval(() =>");
         expect(source).toContain("measured progress");
+        expect(source).toContain("divide-y divide-soft");
     });
 });

@@ -122,4 +122,12 @@ describe("WorkspaceCanvasPanel canvas interactions", () => {
             "Math.round((stepIndex / totalSteps) * 95)",
         );
     });
+
+    it("surfaces non-blocking mask setup warnings in Flow Setup", () => {
+        expect(source).toContain("getWorkspaceNodeSetupWarnings");
+        expect(source).toContain("warningsByNodeId");
+        expect(source).toContain("Review before run");
+        expect(source).toContain("Flow can run, but review");
+        expect(source).toContain("storageAssetMaskSetupIds");
+    });
 });
