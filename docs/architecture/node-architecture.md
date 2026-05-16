@@ -26,11 +26,13 @@ runtime runner đầy đủ.
 7. Workspace có executable path đầu tiên cho `source.file -> storage.upload -> social.publish`, chạy tuần tự local upload API rồi publish-now API ngay trong Workspace.
 8. Workspace runner không ép một path duy nhất: `source.file -> storage.upload`, `source.asset -> social.publish`, và `source.file -> storage.upload -> social.publish` đều là executable paths.
 9. Runtime config thuộc về node đang chọn trong Inspector, không nằm tách khỏi graph như form global.
-10. Workspace runner hỗ trợ artifact runtime cho audio/video MVP: `audio.voice-generation` tạo WAV preview/download từ translated transcript, còn `audio.video-dubbing` tạo MP4 dubbed artifact từ `source.file` hoặc `source.asset`. Artifact này chỉ trở thành asset/publishable khi nối tiếp sang `storage.upload`.
+10. Workspace runner hỗ trợ artifact runtime cho audio/video MVP: `audio.voice-generation` tạo WAV preview/download từ translated transcript, còn `audio.video-dubbing` tạo MP4 dubbed artifact và đồng thời expose translated transcript output từ `source.file` hoặc `source.asset`. Artifact này chỉ trở thành asset/publishable khi nối tiếp sang `storage.upload`.
 11. Workspace runner hỗ trợ `edit.mirror` MVP: lật ngang video bằng ffmpeg từ `source.file` hoặc MP4 artifact upstream, tạo video artifact preview/download và có thể nối tiếp sang `storage.upload`.
-12. Workspace runner hỗ trợ `edit.mask-region` MVP: nhận một video upstream và một `text.translate-transcript` upstream, blur vùng/timeline bằng ffmpeg, burn phụ đề tiếng Việt theo timestamps, tạo video artifact preview/download và có thể nối tiếp sang `storage.upload`.
+12. Workspace runner hỗ trợ `edit.mask-region` MVP: nhận một video upstream và transcript upstream (từ `text.translate-transcript` hoặc `audio.video-dubbing`), blur vùng/timeline bằng ffmpeg, burn phụ đề tiếng Việt theo timestamps, tạo video artifact preview/download và có thể nối tiếp sang `storage.upload`.
 13. Workspace runner hỗ trợ `video.preprocess` executable: điều chỉnh tốc độ source từ `source.file`, `source.url`, hoặc `source.asset`, tạo video artifact có thể nối tiếp sang transcript/dubbing/edit/storage downstream.
 14. Audio Workspace nodes dùng chung các capability chất lượng hiện tại với Audio Transcript khi phù hợp: `audio.chinese-transcribe` nhận cả Storage Asset/video preprocess artifact, còn voice generation/dubbing reuse word-aware timing preparation và expose đầy đủ Piper controls cần thiết.
+15. Trước khi chạy flow mới, nút `Run Flow` mở `Flow Setup` modal để gom cấu hình của toàn bộ executable nodes theo đúng thứ tự chạy; modal chỉ là lớp pre-run UX dùng lại `node.config`/runtime inputs hiện có, không tạo thêm nguồn config song song với Inspector.
+16. Node `video.preprocess` có toggle enable/disable ở runtime config: khi tắt, runner passthrough source video downstream thay vì transform tốc độ.
 
 ## 3. Node Categories
 

@@ -41,9 +41,6 @@ describe("workspace seed templates", () => {
             expect.arrayContaining([
                 "source.asset",
                 "video.preprocess",
-                "audio.chinese-transcribe",
-                "text.translate-transcript",
-                "audio.voice-generation",
                 "audio.video-dubbing",
                 "edit.mask-region",
                 "edit.mirror",

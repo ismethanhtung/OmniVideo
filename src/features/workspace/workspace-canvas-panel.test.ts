@@ -18,7 +18,7 @@ describe("WorkspaceCanvasPanel canvas interactions", () => {
         expect(source).toContain("activeSourceSide === side");
         expect(source).toContain("activeTargetSide === side");
         expect(source).toContain("shouldRevealNodeHandles ? \"block\" : \"hidden\"");
-        expect(source).toContain("? \"bg-accent");
+        expect(source).toContain("\"border-indigo-600 ring-1 ring-indigo-300\"");
     });
 
     it("exposes a direct edge delete affordance", () => {
@@ -36,5 +36,45 @@ describe("WorkspaceCanvasPanel canvas interactions", () => {
         expect(source).toContain("Clear current Workspace draft and runtime state? This action cannot be undone.");
         expect(source).toContain("if (");
         expect(source).toContain("!confirm(");
+    });
+
+    it("routes Run Flow through a centralized Flow Setup modal", () => {
+        expect(source).toContain("isFlowSetupOpen");
+        expect(source).toContain("WorkspaceFlowSetupModal");
+        expect(source).toContain("const openFlowSetup = () =>");
+        expect(source).toContain("onRun={openFlowSetup}");
+        expect(source).toContain("Flow Setup");
+        expect(source).toContain("Resolve before run");
+        expect(source).toContain("<NodeRuntimeConfig");
+    });
+
+    it("hydrates mask setup from source asset metadata in UI and runtime", () => {
+        expect(source).toContain("resolveMaskRegionConfig");
+        expect(source).toContain("Using saved video setup from Storage Asset");
+        expect(source).toContain("sourceAssetSetup");
+    });
+
+    it("supports enable toggle for preprocess and passthrough behavior", () => {
+        expect(source).toContain("Enable preprocess");
+        expect(source).toContain("getBooleanConfig(");
+        expect(source).toContain('"enabled"');
+        expect(source).toContain("Preprocess disabled (passthrough source)");
+        expect(source).toContain("Bypassed preprocess.");
+    });
+
+    it("documents publish fallback from Generate VI metadata when publish fields are empty", () => {
+        expect(source).toContain("findUpstreamMetadataNodeId");
+        expect(source).toContain("runtimeVietnameseMetadataByNodeId");
+        expect(source).toContain(
+            "Nếu để trống Title/Caption/Hashtags, Publish sẽ tự lấy",
+        );
+        expect(source).toContain("upstreamMetadataNodeId");
+        expect(source).toContain("fallbackMetadata");
+        expect(source).toContain(
+            "<WorkspaceFlowSetupModal",
+        );
+        expect(source).toContain(
+            "runtimeVietnameseMetadataByNodeId={",
+        );
     });
 });

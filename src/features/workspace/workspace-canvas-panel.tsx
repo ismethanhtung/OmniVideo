@@ -50,6 +50,11 @@ import {
     type WorkspaceNodeTemplate,
 } from "@/lib/workspace/workspace-graph";
 import {
+    getWorkspaceFlowSetupNodes,
+    getWorkspaceNodeSetupIssues,
+    type WorkspaceFlowSetupNode,
+} from "@/lib/workspace/workspace-flow-setup";
+import {
     WORKSPACE_SEED_TEMPLATES,
     type WorkspaceSeedTemplate,
 } from "@/lib/workspace/workspace-seeds";
@@ -163,6 +168,10 @@ type WorkspaceRuntimeArtifact = {
     kind: "audio" | "video";
     detail: string;
 };
+
+type WorkspaceVideoEditSetup = NonNullable<
+    NonNullable<WorkspaceAsset["metadata"]>["videoEditSetup"]
+>;
 
 const DEFAULT_PUBLISH_TYPE_BY_PLATFORM: Record<
     WorkspaceSocialAccount["platform"],
@@ -479,6 +488,205 @@ function getNumberConfig(
     return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+const MASK_REGION_DEFAULTS = {
+    blurRegionsJson: "",
+    regionX: 0,
+    regionY: 84,
+    regionWidth: 100,
+    regionHeight: 16,
+    timelineStart: 0,
+    timelineEnd: 36000,
+    blurStrength: 50,
+    subtitleFontFamily: "Arial",
+    subtitleFontSize: 55,
+    subtitleMarginBottom: 150,
+    subtitleMarginLeft: 60,
+    subtitleMarginRight: 60,
+    subtitleAlignment: 2,
+    subtitleBackgroundEnabled: true,
+    subtitleBackgroundColor: "#000000",
+    subtitleBackgroundOpacity: 65,
+    mirrorEnabled: false,
+} as const;
+
+function resolveMaskStringConfig(input: {
+    node: WorkspaceNodeInstance;
+    key: string;
+    defaultValue: string;
+    setupValue?: string;
+}) {
+    const raw = input.node.config[input.key];
+    const hasRaw = raw !== undefined && raw !== null;
+    const rawValue = hasRaw ? String(raw).trim() : "";
+    if (hasRaw && rawValue && rawValue !== input.defaultValue) {
+        return rawValue;
+    }
+    if (input.setupValue && input.setupValue.trim()) {
+        return input.setupValue.trim();
+    }
+    if (hasRaw && rawValue) {
+        return rawValue;
+    }
+    return input.defaultValue;
+}
+
+function resolveMaskNumberConfig(input: {
+    node: WorkspaceNodeInstance;
+    key: string;
+    defaultValue: number;
+    setupValue?: number;
+}) {
+    const raw = input.node.config[input.key];
+    const parsedRaw = typeof raw === "number" ? raw : Number(raw);
+    const hasRaw = raw !== undefined && raw !== null && Number.isFinite(parsedRaw);
+    if (hasRaw && parsedRaw !== input.defaultValue) {
+        return parsedRaw;
+    }
+    if (typeof input.setupValue === "number" && Number.isFinite(input.setupValue)) {
+        return input.setupValue;
+    }
+    if (hasRaw) {
+        return parsedRaw;
+    }
+    return input.defaultValue;
+}
+
+function resolveMaskBooleanConfig(input: {
+    node: WorkspaceNodeInstance;
+    key: string;
+    defaultValue: boolean;
+    setupValue?: boolean;
+}) {
+    const raw = input.node.config[input.key];
+    const parsedRaw =
+        typeof raw === "boolean"
+            ? raw
+            : typeof raw === "string"
+              ? raw === "true"
+              : undefined;
+    const hasRaw = parsedRaw !== undefined;
+    if (hasRaw && parsedRaw !== input.defaultValue) {
+        return parsedRaw;
+    }
+    if (typeof input.setupValue === "boolean") {
+        return input.setupValue;
+    }
+    if (hasRaw) {
+        return parsedRaw;
+    }
+    return input.defaultValue;
+}
+
+function resolveMaskRegionConfig(
+    node: WorkspaceNodeInstance,
+    setup: WorkspaceVideoEditSetup | null,
+) {
+    const rawBlurRegionsJson = getStringConfig(node, "blurRegionsJson").trim();
+    const setupBlurRegionsJson =
+        setup?.blurRegions && setup.blurRegions.length > 0
+            ? JSON.stringify(setup.blurRegions)
+            : "";
+
+    return {
+        mirrorEnabled: resolveMaskBooleanConfig({
+            node,
+            key: "mirrorEnabled",
+            defaultValue: MASK_REGION_DEFAULTS.mirrorEnabled,
+            setupValue: setup?.mirrorEnabled,
+        }),
+        blurRegionsJson: rawBlurRegionsJson || setupBlurRegionsJson,
+        regionX: resolveMaskNumberConfig({
+            node,
+            key: "regionX",
+            defaultValue: MASK_REGION_DEFAULTS.regionX,
+        }),
+        regionY: resolveMaskNumberConfig({
+            node,
+            key: "regionY",
+            defaultValue: MASK_REGION_DEFAULTS.regionY,
+        }),
+        regionWidth: resolveMaskNumberConfig({
+            node,
+            key: "regionWidth",
+            defaultValue: MASK_REGION_DEFAULTS.regionWidth,
+        }),
+        regionHeight: resolveMaskNumberConfig({
+            node,
+            key: "regionHeight",
+            defaultValue: MASK_REGION_DEFAULTS.regionHeight,
+        }),
+        timelineStart: resolveMaskNumberConfig({
+            node,
+            key: "timelineStart",
+            defaultValue: MASK_REGION_DEFAULTS.timelineStart,
+        }),
+        timelineEnd: resolveMaskNumberConfig({
+            node,
+            key: "timelineEnd",
+            defaultValue: MASK_REGION_DEFAULTS.timelineEnd,
+        }),
+        blurStrength: resolveMaskNumberConfig({
+            node,
+            key: "blurStrength",
+            defaultValue: MASK_REGION_DEFAULTS.blurStrength,
+        }),
+        subtitleFontFamily: resolveMaskStringConfig({
+            node,
+            key: "subtitleFontFamily",
+            defaultValue: MASK_REGION_DEFAULTS.subtitleFontFamily,
+            setupValue: setup?.subtitleFontFamily ?? undefined,
+        }),
+        subtitleFontSize: resolveMaskNumberConfig({
+            node,
+            key: "subtitleFontSize",
+            defaultValue: MASK_REGION_DEFAULTS.subtitleFontSize,
+            setupValue: setup?.subtitleFontSize ?? undefined,
+        }),
+        subtitleMarginBottom: resolveMaskNumberConfig({
+            node,
+            key: "subtitleMarginBottom",
+            defaultValue: MASK_REGION_DEFAULTS.subtitleMarginBottom,
+            setupValue: setup?.subtitleMarginBottom ?? undefined,
+        }),
+        subtitleMarginLeft: resolveMaskNumberConfig({
+            node,
+            key: "subtitleMarginLeft",
+            defaultValue: MASK_REGION_DEFAULTS.subtitleMarginLeft,
+            setupValue: setup?.subtitleMarginLeft ?? undefined,
+        }),
+        subtitleMarginRight: resolveMaskNumberConfig({
+            node,
+            key: "subtitleMarginRight",
+            defaultValue: MASK_REGION_DEFAULTS.subtitleMarginRight,
+            setupValue: setup?.subtitleMarginRight ?? undefined,
+        }),
+        subtitleAlignment: resolveMaskNumberConfig({
+            node,
+            key: "subtitleAlignment",
+            defaultValue: MASK_REGION_DEFAULTS.subtitleAlignment,
+            setupValue: setup?.subtitleAlignment ?? undefined,
+        }),
+        subtitleBackgroundEnabled: resolveMaskBooleanConfig({
+            node,
+            key: "subtitleBackgroundEnabled",
+            defaultValue: MASK_REGION_DEFAULTS.subtitleBackgroundEnabled,
+            setupValue: setup?.subtitleBackgroundEnabled ?? undefined,
+        }),
+        subtitleBackgroundColor: resolveMaskStringConfig({
+            node,
+            key: "subtitleBackgroundColor",
+            defaultValue: MASK_REGION_DEFAULTS.subtitleBackgroundColor,
+            setupValue: setup?.subtitleBackgroundColor ?? undefined,
+        }),
+        subtitleBackgroundOpacity: resolveMaskNumberConfig({
+            node,
+            key: "subtitleBackgroundOpacity",
+            defaultValue: MASK_REGION_DEFAULTS.subtitleBackgroundOpacity,
+            setupValue: setup?.subtitleBackgroundOpacity ?? undefined,
+        }),
+    };
+}
+
 function getNodePublishType(
     node: WorkspaceNodeInstance | undefined,
 ): WorkspacePublishType {
@@ -569,6 +777,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
         Record<string, NodeRunState>
     >({});
     const [isRunningFlow, setIsRunningFlow] = useState(false);
+    const [isFlowSetupOpen, setIsFlowSetupOpen] = useState(false);
     const [runError, setRunError] = useState<string | null>(null);
     const [runResult, setRunResult] = useState<string | null>(null);
     const [dragState, setDragState] = useState<{
@@ -609,6 +818,49 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
         () => planWorkspaceFlow(graph),
         [graph],
     );
+    const flowSetupNodes = useMemo(
+        () => getWorkspaceFlowSetupNodes(graph, flowPlan),
+        [graph, flowPlan],
+    );
+    const flowSetupValidationContext = useMemo(
+        () => ({
+            runtimeFileNodeIds: new Set(
+                Object.entries(runtimeFilesByNodeId)
+                    .filter(([, file]) => Boolean(file))
+                    .map(([nodeId]) => nodeId),
+            ),
+            storageAccountIds: new Set(
+                storageAccounts.map((account) => account._id),
+            ),
+            socialAccountIds: new Set(
+                socialAccounts.map((account) => account._id),
+            ),
+            storageAssetIds: new Set(storageAssets.map((asset) => asset._id)),
+        }),
+        [
+            runtimeFilesByNodeId,
+            socialAccounts,
+            storageAccounts,
+            storageAssets,
+        ],
+    );
+    const flowSetupIssuesByNodeId = useMemo(
+        () =>
+            Object.fromEntries(
+                flowSetupNodes.map(({ node }) => [
+                    node.id,
+                    getWorkspaceNodeSetupIssues({
+                        node,
+                        plan: flowPlan,
+                        context: flowSetupValidationContext,
+                    }),
+                ]),
+            ) as Record<string, string[]>,
+        [flowPlan, flowSetupNodes, flowSetupValidationContext],
+    );
+    const flowSetupIssueCount = Object.values(
+        flowSetupIssuesByNodeId,
+    ).reduce((total, issues) => total + issues.length, 0);
     const hasResumeCheckpoint = useMemo(() => {
         if (!flowPlan.ok) return false;
         return flowPlan.steps.some((step) => {
@@ -911,6 +1163,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
         }
         setPendingSourceNodeId(null);
         setConnectionError(null);
+        setIsFlowSetupOpen(false);
         const empty = createEmptyWorkspaceGraph("Workspace Draft");
         setGraph(empty);
         resetRunState(empty, true);
@@ -1083,6 +1336,16 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
         let failedPublishes = 0;
         const summary: string[] = [];
         const resolvedUrlFilesByNodeId: Record<string, File> = {};
+        const resolvedAssetDownloadsByNodeId: Record<
+            string,
+            {
+                file: File;
+                fileName: string;
+                byteLength: number;
+                mimeType: string;
+                objectUrl: string;
+            }
+        > = {};
 
         const advanceProgress = (description: string) => {
             stepIndex += 1;
@@ -1097,6 +1360,33 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
 
         const findNode = (nodeId: string) =>
             graph.nodes.find((node) => node.id === nodeId);
+
+        const findUpstreamMetadataNodeId = (targetNodeId: string) => {
+            const visited = new Set<string>();
+            const stack = graph.edges
+                .filter((edge) => edge.toNodeId === targetNodeId)
+                .map((edge) => edge.fromNodeId);
+
+            while (stack.length > 0) {
+                const current = stack.pop() as string;
+                if (visited.has(current)) continue;
+                visited.add(current);
+                const currentNode = findNode(current);
+                if (!currentNode) continue;
+                if (
+                    currentNode.templateNodeType === "text.generate-vi-metadata"
+                ) {
+                    return currentNode.id;
+                }
+                for (const edge of graph.edges) {
+                    if (edge.toNodeId === currentNode.id) {
+                        stack.push(edge.fromNodeId);
+                    }
+                }
+            }
+
+            return null;
+        };
 
         const getResumeCheckpoint = (step: WorkspaceFlowStep) => {
             if (step.kind === "use-existing-asset") {
@@ -1197,8 +1487,8 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                 setNodeStatus(step.editNodeId, "success", detail);
             } else if (step.kind === "store-artifact") {
                 setNodeStatus(step.storageNodeId, "success", detail);
-            }
-        };
+        }
+    };
 
         const resolveUrlSourceFile = async (
             sourceNode: WorkspaceNodeInstance,
@@ -1240,6 +1530,107 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                 `${resolvedFile.fileName} · ${formatBytes(resolvedFile.byteLength)}.`,
             );
             return resolvedFile.file;
+        };
+
+        const resolveWorkspaceSourceVideoFile = async (input: {
+            sourceNode: WorkspaceNodeInstance;
+            consumerLabel: string;
+        }) => {
+            const { sourceNode, consumerLabel } = input;
+            if (sourceNode.templateNodeType === "source.file") {
+                const file = runtimeFilesByNodeId[sourceNode.id];
+                if (!file) {
+                    setNodeStatus(
+                        sourceNode.id,
+                        "failed",
+                        "Chưa chọn file video.",
+                    );
+                    throw new Error(
+                        `Upload Video '${sourceNode.label}' chưa chọn file cho ${consumerLabel}.`,
+                    );
+                }
+                return {
+                    file,
+                    fileName: file.name,
+                    byteLength: file.size,
+                    mimeType: file.type || "video/mp4",
+                    sourceStatus: "Source file used.",
+                    objectUrl: URL.createObjectURL(file),
+                };
+            }
+            if (sourceNode.templateNodeType === "source.url") {
+                const file = await resolveUrlSourceFile(sourceNode);
+                return {
+                    file,
+                    fileName: file.name,
+                    byteLength: file.size,
+                    mimeType: file.type || "video/mp4",
+                    sourceStatus: "Resolved URL video used.",
+                    objectUrl: URL.createObjectURL(file),
+                };
+            }
+            if (sourceNode.templateNodeType === "source.asset") {
+                const assetId = getStringConfig(sourceNode, "assetId").trim();
+                if (!assetId) {
+                    setNodeStatus(
+                        sourceNode.id,
+                        "failed",
+                        "Chưa chọn Storage Library asset.",
+                    );
+                    throw new Error(
+                        `Storage Asset '${sourceNode.label}' chưa chọn asset cho ${consumerLabel}.`,
+                    );
+                }
+                const cached = resolvedAssetDownloadsByNodeId[sourceNode.id];
+                if (cached) {
+                    return {
+                        ...cached,
+                        sourceStatus: "Storage asset used.",
+                    };
+                }
+                setNodeStatus(
+                    sourceNode.id,
+                    "running",
+                    "Downloading asset source...",
+                );
+                const downloaded = await fetchWorkspaceFile({
+                    url: `/api/storage/assets/${assetId}/download?disposition=inline`,
+                    actionLabel: "Download storage asset source",
+                });
+                resolvedAssetDownloadsByNodeId[sourceNode.id] = {
+                    file: downloaded.file,
+                    fileName: downloaded.fileName,
+                    byteLength: downloaded.byteLength,
+                    mimeType: downloaded.mimeType,
+                    objectUrl: downloaded.objectUrl,
+                };
+                setNodeStatus(
+                    sourceNode.id,
+                    "success",
+                    `${downloaded.fileName} · ${formatBytes(downloaded.byteLength)}.`,
+                );
+                return {
+                    ...resolvedAssetDownloadsByNodeId[sourceNode.id],
+                    sourceStatus: "Storage asset used.",
+                };
+            }
+
+            const upstreamArtifact = artifactByProducer[sourceNode.id];
+            if (!upstreamArtifact || upstreamArtifact.kind !== "video") {
+                throw new Error(
+                    `${consumerLabel} thiếu video artifact upstream từ '${sourceNode.label}'.`,
+                );
+            }
+            const file = upstreamArtifact.file ?? base64ToFile(upstreamArtifact);
+            return {
+                file,
+                fileName: upstreamArtifact.fileName,
+                byteLength: upstreamArtifact.byteLength,
+                mimeType: upstreamArtifact.mimeType,
+                sourceStatus: "Video artifact used.",
+                objectUrl:
+                    upstreamArtifact.objectUrl ?? URL.createObjectURL(file),
+            };
         };
 
         const appendWorkspaceVideoInput = async (input: {
@@ -1621,6 +2012,47 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     const preprocessNode = findNode(step.preprocessNodeId);
                     if (!sourceNode || !preprocessNode) {
                         throw new Error("Missing preprocess nodes.");
+                    }
+                    const isPreprocessEnabled = getBooleanConfig(
+                        preprocessNode,
+                        "enabled",
+                        true,
+                    );
+
+                    if (!isPreprocessEnabled) {
+                        const sourceFile = await resolveWorkspaceSourceVideoFile({
+                            sourceNode,
+                            consumerLabel: `Video Preprocess '${preprocessNode.label}'`,
+                        });
+                        const artifact: WorkspaceRuntimeArtifact = {
+                            fileName: sourceFile.fileName,
+                            mimeType: sourceFile.mimeType,
+                            file: sourceFile.file,
+                            objectUrl: sourceFile.objectUrl,
+                            byteLength: sourceFile.byteLength,
+                            kind: "video",
+                            detail: "Preprocess disabled (passthrough source)",
+                        };
+                        artifactByProducer[step.preprocessNodeId] = artifact;
+                        setRuntimeArtifactsByNodeId((current) => ({
+                            ...current,
+                            [preprocessNode.id]: artifact,
+                        }));
+                        setNodeStatus(
+                            sourceNode.id,
+                            "success",
+                            sourceFile.sourceStatus,
+                        );
+                        setNodeStatus(
+                            preprocessNode.id,
+                            "success",
+                            "Bypassed preprocess.",
+                        );
+                        summary.push("Preprocess disabled: passthrough source.");
+                        advanceProgress(
+                            `Preprocess ${preprocessNode.label} bypassed.`,
+                        );
+                        continue;
                     }
 
                     const formData = new FormData();
@@ -2276,14 +2708,6 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         consumerLabel: `Mask Logo/Subtitles '${editNode.label}'`,
                     });
 
-                    formData.set(
-                        "mirrorEnabled",
-                        String(
-                            getBooleanConfig(editNode, "mirrorEnabled", false),
-                        ),
-                    );
-                    formData.set("blurEnabled", "true");
-                    formData.set("subtitleOverlayEnabled", "true");
                     const sourceAssetSetup =
                         sourceNode.templateNodeType === "source.asset"
                             ? (storageAssets.find(
@@ -2292,147 +2716,59 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                                       getStringConfig(sourceNode, "assetId"),
                               )?.metadata?.videoEditSetup ?? null)
                             : null;
-                    const blurRegionsJson = getStringConfig(
+                    const maskConfig = resolveMaskRegionConfig(
                         editNode,
-                        "blurRegionsJson",
-                    ).trim();
-                    const setupBlurRegionsJson =
-                        sourceAssetSetup?.blurRegions &&
-                        sourceAssetSetup.blurRegions.length > 0
-                            ? JSON.stringify(sourceAssetSetup.blurRegions)
-                            : "";
-                    if (blurRegionsJson) {
-                        formData.set("blurRegionsJson", blurRegionsJson);
-                    } else if (setupBlurRegionsJson) {
-                        formData.set("blurRegionsJson", setupBlurRegionsJson);
+                        sourceAssetSetup,
+                    );
+                    formData.set("mirrorEnabled", String(maskConfig.mirrorEnabled));
+                    formData.set("blurEnabled", "true");
+                    formData.set("subtitleOverlayEnabled", "true");
+                    if (maskConfig.blurRegionsJson) {
+                        formData.set("blurRegionsJson", maskConfig.blurRegionsJson);
                     } else {
-                        formData.set(
-                            "regionX",
-                            String(getNumberConfig(editNode, "regionX", 0)),
-                        );
-                        formData.set(
-                            "regionY",
-                            String(getNumberConfig(editNode, "regionY", 84)),
-                        );
-                        formData.set(
-                            "regionWidth",
-                            String(
-                                getNumberConfig(editNode, "regionWidth", 100),
-                            ),
-                        );
-                        formData.set(
-                            "regionHeight",
-                            String(
-                                getNumberConfig(editNode, "regionHeight", 16),
-                            ),
-                        );
+                        formData.set("regionX", String(maskConfig.regionX));
+                        formData.set("regionY", String(maskConfig.regionY));
+                        formData.set("regionWidth", String(maskConfig.regionWidth));
+                        formData.set("regionHeight", String(maskConfig.regionHeight));
                         formData.set(
                             "timelineStart",
-                            String(
-                                getNumberConfig(editNode, "timelineStart", 0),
-                            ),
+                            String(maskConfig.timelineStart),
                         );
-                        formData.set(
-                            "timelineEnd",
-                            String(
-                                getNumberConfig(editNode, "timelineEnd", 36000),
-                            ),
-                        );
+                        formData.set("timelineEnd", String(maskConfig.timelineEnd));
                         formData.set(
                             "blurStrength",
-                            String(
-                                getNumberConfig(editNode, "blurStrength", 50),
-                            ),
+                            String(maskConfig.blurStrength),
                         );
                     }
-                    formData.set(
-                        "subtitleFontFamily",
-                        getStringConfig(
-                            editNode,
-                            "subtitleFontFamily",
-                            sourceAssetSetup?.subtitleFontFamily ?? "Arial",
-                        ),
-                    );
-                    formData.set(
-                        "subtitleFontSize",
-                        String(
-                            getNumberConfig(
-                                editNode,
-                                "subtitleFontSize",
-                                sourceAssetSetup?.subtitleFontSize ?? 55,
-                            ),
-                        ),
-                    );
+                    formData.set("subtitleFontFamily", maskConfig.subtitleFontFamily);
+                    formData.set("subtitleFontSize", String(maskConfig.subtitleFontSize));
                     formData.set(
                         "subtitleMarginBottom",
-                        String(
-                            getNumberConfig(
-                                editNode,
-                                "subtitleMarginBottom",
-                                sourceAssetSetup?.subtitleMarginBottom ?? 150,
-                            ),
-                        ),
+                        String(maskConfig.subtitleMarginBottom),
                     );
                     formData.set(
                         "subtitleMarginLeft",
-                        String(
-                            getNumberConfig(
-                                editNode,
-                                "subtitleMarginLeft",
-                                sourceAssetSetup?.subtitleMarginLeft ?? 60,
-                            ),
-                        ),
+                        String(maskConfig.subtitleMarginLeft),
                     );
                     formData.set(
                         "subtitleMarginRight",
-                        String(
-                            getNumberConfig(
-                                editNode,
-                                "subtitleMarginRight",
-                                sourceAssetSetup?.subtitleMarginRight ?? 60,
-                            ),
-                        ),
+                        String(maskConfig.subtitleMarginRight),
                     );
                     formData.set(
                         "subtitleAlignment",
-                        String(
-                            getNumberConfig(
-                                editNode,
-                                "subtitleAlignment",
-                                sourceAssetSetup?.subtitleAlignment ?? 2,
-                            ),
-                        ),
+                        String(maskConfig.subtitleAlignment),
                     );
                     formData.set(
                         "subtitleBackgroundEnabled",
-                        String(
-                            getBooleanConfig(
-                                editNode,
-                                "subtitleBackgroundEnabled",
-                                sourceAssetSetup?.subtitleBackgroundEnabled ??
-                                    true,
-                            ),
-                        ),
+                        String(maskConfig.subtitleBackgroundEnabled),
                     );
                     formData.set(
                         "subtitleBackgroundColor",
-                        getStringConfig(
-                            editNode,
-                            "subtitleBackgroundColor",
-                            sourceAssetSetup?.subtitleBackgroundColor ??
-                                "#000000",
-                        ),
+                        maskConfig.subtitleBackgroundColor,
                     );
                     formData.set(
                         "subtitleBackgroundOpacity",
-                        String(
-                            getNumberConfig(
-                                editNode,
-                                "subtitleBackgroundOpacity",
-                                sourceAssetSetup?.subtitleBackgroundOpacity ??
-                                    65,
-                            ),
-                        ),
+                        String(maskConfig.subtitleBackgroundOpacity),
                     );
                     formData.set(
                         "translatedSegmentsJson",
@@ -2657,9 +2993,16 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     const hashtags = hashtagsRaw
                         ? parseCommaList(hashtagsRaw)
                         : undefined;
-                    const fallbackMetadata = Object.values(
-                        vietnameseMetadataByNodeId,
-                    )[0];
+                    const upstreamMetadataNodeId = findUpstreamMetadataNodeId(
+                        publishNode.id,
+                    );
+                    const fallbackMetadata =
+                        (upstreamMetadataNodeId
+                            ? vietnameseMetadataByNodeId[
+                                  upstreamMetadataNodeId
+                              ]
+                            : undefined) ??
+                        Object.values(vietnameseMetadataByNodeId)[0];
 
                     setNodeStatus(
                         publishNode.id,
@@ -2781,6 +3124,25 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     : undefined,
         });
         setIsRunningFlow(false);
+    };
+
+    const openFlowSetup = () => {
+        if (!flowPlan.ok) {
+            setRunError(flowPlan.errors.join("\n"));
+            return;
+        }
+        if (flowPlan.steps.length === 0) {
+            setRunError("Plan rỗng. Hãy thêm nodes vào graph.");
+            return;
+        }
+        setRunError(null);
+        setIsFlowSetupOpen(true);
+    };
+
+    const runConfiguredFlow = () => {
+        if (flowSetupIssueCount > 0) return;
+        setIsFlowSetupOpen(false);
+        void runWorkspaceFlow("fresh");
     };
 
     const getCanvasPoint = (event: PointerEvent<HTMLElement>) => {
@@ -3078,7 +3440,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         runError={runError}
                         runResult={runResult}
                         canResume={Boolean(runError) && hasResumeCheckpoint}
-                        onRun={() => runWorkspaceFlow("fresh")}
+                        onRun={openFlowSetup}
                         onResume={() => runWorkspaceFlow("resume")}
                         onClear={clearDraft}
                     />
@@ -3307,6 +3669,9 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     facebookPagesByAccount={facebookPagesByAccount}
                     loadingFacebookAccountIds={loadingFacebookAccountIds}
                     loadingAiModelProviderIds={loadingAiModelProviderIds}
+                    runtimeVietnameseMetadataByNodeId={
+                        runtimeVietnameseMetadataByNodeId
+                    }
                     isRunningFlow={isRunningFlow}
                     seedTemplates={WORKSPACE_SEED_TEMPLATES}
                     onSetPendingSource={(nodeId) =>
@@ -3321,7 +3686,387 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     onEnsureAiProviderModels={ensureAiProviderModels}
                 />
             </div>
+            {isFlowSetupOpen ? (
+                <WorkspaceFlowSetupModal
+                    accountsError={accountsError}
+                    flowPlan={flowPlan}
+                    setupNodes={flowSetupNodes}
+                    issuesByNodeId={flowSetupIssuesByNodeId}
+                    graph={graph}
+                    storageAccounts={storageAccounts}
+                    socialAccounts={socialAccounts}
+                    aiProviders={aiProviders}
+                    aiModelsByProviderId={aiModelsByProviderId}
+                    storageAssets={storageAssets}
+                    runtimeFilesByNodeId={runtimeFilesByNodeId}
+                    runtimeArtifactsByNodeId={runtimeArtifactsByNodeId}
+                    facebookPagesByAccount={facebookPagesByAccount}
+                    loadingFacebookAccountIds={loadingFacebookAccountIds}
+                    loadingAiModelProviderIds={loadingAiModelProviderIds}
+                    runtimeVietnameseMetadataByNodeId={
+                        runtimeVietnameseMetadataByNodeId
+                    }
+                    isRunningFlow={isRunningFlow}
+                    onClose={() => setIsFlowSetupOpen(false)}
+                    onRun={runConfiguredFlow}
+                    onUpdateNodeConfig={updateNodeConfig}
+                    onUpdateNodeFile={setNodeFile}
+                    onEnsureFacebookPages={ensureFacebookPages}
+                    onEnsureAiProviderModels={ensureAiProviderModels}
+                />
+            ) : null}
         </section>
+    );
+}
+
+function WorkspaceFlowSetupModal({
+    accountsError,
+    flowPlan,
+    setupNodes,
+    issuesByNodeId,
+    graph,
+    storageAccounts,
+    socialAccounts,
+    aiProviders,
+    aiModelsByProviderId,
+    storageAssets,
+    runtimeFilesByNodeId,
+    runtimeArtifactsByNodeId,
+    facebookPagesByAccount,
+    loadingFacebookAccountIds,
+    loadingAiModelProviderIds,
+    runtimeVietnameseMetadataByNodeId,
+    isRunningFlow,
+    onClose,
+    onRun,
+    onUpdateNodeConfig,
+    onUpdateNodeFile,
+    onEnsureFacebookPages,
+    onEnsureAiProviderModels,
+}: {
+    accountsError: string | null;
+    flowPlan: WorkspaceFlowPlan;
+    setupNodes: WorkspaceFlowSetupNode[];
+    issuesByNodeId: Record<string, string[]>;
+    graph: WorkspaceGraph;
+    storageAccounts: WorkspaceStorageAccount[];
+    socialAccounts: WorkspaceSocialAccount[];
+    aiProviders: WorkspaceAiProvider[];
+    aiModelsByProviderId: Record<string, WorkspaceAiModel[] | undefined>;
+    storageAssets: WorkspaceAsset[];
+    runtimeFilesByNodeId: Record<string, File | undefined>;
+    runtimeArtifactsByNodeId: Record<
+        string,
+        WorkspaceRuntimeArtifact | undefined
+    >;
+    facebookPagesByAccount: Record<string, FacebookPageOption[]>;
+    loadingFacebookAccountIds: Record<string, boolean>;
+    loadingAiModelProviderIds: Record<string, boolean>;
+    runtimeVietnameseMetadataByNodeId: Record<
+        string,
+        VietnameseVideoMetadataResult | undefined
+    >;
+    isRunningFlow: boolean;
+    onClose: () => void;
+    onRun: () => void;
+    onUpdateNodeConfig: (
+        nodeId: string,
+        patch: WorkspaceNodeInstance["config"],
+    ) => void;
+    onUpdateNodeFile: (nodeId: string, file: File | null) => void;
+    onEnsureFacebookPages: (accountId: string) => Promise<FacebookPagesResult>;
+    onEnsureAiProviderModels: (
+        providerId: string,
+    ) => Promise<WorkspaceAiModel[]>;
+}) {
+    const issueCount = Object.values(issuesByNodeId).reduce(
+        (total, issues) => total + issues.length,
+        0,
+    );
+    const readyCount = setupNodes.filter(
+        ({ node }) => (issuesByNodeId[node.id] ?? []).length === 0,
+    ).length;
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 md:p-6">
+            <section
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="workspace-flow-setup-title"
+                className="flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden border border-main bg-main shadow-2xl"
+            >
+                <header className="flex items-start justify-between gap-4 border-b border-main bg-secondary/45 px-5 py-4">
+                    <div className="min-w-0">
+                        <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted">
+                            Pre-run configuration
+                        </p>
+                        <h2
+                            id="workspace-flow-setup-title"
+                            className="mt-1 text-[16px] font-semibold text-main"
+                        >
+                            Flow Setup
+                        </h2>
+                        <p className="mt-1 max-w-3xl text-[11px] leading-5 text-muted">
+                            Review and configure every executable node before
+                            the flow starts. Each card writes back to the same
+                            node config used by the canvas Inspector.
+                        </p>
+                    </div>
+                    <button
+                        type="button"
+                        aria-label="Close Flow Setup"
+                        onClick={onClose}
+                        disabled={isRunningFlow}
+                        className="inline-flex items-center border border-main bg-main p-1.5 text-main transition-colors hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                        <X className="h-3.5 w-3.5" />
+                    </button>
+                </header>
+
+                <div className="grid min-h-0 flex-1 gap-4 overflow-hidden p-4 lg:grid-cols-[260px_minmax(0,1fr)]">
+                    <aside className="thin-scrollbar min-h-0 overflow-y-auto border border-main bg-secondary/20 p-3">
+                        <p className="text-[11px] font-semibold text-main">
+                            Run readiness
+                        </p>
+                        <div className="mt-3 grid grid-cols-2 gap-2">
+                            <div className="border border-emerald-500/30 bg-emerald-500/10 p-2">
+                                <p className="text-[18px] font-semibold text-emerald-700">
+                                    {readyCount}
+                                </p>
+                                <p className="text-[10px] text-emerald-700">
+                                    Ready
+                                </p>
+                            </div>
+                            <div
+                                className={cn(
+                                    "border p-2",
+                                    issueCount > 0
+                                        ? "border-amber-500/30 bg-amber-500/10"
+                                        : "border-main bg-main",
+                                )}
+                            >
+                                <p
+                                    className={cn(
+                                        "text-[18px] font-semibold",
+                                        issueCount > 0
+                                            ? "text-amber-700"
+                                            : "text-main",
+                                    )}
+                                >
+                                    {issueCount}
+                                </p>
+                                <p
+                                    className={cn(
+                                        "text-[10px]",
+                                        issueCount > 0
+                                            ? "text-amber-700"
+                                            : "text-muted",
+                                    )}
+                                >
+                                    Need attention
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="mt-3 border border-main bg-main p-3">
+                            <p className="text-[10px] font-bold uppercase tracking-wide text-muted">
+                                Current plan
+                            </p>
+                            <p className="mt-1 text-[12px] font-semibold text-main">
+                                {flowPlan.steps.length} step(s)
+                            </p>
+                            <p className="mt-1 text-[10px] leading-4 text-muted">
+                                {setupNodes.length} executable node(s) shown in
+                                first-run order.
+                            </p>
+                        </div>
+
+                        {accountsError ? (
+                            <div className="mt-3 border border-rose-500/30 bg-rose-500/10 p-3 text-[10px] leading-4 text-rose-700">
+                                Runtime accounts failed to load:{" "}
+                                {accountsError}
+                            </div>
+                        ) : null}
+
+                        <div className="mt-3 space-y-2">
+                            {setupNodes.map(({ node }, index) => {
+                                const issues = issuesByNodeId[node.id] ?? [];
+                                return (
+                                    <div
+                                        key={node.id}
+                                        className="border border-main bg-main p-2"
+                                    >
+                                        <div className="flex items-start gap-2">
+                                            <span className="flex h-5 w-5 shrink-0 items-center justify-center border border-main bg-secondary text-[10px] font-bold text-main">
+                                                {index + 1}
+                                            </span>
+                                            <div className="min-w-0">
+                                                <p className="truncate text-[11px] font-semibold text-main">
+                                                    {node.label}
+                                                </p>
+                                                <p className="truncate text-[10px] text-muted">
+                                                    {node.id}
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <span
+                                            className={cn(
+                                                "mt-2 inline-flex border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide",
+                                                issues.length > 0
+                                                    ? "border-amber-500/30 bg-amber-500/10 text-amber-700"
+                                                    : "border-emerald-500/30 bg-emerald-500/10 text-emerald-700",
+                                            )}
+                                        >
+                                            {issues.length > 0
+                                                ? "needs input"
+                                                : "ready"}
+                                        </span>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </aside>
+
+                    <div className="thin-scrollbar min-h-0 space-y-3 overflow-y-auto pr-1">
+                        {setupNodes.map(({ node, template }, index) => {
+                            const issues = issuesByNodeId[node.id] ?? [];
+                            return (
+                                <article
+                                    key={node.id}
+                                    className="border border-main bg-main"
+                                >
+                                    <header className="flex flex-col gap-2 border-b border-main bg-secondary/30 px-4 py-3 sm:flex-row sm:items-start sm:justify-between">
+                                        <div className="min-w-0">
+                                            <div className="flex flex-wrap items-center gap-2">
+                                                <span className="border border-main bg-main px-1.5 py-0.5 text-[10px] font-bold text-main">
+                                                    Node {index + 1}
+                                                </span>
+                                                <h3 className="text-[13px] font-semibold text-main">
+                                                    {node.label}
+                                                </h3>
+                                            </div>
+                                            <p className="mt-1 text-[10px] text-muted">
+                                                {node.templateNodeType} ·{" "}
+                                                {node.id}
+                                            </p>
+                                        </div>
+                                        <span
+                                            className={cn(
+                                                "inline-flex border px-2 py-1 text-[10px] font-bold uppercase tracking-wide",
+                                                issues.length > 0
+                                                    ? "border-amber-500/30 bg-amber-500/10 text-amber-700"
+                                                    : "border-emerald-500/30 bg-emerald-500/10 text-emerald-700",
+                                            )}
+                                        >
+                                            {issues.length > 0
+                                                ? "Needs input"
+                                                : "Ready"}
+                                        </span>
+                                    </header>
+                                    {issues.length > 0 ? (
+                                        <div className="border-b border-amber-500/20 bg-amber-500/10 px-4 py-3">
+                                            <p className="text-[10px] font-bold uppercase tracking-wide text-amber-700">
+                                                Resolve before run
+                                            </p>
+                                            <div className="mt-2 flex flex-wrap gap-1.5">
+                                                {issues.map((issue) => (
+                                                    <span
+                                                        key={issue}
+                                                        className="border border-amber-500/30 bg-main px-2 py-1 text-[10px] font-semibold text-amber-700"
+                                                    >
+                                                        {issue}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    ) : null}
+                                    <div className="p-4">
+                                        <NodeRuntimeConfig
+                                            node={node}
+                                            graph={graph}
+                                            storageAccounts={storageAccounts}
+                                            socialAccounts={socialAccounts}
+                                            aiProviders={aiProviders}
+                                            aiModelsByProviderId={
+                                                aiModelsByProviderId
+                                            }
+                                            storageAssets={storageAssets}
+                                            runtimeFile={
+                                                runtimeFilesByNodeId[node.id] ??
+                                                null
+                                            }
+                                            runtimeArtifact={
+                                                runtimeArtifactsByNodeId[
+                                                    node.id
+                                                ] ?? null
+                                            }
+                                            facebookPagesByAccount={
+                                                facebookPagesByAccount
+                                            }
+                                            loadingFacebookAccountIds={
+                                                loadingFacebookAccountIds
+                                            }
+                                            loadingAiModelProviderIds={
+                                                loadingAiModelProviderIds
+                                            }
+                                            runtimeVietnameseMetadataByNodeId={
+                                                runtimeVietnameseMetadataByNodeId
+                                            }
+                                            isRunningFlow={isRunningFlow}
+                                            onUpdateNodeConfig={
+                                                onUpdateNodeConfig
+                                            }
+                                            onUpdateNodeFile={onUpdateNodeFile}
+                                            onEnsureFacebookPages={
+                                                onEnsureFacebookPages
+                                            }
+                                            onEnsureAiProviderModels={
+                                                onEnsureAiProviderModels
+                                            }
+                                        />
+                                        <div className="mt-3 border border-main bg-secondary/15 px-3 py-2 text-[10px] leading-4 text-muted">
+                                            {template.description}
+                                        </div>
+                                    </div>
+                                </article>
+                            );
+                        })}
+                    </div>
+                </div>
+
+                <footer className="flex flex-col gap-3 border-t border-main bg-secondary/30 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+                    <p className="text-[11px] leading-4 text-muted">
+                        {issueCount > 0
+                            ? `Resolve ${issueCount} issue(s) before running this flow.`
+                            : "All executable nodes are ready. You can run the flow now."}
+                    </p>
+                    <div className="flex items-center justify-end gap-2">
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            disabled={isRunningFlow}
+                            className="inline-flex items-center border border-main bg-main px-3 py-1.5 text-[11px] font-semibold text-main transition-colors hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            type="button"
+                            onClick={onRun}
+                            disabled={
+                                isRunningFlow ||
+                                issueCount > 0 ||
+                                !flowPlan.ok ||
+                                setupNodes.length === 0
+                            }
+                            className="inline-flex items-center gap-1.5 border border-accent/35 bg-accent px-3 py-1.5 text-[11px] font-semibold text-white transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                            <Play className="h-3.5 w-3.5" />
+                            Run Flow
+                        </button>
+                    </div>
+                </footer>
+            </section>
+        </div>
     );
 }
 
@@ -3843,6 +4588,7 @@ function NodeRuntimeConfig({
     facebookPagesByAccount,
     loadingFacebookAccountIds,
     loadingAiModelProviderIds,
+    runtimeVietnameseMetadataByNodeId,
     isRunningFlow,
     onUpdateNodeConfig,
     onUpdateNodeFile,
@@ -3861,6 +4607,10 @@ function NodeRuntimeConfig({
     facebookPagesByAccount: Record<string, FacebookPageOption[]>;
     loadingFacebookAccountIds: Record<string, boolean>;
     loadingAiModelProviderIds: Record<string, boolean>;
+    runtimeVietnameseMetadataByNodeId: Record<
+        string,
+        VietnameseVideoMetadataResult | undefined
+    >;
     isRunningFlow: boolean;
     onUpdateNodeConfig: (
         nodeId: string,
@@ -3889,6 +4639,31 @@ function NodeRuntimeConfig({
             );
             if (!currentNode) continue;
             if (currentNode.templateNodeType === "source.asset") {
+                return currentNode;
+            }
+            for (const edge of graph.edges) {
+                if (edge.toNodeId === currentNode.id) {
+                    stack.push(edge.fromNodeId);
+                }
+            }
+        }
+        return null;
+    };
+
+    const findUpstreamMetadataNode = (targetNodeId: string) => {
+        const visited = new Set<string>();
+        const stack = graph.edges
+            .filter((edge) => edge.toNodeId === targetNodeId)
+            .map((edge) => edge.fromNodeId);
+        while (stack.length > 0) {
+            const current = stack.pop() as string;
+            if (visited.has(current)) continue;
+            visited.add(current);
+            const currentNode = graph.nodes.find(
+                (entry) => entry.id === current,
+            );
+            if (!currentNode) continue;
+            if (currentNode.templateNodeType === "text.generate-vi-metadata") {
                 return currentNode;
             }
             for (const edge of graph.edges) {
@@ -4028,9 +4803,37 @@ function NodeRuntimeConfig({
     }
 
     if (node.templateNodeType === "edit.mask-region") {
+        const upstreamSourceAssetNode = findUpstreamSourceAsset(node.id);
+        const upstreamSourceAsset = upstreamSourceAssetNode
+            ? storageAssets.find(
+                  (asset) =>
+                      asset._id ===
+                      getStringConfig(upstreamSourceAssetNode, "assetId"),
+              )
+            : undefined;
+        const sourceAssetSetup = upstreamSourceAsset?.metadata?.videoEditSetup ?? null;
+        const maskConfig = resolveMaskRegionConfig(node, sourceAssetSetup);
+        const setupAssetLabel =
+            upstreamSourceAsset?.metadata?.title ??
+            upstreamSourceAsset?.providerAssetId ??
+            upstreamSourceAsset?._id ??
+            "";
+
         return (
             <InspectorSection title="Runtime Config">
                 <div className="space-y-2 border border-main bg-secondary/20 p-2">
+                    {sourceAssetSetup ? (
+                        <div className="border border-emerald-500/30 bg-emerald-500/10 px-3 py-2">
+                            <p className="text-[10px] font-semibold text-emerald-700">
+                                Using saved video setup from Storage Asset:{" "}
+                                {setupAssetLabel}
+                            </p>
+                            <p className="mt-1 text-[10px] leading-4 text-emerald-700/90">
+                                Node values keep user overrides first; untouched
+                                default fields fallback to this saved setup.
+                            </p>
+                        </div>
+                    ) : null}
                     <label className="flex items-center justify-between gap-3 border border-main bg-main px-3 py-2">
                         <span>
                             <span className="block text-[11px] font-semibold text-main">
@@ -4042,11 +4845,7 @@ function NodeRuntimeConfig({
                         </span>
                         <input
                             type="checkbox"
-                            checked={getBooleanConfig(
-                                node,
-                                "mirrorEnabled",
-                                false,
-                            )}
+                            checked={maskConfig.mirrorEnabled}
                             disabled={isRunningFlow}
                             onChange={(event) =>
                                 setConfig({
@@ -4062,7 +4861,7 @@ function NodeRuntimeConfig({
                                 Blur regions JSON (multi-region)
                             </span>
                             <textarea
-                                value={getStringConfig(node, "blurRegionsJson")}
+                                value={maskConfig.blurRegionsJson}
                                 disabled={isRunningFlow}
                                 onChange={(event) =>
                                     setConfig({
@@ -4076,7 +4875,7 @@ function NodeRuntimeConfig({
                         </label>
                         <RuntimeTextInput
                             label="Region X %"
-                            value={String(getNumberConfig(node, "regionX", 0))}
+                            value={String(maskConfig.regionX)}
                             disabled={isRunningFlow}
                             placeholder="0"
                             onChange={(value) =>
@@ -4085,7 +4884,7 @@ function NodeRuntimeConfig({
                         />
                         <RuntimeTextInput
                             label="Region Y %"
-                            value={String(getNumberConfig(node, "regionY", 84))}
+                            value={String(maskConfig.regionY)}
                             disabled={isRunningFlow}
                             placeholder="84"
                             onChange={(value) =>
@@ -4094,9 +4893,7 @@ function NodeRuntimeConfig({
                         />
                         <RuntimeTextInput
                             label="Region width %"
-                            value={String(
-                                getNumberConfig(node, "regionWidth", 100),
-                            )}
+                            value={String(maskConfig.regionWidth)}
                             disabled={isRunningFlow}
                             placeholder="100"
                             onChange={(value) =>
@@ -4105,9 +4902,7 @@ function NodeRuntimeConfig({
                         />
                         <RuntimeTextInput
                             label="Region height %"
-                            value={String(
-                                getNumberConfig(node, "regionHeight", 16),
-                            )}
+                            value={String(maskConfig.regionHeight)}
                             disabled={isRunningFlow}
                             placeholder="16"
                             onChange={(value) =>
@@ -4116,9 +4911,7 @@ function NodeRuntimeConfig({
                         />
                         <RuntimeTextInput
                             label="Start seconds"
-                            value={String(
-                                getNumberConfig(node, "timelineStart", 0),
-                            )}
+                            value={String(maskConfig.timelineStart)}
                             disabled={isRunningFlow}
                             placeholder="0"
                             onChange={(value) =>
@@ -4127,9 +4920,7 @@ function NodeRuntimeConfig({
                         />
                         <RuntimeTextInput
                             label="End seconds"
-                            value={String(
-                                getNumberConfig(node, "timelineEnd", 36000),
-                            )}
+                            value={String(maskConfig.timelineEnd)}
                             disabled={isRunningFlow}
                             placeholder="36000"
                             onChange={(value) =>
@@ -4138,9 +4929,7 @@ function NodeRuntimeConfig({
                         />
                         <RuntimeTextInput
                             label="Blur strength"
-                            value={String(
-                                getNumberConfig(node, "blurStrength", 50),
-                            )}
+                            value={String(maskConfig.blurStrength)}
                             disabled={isRunningFlow}
                             placeholder="18"
                             onChange={(value) =>
@@ -4149,11 +4938,7 @@ function NodeRuntimeConfig({
                         />
                         <RuntimeTextInput
                             label="Subtitle font"
-                            value={getStringConfig(
-                                node,
-                                "subtitleFontFamily",
-                                "Arial",
-                            )}
+                            value={maskConfig.subtitleFontFamily}
                             disabled={isRunningFlow}
                             placeholder="Arial"
                             onChange={(value) =>
@@ -4162,9 +4947,7 @@ function NodeRuntimeConfig({
                         />
                         <RuntimeTextInput
                             label="Subtitle size"
-                            value={String(
-                                getNumberConfig(node, "subtitleFontSize", 55),
-                            )}
+                            value={String(maskConfig.subtitleFontSize)}
                             disabled={isRunningFlow}
                             placeholder="100"
                             onChange={(value) =>
@@ -4173,9 +4956,7 @@ function NodeRuntimeConfig({
                         />
                         <RuntimeTextInput
                             label="Subtitle left margin"
-                            value={String(
-                                getNumberConfig(node, "subtitleMarginLeft", 60),
-                            )}
+                            value={String(maskConfig.subtitleMarginLeft)}
                             disabled={isRunningFlow}
                             placeholder="60"
                             onChange={(value) =>
@@ -4184,13 +4965,7 @@ function NodeRuntimeConfig({
                         />
                         <RuntimeTextInput
                             label="Subtitle right margin"
-                            value={String(
-                                getNumberConfig(
-                                    node,
-                                    "subtitleMarginRight",
-                                    60,
-                                ),
-                            )}
+                            value={String(maskConfig.subtitleMarginRight)}
                             disabled={isRunningFlow}
                             placeholder="60"
                             onChange={(value) =>
@@ -4201,9 +4976,7 @@ function NodeRuntimeConfig({
                         />
                         <RuntimeTextInput
                             label="Subtitle alignment (1..9)"
-                            value={String(
-                                getNumberConfig(node, "subtitleAlignment", 2),
-                            )}
+                            value={String(maskConfig.subtitleAlignment)}
                             disabled={isRunningFlow}
                             placeholder="2"
                             onChange={(value) =>
@@ -4213,11 +4986,7 @@ function NodeRuntimeConfig({
                         <RuntimeSelect
                             label="Subtitle background color"
                             value={normalizeSubtitleBackgroundColor(
-                                getStringConfig(
-                                    node,
-                                    "subtitleBackgroundColor",
-                                    "#000000",
-                                ),
+                                maskConfig.subtitleBackgroundColor,
                             )}
                             disabled={isRunningFlow}
                             onChange={(value) =>
@@ -4232,13 +5001,7 @@ function NodeRuntimeConfig({
                         </RuntimeSelect>
                         <RuntimeTextInput
                             label="Subtitle background opacity %"
-                            value={String(
-                                getNumberConfig(
-                                    node,
-                                    "subtitleBackgroundOpacity",
-                                    65,
-                                ),
-                            )}
+                            value={String(maskConfig.subtitleBackgroundOpacity)}
                             disabled={isRunningFlow}
                             placeholder="65"
                             onChange={(value) =>
@@ -4253,11 +5016,7 @@ function NodeRuntimeConfig({
                             </span>
                             <input
                                 type="checkbox"
-                                checked={getBooleanConfig(
-                                    node,
-                                    "subtitleBackgroundEnabled",
-                                    true,
-                                )}
+                                checked={maskConfig.subtitleBackgroundEnabled}
                                 disabled={isRunningFlow}
                                 onChange={(event) =>
                                     setConfig({
@@ -4270,13 +5029,7 @@ function NodeRuntimeConfig({
                         </label>
                         <RuntimeTextInput
                             label="Subtitle Y margin"
-                            value={String(
-                                getNumberConfig(
-                                    node,
-                                    "subtitleMarginBottom",
-                                    150,
-                                ),
-                            )}
+                            value={String(maskConfig.subtitleMarginBottom)}
                             disabled={isRunningFlow}
                             placeholder="280"
                             onChange={(value) =>
@@ -4366,22 +5119,30 @@ function NodeRuntimeConfig({
 
     if (node.templateNodeType === "social.publish") {
         const upstreamAssetNode = findUpstreamSourceAsset(node.id);
+        const upstreamMetadataNode = findUpstreamMetadataNode(node.id);
         const upstreamAssetId = upstreamAssetNode
             ? getStringConfig(upstreamAssetNode, "assetId")
             : "";
         const upstreamAsset = storageAssets.find(
             (asset) => asset._id === upstreamAssetId,
         );
+        const runtimeGeneratedMetadata = upstreamMetadataNode
+            ? runtimeVietnameseMetadataByNodeId[upstreamMetadataNode.id]
+            : undefined;
         const metadataTitle =
+            runtimeGeneratedMetadata?.title ??
             upstreamAsset?.metadata?.vietnameseTitle ??
             upstreamAsset?.metadata?.title ??
             "";
         const metadataCaption =
+            runtimeGeneratedMetadata?.description ??
             upstreamAsset?.metadata?.vietnameseDescription ??
             upstreamAsset?.metadata?.description ??
             "";
         const metadataHashtags = (
-            upstreamAsset?.metadata?.vietnameseHashtags ?? []
+            runtimeGeneratedMetadata?.hashtags ??
+            upstreamAsset?.metadata?.vietnameseHashtags ??
+            []
         ).join(",");
         const hasTitleOverride = Object.prototype.hasOwnProperty.call(
             node.config,
@@ -4573,6 +5334,11 @@ function NodeRuntimeConfig({
                         placeholder="#tag1,#tag2 (optional)"
                         onChange={(value) => setConfig({ hashtags: value })}
                     />
+                    <p className="text-[10px] leading-4 text-muted">
+                        Nếu để trống Title/Caption/Hashtags, Publish sẽ tự lấy
+                        từ node Generate VI metadata (khi có output); nếu chưa
+                        có thì fallback metadata của asset upstream.
+                    </p>
                 </div>
             </InspectorSection>
         );
@@ -4640,9 +5406,32 @@ function NodeRuntimeConfig({
     }
 
     if (node.templateNodeType === "video.preprocess") {
+        const isPreprocessEnabled = getBooleanConfig(node, "enabled", true);
         return (
             <InspectorSection title="Runtime Config">
                 <div className="space-y-2 border border-main bg-secondary/20 p-2">
+                    <label className="flex items-center justify-between gap-3 border border-main bg-main px-3 py-2">
+                        <span>
+                            <span className="block text-[11px] font-semibold text-main">
+                                Enable preprocess
+                            </span>
+                            <span className="block text-[10px] text-muted">
+                                Tắt để passthrough source video không đổi tốc
+                                độ.
+                            </span>
+                        </span>
+                        <input
+                            type="checkbox"
+                            checked={isPreprocessEnabled}
+                            disabled={isRunningFlow}
+                            onChange={(event) =>
+                                setConfig({
+                                    enabled: event.currentTarget.checked,
+                                })
+                            }
+                            className="h-4 w-4 accent-[var(--color-accent)]"
+                        />
+                    </label>
                     <RuntimeTextInput
                         label="Video speed"
                         value={String(
@@ -4655,8 +5444,9 @@ function NodeRuntimeConfig({
                         }
                     />
                     <p className="border border-main bg-main px-3 py-2 text-[10px] leading-4 text-muted">
-                        Node này tạo video artifact mới để các bước transcript,
-                        dubbing hoặc edit downstream dùng lại.
+                        {isPreprocessEnabled
+                            ? "Node này tạo video artifact mới để các bước transcript, dubbing hoặc edit downstream dùng lại."
+                            : "Preprocess đang tắt: flow sẽ dùng trực tiếp source video làm passthrough artifact cho downstream."}
                     </p>
                 </div>
             </InspectorSection>
@@ -5163,6 +5953,7 @@ function InspectorPanel({
     facebookPagesByAccount,
     loadingFacebookAccountIds,
     loadingAiModelProviderIds,
+    runtimeVietnameseMetadataByNodeId,
     isRunningFlow,
     seedTemplates,
     onSetPendingSource,
@@ -5190,6 +5981,10 @@ function InspectorPanel({
     facebookPagesByAccount: Record<string, FacebookPageOption[]>;
     loadingFacebookAccountIds: Record<string, boolean>;
     loadingAiModelProviderIds: Record<string, boolean>;
+    runtimeVietnameseMetadataByNodeId: Record<
+        string,
+        VietnameseVideoMetadataResult | undefined
+    >;
     isRunningFlow: boolean;
     seedTemplates: WorkspaceSeedTemplate[];
     onSetPendingSource: (nodeId: string) => void;
@@ -5329,6 +6124,9 @@ function InspectorPanel({
                         facebookPagesByAccount={facebookPagesByAccount}
                         loadingFacebookAccountIds={loadingFacebookAccountIds}
                         loadingAiModelProviderIds={loadingAiModelProviderIds}
+                        runtimeVietnameseMetadataByNodeId={
+                            runtimeVietnameseMetadataByNodeId
+                        }
                         isRunningFlow={isRunningFlow}
                         onUpdateNodeConfig={onUpdateNodeConfig}
                         onUpdateNodeFile={onUpdateNodeFile}

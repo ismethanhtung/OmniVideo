@@ -31,7 +31,7 @@ export const WORKSPACE_SEED_TEMPLATES: WorkspaceSeedTemplate[] = [
         id: "asset-transcript-full-processing",
         label: "Seed Asset Transcript Full Processing",
         description:
-            "Storage Asset -> Preprocess -> Transcript/Translate/Voice + Dubbing -> Mirror -> Blur -> Save to Storage + Generate VI Metadata.",
+            "Storage Asset -> Preprocess -> VI Voice Dubbing -> Mirror -> Blur -> Save to Storage + Generate VI Metadata.",
         buildGraph: createAssetTranscriptFullProcessingSampleGraph,
     },
 ];

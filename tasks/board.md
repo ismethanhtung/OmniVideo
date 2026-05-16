@@ -22,6 +22,10 @@
 
 ## Review
 
+- `FAST-WORKSPACE-019` - Publish fallback to Generate VI metadata when overrides are empty.
+- `FAST-WORKSPACE-018` - Remove duplicate transcript/voice branch from Seed Asset Transcript Full Processing.
+- `FAST-WORKSPACE-017` - Fix Flow Setup polish, mask setup hydration, and preprocess enable toggle.
+- `FAST-WORKSPACE-016` - Add pre-run Flow Setup modal for Workspace nodes.
 - `FAST-WORKSPACE-015` - Add timed asset thumbnails and visual Workspace asset picker.
 - `FAST-AUDIO-053` - Show inline asset videos in Audio Transcript Source picker.
 - `FAST-INTAKE-005` - Show direct thumbnails in Video Intake Run History.

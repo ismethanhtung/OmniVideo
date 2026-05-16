@@ -4,6 +4,7 @@ import {
     WORKSPACE_NODE_TEMPLATES,
     addWorkspaceNode,
     connectWorkspaceNodes,
+    createAssetTranscriptFullProcessingSampleGraph,
     createDouyinReworkSampleGraph,
     createEmptyWorkspaceGraph,
     createAssetToSocialSampleGraph,
@@ -44,6 +45,25 @@ describe("workspace graph helpers", () => {
             label: "Mirror Video",
             position: { x: 100, y: 160 },
             config: { axis: "horizontal" },
+        });
+    });
+
+    it("creates preprocess nodes with enable flag defaulting to true", () => {
+        const template = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "video.preprocess",
+        );
+
+        expect(template).toBeDefined();
+
+        const graph = addWorkspaceNode(
+            createEmptyWorkspaceGraph("Preprocess"),
+            template!,
+            { x: 120, y: 220 },
+        );
+
+        expect(graph.nodes[0].config).toMatchObject({
+            enabled: true,
+            speedFactor: 0.7,
         });
     });
 
@@ -392,6 +412,46 @@ describe("workspace graph helpers", () => {
                     step.metadataNodeId === "text-generate-vi-metadata-1",
             ),
         ).toBe(true);
+    });
+
+    it("plans generate VI metadata directly from video dubbing transcript output", () => {
+        const fileTemplate = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "source.file",
+        )!;
+        const dubbingTemplate = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "audio.video-dubbing",
+        )!;
+        const metadataTemplate = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "text.generate-vi-metadata",
+        )!;
+
+        let graph: WorkspaceGraph = createEmptyWorkspaceGraph(
+            "VI metadata from dubbing",
+        );
+        graph = addWorkspaceNode(graph, fileTemplate, { x: 0, y: 0 });
+        graph = addWorkspaceNode(graph, dubbingTemplate, { x: 220, y: 0 });
+        graph = addWorkspaceNode(graph, metadataTemplate, { x: 440, y: 0 });
+        graph = connectWorkspaceNodes(graph, "source-file-1", "audio-video-dubbing-1");
+        graph = connectWorkspaceNodes(
+            graph,
+            "audio-video-dubbing-1",
+            "text-generate-vi-metadata-1",
+        );
+
+        const plan = planWorkspaceFlow(graph);
+        expect(plan.ok).toBe(true);
+        expect(plan.steps).toEqual([
+            {
+                kind: "dub-video",
+                sourceNodeId: "source-file-1",
+                dubbingNodeId: "audio-video-dubbing-1",
+            },
+            {
+                kind: "generate-vi-metadata",
+                translationNodeId: "audio-video-dubbing-1",
+                metadataNodeId: "text-generate-vi-metadata-1",
+            },
+        ]);
     });
 
     it("rejects source.file without downstream Save to Storage", () => {
@@ -1180,6 +1240,54 @@ describe("workspace graph helpers", () => {
             {
                 kind: "publish",
                 publishNodeId: "social-publish-1",
+                producerNodeId: "storage-upload-1",
+            },
+        ]);
+    });
+
+    it("plans seeded asset transcript full processing without duplicate transcript/voice branch", () => {
+        const graph = createAssetTranscriptFullProcessingSampleGraph();
+
+        expect(validateWorkspaceGraph(graph)).toEqual({ ok: true, errors: [] });
+        const plan = planWorkspaceFlow(graph);
+
+        expect(plan.ok).toBe(true);
+        expect(plan.steps).toEqual([
+            {
+                kind: "use-existing-asset",
+                nodeId: "source-asset-1",
+                producerNodeId: "source-asset-1",
+            },
+            {
+                kind: "preprocess-video",
+                sourceNodeId: "source-asset-1",
+                preprocessNodeId: "video-preprocess-1",
+            },
+            {
+                kind: "dub-video",
+                sourceNodeId: "video-preprocess-1",
+                dubbingNodeId: "audio-video-dubbing-1",
+            },
+            {
+                kind: "generate-vi-metadata",
+                translationNodeId: "audio-video-dubbing-1",
+                metadataNodeId: "text-generate-vi-metadata-1",
+            },
+            {
+                kind: "mirror-video",
+                sourceNodeId: "audio-video-dubbing-1",
+                mirrorNodeId: "edit-mirror-1",
+            },
+            {
+                kind: "edit-video",
+                sourceNodeId: "edit-mirror-1",
+                editNodeId: "edit-mask-region-1",
+                translationNodeId: "audio-video-dubbing-1",
+            },
+            {
+                kind: "store-artifact",
+                artifactNodeId: "edit-mask-region-1",
+                storageNodeId: "storage-upload-1",
                 producerNodeId: "storage-upload-1",
             },
         ]);

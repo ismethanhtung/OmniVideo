@@ -316,6 +316,13 @@ export const WORKSPACE_NODE_TEMPLATES: WorkspaceNodeTemplate[] = [
         ],
         configFields: [
             {
+                key: "enabled",
+                label: "Enable preprocess",
+                type: "boolean",
+                required: false,
+                defaultValue: true,
+            },
+            {
                 key: "speedFactor",
                 label: "Video speed",
                 type: "number",
@@ -706,6 +713,11 @@ export const WORKSPACE_NODE_TEMPLATES: WorkspaceNodeTemplate[] = [
         inputPorts: [{ id: "asset", label: "Source video", dataType: "asset" }],
         outputPorts: [
             { id: "asset", label: "Dubbed video artifact", dataType: "asset" },
+            {
+                id: "transcript",
+                label: "Translated transcript",
+                dataType: "transcript",
+            },
         ],
         configFields: [
             {
@@ -2016,44 +2028,8 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
         });
     }
 
-    const metadataSteps: WorkspaceFlowStep[] = [];
-    for (const metadataNode of metadataNodes) {
-        const upstreamTranslations = graph.edges
-            .filter((edge) => edge.toNodeId === metadataNode.id)
-            .map((edge) =>
-                graph.nodes.find((node) => node.id === edge.fromNodeId),
-            )
-            .filter(
-                (node): node is WorkspaceNodeInstance =>
-                    node !== undefined &&
-                    node.templateNodeType === "text.translate-transcript",
-            );
-        if (upstreamTranslations.length === 0) {
-            errors.push(
-                `Generate VI Metadata '${metadataNode.label}' (${metadataNode.id}) cần upstream Translate Transcript.`,
-            );
-            continue;
-        }
-        if (upstreamTranslations.length > 1) {
-            errors.push(
-                `Generate VI Metadata '${metadataNode.label}' (${metadataNode.id}) đang nhận nhiều Translate Transcript; chưa hỗ trợ fan-in.`,
-            );
-            continue;
-        }
-        if (!translationProducers.has(upstreamTranslations[0].id)) {
-            errors.push(
-                `Generate VI Metadata '${metadataNode.label}' (${metadataNode.id}) cần Translate Transcript upstream chạy được.`,
-            );
-            continue;
-        }
-        metadataSteps.push({
-            kind: "generate-vi-metadata",
-            translationNodeId: upstreamTranslations[0].id,
-            metadataNodeId: metadataNode.id,
-        });
-    }
-
     const dubbingSteps: WorkspaceFlowStep[] = [];
+    const dubbingProducers = new Set<string>();
     for (const dubbingNode of dubbingNodes) {
         const upstreamSources = graph.edges
             .filter((edge) => edge.toNodeId === dubbingNode.id)
@@ -2095,7 +2071,55 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
             sourceNodeId: upstreamSources[0].id,
             dubbingNodeId: dubbingNode.id,
         });
+        dubbingProducers.add(dubbingNode.id);
         artifactProducers.add(dubbingNode.id);
+    }
+
+    const metadataSteps: WorkspaceFlowStep[] = [];
+    for (const metadataNode of metadataNodes) {
+        const upstreamTranslations = graph.edges
+            .filter(
+                (edge) =>
+                    edge.toNodeId === metadataNode.id &&
+                    edge.toPortId === "transcript",
+            )
+            .map((edge) =>
+                graph.nodes.find((node) => node.id === edge.fromNodeId),
+            )
+            .filter(
+                (node): node is WorkspaceNodeInstance =>
+                    node !== undefined &&
+                    (node.templateNodeType === "text.translate-transcript" ||
+                        node.templateNodeType === "audio.video-dubbing"),
+            );
+        if (upstreamTranslations.length === 0) {
+            errors.push(
+                `Generate VI Metadata '${metadataNode.label}' (${metadataNode.id}) cần upstream Translate Transcript hoặc Video Dubbing.`,
+            );
+            continue;
+        }
+        if (upstreamTranslations.length > 1) {
+            errors.push(
+                `Generate VI Metadata '${metadataNode.label}' (${metadataNode.id}) đang nhận nhiều nguồn transcript; chưa hỗ trợ fan-in.`,
+            );
+            continue;
+        }
+        const upstreamTranslation = upstreamTranslations[0];
+        const translationReady =
+            upstreamTranslation.templateNodeType === "text.translate-transcript"
+                ? translationProducers.has(upstreamTranslation.id)
+                : dubbingProducers.has(upstreamTranslation.id);
+        if (!translationReady) {
+            errors.push(
+                `Generate VI Metadata '${metadataNode.label}' (${metadataNode.id}) cần transcript upstream chạy được.`,
+            );
+            continue;
+        }
+        metadataSteps.push({
+            kind: "generate-vi-metadata",
+            translationNodeId: upstreamTranslation.id,
+            metadataNodeId: metadataNode.id,
+        });
     }
 
     const mirrorSteps: WorkspaceFlowStep[] = [];
@@ -2148,7 +2172,10 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
     const editSteps: WorkspaceFlowStep[] = [];
     for (const editNode of editNodes) {
         const upstreamVideos = graph.edges
-            .filter((edge) => edge.toNodeId === editNode.id)
+            .filter(
+                (edge) =>
+                    edge.toNodeId === editNode.id && edge.toPortId === "video",
+            )
             .map((edge) =>
                 graph.nodes.find((node) => node.id === edge.fromNodeId),
             )
@@ -2162,14 +2189,19 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
                         node.templateNodeType === "edit.mirror"),
             );
         const upstreamTranslations = graph.edges
-            .filter((edge) => edge.toNodeId === editNode.id)
+            .filter(
+                (edge) =>
+                    edge.toNodeId === editNode.id &&
+                    edge.toPortId === "transcript",
+            )
             .map((edge) =>
                 graph.nodes.find((node) => node.id === edge.fromNodeId),
             )
             .filter(
                 (node): node is WorkspaceNodeInstance =>
                     node !== undefined &&
-                    node.templateNodeType === "text.translate-transcript",
+                    (node.templateNodeType === "text.translate-transcript" ||
+                        node.templateNodeType === "audio.video-dubbing"),
             );
 
         if (upstreamVideos.length === 0) {
@@ -2186,7 +2218,7 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
         }
         if (upstreamTranslations.length > 1) {
             errors.push(
-                `Mask Logo/Subtitles '${editNode.label}' (${editNode.id}) đang nhận nhiều Translate Transcript; chưa hỗ trợ fan-in.`,
+                `Mask Logo/Subtitles '${editNode.label}' (${editNode.id}) đang nhận nhiều nguồn transcript; chưa hỗ trợ fan-in.`,
             );
             continue;
         }
@@ -2213,12 +2245,16 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
             );
             continue;
         }
-        if (
-            upstreamTranslations.length > 0 &&
-            !translationProducers.has(upstreamTranslation.id)
-        ) {
+        const translationReady =
+            upstreamTranslations.length === 0
+                ? true
+                : upstreamTranslation.templateNodeType ===
+                    "text.translate-transcript"
+                  ? translationProducers.has(upstreamTranslation.id)
+                  : dubbingProducers.has(upstreamTranslation.id);
+        if (upstreamTranslations.length > 0 && !translationReady) {
             errors.push(
-                `Mask Logo/Subtitles '${editNode.label}' (${editNode.id}) cần Translate Transcript upstream chạy được.`,
+                `Mask Logo/Subtitles '${editNode.label}' (${editNode.id}) cần transcript upstream chạy được.`,
             );
             continue;
         }
@@ -2313,8 +2349,8 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
             ...transcriptionSteps,
             ...translationSteps,
             ...voiceSteps,
-            ...metadataSteps,
             ...dubbingSteps,
+            ...metadataSteps,
             ...mirrorSteps,
             ...editSteps,
             ...artifactStorageSteps,
@@ -2893,40 +2929,6 @@ export function createAssetTranscriptFullProcessingSampleGraph(): WorkspaceGraph
                 config: { speedFactor: 0.7 },
             },
             {
-                id: "audio-chinese-transcribe-1",
-                templateNodeType: "audio.chinese-transcribe",
-                label: "Extract + Transcribe",
-                position: { x: 560, y: 60 },
-                config: { language: "zh", includeWordTimestamps: true },
-            },
-            {
-                id: "text-translate-transcript-1",
-                templateNodeType: "text.translate-transcript",
-                label: "Translate transcript",
-                position: { x: 820, y: 60 },
-                config: { targetLanguage: "vi", model: "llama-3.1-8b-instant" },
-            },
-            {
-                id: "audio-voice-generation-1",
-                templateNodeType: "audio.voice-generation",
-                label: "Generate VI voice",
-                position: { x: 1080, y: 60 },
-                config: {
-                    ttsNoiseScale: 0.667,
-                    ttsNoiseW: 0.8,
-                    ttsSentenceSilence: 0.2,
-                    ttsPreserveTimestampGaps: true,
-                    ttsAlignmentMode: "balanced",
-                },
-            },
-            {
-                id: "text-generate-vi-metadata-1",
-                templateNodeType: "text.generate-vi-metadata",
-                label: "Generate VI metadata",
-                position: { x: 1080, y: 150 },
-                config: { model: "llama-3.1-8b-instant" },
-            },
-            {
                 id: "audio-video-dubbing-1",
                 templateNodeType: "audio.video-dubbing",
                 label: "Vietnamese voice dubbing",
@@ -2943,6 +2945,13 @@ export function createAssetTranscriptFullProcessingSampleGraph(): WorkspaceGraph
                     ttsPreserveTimestampGaps: true,
                     ttsAlignmentMode: "balanced",
                 },
+            },
+            {
+                id: "text-generate-vi-metadata-1",
+                templateNodeType: "text.generate-vi-metadata",
+                label: "Generate VI metadata",
+                position: { x: 820, y: 90 },
+                config: { model: "llama-3.1-8b-instant" },
             },
             {
                 id: "edit-mirror-1",
@@ -2995,39 +3004,18 @@ export function createAssetTranscriptFullProcessingSampleGraph(): WorkspaceGraph
                 toPortId: "video",
             },
             {
-                id: "video-preprocess-1:video->audio-chinese-transcribe-1:asset",
-                fromNodeId: "video-preprocess-1",
-                fromPortId: "video",
-                toNodeId: "audio-chinese-transcribe-1",
-                toPortId: "asset",
-            },
-            {
-                id: "audio-chinese-transcribe-1:transcript->text-translate-transcript-1:transcript",
-                fromNodeId: "audio-chinese-transcribe-1",
-                fromPortId: "transcript",
-                toNodeId: "text-translate-transcript-1",
-                toPortId: "transcript",
-            },
-            {
-                id: "text-translate-transcript-1:transcript->audio-voice-generation-1:transcript",
-                fromNodeId: "text-translate-transcript-1",
-                fromPortId: "transcript",
-                toNodeId: "audio-voice-generation-1",
-                toPortId: "transcript",
-            },
-            {
-                id: "text-translate-transcript-1:transcript->text-generate-vi-metadata-1:transcript",
-                fromNodeId: "text-translate-transcript-1",
-                fromPortId: "transcript",
-                toNodeId: "text-generate-vi-metadata-1",
-                toPortId: "transcript",
-            },
-            {
                 id: "video-preprocess-1:video->audio-video-dubbing-1:asset",
                 fromNodeId: "video-preprocess-1",
                 fromPortId: "video",
                 toNodeId: "audio-video-dubbing-1",
                 toPortId: "asset",
+            },
+            {
+                id: "audio-video-dubbing-1:transcript->text-generate-vi-metadata-1:transcript",
+                fromNodeId: "audio-video-dubbing-1",
+                fromPortId: "transcript",
+                toNodeId: "text-generate-vi-metadata-1",
+                toPortId: "transcript",
             },
             {
                 id: "audio-video-dubbing-1:asset->edit-mirror-1:video",
@@ -3044,8 +3032,8 @@ export function createAssetTranscriptFullProcessingSampleGraph(): WorkspaceGraph
                 toPortId: "video",
             },
             {
-                id: "text-translate-transcript-1:transcript->edit-mask-region-1:transcript",
-                fromNodeId: "text-translate-transcript-1",
+                id: "audio-video-dubbing-1:transcript->edit-mask-region-1:transcript",
+                fromNodeId: "audio-video-dubbing-1",
                 fromPortId: "transcript",
                 toNodeId: "edit-mask-region-1",
                 toPortId: "transcript",
