@@ -29,4 +29,27 @@ describe("workspace seed templates", () => {
             ]),
         );
     });
+
+    it("registers full storage-asset transcript processing seed", () => {
+        const seed = WORKSPACE_SEED_TEMPLATES.find(
+            (entry) => entry.id === "asset-transcript-full-processing",
+        );
+
+        expect(seed).toBeDefined();
+        expect(seed?.label).toBe("Seed Asset Transcript Full Processing");
+        expect(seed?.buildGraph().nodes.map((node) => node.templateNodeType)).toEqual(
+            expect.arrayContaining([
+                "source.asset",
+                "video.preprocess",
+                "audio.chinese-transcribe",
+                "text.translate-transcript",
+                "audio.voice-generation",
+                "audio.video-dubbing",
+                "edit.mask-region",
+                "edit.mirror",
+                "storage.upload",
+                "text.generate-vi-metadata",
+            ]),
+        );
+    });
 });

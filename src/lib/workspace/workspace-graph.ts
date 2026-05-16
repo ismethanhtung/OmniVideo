@@ -1112,6 +1112,17 @@ export function deleteWorkspaceNode(
     };
 }
 
+export function deleteWorkspaceEdge(
+    graph: WorkspaceGraph,
+    edgeId: string,
+): WorkspaceGraph {
+    return {
+        ...graph,
+        updatedAt: new Date().toISOString(),
+        edges: graph.edges.filter((edge) => edge.id !== edgeId),
+    };
+}
+
 function areWorkspacePortsCompatible(
     fromPort: WorkspacePort,
     toPort: WorkspacePort,
@@ -1213,18 +1224,6 @@ export function validateWorkspaceConnection(
         };
     }
 
-    if (
-        graph.edges.some(
-            (edge) =>
-                edge.fromNodeId === fromNodeId && edge.toNodeId === toNodeId,
-        )
-    ) {
-        return {
-            ok: false,
-            error: "Kết nối này đã tồn tại trong graph.",
-        };
-    }
-
     const selectedPorts = selectWorkspaceConnectionPorts({
         graph,
         fromTemplate,
@@ -1243,13 +1242,6 @@ export function validateWorkspaceConnection(
 
     const edgeId = `${fromNodeId}:${fromPort.id}->${toNodeId}:${toPort.id}`;
 
-    if (graph.edges.some((edge) => edge.id === edgeId)) {
-        return {
-            ok: false,
-            error: "Kết nối này đã tồn tại trong graph.",
-        };
-    }
-
     return { ok: true };
 }
 
@@ -1258,6 +1250,15 @@ export function connectWorkspaceNodes(
     fromNodeId: string,
     toNodeId: string,
 ): WorkspaceGraph {
+    if (
+        graph.edges.some(
+            (edge) =>
+                edge.fromNodeId === fromNodeId && edge.toNodeId === toNodeId,
+        )
+    ) {
+        return graph;
+    }
+
     const validation = validateWorkspaceConnection(graph, fromNodeId, toNodeId);
 
     if (!validation.ok) {
@@ -1289,6 +1290,10 @@ export function connectWorkspaceNodes(
     }
 
     const edgeId = `${fromNodeId}:${fromPort.id}->${toNodeId}:${toPort.id}`;
+
+    if (graph.edges.some((edge) => edge.id === edgeId)) {
+        return graph;
+    }
 
     return {
         ...graph,
@@ -2857,6 +2862,198 @@ export function createAssetPreprocessDubbingSampleGraph(): WorkspaceGraph {
                 id: "audio-video-dubbing-1:asset->storage-upload-1:asset",
                 fromNodeId: "audio-video-dubbing-1",
                 fromPortId: "asset",
+                toNodeId: "storage-upload-1",
+                toPortId: "asset",
+            },
+        ],
+    };
+}
+
+export function createAssetTranscriptFullProcessingSampleGraph(): WorkspaceGraph {
+    const now = new Date().toISOString();
+    return {
+        version: 1,
+        draftId: "asset-transcript-full-processing-sample",
+        title: "Asset -> Transcript Full Processing -> Storage",
+        updatedAt: now,
+        selectedNodeId: "source-asset-1",
+        nodes: [
+            {
+                id: "source-asset-1",
+                templateNodeType: "source.asset",
+                label: "Storage source asset",
+                position: { x: 80, y: 220 },
+                config: {},
+            },
+            {
+                id: "video-preprocess-1",
+                templateNodeType: "video.preprocess",
+                label: "Preprocess source video",
+                position: { x: 320, y: 220 },
+                config: { speedFactor: 0.7 },
+            },
+            {
+                id: "audio-chinese-transcribe-1",
+                templateNodeType: "audio.chinese-transcribe",
+                label: "Extract + Transcribe",
+                position: { x: 560, y: 60 },
+                config: { language: "zh", includeWordTimestamps: true },
+            },
+            {
+                id: "text-translate-transcript-1",
+                templateNodeType: "text.translate-transcript",
+                label: "Translate transcript",
+                position: { x: 820, y: 60 },
+                config: { targetLanguage: "vi", model: "llama-3.1-8b-instant" },
+            },
+            {
+                id: "audio-voice-generation-1",
+                templateNodeType: "audio.voice-generation",
+                label: "Generate VI voice",
+                position: { x: 1080, y: 60 },
+                config: {
+                    ttsNoiseScale: 0.667,
+                    ttsNoiseW: 0.8,
+                    ttsSentenceSilence: 0.2,
+                    ttsPreserveTimestampGaps: true,
+                    ttsAlignmentMode: "balanced",
+                },
+            },
+            {
+                id: "text-generate-vi-metadata-1",
+                templateNodeType: "text.generate-vi-metadata",
+                label: "Generate VI metadata",
+                position: { x: 1080, y: 150 },
+                config: { model: "llama-3.1-8b-instant" },
+            },
+            {
+                id: "audio-video-dubbing-1",
+                templateNodeType: "audio.video-dubbing",
+                label: "Vietnamese voice dubbing",
+                position: { x: 560, y: 220 },
+                config: {
+                    language: "zh",
+                    targetLanguage: "vi",
+                    model: "llama-3.1-8b-instant",
+                    originalAudioVolume: 0.18,
+                    voiceVolume: 1,
+                    ttsNoiseScale: 0.667,
+                    ttsNoiseW: 0.8,
+                    ttsSentenceSilence: 0.2,
+                    ttsPreserveTimestampGaps: true,
+                    ttsAlignmentMode: "balanced",
+                },
+            },
+            {
+                id: "edit-mirror-1",
+                templateNodeType: "edit.mirror",
+                label: "Mirror video",
+                position: { x: 820, y: 220 },
+                config: { axis: "horizontal" },
+            },
+            {
+                id: "edit-mask-region-1",
+                templateNodeType: "edit.mask-region",
+                label: "Blur + subtitle overlay",
+                position: { x: 1080, y: 220 },
+                config: {
+                    blurRegionsJson: "",
+                    regionX: 0,
+                    regionY: 84,
+                    regionWidth: 100,
+                    regionHeight: 16,
+                    timelineStart: 0,
+                    timelineEnd: 36000,
+                    blurStrength: 50,
+                    subtitleOverlayEnabled: true,
+                    subtitleFontFamily: "Arial",
+                    subtitleFontSize: 55,
+                    subtitleMarginBottom: 150,
+                    subtitleMarginLeft: 60,
+                    subtitleMarginRight: 60,
+                    subtitleAlignment: 2,
+                    subtitleBackgroundEnabled: true,
+                    subtitleBackgroundColor: "#000000",
+                    subtitleBackgroundOpacity: 65,
+                    mirrorEnabled: false,
+                },
+            },
+            {
+                id: "storage-upload-1",
+                templateNodeType: "storage.upload",
+                label: "Save final video",
+                position: { x: 1340, y: 220 },
+                config: {},
+            },
+        ],
+        edges: [
+            {
+                id: "source-asset-1:asset->video-preprocess-1:video",
+                fromNodeId: "source-asset-1",
+                fromPortId: "asset",
+                toNodeId: "video-preprocess-1",
+                toPortId: "video",
+            },
+            {
+                id: "video-preprocess-1:video->audio-chinese-transcribe-1:asset",
+                fromNodeId: "video-preprocess-1",
+                fromPortId: "video",
+                toNodeId: "audio-chinese-transcribe-1",
+                toPortId: "asset",
+            },
+            {
+                id: "audio-chinese-transcribe-1:transcript->text-translate-transcript-1:transcript",
+                fromNodeId: "audio-chinese-transcribe-1",
+                fromPortId: "transcript",
+                toNodeId: "text-translate-transcript-1",
+                toPortId: "transcript",
+            },
+            {
+                id: "text-translate-transcript-1:transcript->audio-voice-generation-1:transcript",
+                fromNodeId: "text-translate-transcript-1",
+                fromPortId: "transcript",
+                toNodeId: "audio-voice-generation-1",
+                toPortId: "transcript",
+            },
+            {
+                id: "text-translate-transcript-1:transcript->text-generate-vi-metadata-1:transcript",
+                fromNodeId: "text-translate-transcript-1",
+                fromPortId: "transcript",
+                toNodeId: "text-generate-vi-metadata-1",
+                toPortId: "transcript",
+            },
+            {
+                id: "video-preprocess-1:video->audio-video-dubbing-1:asset",
+                fromNodeId: "video-preprocess-1",
+                fromPortId: "video",
+                toNodeId: "audio-video-dubbing-1",
+                toPortId: "asset",
+            },
+            {
+                id: "audio-video-dubbing-1:asset->edit-mirror-1:video",
+                fromNodeId: "audio-video-dubbing-1",
+                fromPortId: "asset",
+                toNodeId: "edit-mirror-1",
+                toPortId: "video",
+            },
+            {
+                id: "edit-mirror-1:video->edit-mask-region-1:video",
+                fromNodeId: "edit-mirror-1",
+                fromPortId: "video",
+                toNodeId: "edit-mask-region-1",
+                toPortId: "video",
+            },
+            {
+                id: "text-translate-transcript-1:transcript->edit-mask-region-1:transcript",
+                fromNodeId: "text-translate-transcript-1",
+                fromPortId: "transcript",
+                toNodeId: "edit-mask-region-1",
+                toPortId: "transcript",
+            },
+            {
+                id: "edit-mask-region-1:video->storage-upload-1:asset",
+                fromNodeId: "edit-mask-region-1",
+                fromPortId: "video",
                 toNodeId: "storage-upload-1",
                 toPortId: "asset",
             },

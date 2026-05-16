@@ -1,5 +1,40 @@
 # OmniVideo Changelog
 
+## FAST-WORKSPACE-015 - Provider Thumbnails and Visual Workspace Asset Picker
+
+- Switched compact asset thumbnails in Video Intake, Audio Transcript, and Workspace to Google Drive provider thumbnails via the existing Drive thumbnail helper instead of probing video streams.
+- Drive-backed assets now load small image thumbnails directly; assets without a reliable provider thumbnail (for example Telegram) fall back without issuing video thumbnail requests.
+- Replaced the Workspace `source.asset` raw select with a visual asset picker using compact thumbnails and asset metadata.
+- Verification (FAST-WORKSPACE-015): `npm run test -- --run src/features/audio/chinese-transcription-panel.test.ts src/features/video-intake/video-intake-panel.test.ts src/features/workspace/workspace-canvas-panel.test.ts src/lib/video-intake/drive-thumbnail.test.ts` pass (4 files / 19 tests); `npm run build` pass with existing ESLint circular-config warning; `npm run guard:version` pass.
+
+## FAST-AUDIO-053 - Show Inline Asset Videos in Audio Transcript Source Picker
+
+- Replaced the per-asset `Preview` / `Hide` CTA in `Audio Transcript -> Source Video` with always-visible inline video inside each asset row.
+- Kept existing asset selection behavior while removing the extra preview click step.
+- Verification (FAST-AUDIO-053): `npm run test -- --run src/features/audio/chinese-transcription-panel.test.ts` pass.
+
+## FAST-INTAKE-005 - Show Direct Thumbnails in Video Intake Run History
+
+- Updated `Video Intake -> Intake Run History` to show inline video thumbnail frame directly in each row instead of the `Preview` text CTA.
+- Kept `No preview` fallback for unavailable/blocked assets.
+- Verification (FAST-INTAKE-005): `npm run test -- --run src/features/video-intake/video-intake-panel.test.ts` pass.
+
+## FAST-WORKSPACE-014 - Add Full Storage-Asset Transcript Processing Seed
+
+- Added a new Workspace seed: `Seed Asset Transcript Full Processing`.
+- Seed starts from `Storage Asset` and includes: `Video Preprocess`, `Audio Transcript`, `Translate Transcript`, `Voice Generation`, `Video Dubbing`, `Mirror Video`, `Mask Logo/Subtitles`, `Save to Storage`, and `Generate VI Metadata`.
+- Seed topology is aligned with current planner constraints by feeding `Mask` from both mirrored video and translated transcript.
+- Verification (FAST-WORKSPACE-014): `npm run test -- --run src/lib/workspace/workspace-seeds.test.ts src/lib/workspace/workspace-graph.test.ts` pass.
+
+## FAST-WORKSPACE-013 - Direct Canvas Linking and Edge Deletion
+
+- Added hover-visible connector handles on all four sides of Workspace nodes so links can be created by dragging directly on the canvas.
+- Refined connector feedback so the active source handle visibly darkens once selected for dragging.
+- During a drag, the current destination node now reveals all four handles, and the nearest destination handle darkens to make the intended drop point explicit.
+- Preserved the existing Inspector `Link from node` workflow while routing drag-created links through the same connection validation rules.
+- Added interactive edge hit areas plus an on-canvas delete control for removing links without deleting nodes.
+- Verification (FAST-WORKSPACE-013): `npm run test -- --run src/lib/workspace/workspace-graph.test.ts src/features/workspace/workspace-canvas-panel.test.ts` pass (2 files / 41 tests); `npm run build` pass with existing ESLint circular-config warning; browser verification not completed because the in-app browser policy blocked access to the local dev URL.
+
 ## FAST-UX-025 - Align Workspace Outer Spacing with App Pages
 
 - Fixed Workspace route outer wrapper spacing mismatch by aligning `ContentRouter` workspace padding from `p-3` to `p-5`, consistent with other app sections.

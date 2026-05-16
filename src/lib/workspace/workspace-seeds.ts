@@ -1,4 +1,5 @@
 import {
+    createAssetTranscriptFullProcessingSampleGraph,
     createAssetPreprocessDubbingSampleGraph,
     createUploadVietnameseMaskPublishSampleGraph,
     type WorkspaceGraph,
@@ -25,5 +26,12 @@ export const WORKSPACE_SEED_TEMPLATES: WorkspaceSeedTemplate[] = [
         description:
             "Storage Asset -> Video Preprocess -> VI Voice Dubbing -> Save to Storage.",
         buildGraph: createAssetPreprocessDubbingSampleGraph,
+    },
+    {
+        id: "asset-transcript-full-processing",
+        label: "Seed Asset Transcript Full Processing",
+        description:
+            "Storage Asset -> Preprocess -> Transcript/Translate/Voice + Dubbing -> Mirror -> Blur -> Save to Storage + Generate VI Metadata.",
+        buildGraph: createAssetTranscriptFullProcessingSampleGraph,
     },
 ];

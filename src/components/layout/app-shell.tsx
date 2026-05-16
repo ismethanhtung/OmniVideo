@@ -61,6 +61,20 @@ export function AppShell() {
         [sectionCandidate],
     );
     const activeSection: AppSectionId = resolvedSection ?? DEFAULT_SECTION_ID;
+    const shouldWarnOnNavigate =
+        activeSection === "workspace" ||
+        activeSection === "chineseTranscription";
+
+    const navigateToSection = (sectionId: AppSectionId) => {
+        if (sectionId === activeSection) return;
+        if (shouldWarnOnNavigate) {
+            const confirmed = confirm(
+                "You have in-progress work. Are you sure you want to leave this page?",
+            );
+            if (!confirmed) return;
+        }
+        router.push(toSectionPath(sectionId));
+    };
 
     useEffect(() => {
         if (!resolvedSection) {
@@ -77,7 +91,7 @@ export function AppShell() {
         const handleNavigate = (event: Event) => {
             const sectionId = (event as CustomEvent<AppSectionId>).detail;
 
-            if (sectionId) router.push(toSectionPath(sectionId));
+            if (sectionId) navigateToSection(sectionId);
         };
 
         window.addEventListener("omnivideo:navigate", handleNavigate);
@@ -85,7 +99,7 @@ export function AppShell() {
         return () => {
             window.removeEventListener("omnivideo:navigate", handleNavigate);
         };
-    }, [router]);
+    }, [activeSection, shouldWarnOnNavigate, router]);
 
     const applyTheme = (theme: AppThemeKey) => {
         const root = document.documentElement;
@@ -113,9 +127,7 @@ export function AppShell() {
         <div className="flex h-screen min-h-screen bg-main text-main">
             <Leftbar
                 activeSection={activeSection}
-                onSectionChange={(sectionId) =>
-                    router.push(toSectionPath(sectionId))
-                }
+                onSectionChange={navigateToSection}
             />
             <div className="flex min-w-0 flex-1 flex-col">
                 <Topbar

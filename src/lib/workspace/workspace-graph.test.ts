@@ -10,6 +10,7 @@ import {
     createUploadToStorageSampleGraph,
     createUploadToSocialSampleGraph,
     createUploadVietnameseMaskPublishSampleGraph,
+    deleteWorkspaceEdge,
     getWorkspaceExecutableUploadToSocialPlan,
     moveWorkspaceNode,
     parseWorkspaceDraft,
@@ -73,7 +74,7 @@ describe("workspace graph helpers", () => {
         }
     });
 
-    it("connects nodes and rejects missing or duplicate edges", () => {
+    it("connects nodes, keeps duplicate edges as no-op, and rejects missing nodes", () => {
         const sourceTemplate = WORKSPACE_NODE_TEMPLATES.find(
             (entry) => entry.nodeType === "source.url",
         );
@@ -95,9 +96,13 @@ describe("workspace graph helpers", () => {
             fromNodeId: "source-url-1",
             toNodeId: "edit-mask-region-1",
         });
-        expect(() =>
-            connectWorkspaceNodes(graph, "source-url-1", "edit-mask-region-1"),
-        ).toThrow("Kết nối này đã tồn tại");
+        const duplicateGraph = connectWorkspaceNodes(
+            graph,
+            "source-url-1",
+            "edit-mask-region-1",
+        );
+        expect(duplicateGraph).toBe(graph);
+        expect(duplicateGraph.edges).toHaveLength(1);
         expect(() =>
             connectWorkspaceNodes(graph, "missing-node", "edit-mask-region-1"),
         ).toThrow("node nguồn hoặc node đích");
@@ -132,6 +137,32 @@ describe("workspace graph helpers", () => {
             y: 245,
         });
         expect(graph.edges).toHaveLength(1);
+    });
+
+    it("deletes only the requested edge", () => {
+        const fileTemplate = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "source.file",
+        )!;
+        const storageTemplate = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "storage.upload",
+        )!;
+        const publishTemplate = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "social.publish",
+        )!;
+        let graph = createEmptyWorkspaceGraph("Delete edge");
+
+        graph = addWorkspaceNode(graph, fileTemplate, { x: 0, y: 0 });
+        graph = addWorkspaceNode(graph, storageTemplate, { x: 220, y: 0 });
+        graph = addWorkspaceNode(graph, publishTemplate, { x: 440, y: 0 });
+        graph = connectWorkspaceNodes(graph, "source-file-1", "storage-upload-1");
+        graph = connectWorkspaceNodes(graph, "storage-upload-1", "social-publish-1");
+
+        const firstEdgeId = graph.edges[0].id;
+        const secondEdgeId = graph.edges[1].id;
+        graph = deleteWorkspaceEdge(graph, firstEdgeId);
+
+        expect(graph.edges).toHaveLength(1);
+        expect(graph.edges[0].id).toBe(secondEdgeId);
     });
 
     it("returns user-facing connection errors before throwing", () => {

@@ -22,6 +22,11 @@
 
 ## Review
 
+- `FAST-WORKSPACE-015` - Add timed asset thumbnails and visual Workspace asset picker.
+- `FAST-AUDIO-053` - Show inline asset videos in Audio Transcript Source picker.
+- `FAST-INTAKE-005` - Show direct thumbnails in Video Intake Run History.
+- `FAST-WORKSPACE-014` - Add full Storage Asset audio transcript + video processing seed.
+- `FAST-WORKSPACE-013` - Direct canvas linking and edge deletion.
 - `FAST-AUDIO-052` - Promote Video Preprocess to main Audio Transcript.
 - `FAST-WORKSPACE-012` - Workspace audio functional parity and Video Preprocess node.
 - `FAST-AUDIO-051` - Audio Transcript 2 clone and video speed preprocess.
