@@ -42,6 +42,12 @@ Page URL như YouTube/TikTok/Facebook/Bilibili không phải direct media URL. O
 6. Speed adjustment (creative use hợp lệ).
 7. Mirror horizontal cho biến thể edit hợp lệ.
 
+### 4.1 Current Workspace preprocess path
+
+1. Node `video.preprocess` điều chỉnh speed source video bằng ffmpeg và tạo video artifact downstream.
+2. Input hiện hỗ trợ `source.file`, `source.url`, `source.asset`; output artifact có thể đi tiếp sang transcript, dubbing, mirror/edit, hoặc storage.
+3. Trang `Audio Transcript` chính cũng expose Video Preprocess on-demand, mặc định tắt để giữ nguyên behavior cũ cho người dùng không bật preprocess.
+
 ## 5. Traceability Requirements
 
 Mỗi output video phải truy vết được:

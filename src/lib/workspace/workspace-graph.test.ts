@@ -64,6 +64,9 @@ describe("workspace graph helpers", () => {
             );
 
             expect(graph.nodes[0].config).toMatchObject({
+                ttsNoiseScale: 0.667,
+                ttsNoiseW: 0.8,
+                ttsSentenceSilence: 0.2,
                 ttsPreserveTimestampGaps: true,
                 ttsAlignmentMode: "balanced",
             });
@@ -432,10 +435,228 @@ describe("workspace graph helpers", () => {
         expect(plan.steps).toEqual([
             {
                 kind: "transcribe-chinese",
-                sourceFileNodeId: "source-file-1",
+                sourceNodeId: "source-file-1",
                 transcriptionNodeId: "audio-chinese-transcribe-1",
             },
         ]);
+    });
+
+    it("plans audio transcription directly from a Storage Asset node", () => {
+        const assetTemplate = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "source.asset",
+        )!;
+        const transcriptionTemplate = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "audio.chinese-transcribe",
+        )!;
+
+        let graph: WorkspaceGraph = createEmptyWorkspaceGraph("Asset transcript");
+        graph = addWorkspaceNode(graph, assetTemplate, { x: 0, y: 0 });
+        graph = addWorkspaceNode(graph, transcriptionTemplate, {
+            x: 240,
+            y: 0,
+        });
+        graph = connectWorkspaceNodes(
+            graph,
+            "source-asset-1",
+            "audio-chinese-transcribe-1",
+        );
+
+        const plan = planWorkspaceFlow(graph);
+        expect(plan.ok).toBe(true);
+        expect(plan.steps).toEqual([
+            {
+                kind: "use-existing-asset",
+                nodeId: "source-asset-1",
+                producerNodeId: "source-asset-1",
+            },
+            {
+                kind: "transcribe-chinese",
+                sourceNodeId: "source-asset-1",
+                transcriptionNodeId: "audio-chinese-transcribe-1",
+            },
+        ]);
+    });
+
+    it("plans preprocess before transcript translation and voice generation", () => {
+        const fileTemplate = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "source.file",
+        )!;
+        const preprocessTemplate = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "video.preprocess",
+        )!;
+        const transcriptionTemplate = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "audio.chinese-transcribe",
+        )!;
+        const translationTemplate = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "text.translate-transcript",
+        )!;
+        const voiceTemplate = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "audio.voice-generation",
+        )!;
+
+        let graph: WorkspaceGraph = createEmptyWorkspaceGraph("Preprocess voice");
+        graph = addWorkspaceNode(graph, fileTemplate, { x: 0, y: 0 });
+        graph = addWorkspaceNode(graph, preprocessTemplate, { x: 220, y: 0 });
+        graph = addWorkspaceNode(graph, transcriptionTemplate, { x: 440, y: 0 });
+        graph = addWorkspaceNode(graph, translationTemplate, { x: 660, y: 0 });
+        graph = addWorkspaceNode(graph, voiceTemplate, { x: 880, y: 0 });
+        graph = connectWorkspaceNodes(graph, "source-file-1", "video-preprocess-1");
+        graph = connectWorkspaceNodes(
+            graph,
+            "video-preprocess-1",
+            "audio-chinese-transcribe-1",
+        );
+        graph = connectWorkspaceNodes(
+            graph,
+            "audio-chinese-transcribe-1",
+            "text-translate-transcript-1",
+        );
+        graph = connectWorkspaceNodes(
+            graph,
+            "text-translate-transcript-1",
+            "audio-voice-generation-1",
+        );
+
+        const plan = planWorkspaceFlow(graph);
+        expect(plan.ok).toBe(true);
+        expect(plan.steps).toEqual([
+            {
+                kind: "preprocess-video",
+                sourceNodeId: "source-file-1",
+                preprocessNodeId: "video-preprocess-1",
+            },
+            {
+                kind: "transcribe-chinese",
+                sourceNodeId: "video-preprocess-1",
+                transcriptionNodeId: "audio-chinese-transcribe-1",
+            },
+            {
+                kind: "translate-transcript",
+                transcriptionNodeId: "audio-chinese-transcribe-1",
+                translationNodeId: "text-translate-transcript-1",
+            },
+            {
+                kind: "generate-voice",
+                transcriptionNodeId: "audio-chinese-transcribe-1",
+                translationNodeId: "text-translate-transcript-1",
+                voiceNodeId: "audio-voice-generation-1",
+            },
+        ]);
+    });
+
+    it("plans preprocess artifact into dubbing and storage from Storage Asset", () => {
+        const assetTemplate = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "source.asset",
+        )!;
+        const preprocessTemplate = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "video.preprocess",
+        )!;
+        const dubbingTemplate = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "audio.video-dubbing",
+        )!;
+        const storageTemplate = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "storage.upload",
+        )!;
+
+        let graph: WorkspaceGraph = createEmptyWorkspaceGraph("Asset preprocess");
+        graph = addWorkspaceNode(graph, assetTemplate, { x: 0, y: 0 });
+        graph = addWorkspaceNode(graph, preprocessTemplate, { x: 220, y: 0 });
+        graph = addWorkspaceNode(graph, dubbingTemplate, { x: 440, y: 0 });
+        graph = addWorkspaceNode(graph, storageTemplate, { x: 660, y: 0 });
+        graph = connectWorkspaceNodes(graph, "source-asset-1", "video-preprocess-1");
+        graph = connectWorkspaceNodes(
+            graph,
+            "video-preprocess-1",
+            "audio-video-dubbing-1",
+        );
+        graph = connectWorkspaceNodes(
+            graph,
+            "audio-video-dubbing-1",
+            "storage-upload-1",
+        );
+
+        const plan = planWorkspaceFlow(graph);
+        expect(plan.ok).toBe(true);
+        expect(plan.steps).toEqual([
+            {
+                kind: "use-existing-asset",
+                nodeId: "source-asset-1",
+                producerNodeId: "source-asset-1",
+            },
+            {
+                kind: "preprocess-video",
+                sourceNodeId: "source-asset-1",
+                preprocessNodeId: "video-preprocess-1",
+            },
+            {
+                kind: "dub-video",
+                sourceNodeId: "video-preprocess-1",
+                dubbingNodeId: "audio-video-dubbing-1",
+            },
+            {
+                kind: "store-artifact",
+                artifactNodeId: "audio-video-dubbing-1",
+                storageNodeId: "storage-upload-1",
+                producerNodeId: "storage-upload-1",
+            },
+        ]);
+    });
+
+    it("plans preprocess artifact into mirror and storage", () => {
+        const fileTemplate = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "source.file",
+        )!;
+        const preprocessTemplate = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "video.preprocess",
+        )!;
+        const mirrorTemplate = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "edit.mirror",
+        )!;
+        const storageTemplate = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "storage.upload",
+        )!;
+
+        let graph: WorkspaceGraph = createEmptyWorkspaceGraph("Preprocess mirror");
+        graph = addWorkspaceNode(graph, fileTemplate, { x: 0, y: 0 });
+        graph = addWorkspaceNode(graph, preprocessTemplate, { x: 220, y: 0 });
+        graph = addWorkspaceNode(graph, mirrorTemplate, { x: 440, y: 0 });
+        graph = addWorkspaceNode(graph, storageTemplate, { x: 660, y: 0 });
+        graph = connectWorkspaceNodes(graph, "source-file-1", "video-preprocess-1");
+        graph = connectWorkspaceNodes(graph, "video-preprocess-1", "edit-mirror-1");
+        graph = connectWorkspaceNodes(graph, "edit-mirror-1", "storage-upload-1");
+
+        const plan = planWorkspaceFlow(graph);
+        expect(plan.ok).toBe(true);
+        expect(plan.steps).toEqual([
+            {
+                kind: "preprocess-video",
+                sourceNodeId: "source-file-1",
+                preprocessNodeId: "video-preprocess-1",
+            },
+            {
+                kind: "mirror-video",
+                sourceNodeId: "video-preprocess-1",
+                mirrorNodeId: "edit-mirror-1",
+            },
+            {
+                kind: "store-artifact",
+                artifactNodeId: "edit-mirror-1",
+                storageNodeId: "storage-upload-1",
+                producerNodeId: "storage-upload-1",
+            },
+        ]);
+    });
+
+    it("rejects preprocess without upstream video", () => {
+        const preprocessTemplate = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "video.preprocess",
+        )!;
+        let graph: WorkspaceGraph = createEmptyWorkspaceGraph("Bad preprocess");
+        graph = addWorkspaceNode(graph, preprocessTemplate, { x: 0, y: 0 });
+
+        const plan = planWorkspaceFlow(graph);
+        expect(plan.ok).toBe(false);
+        expect(plan.errors.join("\n")).toMatch(/Video Preprocess.*cần upstream/);
     });
 
     it("rejects audio transcription without an Upload Video upstream", () => {
@@ -488,7 +709,7 @@ describe("workspace graph helpers", () => {
         expect(plan.steps).toEqual([
             {
                 kind: "transcribe-chinese",
-                sourceFileNodeId: "source-file-1",
+                sourceNodeId: "source-file-1",
                 transcriptionNodeId: "audio-chinese-transcribe-1",
             },
             {
@@ -554,6 +775,7 @@ describe("workspace graph helpers", () => {
         expect(plan.ok).toBe(true);
         expect(plan.steps.at(-1)).toEqual({
             kind: "generate-voice",
+            transcriptionNodeId: "audio-chinese-transcribe-1",
             translationNodeId: "text-translate-transcript-1",
             voiceNodeId: "audio-voice-generation-1",
         });
@@ -847,7 +1069,7 @@ describe("workspace graph helpers", () => {
         expect(plan.steps).toEqual([
             {
                 kind: "transcribe-chinese",
-                sourceFileNodeId: "source-file-1",
+                sourceNodeId: "source-file-1",
                 transcriptionNodeId: "audio-chinese-transcribe-1",
             },
             {
@@ -943,7 +1165,7 @@ describe("workspace graph helpers", () => {
         const plan = planWorkspaceFlow(graph);
         expect(plan.ok).toBe(false);
         expect(plan.errors.join("\n")).toMatch(
-            /cần upstream Upload Video, URL Video hoặc Video Dubbing/,
+            /cần upstream Upload Video, URL Video, Video Preprocess hoặc Video Dubbing/,
         );
     });
 

@@ -106,7 +106,7 @@ export function ContentRouter({
     if (activeSection === "workspace") {
         return (
             <main
-                className="flex min-h-0 min-w-0 flex-1 overflow-hidden bg-secondary/35 p-3"
+                className="flex min-h-0 min-w-0 flex-1 overflow-hidden bg-secondary/35 p-5"
                 data-hide-section-header="true"
             >
                 <SectionComponent section={section} />

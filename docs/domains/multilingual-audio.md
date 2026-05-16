@@ -34,7 +34,10 @@ Hỗ trợ xử lý audio đa ngôn ngữ cho video linh hoạt: phát hiện ng
   transcript và node `audio.video-dubbing` để chạy trọn MVP ZH->VI: transcribe,
   translate, Piper TTS, duck audio gốc rồi mux MP4 bằng ffmpeg. Node dubbing trả
   preview/download trong Workspace và có thể nối sang `storage.upload` để persist
-  thành asset trước khi publish. Bước translate trong node dubbing dùng cùng AI
+  thành asset trước khi publish. Các node audio Workspace reuse word-aware timing
+  preparation của Audio Transcript khi có word timestamps, expose đủ Piper
+  controls cần thiết, và `audio.chinese-transcribe` nhận cả Storage Asset hoặc
+  artifact sau `video.preprocess`. Bước translate trong node dubbing dùng cùng AI
   Provider Management với Audio Transcript: có thể chọn provider active, load
   models từ provider đó, hoặc dùng default env `GROQ_API_KEY`.
 
@@ -57,6 +60,7 @@ Hỗ trợ xử lý audio đa ngôn ngữ cho video linh hoạt: phát hiện ng
 5. `audio.duck-or-mute`
 6. `subtitle.align`
 7. `audio.video-dubbing` (MVP composite node cho ZH->VI)
+8. `video.preprocess` (speed preprocess trước transcript/dubbing/edit khi cần)
 
 ## 5. Data Requirements
 

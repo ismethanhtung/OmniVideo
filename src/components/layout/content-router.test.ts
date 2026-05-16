@@ -16,4 +16,10 @@ describe("ContentRouter layout experiment", () => {
     expect(source).toContain('data-hide-section-header=\"true\"');
     expect(markerCount).toBeGreaterThanOrEqual(4);
   });
+
+
+  it("keeps workspace outer padding aligned with shared page spacing", () => {
+    expect(source).toContain('className="flex min-h-0 min-w-0 flex-1 overflow-hidden bg-secondary/35 p-5"');
+    expect(source).not.toContain('className="flex min-h-0 min-w-0 flex-1 overflow-hidden bg-secondary/35 p-3"');
+  });
 });

@@ -29,6 +29,8 @@ runtime runner đầy đủ.
 10. Workspace runner hỗ trợ artifact runtime cho audio/video MVP: `audio.voice-generation` tạo WAV preview/download từ translated transcript, còn `audio.video-dubbing` tạo MP4 dubbed artifact từ `source.file` hoặc `source.asset`. Artifact này chỉ trở thành asset/publishable khi nối tiếp sang `storage.upload`.
 11. Workspace runner hỗ trợ `edit.mirror` MVP: lật ngang video bằng ffmpeg từ `source.file` hoặc MP4 artifact upstream, tạo video artifact preview/download và có thể nối tiếp sang `storage.upload`.
 12. Workspace runner hỗ trợ `edit.mask-region` MVP: nhận một video upstream và một `text.translate-transcript` upstream, blur vùng/timeline bằng ffmpeg, burn phụ đề tiếng Việt theo timestamps, tạo video artifact preview/download và có thể nối tiếp sang `storage.upload`.
+13. Workspace runner hỗ trợ `video.preprocess` executable: điều chỉnh tốc độ source từ `source.file`, `source.url`, hoặc `source.asset`, tạo video artifact có thể nối tiếp sang transcript/dubbing/edit/storage downstream.
+14. Audio Workspace nodes dùng chung các capability chất lượng hiện tại với Audio Transcript khi phù hợp: `audio.chinese-transcribe` nhận cả Storage Asset/video preprocess artifact, còn voice generation/dubbing reuse word-aware timing preparation và expose đầy đủ Piper controls cần thiết.
 
 ## 3. Node Categories
 

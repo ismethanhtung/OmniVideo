@@ -1,5 +1,21 @@
 # OmniVideo Changelog
 
+## FAST-UX-025 - Align Workspace Outer Spacing with App Pages
+
+- Fixed Workspace route outer wrapper spacing mismatch by aligning `ContentRouter` workspace padding from `p-3` to `p-5`, consistent with other app sections.
+- Added source-level regression coverage for workspace outer padding class to prevent future spacing drift.
+- Verification (FAST-UX-025): `npm run test -- --run src/components/layout/content-router.test.ts` pass; `npm run guard:version` pass.
+
+## FAST-AUDIO-052 / FAST-WORKSPACE-012 - Promote Video Preprocess and Workspace Audio Functional Parity
+
+- Bumped app version from `0.4.25` to `0.5.0` as a backward-compatible feature release for promoted preprocess UX and executable Workspace media flow upgrades.
+- Promoted on-demand `Video Preprocess` to the main `Audio Transcript` page, visible by default but still opt-in, with `0.7x` as the selected speed baseline.
+- Isolated the heavy transcript segment subtree and memoized timing derivations so preprocess-only state changes do not rebuild the largest result surfaces unnecessarily.
+- Added executable Workspace node `video.preprocess`, including planner/runtime execution, Inspector config, seed flow, and downstream artifact support for transcript/dubbing/mirror/storage paths.
+- Brought Workspace audio nodes closer to the main Audio Transcript flow: transcription now accepts Storage Asset and preprocess artifact upstream, voice generation/dubbing reuse word-aware timing preparation, and Piper nodes expose `noiseScale`, `noiseW`, and `sentenceSilence`.
+- Updated Workspace node/domain docs plus tests for preprocess graphs, Storage Asset transcription, seed registration, and dubbing timing preparation.
+- Verification (FAST-AUDIO-052 / FAST-WORKSPACE-012): `npm run test -- --run src/features/audio/chinese-transcription-panel.test.ts src/lib/workspace/workspace-graph.test.ts src/lib/workspace/workspace-seeds.test.ts src/lib/multilingual-audio/video-dubbing.test.ts src/lib/multilingual-audio/voice-segment-timing.test.ts` pass (5 files / 58 tests); `npm run build` pass; `npm run guard:version` pass.
+
 ## FAST-AUDIO-051 - Audio Transcript 2 Clone and Video Speed Preprocess
 
 - Added a new `Audio Transcript 2` page in navigation (`/audio-transcript-2`) as a clone track for testing new transcript features.

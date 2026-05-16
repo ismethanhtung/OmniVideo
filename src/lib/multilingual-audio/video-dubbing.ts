@@ -9,6 +9,7 @@ import { runChineseVideoTranscription } from "./chinese-transcription";
 import { generateVoiceFromSegments } from "./piper-tts";
 import { translateTranscriptSegments } from "./transcript-translation";
 import { preprocessVideoSpeed } from "./video-preprocess";
+import { buildWordAwareVoiceSegments } from "./voice-segment-timing";
 import {
     ChineseTranscriptionError,
     DEFAULT_PIPER_TTS_SETTINGS,
@@ -72,6 +73,16 @@ export function setVideoDubbingReadFileForTest(
     readFileImpl: ((filePath: string) => Promise<Buffer>) | null,
 ) {
     dubbingReadFileForTest = readFileImpl;
+}
+
+export function buildVideoDubbingVoiceSegments(input: {
+    transcript: ChineseTranscriptionResult;
+    translation: TranscriptTranslationResult;
+}) {
+    return buildWordAwareVoiceSegments({
+        translatedSegments: input.translation.translatedSegments,
+        words: input.transcript.words,
+    });
 }
 
 function sanitizeOutputName(fileName: string) {
@@ -249,12 +260,7 @@ export async function runVideoDubbing(
         providerName: input.providerName,
     });
     const voice = await generateVoiceFromSegments({
-        segments: translation.translatedSegments.map((segment) => ({
-            id: segment.id,
-            start: segment.start,
-            end: segment.end,
-            text: segment.translatedText,
-        })),
+        segments: buildVideoDubbingVoiceSegments({ transcript, translation }),
         settings: {
             ...DEFAULT_PIPER_TTS_SETTINGS,
             ...input.ttsSettings,

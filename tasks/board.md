@@ -22,6 +22,8 @@
 
 ## Review
 
+- `FAST-AUDIO-052` - Promote Video Preprocess to main Audio Transcript.
+- `FAST-WORKSPACE-012` - Workspace audio functional parity and Video Preprocess node.
 - `FAST-AUDIO-051` - Audio Transcript 2 clone and video speed preprocess.
 - `FAST-AUDIO-050` - Console log transcript translation provider exchanges and larger chunks.
 - `FAST-AUDIO-049` - Prompt-driven gender consistency for transcript translation.
@@ -42,6 +44,7 @@
 
 ## Done
 
+- `FAST-UX-025` - Align Workspace outer spacing with app pages.
 - `FAST-AUDIO-038` - Repair suspicious word timestamp voice timing.
 - `FAST-AUDIO-037` - Harden Dub preview media playback errors.
 - `FAST-AUDIO-036` - Light timeline workbench and restore 1.25x min speed.

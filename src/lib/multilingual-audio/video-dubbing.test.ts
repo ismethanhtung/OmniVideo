@@ -3,6 +3,7 @@ import { PassThrough } from "node:stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+    buildVideoDubbingVoiceSegments,
     buildDubbedVideoFfmpegArgs,
     muxDubbedVideo,
     runVideoDubbing,
@@ -70,6 +71,60 @@ describe("video dubbing adapter", () => {
         ).rejects.toMatchObject({
             code: "VAL_DUBBING_VIDEO_REQUIRED",
         });
+    });
+
+    it("reuses word-aware timing when preparing dubbing voice segments", () => {
+        const segments = buildVideoDubbingVoiceSegments({
+            transcript: {
+                text: "你好，世界。",
+                language: "zh",
+                model: "whisper-large-v3-turbo",
+                segments: [{ id: 1, start: 0, end: 4, text: "你好，世界。" }],
+                words: [
+                    { word: "你", start: 1.2, end: 1.5 },
+                    { word: "好", start: 1.5, end: 1.8 },
+                ],
+                audio: {
+                    format: "mp3",
+                    sampleRate: 16000,
+                    channels: 1,
+                    bitrateKbps: 64,
+                    fileSizeBytes: 1,
+                },
+                steps: [],
+                source: {
+                    fileName: "source.mp4",
+                    fileSizeBytes: 1,
+                },
+                provider: { name: "groq" },
+            },
+            translation: {
+                sourceLanguage: "zh",
+                targetLanguage: "vi",
+                model: "test-model",
+                translatedSegments: [
+                    {
+                        id: 1,
+                        start: 0,
+                        end: 4,
+                        sourceText: "你好，世界。",
+                        translatedText: "Xin chào thế giới.",
+                    },
+                ],
+                generationDurationMs: 1,
+                chunks: [],
+                provider: { name: "test" },
+            },
+        });
+
+        expect(segments).toEqual([
+            {
+                id: 1,
+                start: 1.2,
+                end: 4,
+                text: "Xin chào thế giới.",
+            },
+        ]);
     });
 
     it("maps ffmpeg mux failures to dubbing error code", async () => {

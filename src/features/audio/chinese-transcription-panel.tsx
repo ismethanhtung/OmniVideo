@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { RefObject } from "react";
 import {
     ChevronDown,
     ChevronUp,
@@ -315,10 +316,221 @@ function StepTracePanel({ steps }: { steps: AudioTranscriptionStep[] }) {
     );
 }
 
+const TranscriptSegmentsPanel = memo(function TranscriptSegmentsPanel({
+    result,
+    translation,
+    segmentView,
+    voiceTimelineBySegmentId,
+    voiceTimingDiagnosticsBySegmentId,
+    voiceResult,
+    activeVoiceSegmentId,
+    copiedSegmentsLabel,
+    segmentsScrollRef,
+    segmentRefs,
+    onCopySegments,
+    onTranslatedTextChange,
+}: {
+    result: ChineseTranscriptionResult;
+    translation: TranscriptTranslationResult | null;
+    segmentView: "source" | "translation";
+    voiceTimelineBySegmentId: Map<
+        number,
+        NonNullable<VoiceGenerationResult["alignment"]["timeline"]>[number]
+    >;
+    voiceTimingDiagnosticsBySegmentId: Map<
+        number,
+        VoiceSegmentTimingDiagnostic[]
+    >;
+    voiceResult: VoiceGenerationResult | null;
+    activeVoiceSegmentId: number | null;
+    copiedSegmentsLabel: "json" | "text" | null;
+    segmentsScrollRef: RefObject<HTMLDivElement | null>;
+    segmentRefs: RefObject<Map<number, HTMLDivElement>>;
+    onCopySegments: (mode: "json" | "text") => Promise<void>;
+    onTranslatedTextChange: (segmentId: number, value: string) => void;
+}) {
+    const translationById = useMemo(
+        () =>
+            new Map(
+                translation?.translatedSegments.map((segment) => [
+                    segment.id,
+                    segment,
+                ]) ?? [],
+            ),
+        [translation],
+    );
+
+    return (
+        <div className="border border-main bg-main">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-main bg-secondary/30 px-4 py-2">
+                <div>
+                    <p className="text-[12px] font-semibold text-main">
+                        Segments
+                    </p>
+                    {translation ? (
+                        <p className="mt-0.5 text-[10px] leading-4 text-muted">
+                            Copy JSON để dán vào Video Tools Lab
+                            `translatedSegmentsJson`.
+                        </p>
+                    ) : null}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                    <button
+                        type="button"
+                        disabled={!translation}
+                        onClick={() => onCopySegments("json")}
+                        className="inline-flex items-center gap-1.5 border border-main bg-main px-2 py-1 text-[10px] font-semibold text-main hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                        <Copy className="h-3.5 w-3.5" />
+                        {copiedSegmentsLabel === "json"
+                            ? "Copied JSON"
+                            : "Copy translatedSegments JSON"}
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => onCopySegments("text")}
+                        className="inline-flex items-center gap-1.5 border border-main bg-main px-2 py-1 text-[10px] font-semibold text-main hover:bg-secondary"
+                    >
+                        <Copy className="h-3.5 w-3.5" />
+                        {copiedSegmentsLabel === "text"
+                            ? "Copied text"
+                            : "Copy visible text"}
+                    </button>
+                </div>
+            </div>
+            <div
+                ref={segmentsScrollRef}
+                className="thin-scrollbar max-h-[420px] overflow-auto"
+            >
+                {result.segments.map((segment) => {
+                    const translated = translationById.get(segment.id);
+                    const segmentNumber = segment.id + 1;
+                    const displayText =
+                        segmentView === "translation" && translated
+                            ? translated.translatedText
+                            : segment.text;
+                    const voiceChunk = voiceTimelineBySegmentId.get(segment.id);
+                    const timingDiagnostics =
+                        voiceTimingDiagnosticsBySegmentId.get(segment.id) ?? [];
+                    const hasVoiceResult = Boolean(voiceResult);
+                    const missingGeneratedVoice =
+                        hasVoiceResult &&
+                        (!voiceChunk ||
+                            (translated &&
+                                !translated.translatedText.trim()));
+                    const isActiveVoiceSegment =
+                        activeVoiceSegmentId === segment.id;
+                    const segmentTone = missingGeneratedVoice
+                        ? "border-rose-500/50 bg-rose-500/10"
+                        : isActiveVoiceSegment
+                          ? "border-accent bg-accent/10"
+                          : "border-main";
+                    return (
+                        <div
+                            key={segment.id}
+                            ref={(node) => {
+                                if (node) {
+                                    segmentRefs.current?.set(segment.id, node);
+                                    return;
+                                }
+                                segmentRefs.current?.delete(segment.id);
+                            }}
+                            className={`grid gap-3 border-b px-4 py-3 last:border-b-0 md:grid-cols-[190px_minmax(0,1fr)] ${segmentTone}`}
+                        >
+                            <div className="space-y-1">
+                                <p className="text-[11px] font-bold text-main">
+                                    Segment #{segmentNumber}
+                                </p>
+                                <p className="text-[10px] font-semibold text-muted">
+                                    {formatTime(segment.start)} →{" "}
+                                    {formatTime(segment.end)}
+                                </p>
+                                {voiceChunk ? (
+                                    <div className="mt-1 space-y-1">
+                                        <p className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700">
+                                            <span>Voice speed</span>
+                                            <span>
+                                                {formatSpeedFactor(
+                                                    voiceChunk.speedFactor,
+                                                )}
+                                            </span>
+                                        </p>
+                                        <p className="block text-[10px] font-semibold text-green-700">
+                                            Voice{" "}
+                                            {formatTime(
+                                                voiceChunk.scheduledStartSeconds ??
+                                                    voiceChunk.start,
+                                            )}{" "}
+                                            →{" "}
+                                            {formatTime(
+                                                voiceChunk.scheduledEndSeconds ??
+                                                    voiceChunk.end,
+                                            )}
+                                        </p>
+                                    </div>
+                                ) : hasVoiceResult ? (
+                                    <p className="text-[10px] font-semibold text-rose-700">
+                                        Missing generated voice
+                                    </p>
+                                ) : null}
+                                {timingDiagnostics.map((diagnostic) => (
+                                    <p
+                                        key={`${diagnostic.code}-${diagnostic.repairedStart}-${diagnostic.repairedEnd}`}
+                                        className="mt-1 text-[10px] font-semibold leading-4 text-amber-700"
+                                        title={diagnostic.suspiciousWords
+                                            .map(
+                                                (word) =>
+                                                    `${word.word}: ${formatTime(
+                                                        word.start,
+                                                    )} -> ${formatTime(
+                                                        word.end,
+                                                    )}`,
+                                            )
+                                            .join("\n")}
+                                    >
+                                        Timing repaired{" "}
+                                        {formatTime(diagnostic.repairedStart)} →{" "}
+                                        {formatTime(diagnostic.repairedEnd)}
+                                    </p>
+                                ))}
+                            </div>
+                            <div className="min-w-0">
+                                {segmentView === "translation" && translated ? (
+                                    <textarea
+                                        value={translated.translatedText}
+                                        rows={1}
+                                        onChange={(event) =>
+                                            onTranslatedTextChange(
+                                                segment.id,
+                                                event.currentTarget.value,
+                                            )
+                                        }
+                                        className="w-full resize-y border border-main bg-main px-2 py-1.5 text-[12px] leading-5 text-main"
+                                    />
+                                ) : (
+                                    <p className="text-[12px] leading-5 text-main">
+                                        {displayText}
+                                    </p>
+                                )}
+                                {translated &&
+                                segmentView === "translation" ? (
+                                    <p className="mt-1 text-[10px] leading-4 text-muted">
+                                        Source: {translated.sourceText}
+                                    </p>
+                                ) : null}
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
+        </div>
+    );
+});
+
 export function ChineseTranscriptionPanel({
     section,
-    enableVideoPreprocess = false,
-    defaultVideoSpeedFactor = 1,
+    enableVideoPreprocess = true,
+    defaultVideoSpeedFactor = 0.7,
 }: ChineseTranscriptionPanelProps) {
     const Icon = section.icon;
     const [file, setFile] = useState<File | null>(null);
@@ -929,11 +1141,15 @@ export function ChineseTranscriptionPanel({
         }
     };
 
-    const translationById = new Map(
-        translation?.translatedSegments.map((segment) => [
-            segment.id,
-            segment,
-        ]) ?? [],
+    const translationById = useMemo(
+        () =>
+            new Map(
+                translation?.translatedSegments.map((segment) => [
+                    segment.id,
+                    segment,
+                ]) ?? [],
+            ),
+        [translation],
     );
     const voiceAudioUrl = voiceResult
         ? `data:${voiceResult.mimeType};base64,${voiceResult.audioBase64}`
@@ -988,40 +1204,56 @@ export function ChineseTranscriptionPanel({
         }
         return grouped;
     }, [voiceTimingDiagnostics]);
-    const voiceWarningSegments = voiceTimelineDiagnostics
-        .filter(
-            (chunk) =>
-                chunk.warningCodes.length > 0 ||
-                chunk.speedFactor >
-                    PIPER_TTS_ALIGNMENT_SETTINGS.highTimelineSpeedFactor,
-        )
-        .sort((left, right) => right.speedFactor - left.speedFactor);
-    const voiceSlowSegments = voiceTimelineDiagnostics
-        .filter(
-            (chunk) =>
-                chunk.targetDurationSeconds > chunk.rawDurationSeconds * 1.25 ||
-                (chunk.pauseBeforeSeconds ?? 0) > 0.7,
-        )
-        .sort(
-            (left, right) =>
-                right.targetDurationSeconds /
-                    Math.max(0.01, right.rawDurationSeconds) -
-                left.targetDurationSeconds /
-                    Math.max(0.01, left.rawDurationSeconds),
-        );
-    const maxVoiceSpeedFactor =
-        voiceTimelineDiagnostics.length > 0
-            ? Math.max(
-                  ...voiceTimelineDiagnostics.map((chunk) =>
-                      Number.isFinite(chunk.speedFactor)
-                          ? chunk.speedFactor
-                          : 1,
-                  ),
-              )
-            : undefined;
-    const totalBorrowedGapSeconds = voiceTimelineDiagnostics.reduce(
-        (sum, chunk) => sum + chunk.borrowedGapSeconds,
-        0,
+    const voiceWarningSegments = useMemo(
+        () =>
+            voiceTimelineDiagnostics
+                .filter(
+                    (chunk) =>
+                        chunk.warningCodes.length > 0 ||
+                        chunk.speedFactor >
+                            PIPER_TTS_ALIGNMENT_SETTINGS.highTimelineSpeedFactor,
+                )
+                .sort((left, right) => right.speedFactor - left.speedFactor),
+        [voiceTimelineDiagnostics],
+    );
+    const voiceSlowSegments = useMemo(
+        () =>
+            voiceTimelineDiagnostics
+                .filter(
+                    (chunk) =>
+                        chunk.targetDurationSeconds >
+                            chunk.rawDurationSeconds * 1.25 ||
+                        (chunk.pauseBeforeSeconds ?? 0) > 0.7,
+                )
+                .sort(
+                    (left, right) =>
+                        right.targetDurationSeconds /
+                            Math.max(0.01, right.rawDurationSeconds) -
+                        left.targetDurationSeconds /
+                            Math.max(0.01, left.rawDurationSeconds),
+                ),
+        [voiceTimelineDiagnostics],
+    );
+    const maxVoiceSpeedFactor = useMemo(
+        () =>
+            voiceTimelineDiagnostics.length > 0
+                ? Math.max(
+                      ...voiceTimelineDiagnostics.map((chunk) =>
+                          Number.isFinite(chunk.speedFactor)
+                              ? chunk.speedFactor
+                              : 1,
+                      ),
+                  )
+                : undefined,
+        [voiceTimelineDiagnostics],
+    );
+    const totalBorrowedGapSeconds = useMemo(
+        () =>
+            voiceTimelineDiagnostics.reduce(
+                (sum, chunk) => sum + chunk.borrowedGapSeconds,
+                0,
+            ),
+        [voiceTimelineDiagnostics],
     );
     const voiceTimelineWorkbench = useMemo(() => {
         const timelineEnd = Math.max(
@@ -1249,12 +1481,15 @@ export function ChineseTranscriptionPanel({
                       error?: string;
                       errorCode?: string;
                   };
-            if (!response.ok || !payload.ok) {
+            if (!payload.ok) {
                 throw new Error(
                     payload.errorCode
                         ? `${payload.errorCode}: ${payload.error ?? "Video preprocess failed."}`
                         : (payload.error ?? "Video preprocess failed."),
                 );
+            }
+            if (!response.ok) {
+                throw new Error("Video preprocess failed.");
             }
             const nextUrl = await decodeBase64VideoToBlobUrl(
                 payload.data.videoBase64,
@@ -1419,7 +1654,7 @@ export function ChineseTranscriptionPanel({
 
     const selectedAsset =
         assets.find((asset) => asset._id === selectedAssetId) ?? null;
-    const copySegmentsToClipboard = async (mode: "json" | "text") => {
+    const copySegmentsToClipboard = useCallback(async (mode: "json" | "text") => {
         if (!result) return;
 
         const text =
@@ -1445,7 +1680,25 @@ export function ChineseTranscriptionPanel({
         await navigator.clipboard.writeText(text);
         setCopiedSegmentsLabel(mode);
         window.setTimeout(() => setCopiedSegmentsLabel(null), 1800);
-    };
+    }, [result, segmentView, translation, translationById]);
+    const updateTranslatedSegmentText = useCallback(
+        (segmentId: number, value: string) => {
+            setTranslation((current) =>
+                current
+                    ? {
+                          ...current,
+                          translatedSegments: current.translatedSegments.map(
+                              (item) =>
+                                  item.id === segmentId
+                                      ? { ...item, translatedText: value }
+                                      : item,
+                          ),
+                      }
+                    : current,
+            );
+        },
+        [],
+    );
 
     return (
         <section className="border border-main bg-main">
@@ -2370,247 +2623,26 @@ export function ChineseTranscriptionPanel({
                                 </div>
                             ) : null}
 
-                            <div className="border border-main bg-main">
-                                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-main bg-secondary/30 px-4 py-2">
-                                    <div>
-                                        <p className="text-[12px] font-semibold text-main">
-                                            Segments
-                                        </p>
-                                        {translation ? (
-                                            <p className="mt-0.5 text-[10px] leading-4 text-muted">
-                                                Copy JSON để dán vào Video Tools
-                                                Lab `translatedSegmentsJson`.
-                                            </p>
-                                        ) : null}
-                                    </div>
-                                    <div className="flex flex-wrap gap-2">
-                                        <button
-                                            type="button"
-                                            disabled={!translation}
-                                            onClick={() =>
-                                                copySegmentsToClipboard("json")
-                                            }
-                                            className="inline-flex items-center gap-1.5 border border-main bg-main px-2 py-1 text-[10px] font-semibold text-main hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-50"
-                                        >
-                                            <Copy className="h-3.5 w-3.5" />
-                                            {copiedSegmentsLabel === "json"
-                                                ? "Copied JSON"
-                                                : "Copy translatedSegments JSON"}
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() =>
-                                                copySegmentsToClipboard("text")
-                                            }
-                                            className="inline-flex items-center gap-1.5 border border-main bg-main px-2 py-1 text-[10px] font-semibold text-main hover:bg-secondary"
-                                        >
-                                            <Copy className="h-3.5 w-3.5" />
-                                            {copiedSegmentsLabel === "text"
-                                                ? "Copied text"
-                                                : "Copy visible text"}
-                                        </button>
-                                    </div>
-                                </div>
-                                <div
-                                    ref={segmentsScrollRef}
-                                    className="thin-scrollbar max-h-[420px] overflow-auto"
-                                >
-                                    {result.segments.map((segment) =>
-                                        (() => {
-                                            const translated =
-                                                translationById.get(segment.id);
-                                            const segmentNumber =
-                                                segment.id + 1;
-                                            const displayText =
-                                                segmentView === "translation" &&
-                                                translated
-                                                    ? translated.translatedText
-                                                    : segment.text;
-                                            const voiceChunk =
-                                                voiceTimelineBySegmentId.get(
-                                                    segment.id,
-                                                );
-                                            const timingDiagnostics =
-                                                voiceTimingDiagnosticsBySegmentId.get(
-                                                    segment.id,
-                                                ) ?? [];
-                                            const hasVoiceResult =
-                                                Boolean(voiceResult);
-                                            const missingGeneratedVoice =
-                                                hasVoiceResult &&
-                                                (!voiceChunk ||
-                                                    (translated &&
-                                                        !translated.translatedText.trim()));
-                                            const isActiveVoiceSegment =
-                                                activeVoiceSegmentId ===
-                                                segment.id;
-                                            const segmentTone =
-                                                missingGeneratedVoice
-                                                    ? "border-rose-500/50 bg-rose-500/10"
-                                                    : isActiveVoiceSegment
-                                                      ? "border-accent bg-accent/10"
-                                                      : "border-main";
-                                            return (
-                                                <div
-                                                    key={segment.id}
-                                                    ref={(node) => {
-                                                        if (node) {
-                                                            segmentRefs.current.set(
-                                                                segment.id,
-                                                                node,
-                                                            );
-                                                            return;
-                                                        }
-                                                        segmentRefs.current.delete(
-                                                            segment.id,
-                                                        );
-                                                    }}
-                                                    className={`grid gap-3 border-b px-4 py-3 last:border-b-0 md:grid-cols-[190px_minmax(0,1fr)] ${segmentTone}`}
-                                                >
-                                                    <div className="space-y-1">
-                                                        <p className="text-[11px] font-bold text-main">
-                                                            Segment #
-                                                            {segmentNumber}
-                                                        </p>
-                                                        <p className="text-[10px] font-semibold text-muted">
-                                                            {formatTime(
-                                                                segment.start,
-                                                            )}{" "}
-                                                            →{" "}
-                                                            {formatTime(
-                                                                segment.end,
-                                                            )}
-                                                        </p>
-                                                        {voiceChunk ? (
-                                                            <div className="mt-1 space-y-1">
-                                                                <p className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700">
-                                                                    <span>
-                                                                        Voice
-                                                                        speed
-                                                                    </span>
-                                                                    <span>
-                                                                        {formatSpeedFactor(
-                                                                            voiceChunk.speedFactor,
-                                                                        )}
-                                                                    </span>
-                                                                </p>
-                                                                <p className="block text-[10px] font-semibold text-green-700">
-                                                                    Voice{" "}
-                                                                    {formatTime(
-                                                                        voiceChunk.scheduledStartSeconds ??
-                                                                            voiceChunk.start,
-                                                                    )}{" "}
-                                                                    →{" "}
-                                                                    {formatTime(
-                                                                        voiceChunk.scheduledEndSeconds ??
-                                                                            voiceChunk.end,
-                                                                    )}
-                                                                </p>
-                                                            </div>
-                                                        ) : hasVoiceResult ? (
-                                                            <p className="text-[10px] font-semibold text-rose-700">
-                                                                Missing
-                                                                generated voice
-                                                            </p>
-                                                        ) : null}
-                                                        {timingDiagnostics.map(
-                                                            (diagnostic) => (
-                                                                <p
-                                                                    key={`${diagnostic.code}-${diagnostic.repairedStart}-${diagnostic.repairedEnd}`}
-                                                                    className="mt-1 text-[10px] font-semibold leading-4 text-amber-700"
-                                                                    title={diagnostic.suspiciousWords
-                                                                        .map(
-                                                                            (
-                                                                                word,
-                                                                            ) =>
-                                                                                `${word.word}: ${formatTime(
-                                                                                    word.start,
-                                                                                )} -> ${formatTime(
-                                                                                    word.end,
-                                                                                )}`,
-                                                                        )
-                                                                        .join(
-                                                                            "\n",
-                                                                        )}
-                                                                >
-                                                                    Timing
-                                                                    repaired{" "}
-                                                                    {formatTime(
-                                                                        diagnostic.repairedStart,
-                                                                    )}{" "}
-                                                                    →{" "}
-                                                                    {formatTime(
-                                                                        diagnostic.repairedEnd,
-                                                                    )}
-                                                                </p>
-                                                            ),
-                                                        )}
-                                                    </div>
-                                                    <div className="min-w-0">
-                                                        {segmentView ===
-                                                            "translation" &&
-                                                        translated ? (
-                                                            <textarea
-                                                                value={
-                                                                    translated.translatedText
-                                                                }
-                                                                rows={1}
-                                                                onChange={(
-                                                                    event,
-                                                                ) => {
-                                                                    if (
-                                                                        !translation ||
-                                                                        !translated
-                                                                    )
-                                                                        return;
-                                                                    const next =
-                                                                        translation.translatedSegments.map(
-                                                                            (
-                                                                                item,
-                                                                            ) =>
-                                                                                item.id ===
-                                                                                segment.id
-                                                                                    ? {
-                                                                                          ...item,
-                                                                                          translatedText:
-                                                                                              event
-                                                                                                  .currentTarget
-                                                                                                  .value,
-                                                                                      }
-                                                                                    : item,
-                                                                        );
-                                                                    setTranslation(
-                                                                        {
-                                                                            ...translation,
-                                                                            translatedSegments:
-                                                                                next,
-                                                                        },
-                                                                    );
-                                                                }}
-                                                                className="w-full resize-y border border-main bg-main px-2 py-1.5 text-[12px] leading-5 text-main"
-                                                            />
-                                                        ) : (
-                                                            <p className="text-[12px] leading-5 text-main">
-                                                                {displayText}
-                                                            </p>
-                                                        )}
-                                                        {translated &&
-                                                        segmentView ===
-                                                            "translation" ? (
-                                                            <p className="mt-1 text-[10px] leading-4 text-muted">
-                                                                Source:{" "}
-                                                                {
-                                                                    translated.sourceText
-                                                                }
-                                                            </p>
-                                                        ) : null}
-                                                    </div>
-                                                </div>
-                                            );
-                                        })(),
-                                    )}
-                                </div>
-                            </div>
+                            <TranscriptSegmentsPanel
+                                result={result}
+                                translation={translation}
+                                segmentView={segmentView}
+                                voiceTimelineBySegmentId={
+                                    voiceTimelineBySegmentId
+                                }
+                                voiceTimingDiagnosticsBySegmentId={
+                                    voiceTimingDiagnosticsBySegmentId
+                                }
+                                voiceResult={voiceResult}
+                                activeVoiceSegmentId={activeVoiceSegmentId}
+                                copiedSegmentsLabel={copiedSegmentsLabel}
+                                segmentsScrollRef={segmentsScrollRef}
+                                segmentRefs={segmentRefs}
+                                onCopySegments={copySegmentsToClipboard}
+                                onTranslatedTextChange={
+                                    updateTranslatedSegmentText
+                                }
+                            />
                         </>
                     )}
                     {voiceResult && voiceAudioUrl ? (

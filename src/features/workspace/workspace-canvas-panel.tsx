@@ -61,6 +61,7 @@ import {
     type VoiceGenerationResult,
 } from "@/lib/multilingual-audio/types";
 import type { VideoDubbingResult } from "@/lib/multilingual-audio/video-dubbing";
+import { buildWordAwareVoiceSegments } from "@/lib/multilingual-audio/voice-segment-timing";
 
 type WorkspaceCanvasPanelProps = {
     section: LeftbarNavItem;
@@ -1096,6 +1097,11 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     ? "Transcript đã có từ lần chạy trước."
                     : null;
             }
+            if (step.kind === "preprocess-video") {
+                return artifactByProducer[step.preprocessNodeId]
+                    ? "Processed video artifact đã có từ lần chạy trước."
+                    : null;
+            }
             if (step.kind === "translate-transcript") {
                 return translationByProducer[step.translationNodeId]
                     ? "Translation đã có từ lần chạy trước."
@@ -1148,8 +1154,11 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                 setNodeStatus(step.sourceUrlNodeId, "success", detail);
                 setNodeStatus(step.storageNodeId, "success", detail);
             } else if (step.kind === "transcribe-chinese") {
-                setNodeStatus(step.sourceFileNodeId, "success", detail);
+                setNodeStatus(step.sourceNodeId, "success", detail);
                 setNodeStatus(step.transcriptionNodeId, "success", detail);
+            } else if (step.kind === "preprocess-video") {
+                setNodeStatus(step.sourceNodeId, "success", detail);
+                setNodeStatus(step.preprocessNodeId, "success", detail);
             } else if (step.kind === "translate-transcript") {
                 setNodeStatus(step.translationNodeId, "success", detail);
             } else if (step.kind === "generate-voice") {
@@ -1209,6 +1218,70 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                 `${resolvedFile.fileName} · ${formatBytes(resolvedFile.byteLength)}.`,
             );
             return resolvedFile.file;
+        };
+
+        const appendWorkspaceVideoInput = async (input: {
+            formData: FormData;
+            sourceNode: WorkspaceNodeInstance;
+            consumerLabel: string;
+        }) => {
+            const { formData, sourceNode, consumerLabel } = input;
+            if (sourceNode.templateNodeType === "source.file") {
+                const file = runtimeFilesByNodeId[sourceNode.id];
+                if (!file) {
+                    setNodeStatus(
+                        sourceNode.id,
+                        "failed",
+                        "Chưa chọn file video.",
+                    );
+                    throw new Error(
+                        `Upload Video '${sourceNode.label}' chưa chọn file cho ${consumerLabel}.`,
+                    );
+                }
+                formData.set("videoFile", file);
+                return {
+                    detail: file.name,
+                    sourceStatus: "Source file used.",
+                };
+            }
+            if (sourceNode.templateNodeType === "source.url") {
+                const file = await resolveUrlSourceFile(sourceNode);
+                formData.set("videoFile", file);
+                return {
+                    detail: file.name,
+                    sourceStatus: "Resolved URL video used.",
+                };
+            }
+            if (sourceNode.templateNodeType === "source.asset") {
+                const assetId = getStringConfig(sourceNode, "assetId");
+                if (!assetId) {
+                    setNodeStatus(
+                        sourceNode.id,
+                        "failed",
+                        "Chưa chọn Storage Library asset.",
+                    );
+                    throw new Error(
+                        `Storage Asset '${sourceNode.label}' chưa chọn asset cho ${consumerLabel}.`,
+                    );
+                }
+                formData.set("assetId", assetId);
+                return {
+                    detail: assetId,
+                    sourceStatus: "Storage asset used.",
+                };
+            }
+
+            const upstreamArtifact = artifactByProducer[sourceNode.id];
+            if (!upstreamArtifact || upstreamArtifact.kind !== "video") {
+                throw new Error(
+                    `${consumerLabel} thiếu video artifact upstream từ '${sourceNode.label}'.`,
+                );
+            }
+            formData.set("videoFile", base64ToFile(upstreamArtifact));
+            return {
+                detail: upstreamArtifact.fileName,
+                sourceStatus: "Video artifact used.",
+            };
         };
 
         let abortRemaining = false;
@@ -1521,8 +1594,69 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     );
                     summary.push(`Created asset ${newAssetId}.`);
                     advanceProgress(`Created asset ${newAssetId}.`);
+                } else if (step.kind === "preprocess-video") {
+                    const sourceNode = findNode(step.sourceNodeId);
+                    const preprocessNode = findNode(step.preprocessNodeId);
+                    if (!sourceNode || !preprocessNode) {
+                        throw new Error("Missing preprocess nodes.");
+                    }
+
+                    const formData = new FormData();
+                    const source = await appendWorkspaceVideoInput({
+                        formData,
+                        sourceNode,
+                        consumerLabel: `Video Preprocess '${preprocessNode.label}'`,
+                    });
+                    formData.set(
+                        "videoSpeedFactor",
+                        String(getNumberConfig(preprocessNode, "speedFactor", 0.7)),
+                    );
+                    setNodeStatus(
+                        preprocessNode.id,
+                        "running",
+                        "Preprocessing video speed with ffmpeg...",
+                    );
+                    const preprocessPayload = await fetchWorkspaceJson<{
+                        ok: true;
+                        data: {
+                            fileName: string;
+                            mimeType: string;
+                            videoBase64: string;
+                            byteLength: number;
+                            speedFactor: number;
+                        };
+                    }>({
+                        url: "/api/audio/video-preprocess",
+                        actionLabel: "Video preprocess",
+                        init: { method: "POST", body: formData },
+                    });
+                    const artifact: WorkspaceRuntimeArtifact = {
+                        fileName: preprocessPayload.data.fileName,
+                        mimeType: preprocessPayload.data.mimeType,
+                        base64: preprocessPayload.data.videoBase64,
+                        byteLength: preprocessPayload.data.byteLength,
+                        kind: "video",
+                        detail: `${preprocessPayload.data.speedFactor.toFixed(2)}x processed video`,
+                    };
+                    artifactByProducer[step.preprocessNodeId] = artifact;
+                    setRuntimeArtifactsByNodeId((current) => ({
+                        ...current,
+                        [preprocessNode.id]: artifact,
+                    }));
+                    setNodeStatus(sourceNode.id, "success", source.sourceStatus);
+                    setNodeStatus(
+                        preprocessNode.id,
+                        "success",
+                        `${formatBytes(preprocessPayload.data.byteLength)} MP4.`,
+                    );
+                    summary.push(
+                        `Preprocessed video ready: ${formatBytes(preprocessPayload.data.byteLength)}.`,
+                    );
+                    advanceProgress(
+                        `Preprocess ${preprocessNode.label} complete.`,
+                    );
                 } else if (step.kind === "transcribe-chinese") {
-                    const fileNode = findNode(step.sourceFileNodeId);
+                    const fileNode = findNode(step.sourceNodeId);
                     const transcriptionNode = findNode(
                         step.transcriptionNodeId,
                     );
@@ -1530,34 +1664,10 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         throw new Error("Missing transcription nodes.");
                     }
 
-                    const file =
-                        fileNode.templateNodeType === "source.file"
-                            ? runtimeFilesByNodeId[fileNode.id]
-                            : await resolveUrlSourceFile(fileNode);
-                    if (!file) {
-                        setNodeStatus(
-                            fileNode.id,
-                            "failed",
-                            fileNode.templateNodeType === "source.file"
-                                ? "Chưa chọn file video."
-                                : "Chưa resolve được URL video.",
-                        );
-                        setNodeStatus(
-                            transcriptionNode.id,
-                            "skipped",
-                            "Chưa có file để transcribe.",
-                        );
-                        throw new Error(
-                            fileNode.templateNodeType === "source.file"
-                                ? `Upload Video '${fileNode.label}' chưa chọn file.`
-                                : `URL Video '${fileNode.label}' chưa resolve được source video.`,
-                        );
-                    }
-
                     setNodeStatus(
                         fileNode.id,
                         "running",
-                        `Preparing ${file.name}...`,
+                        "Preparing video source...",
                     );
                     setNodeStatus(
                         transcriptionNode.id,
@@ -1566,7 +1676,11 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     );
 
                     const formData = new FormData();
-                    formData.set("videoFile", file);
+                    const source = await appendWorkspaceVideoInput({
+                        formData,
+                        sourceNode: fileNode,
+                        consumerLabel: `Audio Transcript '${transcriptionNode.label}'`,
+                    });
                     formData.set(
                         "language",
                         getStringConfig(transcriptionNode, "language", "zh"),
@@ -1604,7 +1718,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         ...current,
                         [step.transcriptionNodeId]: transcriptionPayload.data,
                     }));
-                    setNodeStatus(fileNode.id, "success", file.name);
+                    setNodeStatus(fileNode.id, "success", source.sourceStatus);
                     setNodeStatus(
                         transcriptionNode.id,
                         "success",
@@ -1798,14 +1912,14 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                             method: "POST",
                             headers: { "Content-Type": "application/json" },
                             body: JSON.stringify({
-                                segments: translation.translatedSegments.map(
-                                    (segment) => ({
-                                        id: segment.id,
-                                        start: segment.start,
-                                        end: segment.end,
-                                        text: segment.translatedText,
-                                    }),
-                                ),
+                                segments: buildWordAwareVoiceSegments({
+                                    translatedSegments:
+                                        translation.translatedSegments,
+                                    words:
+                                        transcriptByProducer[
+                                            step.transcriptionNodeId
+                                        ]?.words ?? [],
+                                }),
                                 settings: {
                                     binaryPath: getStringConfig(
                                         voiceNode,
@@ -1829,6 +1943,21 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                                         voiceNode,
                                         "ttsLengthScale",
                                         1,
+                                    ),
+                                    noiseScale: getNumberConfig(
+                                        voiceNode,
+                                        "ttsNoiseScale",
+                                        DEFAULT_PIPER_TTS_SETTINGS.noiseScale,
+                                    ),
+                                    noiseW: getNumberConfig(
+                                        voiceNode,
+                                        "ttsNoiseW",
+                                        DEFAULT_PIPER_TTS_SETTINGS.noiseW,
+                                    ),
+                                    sentenceSilence: getNumberConfig(
+                                        voiceNode,
+                                        "ttsSentenceSilence",
+                                        DEFAULT_PIPER_TTS_SETTINGS.sentenceSilence,
                                     ),
                                     alignmentMode: getStringConfig(
                                         voiceNode,
@@ -1875,43 +2004,11 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     }
 
                     const formData = new FormData();
-                    if (sourceNode.templateNodeType === "source.file") {
-                        const file = runtimeFilesByNodeId[sourceNode.id];
-                        if (!file) {
-                            setNodeStatus(
-                                sourceNode.id,
-                                "failed",
-                                "Chưa chọn file video.",
-                            );
-                            setNodeStatus(
-                                dubbingNode.id,
-                                "skipped",
-                                "Chưa có file để dub.",
-                            );
-                            throw new Error(
-                                `Upload Video '${sourceNode.label}' chưa chọn file.`,
-                            );
-                        }
-                        formData.set("videoFile", file);
-                    } else if (sourceNode.templateNodeType === "source.url") {
-                        formData.set(
-                            "videoFile",
-                            await resolveUrlSourceFile(sourceNode),
-                        );
-                    } else {
-                        const assetId = getStringConfig(sourceNode, "assetId");
-                        if (!assetId) {
-                            setNodeStatus(
-                                sourceNode.id,
-                                "failed",
-                                "Chưa chọn Storage Library asset.",
-                            );
-                            throw new Error(
-                                `Storage Asset '${sourceNode.label}' chưa chọn asset.`,
-                            );
-                        }
-                        formData.set("assetId", assetId);
-                    }
+                    const source = await appendWorkspaceVideoInput({
+                        formData,
+                        sourceNode,
+                        consumerLabel: `Video Dubbing '${dubbingNode.label}'`,
+                    });
 
                     formData.set(
                         "language",
@@ -1961,6 +2058,36 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     formData.set(
                         "ttsConfigPath",
                         getStringConfig(dubbingNode, "ttsConfigPath"),
+                    );
+                    formData.set(
+                        "ttsNoiseScale",
+                        String(
+                            getNumberConfig(
+                                dubbingNode,
+                                "ttsNoiseScale",
+                                DEFAULT_PIPER_TTS_SETTINGS.noiseScale,
+                            ),
+                        ),
+                    );
+                    formData.set(
+                        "ttsNoiseW",
+                        String(
+                            getNumberConfig(
+                                dubbingNode,
+                                "ttsNoiseW",
+                                DEFAULT_PIPER_TTS_SETTINGS.noiseW,
+                            ),
+                        ),
+                    );
+                    formData.set(
+                        "ttsSentenceSilence",
+                        String(
+                            getNumberConfig(
+                                dubbingNode,
+                                "ttsSentenceSilence",
+                                DEFAULT_PIPER_TTS_SETTINGS.sentenceSilence,
+                            ),
+                        ),
                     );
                     formData.set(
                         "ttsAlignmentMode",
@@ -2017,11 +2144,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     setNodeStatus(
                         sourceNode.id,
                         "success",
-                        sourceNode.templateNodeType === "source.file"
-                            ? "Source file used."
-                            : sourceNode.templateNodeType === "source.url"
-                              ? "Resolved URL video used."
-                              : "Storage asset used.",
+                        source.sourceStatus,
                     );
                     setNodeStatus(
                         dubbingNode.id,
@@ -2040,47 +2163,11 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     }
 
                     const formData = new FormData();
-                    if (sourceNode.templateNodeType === "source.file") {
-                        const file = runtimeFilesByNodeId[sourceNode.id];
-                        if (!file) {
-                            setNodeStatus(
-                                sourceNode.id,
-                                "failed",
-                                "Chưa chọn file video.",
-                            );
-                            setNodeStatus(
-                                mirrorNode.id,
-                                "skipped",
-                                "Chưa có file để mirror.",
-                            );
-                            throw new Error(
-                                `Upload Video '${sourceNode.label}' chưa chọn file.`,
-                            );
-                        }
-                        formData.set("videoFile", file);
-                    } else if (sourceNode.templateNodeType === "source.url") {
-                        formData.set(
-                            "videoFile",
-                            await resolveUrlSourceFile(sourceNode),
-                        );
-                    } else {
-                        const upstreamArtifact =
-                            artifactByProducer[sourceNode.id];
-                        if (!upstreamArtifact) {
-                            setNodeStatus(
-                                mirrorNode.id,
-                                "skipped",
-                                "Chưa có video artifact upstream.",
-                            );
-                            throw new Error(
-                                `Mirror Video '${mirrorNode.label}' thiếu video artifact upstream.`,
-                            );
-                        }
-                        formData.set(
-                            "videoFile",
-                            base64ToFile(upstreamArtifact),
-                        );
-                    }
+                    const source = await appendWorkspaceVideoInput({
+                        formData,
+                        sourceNode,
+                        consumerLabel: `Mirror Video '${mirrorNode.label}'`,
+                    });
                     formData.set(
                         "axis",
                         getStringConfig(mirrorNode, "axis", "horizontal"),
@@ -2122,11 +2209,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     setNodeStatus(
                         sourceNode.id,
                         "success",
-                        sourceNode.templateNodeType === "source.file"
-                            ? "Source file used."
-                            : sourceNode.templateNodeType === "source.url"
-                              ? "Resolved URL video used."
-                              : "Video artifact used.",
+                        source.sourceStatus,
                     );
                     setNodeStatus(
                         mirrorNode.id,
@@ -2159,47 +2242,11 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     }
 
                     const formData = new FormData();
-                    if (sourceNode.templateNodeType === "source.file") {
-                        const file = runtimeFilesByNodeId[sourceNode.id];
-                        if (!file) {
-                            setNodeStatus(
-                                sourceNode.id,
-                                "failed",
-                                "Chưa chọn file video.",
-                            );
-                            setNodeStatus(
-                                editNode.id,
-                                "skipped",
-                                "Chưa có file để edit.",
-                            );
-                            throw new Error(
-                                `Upload Video '${sourceNode.label}' chưa chọn file.`,
-                            );
-                        }
-                        formData.set("videoFile", file);
-                    } else if (sourceNode.templateNodeType === "source.url") {
-                        formData.set(
-                            "videoFile",
-                            await resolveUrlSourceFile(sourceNode),
-                        );
-                    } else {
-                        const upstreamArtifact =
-                            artifactByProducer[sourceNode.id];
-                        if (!upstreamArtifact) {
-                            setNodeStatus(
-                                editNode.id,
-                                "skipped",
-                                "Chưa có video artifact upstream.",
-                            );
-                            throw new Error(
-                                `Mask Logo/Subtitles '${editNode.label}' thiếu video artifact upstream.`,
-                            );
-                        }
-                        formData.set(
-                            "videoFile",
-                            base64ToFile(upstreamArtifact),
-                        );
-                    }
+                    const source = await appendWorkspaceVideoInput({
+                        formData,
+                        sourceNode,
+                        consumerLabel: `Mask Logo/Subtitles '${editNode.label}'`,
+                    });
 
                     formData.set(
                         "mirrorEnabled",
@@ -2393,11 +2440,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     setNodeStatus(
                         sourceNode.id,
                         "success",
-                        sourceNode.templateNodeType === "source.file"
-                            ? "Source file used."
-                            : sourceNode.templateNodeType === "source.url"
-                              ? "Resolved URL video used."
-                              : "Video artifact used.",
+                        source.sourceStatus,
                     );
                     setNodeStatus(
                         translationNode.id,
@@ -3343,8 +3386,16 @@ function describeStep(
         return {
             key: `transcribe-${step.transcriptionNodeId}`,
             statusKey: step.transcriptionNodeId,
-            label: `Transcript · ${findLabel(step.sourceFileNodeId)} → ${findLabel(step.transcriptionNodeId)}`,
+            label: `Transcript · ${findLabel(step.sourceNodeId)} → ${findLabel(step.transcriptionNodeId)}`,
             subtitle: "Extract audio and transcribe timestamps",
+        };
+    }
+    if (step.kind === "preprocess-video") {
+        return {
+            key: `preprocess-${step.preprocessNodeId}`,
+            statusKey: step.preprocessNodeId,
+            label: `Preprocess · ${findLabel(step.sourceNodeId)} → ${findLabel(step.preprocessNodeId)}`,
+            subtitle: "Adjust source video speed with ffmpeg",
         };
     }
     if (step.kind === "translate-transcript") {
@@ -4312,6 +4363,30 @@ function NodeRuntimeConfig({
         );
     }
 
+    if (node.templateNodeType === "video.preprocess") {
+        return (
+            <InspectorSection title="Runtime Config">
+                <div className="space-y-2 border border-main bg-secondary/20 p-2">
+                    <RuntimeTextInput
+                        label="Video speed"
+                        value={String(
+                            getNumberConfig(node, "speedFactor", 0.7),
+                        )}
+                        disabled={isRunningFlow}
+                        placeholder="0.7"
+                        onChange={(value) =>
+                            setConfig({ speedFactor: Number(value) })
+                        }
+                    />
+                    <p className="border border-main bg-main px-3 py-2 text-[10px] leading-4 text-muted">
+                        Node này tạo video artifact mới để các bước transcript,
+                        dubbing hoặc edit downstream dùng lại.
+                    </p>
+                </div>
+            </InspectorSection>
+        );
+    }
+
     if (node.templateNodeType === "text.translate-transcript") {
         const selectedTranslationProviderId = getStringConfig(
             node,
@@ -4659,6 +4734,55 @@ function NodeRuntimeConfig({
                             setConfig({ ttsConfigPath: value })
                         }
                     />
+                    <div className="grid gap-2 sm:grid-cols-3">
+                        <RuntimeTextInput
+                            label="Noise scale"
+                            value={String(
+                                getNumberConfig(
+                                    node,
+                                    "ttsNoiseScale",
+                                    DEFAULT_PIPER_TTS_SETTINGS.noiseScale,
+                                ),
+                            )}
+                            disabled={isRunningFlow}
+                            placeholder="0.667"
+                            onChange={(value) =>
+                                setConfig({ ttsNoiseScale: Number(value) })
+                            }
+                        />
+                        <RuntimeTextInput
+                            label="Noise W"
+                            value={String(
+                                getNumberConfig(
+                                    node,
+                                    "ttsNoiseW",
+                                    DEFAULT_PIPER_TTS_SETTINGS.noiseW,
+                                ),
+                            )}
+                            disabled={isRunningFlow}
+                            placeholder="0.8"
+                            onChange={(value) =>
+                                setConfig({ ttsNoiseW: Number(value) })
+                            }
+                        />
+                        <RuntimeTextInput
+                            label="Sentence silence"
+                            value={String(
+                                getNumberConfig(
+                                    node,
+                                    "ttsSentenceSilence",
+                                    DEFAULT_PIPER_TTS_SETTINGS.sentenceSilence,
+                                ),
+                            )}
+                            disabled={isRunningFlow}
+                            placeholder="0.2"
+                            onChange={(value) =>
+                                setConfig({
+                                    ttsSentenceSilence: Number(value),
+                                })
+                            }
+                        />
+                    </div>
                     <RuntimeSelect
                         label="Alignment mode"
                         value={getStringConfig(

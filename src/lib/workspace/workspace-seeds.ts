@@ -1,4 +1,5 @@
 import {
+    createAssetPreprocessDubbingSampleGraph,
     createUploadVietnameseMaskPublishSampleGraph,
     type WorkspaceGraph,
 } from "./workspace-graph";
@@ -17,5 +18,12 @@ export const WORKSPACE_SEED_TEMPLATES: WorkspaceSeedTemplate[] = [
         description:
             "Upload -> VI Voice Dubbing -> Mask/Subtitles -> Save to Storage -> Publish Social.",
         buildGraph: createUploadVietnameseMaskPublishSampleGraph,
+    },
+    {
+        id: "asset-preprocess-dubbing",
+        label: "Seed Asset Preprocess Dubbing",
+        description:
+            "Storage Asset -> Video Preprocess -> VI Voice Dubbing -> Save to Storage.",
+        buildGraph: createAssetPreprocessDubbingSampleGraph,
     },
 ];

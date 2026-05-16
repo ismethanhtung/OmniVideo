@@ -12,4 +12,21 @@ describe("workspace seed templates", () => {
         expect(seed?.label).toBe("Seed VI Voice Mask Publish");
         expect(seed?.buildGraph().nodes.length).toBeGreaterThan(0);
     });
+
+    it("registers asset preprocess dubbing seed", () => {
+        const seed = WORKSPACE_SEED_TEMPLATES.find(
+            (entry) => entry.id === "asset-preprocess-dubbing",
+        );
+
+        expect(seed).toBeDefined();
+        expect(seed?.label).toBe("Seed Asset Preprocess Dubbing");
+        expect(seed?.buildGraph().nodes.map((node) => node.templateNodeType)).toEqual(
+            expect.arrayContaining([
+                "source.asset",
+                "video.preprocess",
+                "audio.video-dubbing",
+                "storage.upload",
+            ]),
+        );
+    });
 });

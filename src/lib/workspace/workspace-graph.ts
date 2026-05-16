@@ -122,7 +122,7 @@ export type WorkspaceFlowStep =
       }
     | {
           kind: "transcribe-chinese";
-          sourceFileNodeId: string;
+          sourceNodeId: string;
           transcriptionNodeId: string;
       }
     | {
@@ -137,8 +137,14 @@ export type WorkspaceFlowStep =
       }
     | {
           kind: "generate-voice";
+          transcriptionNodeId: string;
           translationNodeId: string;
           voiceNodeId: string;
+      }
+    | {
+          kind: "preprocess-video";
+          sourceNodeId: string;
+          preprocessNodeId: string;
       }
     | {
           kind: "dub-video";
@@ -295,6 +301,34 @@ export const WORKSPACE_NODE_TEMPLATES: WorkspaceNodeTemplate[] = [
         observabilityHooks: ["onStart", "onSuccess", "onError"],
         traceabilityNotes:
             "Existing asset input must preserve asset id, storage pointer, source refs, and prior pipeline trace.",
+    },
+    {
+        nodeType: "video.preprocess",
+        version: "1.0.0",
+        label: "Video Preprocess",
+        description:
+            "Điều chỉnh tốc độ source video trước các bước transcript/dubbing/edit downstream.",
+        category: "processing",
+        status: "available",
+        inputPorts: [{ id: "video", label: "Video", dataType: "video" }],
+        outputPorts: [
+            { id: "video", label: "Processed video", dataType: "video" },
+        ],
+        configFields: [
+            {
+                key: "speedFactor",
+                label: "Video speed",
+                type: "number",
+                required: true,
+                defaultValue: 0.7,
+            },
+        ],
+        timeoutMs: 900000,
+        retryPolicy: { maxAttempts: 1, backoff: "none" },
+        idempotencyStrategy: "input-hash",
+        observabilityHooks: ["onStart", "onSuccess", "onError"],
+        traceabilityNotes:
+            "Preprocess output must preserve source refs, speed factor, and generated artifact lineage.",
     },
     {
         nodeType: "edit.mask-region",
@@ -619,6 +653,27 @@ export const WORKSPACE_NODE_TEMPLATES: WorkspaceNodeTemplate[] = [
                 defaultValue: 1,
             },
             {
+                key: "ttsNoiseScale",
+                label: "Noise scale",
+                type: "number",
+                required: false,
+                defaultValue: 0.667,
+            },
+            {
+                key: "ttsNoiseW",
+                label: "Noise W",
+                type: "number",
+                required: false,
+                defaultValue: 0.8,
+            },
+            {
+                key: "ttsSentenceSilence",
+                label: "Sentence silence",
+                type: "number",
+                required: false,
+                defaultValue: 0.2,
+            },
+            {
                 key: "ttsPreserveTimestampGaps",
                 label: "Balanced timing",
                 type: "boolean",
@@ -715,6 +770,27 @@ export const WORKSPACE_NODE_TEMPLATES: WorkspaceNodeTemplate[] = [
                 type: "text",
                 required: false,
                 defaultValue: "",
+            },
+            {
+                key: "ttsNoiseScale",
+                label: "Noise scale",
+                type: "number",
+                required: false,
+                defaultValue: 0.667,
+            },
+            {
+                key: "ttsNoiseW",
+                label: "Noise W",
+                type: "number",
+                required: false,
+                defaultValue: 0.8,
+            },
+            {
+                key: "ttsSentenceSilence",
+                label: "Sentence silence",
+                type: "number",
+                required: false,
+                defaultValue: 0.2,
             },
             {
                 key: "ttsPreserveTimestampGaps",
@@ -1383,6 +1459,9 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
     const voiceNodes = graph.nodes.filter(
         (node) => node.templateNodeType === "audio.voice-generation",
     );
+    const preprocessNodes = graph.nodes.filter(
+        (node) => node.templateNodeType === "video.preprocess",
+    );
     const dubbingNodes = graph.nodes.filter(
         (node) => node.templateNodeType === "audio.video-dubbing",
     );
@@ -1434,6 +1513,16 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
                     node !== undefined &&
                     node.templateNodeType === "audio.video-dubbing",
             );
+        const downstreamPreprocess = graph.edges
+            .filter((edge) => edge.fromNodeId === fileNode.id)
+            .map((edge) =>
+                graph.nodes.find((node) => node.id === edge.toNodeId),
+            )
+            .filter(
+                (node): node is WorkspaceNodeInstance =>
+                    node !== undefined &&
+                    node.templateNodeType === "video.preprocess",
+            );
         const downstreamMirror = graph.edges
             .filter((edge) => edge.fromNodeId === fileNode.id)
             .map((edge) =>
@@ -1458,12 +1547,13 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
         if (
             downstreamStorage.length === 0 &&
             downstreamTranscription.length === 0 &&
+            downstreamPreprocess.length === 0 &&
             downstreamDubbing.length === 0 &&
             downstreamMirror.length === 0 &&
             downstreamEdit.length === 0
         ) {
             errors.push(
-                `Upload Video '${fileNode.label}' (${fileNode.id}) cần nối tới Save to Storage, Audio Transcript, Video Dubbing, Mirror Video hoặc Mask Logo/Subtitles downstream.`,
+                `Upload Video '${fileNode.label}' (${fileNode.id}) cần nối tới Save to Storage, Video Preprocess, Audio Transcript, Video Dubbing, Mirror Video hoặc Mask Logo/Subtitles downstream.`,
             );
             continue;
         }
@@ -1518,6 +1608,16 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
                     node !== undefined &&
                     node.templateNodeType === "audio.video-dubbing",
             );
+        const downstreamPreprocess = graph.edges
+            .filter((edge) => edge.fromNodeId === urlNode.id)
+            .map((edge) =>
+                graph.nodes.find((node) => node.id === edge.toNodeId),
+            )
+            .filter(
+                (node): node is WorkspaceNodeInstance =>
+                    node !== undefined &&
+                    node.templateNodeType === "video.preprocess",
+            );
         const downstreamMirror = graph.edges
             .filter((edge) => edge.fromNodeId === urlNode.id)
             .map((edge) =>
@@ -1541,12 +1641,13 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
         if (
             downstreamStorage.length === 0 &&
             downstreamTranscription.length === 0 &&
+            downstreamPreprocess.length === 0 &&
             downstreamDubbing.length === 0 &&
             downstreamMirror.length === 0 &&
             downstreamEdit.length === 0
         ) {
             errors.push(
-                `URL Video '${urlNode.label}' (${urlNode.id}) cần nối tới Save to Storage, Audio Transcript, Video Dubbing, Mirror Video hoặc Mask Logo/Subtitles downstream.`,
+                `URL Video '${urlNode.label}' (${urlNode.id}) cần nối tới Save to Storage, Video Preprocess, Audio Transcript, Video Dubbing, Mirror Video hoặc Mask Logo/Subtitles downstream.`,
             );
             continue;
         }
@@ -1568,6 +1669,39 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
         }
         consumedStorageByFile.set(storageNode.id, urlNode.id);
         urlToStorage.set(urlNode.id, storageNode.id);
+    }
+
+    for (const preprocessNode of preprocessNodes) {
+        const downstreamStorage = graph.edges
+            .filter((edge) => edge.fromNodeId === preprocessNode.id)
+            .map((edge) =>
+                graph.nodes.find((node) => node.id === edge.toNodeId),
+            )
+            .filter(
+                (node): node is WorkspaceNodeInstance =>
+                    node !== undefined &&
+                    node.templateNodeType === "storage.upload",
+            );
+
+        if (downstreamStorage.length === 0) continue;
+        if (downstreamStorage.length > 1) {
+            errors.push(
+                `Video Preprocess '${preprocessNode.label}' (${preprocessNode.id}) đang nối tới nhiều Save to Storage; backend hiện chỉ hỗ trợ 1.`,
+            );
+            continue;
+        }
+        const storageNode = downstreamStorage[0];
+        if (
+            consumedStorageByFile.has(storageNode.id) ||
+            consumedStorageByArtifact.has(storageNode.id)
+        ) {
+            errors.push(
+                `Save to Storage '${storageNode.label}' (${storageNode.id}) đang nhận từ nhiều producer; chưa hỗ trợ fan-in.`,
+            );
+            continue;
+        }
+        consumedStorageByArtifact.set(storageNode.id, preprocessNode.id);
+        artifactToStorage.set(preprocessNode.id, storageNode.id);
     }
 
     for (const dubbingNode of dubbingNodes) {
@@ -1704,10 +1838,47 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
         });
     }
 
+    const artifactProducers = new Set<string>();
+    const preprocessSteps: WorkspaceFlowStep[] = [];
+    for (const preprocessNode of preprocessNodes) {
+        const upstreamSources = graph.edges
+            .filter((edge) => edge.toNodeId === preprocessNode.id)
+            .map((edge) =>
+                graph.nodes.find((node) => node.id === edge.fromNodeId),
+            )
+            .filter(
+                (node): node is WorkspaceNodeInstance =>
+                    node !== undefined &&
+                    (node.templateNodeType === "source.file" ||
+                        node.templateNodeType === "source.url" ||
+                        node.templateNodeType === "source.asset" ||
+                        node.templateNodeType === "video.preprocess"),
+            );
+
+        if (upstreamSources.length === 0) {
+            errors.push(
+                `Video Preprocess '${preprocessNode.label}' (${preprocessNode.id}) cần upstream Upload Video, URL Video hoặc Storage Asset.`,
+            );
+            continue;
+        }
+        if (upstreamSources.length > 1) {
+            errors.push(
+                `Video Preprocess '${preprocessNode.label}' (${preprocessNode.id}) đang nhận nhiều video source; chưa hỗ trợ fan-in.`,
+            );
+            continue;
+        }
+        preprocessSteps.push({
+            kind: "preprocess-video",
+            sourceNodeId: upstreamSources[0].id,
+            preprocessNodeId: preprocessNode.id,
+        });
+        artifactProducers.add(preprocessNode.id);
+    }
+
     const transcriptionSteps: WorkspaceFlowStep[] = [];
     const transcriptionProducers = new Set<string>();
     for (const transcriptionNode of transcriptionNodes) {
-        const upstreamFiles = graph.edges
+        const upstreamMedia = graph.edges
             .filter((edge) => edge.toNodeId === transcriptionNode.id)
             .map((edge) =>
                 graph.nodes.find((node) => node.id === edge.fromNodeId),
@@ -1716,24 +1887,36 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
                 (node): node is WorkspaceNodeInstance =>
                     node !== undefined &&
                     (node.templateNodeType === "source.file" ||
-                        node.templateNodeType === "source.url"),
+                        node.templateNodeType === "source.url" ||
+                        node.templateNodeType === "source.asset" ||
+                        node.templateNodeType === "video.preprocess"),
             );
 
-        if (upstreamFiles.length === 0) {
+        if (upstreamMedia.length === 0) {
             errors.push(
-                `Audio Transcript '${transcriptionNode.label}' (${transcriptionNode.id}) cần upstream Upload Video hoặc URL Video.`,
+                `Audio Transcript '${transcriptionNode.label}' (${transcriptionNode.id}) cần upstream Upload Video, URL Video, Storage Asset hoặc Video Preprocess.`,
             );
             continue;
         }
-        if (upstreamFiles.length > 1) {
+        if (upstreamMedia.length > 1) {
             errors.push(
                 `Audio Transcript '${transcriptionNode.label}' (${transcriptionNode.id}) đang nhận nhiều source video; chưa hỗ trợ fan-in.`,
             );
             continue;
         }
+        const upstreamSource = upstreamMedia[0];
+        if (
+            upstreamSource.templateNodeType === "video.preprocess" &&
+            !artifactProducers.has(upstreamSource.id)
+        ) {
+            errors.push(
+                `Audio Transcript '${transcriptionNode.label}' (${transcriptionNode.id}) cần Video Preprocess upstream chạy được.`,
+            );
+            continue;
+        }
         transcriptionSteps.push({
             kind: "transcribe-chinese",
-            sourceFileNodeId: upstreamFiles[0].id,
+            sourceNodeId: upstreamSource.id,
             transcriptionNodeId: transcriptionNode.id,
         });
         transcriptionProducers.add(transcriptionNode.id);
@@ -1812,6 +1995,17 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
         }
         voiceSteps.push({
             kind: "generate-voice",
+            transcriptionNodeId:
+                translationSteps.find(
+                    (
+                        step,
+                    ): step is Extract<
+                        WorkspaceFlowStep,
+                        { kind: "translate-transcript" }
+                    > =>
+                        step.kind === "translate-transcript" &&
+                        step.translationNodeId === upstreamTranslations[0].id,
+                )?.transcriptionNodeId ?? "",
             translationNodeId: upstreamTranslations[0].id,
             voiceNodeId: voiceNode.id,
         });
@@ -1854,7 +2048,6 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
         });
     }
 
-    const artifactProducers = new Set<string>();
     const dubbingSteps: WorkspaceFlowStep[] = [];
     for (const dubbingNode of dubbingNodes) {
         const upstreamSources = graph.edges
@@ -1867,18 +2060,28 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
                     node !== undefined &&
                     (node.templateNodeType === "source.file" ||
                         node.templateNodeType === "source.url" ||
-                        node.templateNodeType === "source.asset"),
+                        node.templateNodeType === "source.asset" ||
+                        node.templateNodeType === "video.preprocess"),
             );
 
         if (upstreamSources.length === 0) {
             errors.push(
-                `Video Dubbing '${dubbingNode.label}' (${dubbingNode.id}) cần upstream Upload Video, URL Video hoặc Storage Asset.`,
+                `Video Dubbing '${dubbingNode.label}' (${dubbingNode.id}) cần upstream Upload Video, URL Video, Storage Asset hoặc Video Preprocess.`,
             );
             continue;
         }
         if (upstreamSources.length > 1) {
             errors.push(
                 `Video Dubbing '${dubbingNode.label}' (${dubbingNode.id}) đang nhận nhiều source; chưa hỗ trợ fan-in.`,
+            );
+            continue;
+        }
+        if (
+            upstreamSources[0].templateNodeType === "video.preprocess" &&
+            !artifactProducers.has(upstreamSources[0].id)
+        ) {
+            errors.push(
+                `Video Dubbing '${dubbingNode.label}' (${dubbingNode.id}) cần Video Preprocess upstream chạy được.`,
             );
             continue;
         }
@@ -1902,12 +2105,13 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
                     node !== undefined &&
                     (node.templateNodeType === "source.file" ||
                         node.templateNodeType === "source.url" ||
-                        node.templateNodeType === "audio.video-dubbing"),
+                        node.templateNodeType === "audio.video-dubbing" ||
+                        node.templateNodeType === "video.preprocess"),
             );
 
         if (upstreamSources.length === 0) {
             errors.push(
-                `Mirror Video '${mirrorNode.label}' (${mirrorNode.id}) cần upstream Upload Video, URL Video hoặc Video Dubbing.`,
+                `Mirror Video '${mirrorNode.label}' (${mirrorNode.id}) cần upstream Upload Video, URL Video, Video Preprocess hoặc Video Dubbing.`,
             );
             continue;
         }
@@ -1919,7 +2123,8 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
         }
         const upstreamSource = upstreamSources[0];
         if (
-            upstreamSource.templateNodeType === "audio.video-dubbing" &&
+            (upstreamSource.templateNodeType === "audio.video-dubbing" ||
+                upstreamSource.templateNodeType === "video.preprocess") &&
             !artifactProducers.has(upstreamSource.id)
         ) {
             errors.push(
@@ -1947,6 +2152,7 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
                     node !== undefined &&
                     (node.templateNodeType === "source.file" ||
                         node.templateNodeType === "source.url" ||
+                        node.templateNodeType === "video.preprocess" ||
                         node.templateNodeType === "audio.video-dubbing" ||
                         node.templateNodeType === "edit.mirror"),
             );
@@ -1963,7 +2169,7 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
 
         if (upstreamVideos.length === 0) {
             errors.push(
-                `Mask Logo/Subtitles '${editNode.label}' (${editNode.id}) cần upstream Upload Video, URL Video, Video Dubbing hoặc Mirror Video.`,
+                `Mask Logo/Subtitles '${editNode.label}' (${editNode.id}) cần upstream Upload Video, URL Video, Video Preprocess, Video Dubbing hoặc Mirror Video.`,
             );
             continue;
         }
@@ -2077,6 +2283,7 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
 
     if (
         producerSteps.length === 0 &&
+        preprocessSteps.length === 0 &&
         transcriptionSteps.length === 0 &&
         translationSteps.length === 0 &&
         voiceSteps.length === 0 &&
@@ -2097,6 +2304,7 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
         ok: errors.length === 0,
         steps: [
             ...producerSteps,
+            ...preprocessSteps,
             ...transcriptionSteps,
             ...translationSteps,
             ...voiceSteps,
@@ -2575,6 +2783,81 @@ export function createUploadVietnameseMaskPublishSampleGraph(): WorkspaceGraph {
                 fromNodeId: "storage-upload-1",
                 fromPortId: "asset",
                 toNodeId: "social-publish-1",
+                toPortId: "asset",
+            },
+        ],
+    };
+}
+
+export function createAssetPreprocessDubbingSampleGraph(): WorkspaceGraph {
+    const now = new Date().toISOString();
+    return {
+        version: 1,
+        draftId: "asset-preprocess-dubbing-sample",
+        title: "Asset -> Preprocess -> Dubbing -> Storage",
+        updatedAt: now,
+        selectedNodeId: "source-asset-1",
+        nodes: [
+            {
+                id: "source-asset-1",
+                templateNodeType: "source.asset",
+                label: "Storage source asset",
+                position: { x: 80, y: 160 },
+                config: {},
+            },
+            {
+                id: "video-preprocess-1",
+                templateNodeType: "video.preprocess",
+                label: "Slow source video",
+                position: { x: 340, y: 160 },
+                config: { speedFactor: 0.7 },
+            },
+            {
+                id: "audio-video-dubbing-1",
+                templateNodeType: "audio.video-dubbing",
+                label: "Vietnamese Voice Dubbing",
+                position: { x: 620, y: 160 },
+                config: {
+                    language: "zh",
+                    targetLanguage: "vi",
+                    model: "llama-3.1-8b-instant",
+                    originalAudioVolume: 0.18,
+                    voiceVolume: 1,
+                    ttsNoiseScale: 0.667,
+                    ttsNoiseW: 0.8,
+                    ttsSentenceSilence: 0.2,
+                    ttsPreserveTimestampGaps: true,
+                    ttsAlignmentMode: "balanced",
+                },
+            },
+            {
+                id: "storage-upload-1",
+                templateNodeType: "storage.upload",
+                label: "Save dubbed video",
+                position: { x: 940, y: 160 },
+                config: {},
+            },
+        ],
+        edges: [
+            {
+                id: "source-asset-1:asset->video-preprocess-1:video",
+                fromNodeId: "source-asset-1",
+                fromPortId: "asset",
+                toNodeId: "video-preprocess-1",
+                toPortId: "video",
+            },
+            {
+                id: "video-preprocess-1:video->audio-video-dubbing-1:asset",
+                fromNodeId: "video-preprocess-1",
+                fromPortId: "video",
+                toNodeId: "audio-video-dubbing-1",
+                toPortId: "asset",
+            },
+            {
+                id: "audio-video-dubbing-1:asset->storage-upload-1:asset",
+                fromNodeId: "audio-video-dubbing-1",
+                fromPortId: "asset",
+                toNodeId: "storage-upload-1",
                 toPortId: "asset",
             },
         ],

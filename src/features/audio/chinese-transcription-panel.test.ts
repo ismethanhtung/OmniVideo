@@ -64,6 +64,8 @@ describe("Audio Transcript asset picker preview", () => {
 
   it("supports optional video preprocess speed control for Audio Transcript 2", () => {
     expect(source).toContain("enableVideoPreprocess");
+    expect(source).toContain("enableVideoPreprocess = true");
+    expect(source).toContain("defaultVideoSpeedFactor = 0.7");
     expect(source).toContain("Video Preprocess");
     expect(source).toContain("Enable preprocess");
     expect(source).toContain("useVideoPreprocess");
@@ -86,5 +88,12 @@ describe("Audio Transcript asset picker preview", () => {
     expect(source).toContain("Metadata generation time");
     expect(source).toContain("Total time:");
     expect(source).toContain("Completed timed steps:");
+  });
+
+  it("isolates the heavy segments subtree from preprocess-only toggles", () => {
+    expect(source).toContain("const TranscriptSegmentsPanel = memo");
+    expect(source).toContain("onTranslatedTextChange");
+    expect(source).toContain("const translationById = useMemo");
+    expect(source).toContain("const voiceWarningSegments = useMemo");
   });
 });
