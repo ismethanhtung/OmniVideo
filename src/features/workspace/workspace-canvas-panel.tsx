@@ -201,6 +201,21 @@ const NODE_HEIGHT = 80;
 const NODE_HEIGHT_OFFSET = NODE_HEIGHT / 2;
 const NODE_HANDLE_HIT_SIZE = 18;
 const NODE_HANDLE_VISUAL_SIZE = 8;
+const WORKSPACE_RUNTIME_RESUME_STORAGE_KEY =
+    "omnivideo.workspace.runtime.resume.v1";
+
+type WorkspaceRuntimeResumeSnapshot = {
+    version: 1;
+    graphSignature: string;
+    nodeRunStatus: Record<string, NodeRunState>;
+    runtimeAssetIdsByNodeId: Record<string, string | undefined>;
+    runtimeVietnameseMetadataByNodeId: Record<
+        string,
+        VietnameseVideoMetadataResult | undefined
+    >;
+    runError: string | null;
+    runResult: string | null;
+};
 
 function cn(...classes: Array<string | false | null | undefined>) {
     return classes.filter(Boolean).join(" ");
@@ -218,6 +233,109 @@ function formatBytes(bytes: number) {
     if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
     if (bytes >= 1024) return `${(bytes / 1024).toFixed(2)} KB`;
     return `${bytes} B`;
+}
+
+function findUpstreamNodeByTemplateType(
+    graph: WorkspaceGraph,
+    targetNodeId: string,
+    templateNodeTypes: string[],
+) {
+    const visited = new Set<string>();
+    const stack = graph.edges
+        .filter((edge) => edge.toNodeId === targetNodeId)
+        .map((edge) => edge.fromNodeId);
+    while (stack.length > 0) {
+        const current = stack.pop() as string;
+        if (visited.has(current)) continue;
+        visited.add(current);
+        const currentNode = graph.nodes.find((entry) => entry.id === current);
+        if (!currentNode) continue;
+        if (templateNodeTypes.includes(currentNode.templateNodeType)) {
+            return currentNode;
+        }
+        for (const edge of graph.edges) {
+            if (edge.toNodeId === currentNode.id) {
+                stack.push(edge.fromNodeId);
+            }
+        }
+    }
+    return null;
+}
+
+function findUpstreamSourceAssetNode(graph: WorkspaceGraph, targetNodeId: string) {
+    return findUpstreamNodeByTemplateType(graph, targetNodeId, [
+        "source.asset",
+    ]);
+}
+
+function findUpstreamMetadataNode(graph: WorkspaceGraph, targetNodeId: string) {
+    return findUpstreamNodeByTemplateType(graph, targetNodeId, [
+        "text.generate-vi-metadata",
+    ]);
+}
+
+async function probeVideoDimensionsFromFile(file: File): Promise<{
+    width: number;
+    height: number;
+}> {
+    return await new Promise((resolve) => {
+        const objectUrl = URL.createObjectURL(file);
+        const video = document.createElement("video");
+        video.preload = "metadata";
+        video.onloadedmetadata = () => {
+            const width =
+                Number.isFinite(video.videoWidth) && video.videoWidth > 0
+                    ? Math.round(video.videoWidth)
+                    : 1920;
+            const height =
+                Number.isFinite(video.videoHeight) && video.videoHeight > 0
+                    ? Math.round(video.videoHeight)
+                    : 1080;
+            URL.revokeObjectURL(objectUrl);
+            resolve({ width, height });
+        };
+        video.onerror = () => {
+            URL.revokeObjectURL(objectUrl);
+            resolve({ width: 1920, height: 1080 });
+        };
+        video.src = objectUrl;
+    });
+}
+
+function buildWorkspaceGraphSignature(graph: WorkspaceGraph) {
+    return JSON.stringify({
+        title: graph.title,
+        nodes: graph.nodes.map((node) => ({
+            id: node.id,
+            templateNodeType: node.templateNodeType,
+            label: node.label,
+            position: node.position,
+            config: node.config,
+        })),
+        edges: graph.edges,
+    });
+}
+
+function buildInitialNodeRunStatus(graph: WorkspaceGraph) {
+    const initial: Record<string, NodeRunState> = {};
+    for (const node of graph.nodes) {
+        initial[node.id] = { status: "idle", detail: "" };
+    }
+    return initial;
+}
+
+function parseRuntimeResumeSnapshot(
+    raw: string | null,
+): WorkspaceRuntimeResumeSnapshot | null {
+    if (!raw) return null;
+    try {
+        const parsed = JSON.parse(raw) as WorkspaceRuntimeResumeSnapshot;
+        if (!parsed || parsed.version !== 1) return null;
+        if (typeof parsed.graphSignature !== "string") return null;
+        return parsed;
+    } catch {
+        return null;
+    }
 }
 
 function artifactDataUrl(artifact: WorkspaceRuntimeArtifact) {
@@ -920,11 +1038,32 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
     );
 
     useEffect(() => {
-        setGraph(
-            parseWorkspaceDraft(
-                window.localStorage.getItem(WORKSPACE_DRAFT_STORAGE_KEY),
-            ),
+        const parsedGraph = parseWorkspaceDraft(
+            window.localStorage.getItem(WORKSPACE_DRAFT_STORAGE_KEY),
         );
+        const graphSignature = buildWorkspaceGraphSignature(parsedGraph);
+        const snapshot = parseRuntimeResumeSnapshot(
+            window.localStorage.getItem(WORKSPACE_RUNTIME_RESUME_STORAGE_KEY),
+        );
+
+        setGraph(parsedGraph);
+        if (snapshot && snapshot.graphSignature === graphSignature) {
+            const baseStatus = buildInitialNodeRunStatus(parsedGraph);
+            const mergedStatus: Record<string, NodeRunState> = {
+                ...baseStatus,
+                ...snapshot.nodeRunStatus,
+            };
+            setNodeRunStatus(mergedStatus);
+            setRuntimeAssetIdsByNodeId(snapshot.runtimeAssetIdsByNodeId ?? {});
+            setRuntimeVietnameseMetadataByNodeId(
+                snapshot.runtimeVietnameseMetadataByNodeId ?? {},
+            );
+            setRunError(snapshot.runError ?? null);
+            setRunResult(snapshot.runResult ?? null);
+        } else {
+            setNodeRunStatus(buildInitialNodeRunStatus(parsedGraph));
+        }
+
         setHasHydratedDraft(true);
     }, []);
 
@@ -935,6 +1074,31 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
             serializeWorkspaceDraft(graph),
         );
     }, [graph, hasHydratedDraft]);
+
+    useEffect(() => {
+        if (!hasHydratedDraft) return;
+        const snapshot: WorkspaceRuntimeResumeSnapshot = {
+            version: 1,
+            graphSignature: buildWorkspaceGraphSignature(graph),
+            nodeRunStatus,
+            runtimeAssetIdsByNodeId,
+            runtimeVietnameseMetadataByNodeId,
+            runError,
+            runResult,
+        };
+        window.localStorage.setItem(
+            WORKSPACE_RUNTIME_RESUME_STORAGE_KEY,
+            JSON.stringify(snapshot),
+        );
+    }, [
+        graph,
+        hasHydratedDraft,
+        nodeRunStatus,
+        runError,
+        runResult,
+        runtimeAssetIdsByNodeId,
+        runtimeVietnameseMetadataByNodeId,
+    ]);
 
     useEffect(() => {
         let isActive = true;
@@ -1164,6 +1328,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
         setPendingSourceNodeId(null);
         setConnectionError(null);
         setIsFlowSetupOpen(false);
+        window.localStorage.removeItem(WORKSPACE_RUNTIME_RESUME_STORAGE_KEY);
         const empty = createEmptyWorkspaceGraph("Workspace Draft");
         setGraph(empty);
         resetRunState(empty, true);
@@ -1361,33 +1526,6 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
         const findNode = (nodeId: string) =>
             graph.nodes.find((node) => node.id === nodeId);
 
-        const findUpstreamMetadataNodeId = (targetNodeId: string) => {
-            const visited = new Set<string>();
-            const stack = graph.edges
-                .filter((edge) => edge.toNodeId === targetNodeId)
-                .map((edge) => edge.fromNodeId);
-
-            while (stack.length > 0) {
-                const current = stack.pop() as string;
-                if (visited.has(current)) continue;
-                visited.add(current);
-                const currentNode = findNode(current);
-                if (!currentNode) continue;
-                if (
-                    currentNode.templateNodeType === "text.generate-vi-metadata"
-                ) {
-                    return currentNode.id;
-                }
-                for (const edge of graph.edges) {
-                    if (edge.toNodeId === currentNode.id) {
-                        stack.push(edge.fromNodeId);
-                    }
-                }
-            }
-
-            return null;
-        };
-
         const getResumeCheckpoint = (step: WorkspaceFlowStep) => {
             if (step.kind === "use-existing-asset") {
                 return assetByProducer[step.producerNodeId]
@@ -1487,8 +1625,40 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                 setNodeStatus(step.editNodeId, "success", detail);
             } else if (step.kind === "store-artifact") {
                 setNodeStatus(step.storageNodeId, "success", detail);
-        }
-    };
+            }
+        };
+
+        const getStepStatusKey = (step: WorkspaceFlowStep) => {
+            if (step.kind === "use-existing-asset") return step.nodeId;
+            if (step.kind === "upload-and-store") return step.storageNodeId;
+            if (step.kind === "intake-url-and-store") return step.storageNodeId;
+            if (step.kind === "preprocess-video") return step.preprocessNodeId;
+            if (step.kind === "transcribe-chinese")
+                return step.transcriptionNodeId;
+            if (step.kind === "translate-transcript")
+                return step.translationNodeId;
+            if (step.kind === "generate-voice") return step.voiceNodeId;
+            if (step.kind === "generate-vi-metadata")
+                return step.metadataNodeId;
+            if (step.kind === "dub-video") return step.dubbingNodeId;
+            if (step.kind === "mirror-video") return step.mirrorNodeId;
+            if (step.kind === "edit-video") return step.editNodeId;
+            if (step.kind === "store-artifact") return step.storageNodeId;
+            if (step.kind === "publish") return step.publishNodeId;
+            return null;
+        };
+
+        const hasStoredArtifactCheckpoint = plan.steps.some(
+            (step): step is Extract<WorkspaceFlowStep, { kind: "store-artifact" }> =>
+                step.kind === "store-artifact" &&
+                Boolean(assetByProducer[step.producerNodeId]) &&
+                nodeRunStatus[step.storageNodeId]?.status === "success",
+        );
+        const hasAnyFailedStep = Object.values(nodeRunStatus).some(
+            (state) => state.status === "failed",
+        );
+        const shouldUsePublishOnlyResume =
+            mode === "resume" && hasStoredArtifactCheckpoint && hasAnyFailedStep;
 
         const resolveUrlSourceFile = async (
             sourceNode: WorkspaceNodeInstance,
@@ -1712,6 +1882,20 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     markResumeCheckpoint(step, checkpoint);
                     advanceProgress(checkpoint);
                     continue;
+                }
+                if (shouldUsePublishOnlyResume && step.kind !== "publish") {
+                    const statusKey = getStepStatusKey(step);
+                    if (
+                        statusKey &&
+                        nodeRunStatus[statusKey]?.status === "success"
+                    ) {
+                        const detail =
+                            nodeRunStatus[statusKey]?.detail ||
+                            "Step đã hoàn tất từ lần chạy trước.";
+                        markResumeCheckpoint(step, detail);
+                        advanceProgress(detail);
+                        continue;
+                    }
                 }
             }
 
@@ -2702,20 +2886,24 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     }
 
                     const formData = new FormData();
-                    const source = await appendWorkspaceVideoInput({
-                        formData,
+                    const source = await resolveWorkspaceSourceVideoFile({
                         sourceNode,
                         consumerLabel: `Mask Logo/Subtitles '${editNode.label}'`,
                     });
+                    formData.set("videoFile", source.file);
 
-                    const sourceAssetSetup =
-                        sourceNode.templateNodeType === "source.asset"
-                            ? (storageAssets.find(
-                                  (item) =>
-                                      item._id ===
-                                      getStringConfig(sourceNode, "assetId"),
-                              )?.metadata?.videoEditSetup ?? null)
-                            : null;
+                    const upstreamSourceAssetNode =
+                        findUpstreamSourceAssetNode(graph, sourceNode.id);
+                    const sourceAssetSetup = upstreamSourceAssetNode
+                        ? (storageAssets.find(
+                              (item) =>
+                                  item._id ===
+                                  getStringConfig(
+                                      upstreamSourceAssetNode,
+                                      "assetId",
+                                  ),
+                          )?.metadata?.videoEditSetup ?? null)
+                        : null;
                     const maskConfig = resolveMaskRegionConfig(
                         editNode,
                         sourceAssetSetup,
@@ -2773,6 +2961,16 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     formData.set(
                         "translatedSegmentsJson",
                         JSON.stringify(translation.translatedSegments),
+                    );
+                    const sourceDimensions =
+                        await probeVideoDimensionsFromFile(source.file);
+                    formData.set(
+                        "subtitlePlayResX",
+                        String(sourceDimensions.width),
+                    );
+                    formData.set(
+                        "subtitlePlayResY",
+                        String(sourceDimensions.height),
                     );
                     formData.set("responseMode", "binary");
 
@@ -2902,6 +3100,69 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         ...current,
                         [step.producerNodeId]: newAssetId,
                     }));
+
+                    const upstreamMetadataNodeId =
+                        findUpstreamMetadataNode(graph, storageNode.id)?.id ??
+                        findUpstreamMetadataNode(graph, artifactNode.id)?.id;
+                    const generatedMetadata =
+                        (upstreamMetadataNodeId
+                            ? vietnameseMetadataByNodeId[upstreamMetadataNodeId]
+                            : undefined) ??
+                        Object.values(vietnameseMetadataByNodeId)[0];
+                    if (generatedMetadata) {
+                        try {
+                            await fetchWorkspaceJson<{
+                                ok: true;
+                                data?: { _id?: string };
+                            }>({
+                                url: `/api/storage/assets/${newAssetId}`,
+                                actionLabel: "Patch storage asset metadata",
+                                init: {
+                                    method: "PATCH",
+                                    headers: {
+                                        "Content-Type": "application/json",
+                                    },
+                                    body: JSON.stringify({
+                                        metadata: {
+                                            vietnameseTitle:
+                                                generatedMetadata.title,
+                                            vietnameseDescription:
+                                                generatedMetadata.description,
+                                            vietnameseHashtags:
+                                                generatedMetadata.hashtags,
+                                        },
+                                    }),
+                                },
+                            });
+                            setStorageAssets((current) =>
+                                current.map((asset) =>
+                                    asset._id === newAssetId
+                                        ? {
+                                              ...asset,
+                                              metadata: {
+                                                  ...asset.metadata,
+                                                  vietnameseTitle:
+                                                      generatedMetadata.title,
+                                                  vietnameseDescription:
+                                                      generatedMetadata.description,
+                                                  vietnameseHashtags:
+                                                      generatedMetadata.hashtags,
+                                              },
+                                          }
+                                        : asset,
+                                ),
+                            );
+                        } catch (patchMetadataError) {
+                            summary.push(
+                                `Stored asset ${newAssetId} nhưng patch VI metadata thất bại: ${
+                                    patchMetadataError instanceof Error
+                                        ? patchMetadataError.message
+                                        : "unknown error"
+                                }.`,
+                            );
+                        }
+                    }
+
                     setNodeStatus(
                         storageNode.id,
                         "success",
@@ -2993,9 +3254,10 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     const hashtags = hashtagsRaw
                         ? parseCommaList(hashtagsRaw)
                         : undefined;
-                    const upstreamMetadataNodeId = findUpstreamMetadataNodeId(
+                    const upstreamMetadataNodeId = findUpstreamMetadataNode(
+                        graph,
                         publishNode.id,
-                    );
+                    )?.id;
                     const fallbackMetadata =
                         (upstreamMetadataNodeId
                             ? vietnameseMetadataByNodeId[
@@ -4625,56 +4887,6 @@ function NodeRuntimeConfig({
     const setConfig = (patch: WorkspaceNodeInstance["config"]) =>
         onUpdateNodeConfig(node.id, patch);
 
-    const findUpstreamSourceAsset = (targetNodeId: string) => {
-        const visited = new Set<string>();
-        const stack = graph.edges
-            .filter((edge) => edge.toNodeId === targetNodeId)
-            .map((edge) => edge.fromNodeId);
-        while (stack.length > 0) {
-            const current = stack.pop() as string;
-            if (visited.has(current)) continue;
-            visited.add(current);
-            const currentNode = graph.nodes.find(
-                (entry) => entry.id === current,
-            );
-            if (!currentNode) continue;
-            if (currentNode.templateNodeType === "source.asset") {
-                return currentNode;
-            }
-            for (const edge of graph.edges) {
-                if (edge.toNodeId === currentNode.id) {
-                    stack.push(edge.fromNodeId);
-                }
-            }
-        }
-        return null;
-    };
-
-    const findUpstreamMetadataNode = (targetNodeId: string) => {
-        const visited = new Set<string>();
-        const stack = graph.edges
-            .filter((edge) => edge.toNodeId === targetNodeId)
-            .map((edge) => edge.fromNodeId);
-        while (stack.length > 0) {
-            const current = stack.pop() as string;
-            if (visited.has(current)) continue;
-            visited.add(current);
-            const currentNode = graph.nodes.find(
-                (entry) => entry.id === current,
-            );
-            if (!currentNode) continue;
-            if (currentNode.templateNodeType === "text.generate-vi-metadata") {
-                return currentNode;
-            }
-            for (const edge of graph.edges) {
-                if (edge.toNodeId === currentNode.id) {
-                    stack.push(edge.fromNodeId);
-                }
-            }
-        }
-        return null;
-    };
-
     if (node.templateNodeType === "source.file") {
         return (
             <InspectorSection title="Runtime Config">
@@ -4803,7 +5015,10 @@ function NodeRuntimeConfig({
     }
 
     if (node.templateNodeType === "edit.mask-region") {
-        const upstreamSourceAssetNode = findUpstreamSourceAsset(node.id);
+        const upstreamSourceAssetNode = findUpstreamSourceAssetNode(
+            graph,
+            node.id,
+        );
         const upstreamSourceAsset = upstreamSourceAssetNode
             ? storageAssets.find(
                   (asset) =>
@@ -5118,8 +5333,8 @@ function NodeRuntimeConfig({
     }
 
     if (node.templateNodeType === "social.publish") {
-        const upstreamAssetNode = findUpstreamSourceAsset(node.id);
-        const upstreamMetadataNode = findUpstreamMetadataNode(node.id);
+        const upstreamAssetNode = findUpstreamSourceAssetNode(graph, node.id);
+        const upstreamMetadataNode = findUpstreamMetadataNode(graph, node.id);
         const upstreamAssetId = upstreamAssetNode
             ? getStringConfig(upstreamAssetNode, "assetId")
             : "";

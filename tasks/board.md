@@ -22,6 +22,8 @@
 
 ## Review
 
+- `FAST-WORKSPACE-021` - Persist generated VI metadata on stored artifacts and align mask runtime setup sourcing with Video Tools Lab.
+- `FAST-WORKSPACE-020` - Persist Workspace resume checkpoints and strengthen publish-only continuation after navigation.
 - `FAST-WORKSPACE-019` - Publish fallback to Generate VI metadata when overrides are empty.
 - `FAST-WORKSPACE-018` - Remove duplicate transcript/voice branch from Seed Asset Transcript Full Processing.
 - `FAST-WORKSPACE-017` - Fix Flow Setup polish, mask setup hydration, and preprocess enable toggle.

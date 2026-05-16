@@ -63,7 +63,7 @@ describe("WorkspaceCanvasPanel canvas interactions", () => {
     });
 
     it("documents publish fallback from Generate VI metadata when publish fields are empty", () => {
-        expect(source).toContain("findUpstreamMetadataNodeId");
+        expect(source).toContain("findUpstreamMetadataNode(");
         expect(source).toContain("runtimeVietnameseMetadataByNodeId");
         expect(source).toContain(
             "Nếu để trống Title/Caption/Hashtags, Publish sẽ tự lấy",
@@ -76,5 +76,27 @@ describe("WorkspaceCanvasPanel canvas interactions", () => {
         expect(source).toContain(
             "runtimeVietnameseMetadataByNodeId={",
         );
+    });
+
+    it("persists lightweight resume checkpoints and supports publish-only continuation", () => {
+        expect(source).toContain("WORKSPACE_RUNTIME_RESUME_STORAGE_KEY");
+        expect(source).toContain("parseRuntimeResumeSnapshot");
+        expect(source).toContain("buildWorkspaceGraphSignature");
+        expect(source).toContain("hasStoredArtifactCheckpoint");
+        expect(source).toContain("shouldUsePublishOnlyResume");
+        expect(source).toContain(
+            "window.localStorage.removeItem(WORKSPACE_RUNTIME_RESUME_STORAGE_KEY)",
+        );
+    });
+
+    it("patches stored artifact with generated VI metadata and aligns edit runtime setup sourcing", () => {
+        expect(source).toContain("findUpstreamSourceAssetNode(graph, sourceNode.id)");
+        expect(source).toContain("probeVideoDimensionsFromFile(source.file)");
+        expect(source).toContain("subtitlePlayResX");
+        expect(source).toContain("subtitlePlayResY");
+        expect(source).toContain("Patch storage asset metadata");
+        expect(source).toContain("vietnameseTitle");
+        expect(source).toContain("vietnameseDescription");
+        expect(source).toContain("vietnameseHashtags");
     });
 });
