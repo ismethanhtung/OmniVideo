@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  clearFinishedProgressTasks,
+  dismissProgressTask,
   finishProgressTask,
   finishProgressStep,
   getActiveProgressTaskCount,
@@ -16,6 +18,7 @@ import {
 describe("progress center", () => {
   afterEach(() => {
     resetProgressTasksForTest();
+    vi.unstubAllGlobals();
   });
 
   it("tracks active task progress and clamps percent", () => {
@@ -110,4 +113,98 @@ describe("progress center", () => {
     });
     expect(finishedTask.steps[0].finishedAt).toEqual(expect.any(Number));
   });
+
+  it("persists finished tasks across reload-style rehydration and clears them on demand", () => {
+    const storage = createLocalStorageMock();
+    vi.stubGlobal("window", { localStorage: storage });
+
+    const taskId = startProgressTask({
+      id: "publish-persisted",
+      title: "Publishing",
+      scope: "publish",
+    });
+
+    finishProgressTask({
+      id: taskId,
+      status: "success",
+      description: "Published.",
+    });
+
+    expect(storage.getItem("omnivideo-progress-tasks")).toContain(
+      "publish-persisted",
+    );
+
+    resetProgressTasksForTest({ preserveStorage: true });
+
+    expect(getProgressTasksSnapshot()).toMatchObject([
+      {
+        id: "publish-persisted",
+        status: "success",
+        description: "Published.",
+      },
+    ]);
+
+    clearFinishedProgressTasks();
+
+    expect(getProgressTasksSnapshot()).toEqual([]);
+    expect(storage.getItem("omnivideo-progress-tasks")).toBeNull();
+  });
+
+  it("removes one dismissed finished task from persisted history", () => {
+    const storage = createLocalStorageMock();
+    vi.stubGlobal("window", { localStorage: storage });
+
+    const firstTaskId = startProgressTask({
+      id: "publish-first",
+      title: "First publish",
+      scope: "publish",
+    });
+    const secondTaskId = startProgressTask({
+      id: "publish-second",
+      title: "Second publish",
+      scope: "publish",
+    });
+
+    finishProgressTask({
+      id: firstTaskId,
+      status: "success",
+    });
+    finishProgressTask({
+      id: secondTaskId,
+      status: "failed",
+    });
+
+    dismissProgressTask(firstTaskId);
+
+    expect(storage.getItem("omnivideo-progress-tasks")).not.toContain(
+      "publish-first",
+    );
+    expect(storage.getItem("omnivideo-progress-tasks")).toContain(
+      "publish-second",
+    );
+  });
+
+  it("ignores corrupted persisted payloads safely", () => {
+    const storage = createLocalStorageMock();
+    storage.setItem("omnivideo-progress-tasks", "{bad-json");
+    vi.stubGlobal("window", { localStorage: storage });
+
+    expect(getProgressTasksSnapshot()).toEqual([]);
+  });
 });
+
+function createLocalStorageMock() {
+  const values = new Map<string, string>();
+
+  return {
+    getItem(key: string) {
+      return values.get(key) ?? null;
+    },
+    setItem(key: string, value: string) {
+      values.set(key, value);
+    },
+    removeItem(key: string) {
+      values.delete(key);
+    },
+  };
+}

@@ -1,5 +1,13 @@
 # OmniVideo Changelog
 
+## FAST-OPS-005 - Persist Finished Background Progress Tasks Across Reloads
+
+- Bumped app version from `0.8.2` to `0.8.3` as a patch release for Background Progress history durability.
+- `Background Progress` now persists finished task history in browser storage and restores it after reload.
+- `Clear finished` and per-task dismiss now also remove the corresponding persisted history, while in-flight tasks remain session-scoped to avoid stale “running” entries after a reload.
+- Added safe fallback handling for corrupted persisted payloads so progress history never breaks the modal.
+- Verification (FAST-OPS-005): `npm run test -- --run src/lib/ui/progress-center.test.ts src/components/layout/topbar.test.ts` pass (2 files / 7 tests); `npm run build` pass with existing ESLint circular-config warning; `npm run guard:version` pass.
+
 ## FAST-WORKSPACE-025 - Warn Missing Mask Setup in Flow Setup and Soften Progress Separators
 
 - Bumped app version from `0.8.1` to `0.8.2` as a patch release for Workspace/UI polish.

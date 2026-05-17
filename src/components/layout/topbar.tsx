@@ -700,8 +700,8 @@ function ProgressModal({
                             Background Progress
                         </p>
                         <p className="mt-1 text-[11px] text-muted">
-                            Upload, download, and publish jobs currently running
-                            in this workspace.
+                            Recent upload, download, and publish jobs in this
+                            workspace.
                         </p>
                     </div>
                     <button

@@ -22,6 +22,7 @@
 
 ## Review
 
+- `FAST-OPS-005` - Persist finished Background Progress tasks across reloads.
 - `FAST-WORKSPACE-025` - Add missing mask setup warnings and soften progress separators.
 - `FAST-AUDIO-054` - Lower minimum voice speed floor to 1.30x.
 - `FAST-OPS-004` - Upgrade Background Progress to step-aware real runtime telemetry.

@@ -56,6 +56,144 @@ type ProgressTaskInput = {
 const listeners = new Set<() => void>();
 const tasks = new Map<string, ProgressTask>();
 let snapshotCache: ProgressTask[] | null = null;
+let hydrated = false;
+
+const PROGRESS_TASKS_STORAGE_KEY = "omnivideo-progress-tasks";
+
+function getBrowserStorage() {
+  try {
+    return typeof window !== "undefined" ? window.localStorage : null;
+  } catch {
+    return null;
+  }
+}
+
+function isFinishedTask(
+  task: ProgressTask,
+): task is ProgressTask & { status: "success" | "failed" } {
+  return task.status === "success" || task.status === "failed";
+}
+
+function isProgressMode(value: unknown): value is ProgressMode {
+  return value === "determinate" || value === "indeterminate";
+}
+
+function isProgressStepStatus(value: unknown): value is ProgressStepStatus {
+  return (
+    value === "queued" ||
+    value === "running" ||
+    value === "success" ||
+    value === "failed" ||
+    value === "skipped"
+  );
+}
+
+function isProgressScope(value: unknown): value is ProgressTask["scope"] {
+  return (
+    value === "publish" ||
+    value === "upload" ||
+    value === "download" ||
+    value === "system"
+  );
+}
+
+function isPersistedProgressTaskStep(value: unknown): value is ProgressTaskStep {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const step = value as Partial<ProgressTaskStep>;
+  return (
+    typeof step.id === "string" &&
+    typeof step.title === "string" &&
+    (step.description === undefined || typeof step.description === "string") &&
+    isProgressStepStatus(step.status) &&
+    typeof step.progress === "number" &&
+    isProgressMode(step.progressMode) &&
+    (step.startedAt === undefined || typeof step.startedAt === "number") &&
+    typeof step.updatedAt === "number" &&
+    (step.finishedAt === undefined || typeof step.finishedAt === "number") &&
+    (step.error === undefined || typeof step.error === "string")
+  );
+}
+
+function isPersistedFinishedProgressTask(value: unknown): value is ProgressTask {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const task = value as Partial<ProgressTask>;
+  return (
+    typeof task.id === "string" &&
+    typeof task.title === "string" &&
+    (task.description === undefined || typeof task.description === "string") &&
+    isProgressScope(task.scope) &&
+    (task.status === "success" || task.status === "failed") &&
+    typeof task.progress === "number" &&
+    isProgressMode(task.progressMode) &&
+    Array.isArray(task.steps) &&
+    task.steps.every(isPersistedProgressTaskStep) &&
+    typeof task.startedAt === "number" &&
+    typeof task.updatedAt === "number" &&
+    typeof task.finishedAt === "number" &&
+    (task.error === undefined || typeof task.error === "string")
+  );
+}
+
+function ensureHydrated() {
+  if (hydrated) {
+    return;
+  }
+
+  hydrated = true;
+  const storage = getBrowserStorage();
+  if (!storage) {
+    return;
+  }
+
+  try {
+    const raw = storage.getItem(PROGRESS_TASKS_STORAGE_KEY);
+    if (!raw) {
+      return;
+    }
+
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) {
+      return;
+    }
+
+    for (const task of parsed) {
+      if (isPersistedFinishedProgressTask(task)) {
+        tasks.set(task.id, task);
+      }
+    }
+  } catch {
+    // Browser storage is best-effort; corrupted payloads should not break UI state.
+  }
+}
+
+function persistFinishedTasks() {
+  const storage = getBrowserStorage();
+  if (!storage) {
+    return;
+  }
+
+  const finishedTasks = Array.from(tasks.values()).filter(isFinishedTask);
+
+  try {
+    if (finishedTasks.length === 0) {
+      storage.removeItem(PROGRESS_TASKS_STORAGE_KEY);
+      return;
+    }
+
+    storage.setItem(
+      PROGRESS_TASKS_STORAGE_KEY,
+      JSON.stringify(finishedTasks),
+    );
+  } catch {
+    // Browser storage is best-effort; progress tracking should keep working.
+  }
+}
 
 function clampProgress(value: number) {
   if (!Number.isFinite(value)) {
@@ -67,6 +205,7 @@ function clampProgress(value: number) {
 
 function emit() {
   snapshotCache = null;
+  persistFinishedTasks();
   for (const listener of listeners) {
     listener();
   }
@@ -112,6 +251,7 @@ function updateTask(
 }
 
 export function subscribeProgressTasks(listener: () => void) {
+  ensureHydrated();
   listeners.add(listener);
 
   return () => {
@@ -120,6 +260,7 @@ export function subscribeProgressTasks(listener: () => void) {
 }
 
 export function getProgressTasksSnapshot() {
+  ensureHydrated();
   if (!snapshotCache) {
     snapshotCache = Array.from(tasks.values()).sort(
       (a, b) => b.updatedAt - a.updatedAt,
@@ -136,6 +277,7 @@ export function getActiveProgressTaskCount() {
 }
 
 export function startProgressTask(input: ProgressTaskInput) {
+  ensureHydrated();
   const now = Date.now();
   const id = input.id ?? createTaskId(input.scope);
 
@@ -305,11 +447,13 @@ export function finishProgressTask({
 }
 
 export function dismissProgressTask(id: string) {
+  ensureHydrated();
   tasks.delete(id);
   emit();
 }
 
 export function clearFinishedProgressTasks() {
+  ensureHydrated();
   for (const task of tasks.values()) {
     if (task.status === "success" || task.status === "failed") {
       tasks.delete(task.id);
@@ -318,7 +462,23 @@ export function clearFinishedProgressTasks() {
   emit();
 }
 
-export function resetProgressTasksForTest() {
+export function resetProgressTasksForTest({
+  preserveStorage = false,
+}: {
+  preserveStorage?: boolean;
+} = {}) {
   tasks.clear();
-  emit();
+  snapshotCache = null;
+  hydrated = false;
+  if (!preserveStorage) {
+    const storage = getBrowserStorage();
+    try {
+      storage?.removeItem(PROGRESS_TASKS_STORAGE_KEY);
+    } catch {
+      // Test cleanup should not fail on inaccessible storage.
+    }
+  }
+  for (const listener of listeners) {
+    listener();
+  }
 }
