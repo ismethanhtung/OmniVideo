@@ -14,6 +14,8 @@ describe("Workspace linking interactions", () => {
         expect(source).toContain("activeTargetSide");
         expect(source).toContain("Delete link");
         expect(source).toContain("deleteWorkspaceEdge");
+        expect(source).toContain("buildWorkspaceLinkPath");
+        expect(source).toContain("d={dragPath}");
+        expect(source).not.toContain("<foreignObject");
     });
 });
-

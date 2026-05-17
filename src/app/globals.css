@@ -242,6 +242,24 @@ html[data-app-font="figtree"] {
     border-color: color-mix(in srgb, var(--border-color) 58%, transparent);
 }
 
+.workspace-canvas-grid {
+    background-image: radial-gradient(
+        circle,
+        color-mix(in srgb, var(--text-muted) 24%, transparent) 1.35px,
+        transparent 1.5px
+    );
+    background-size: 20px 20px;
+}
+
+.workspace-edge-delete-control {
+    outline: none;
+}
+
+.workspace-edge-delete-control:focus-visible circle:nth-of-type(2) {
+    stroke: var(--color-accent);
+    stroke-width: 1.5px;
+}
+
 .text-main {
     color: var(--text-main);
 }

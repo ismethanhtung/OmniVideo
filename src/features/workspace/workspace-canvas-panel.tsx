@@ -12,7 +12,7 @@ import {
     Trash2,
     Volume2,
     Workflow,
-    Play,
+    FastForward,
 } from "lucide-react";
 
 import type { LeftbarNavItem } from "@/components/layout/types";
@@ -250,6 +250,21 @@ function clampNumber(value: number, min: number, max: number) {
     return Math.min(max, Math.max(min, value));
 }
 
+function buildWorkspaceLinkPath({
+    startX,
+    startY,
+    endX,
+    endY,
+}: {
+    startX: number;
+    startY: number;
+    endX: number;
+    endY: number;
+}) {
+    const midX = startX + (endX - startX) / 2;
+    return `M ${startX} ${startY} C ${midX} ${startY}, ${midX} ${endY}, ${endX} ${endY}`;
+}
+
 function findUpstreamNodeByTemplateType(
     graph: WorkspaceGraph,
     targetNodeId: string,
@@ -277,7 +292,10 @@ function findUpstreamNodeByTemplateType(
     return null;
 }
 
-function findUpstreamSourceAssetNode(graph: WorkspaceGraph, targetNodeId: string) {
+function findUpstreamSourceAssetNode(
+    graph: WorkspaceGraph,
+    targetNodeId: string,
+) {
     return findUpstreamNodeByTemplateType(graph, targetNodeId, [
         "source.asset",
     ]);
@@ -289,10 +307,7 @@ function findUpstreamMetadataNode(graph: WorkspaceGraph, targetNodeId: string) {
     ]);
 }
 
-function findMaskUpstreamVideoNode(
-    graph: WorkspaceGraph,
-    maskNodeId: string,
-) {
+function findMaskUpstreamVideoNode(graph: WorkspaceGraph, maskNodeId: string) {
     const videoSourceNodeTypes = new Set([
         "source.file",
         "source.url",
@@ -304,7 +319,8 @@ function findMaskUpstreamVideoNode(
     ]);
     const candidates = graph.edges
         .filter(
-            (edge) => edge.toNodeId === maskNodeId && edge.toPortId !== "transcript",
+            (edge) =>
+                edge.toNodeId === maskNodeId && edge.toPortId !== "transcript",
         )
         .map((edge) => graph.nodes.find((node) => node.id === edge.fromNodeId))
         .filter(
@@ -841,11 +857,15 @@ function resolveMaskNumberConfig(input: {
 }) {
     const raw = input.node.config[input.key];
     const parsedRaw = typeof raw === "number" ? raw : Number(raw);
-    const hasRaw = raw !== undefined && raw !== null && Number.isFinite(parsedRaw);
+    const hasRaw =
+        raw !== undefined && raw !== null && Number.isFinite(parsedRaw);
     if (hasRaw && parsedRaw !== input.defaultValue) {
         return parsedRaw;
     }
-    if (typeof input.setupValue === "number" && Number.isFinite(input.setupValue)) {
+    if (
+        typeof input.setupValue === "number" &&
+        Number.isFinite(input.setupValue)
+    ) {
         return input.setupValue;
     }
     if (hasRaw) {
@@ -1145,12 +1165,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     .map((asset) => asset._id),
             ),
         }),
-        [
-            runtimeFilesByNodeId,
-            socialAccounts,
-            storageAccounts,
-            storageAssets,
-        ],
+        [runtimeFilesByNodeId, socialAccounts, storageAccounts, storageAssets],
     );
     const flowSetupIssuesByNodeId = useMemo(
         () =>
@@ -1181,9 +1196,10 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
             ) as Record<string, string[]>,
         [flowPlan, flowSetupNodes, flowSetupValidationContext, graph],
     );
-    const flowSetupIssueCount = Object.values(
-        flowSetupIssuesByNodeId,
-    ).reduce((total, issues) => total + issues.length, 0);
+    const flowSetupIssueCount = Object.values(flowSetupIssuesByNodeId).reduce(
+        (total, issues) => total + issues.length,
+        0,
+    );
     const hasResumeCheckpoint = useMemo(() => {
         if (!flowPlan.ok) return false;
         return flowPlan.steps.some((step) => {
@@ -1912,7 +1928,9 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
         };
 
         const hasStoredArtifactCheckpoint = plan.steps.some(
-            (step): step is Extract<WorkspaceFlowStep, { kind: "store-artifact" }> =>
+            (
+                step,
+            ): step is Extract<WorkspaceFlowStep, { kind: "store-artifact" }> =>
                 step.kind === "store-artifact" &&
                 Boolean(assetByProducer[step.producerNodeId]) &&
                 nodeRunStatus[step.storageNodeId]?.status === "success",
@@ -1921,7 +1939,9 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
             (state) => state.status === "failed",
         );
         const shouldUsePublishOnlyResume =
-            mode === "resume" && hasStoredArtifactCheckpoint && hasAnyFailedStep;
+            mode === "resume" &&
+            hasStoredArtifactCheckpoint &&
+            hasAnyFailedStep;
 
         const resolveUrlSourceFile = async (
             sourceNode: WorkspaceNodeInstance,
@@ -1943,7 +1963,10 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                 url: "/api/video-intake/resolve-file",
                 actionLabel: "Resolve URL video",
                 onProgress: (progress) => {
-                    if (!currentProgressStep || progress.percent === undefined) {
+                    if (
+                        !currentProgressStep ||
+                        progress.percent === undefined
+                    ) {
                         return;
                     }
                     updateProgressStepDetail(currentProgressStep, {
@@ -2077,7 +2100,8 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     `${consumerLabel} thiếu video artifact upstream từ '${sourceNode.label}'.`,
                 );
             }
-            const file = upstreamArtifact.file ?? base64ToFile(upstreamArtifact);
+            const file =
+                upstreamArtifact.file ?? base64ToFile(upstreamArtifact);
             return {
                 file,
                 fileName: upstreamArtifact.fileName,
@@ -2502,10 +2526,11 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     );
 
                     if (!isPreprocessEnabled) {
-                        const sourceFile = await resolveWorkspaceSourceVideoFile({
-                            sourceNode,
-                            consumerLabel: `Video Preprocess '${preprocessNode.label}'`,
-                        });
+                        const sourceFile =
+                            await resolveWorkspaceSourceVideoFile({
+                                sourceNode,
+                                consumerLabel: `Video Preprocess '${preprocessNode.label}'`,
+                            });
                         const artifact: WorkspaceRuntimeArtifact = {
                             fileName: sourceFile.fileName,
                             mimeType: sourceFile.mimeType,
@@ -2530,7 +2555,9 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                             "success",
                             "Bypassed preprocess.",
                         );
-                        summary.push("Preprocess disabled: passthrough source.");
+                        summary.push(
+                            "Preprocess disabled: passthrough source.",
+                        );
                         advanceProgress(
                             `Preprocess ${preprocessNode.label} bypassed.`,
                         );
@@ -2624,7 +2651,8 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     updateProgressStepDetail(step, {
                         progressMode: "indeterminate",
                         progress: 0,
-                        description: "Extracting audio and transcribing timestamps...",
+                        description:
+                            "Extracting audio and transcribing timestamps...",
                     });
 
                     const formData = new FormData();
@@ -2867,7 +2895,8 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     updateProgressStepDetail(step, {
                         progressMode: "indeterminate",
                         progress: 0,
-                        description: "Generating Vietnamese voice with Piper...",
+                        description:
+                            "Generating Vietnamese voice with Piper...",
                     });
                     const voicePayload = await fetchWorkspaceJson<{
                         ok: true;
@@ -3077,10 +3106,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     const effectiveAlignmentMode = shouldForceStrictAlignment
                         ? "strict"
                         : configuredAlignmentMode;
-                    formData.set(
-                        "ttsAlignmentMode",
-                        effectiveAlignmentMode,
-                    );
+                    formData.set("ttsAlignmentMode", effectiveAlignmentMode);
                     formData.set(
                         "ttsPreserveTimestampGaps",
                         String(
@@ -3176,7 +3202,8 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     updateProgressStepDetail(step, {
                         progressMode: "indeterminate",
                         progress: 0,
-                        description: "Mirroring video horizontally with ffmpeg...",
+                        description:
+                            "Mirroring video horizontally with ffmpeg...",
                     });
                     const mirrorPayload = await fetchWorkspaceJson<{
                         ok: true;
@@ -3248,8 +3275,10 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     });
                     formData.set("videoFile", source.file);
 
-                    const upstreamSourceAssetNode =
-                        findUpstreamSourceAssetNode(graph, sourceNode.id);
+                    const upstreamSourceAssetNode = findUpstreamSourceAssetNode(
+                        graph,
+                        sourceNode.id,
+                    );
                     const sourceAssetSetupRaw = upstreamSourceAssetNode
                         ? (storageAssets.find(
                               (item) =>
@@ -3271,35 +3300,57 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         editNode,
                         sourceAssetSetupRaw,
                         {
-                            mirrorSetupRegions: (sourceMirrorParity ?? 0) % 2 === 1,
+                            mirrorSetupRegions:
+                                (sourceMirrorParity ?? 0) % 2 === 1,
                         },
                     );
                     const maskConfig = resolveMaskRegionConfig(
                         editNode,
                         sourceAssetSetup,
                     );
-                    formData.set("mirrorEnabled", String(maskConfig.mirrorEnabled));
+                    formData.set(
+                        "mirrorEnabled",
+                        String(maskConfig.mirrorEnabled),
+                    );
                     formData.set("blurEnabled", "true");
                     formData.set("subtitleOverlayEnabled", "true");
                     if (maskConfig.blurRegionsJson) {
-                        formData.set("blurRegionsJson", maskConfig.blurRegionsJson);
+                        formData.set(
+                            "blurRegionsJson",
+                            maskConfig.blurRegionsJson,
+                        );
                     } else {
                         formData.set("regionX", String(maskConfig.regionX));
                         formData.set("regionY", String(maskConfig.regionY));
-                        formData.set("regionWidth", String(maskConfig.regionWidth));
-                        formData.set("regionHeight", String(maskConfig.regionHeight));
+                        formData.set(
+                            "regionWidth",
+                            String(maskConfig.regionWidth),
+                        );
+                        formData.set(
+                            "regionHeight",
+                            String(maskConfig.regionHeight),
+                        );
                         formData.set(
                             "timelineStart",
                             String(maskConfig.timelineStart),
                         );
-                        formData.set("timelineEnd", String(maskConfig.timelineEnd));
+                        formData.set(
+                            "timelineEnd",
+                            String(maskConfig.timelineEnd),
+                        );
                         formData.set(
                             "blurStrength",
                             String(maskConfig.blurStrength),
                         );
                     }
-                    formData.set("subtitleFontFamily", maskConfig.subtitleFontFamily);
-                    formData.set("subtitleFontSize", String(maskConfig.subtitleFontSize));
+                    formData.set(
+                        "subtitleFontFamily",
+                        maskConfig.subtitleFontFamily,
+                    );
+                    formData.set(
+                        "subtitleFontSize",
+                        String(maskConfig.subtitleFontSize),
+                    );
                     formData.set(
                         "subtitleMarginBottom",
                         String(maskConfig.subtitleMarginBottom),
@@ -3332,8 +3383,9 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         "translatedSegmentsJson",
                         JSON.stringify(translation.translatedSegments),
                     );
-                    const sourceDimensions =
-                        await probeVideoDimensionsFromFile(source.file);
+                    const sourceDimensions = await probeVideoDimensionsFromFile(
+                        source.file,
+                    );
                     formData.set(
                         "subtitlePlayResX",
                         String(sourceDimensions.width),
@@ -3644,9 +3696,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     )?.id;
                     const fallbackMetadata =
                         (upstreamMetadataNodeId
-                            ? vietnameseMetadataByNodeId[
-                                  upstreamMetadataNodeId
-                              ]
+                            ? vietnameseMetadataByNodeId[upstreamMetadataNodeId]
                             : undefined) ??
                         Object.values(vietnameseMetadataByNodeId)[0];
 
@@ -4120,7 +4170,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         onPointerCancel={endCanvasPan}
                     >
                         <div
-                            className="absolute left-0 top-0"
+                            className="workspace-canvas-grid absolute left-0 top-0"
                             style={{
                                 width: CANVAS_WIDTH,
                                 height: CANVAS_HEIGHT,
@@ -4153,11 +4203,17 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                                         toNode.position.y + NODE_HEIGHT_OFFSET;
                                     const midX = startX + (endX - startX) / 2;
                                     const midY = startY + (endY - startY) / 2;
+                                    const edgePath = buildWorkspaceLinkPath({
+                                        startX,
+                                        startY,
+                                        endX,
+                                        endY,
+                                    });
 
                                     return (
                                         <g key={edge.id} className="group/edge">
                                             <path
-                                                d={`M ${startX} ${startY} C ${midX} ${startY}, ${midX} ${endY}, ${endX} ${endY}`}
+                                                d={edgePath}
                                                 fill="none"
                                                 stroke="transparent"
                                                 strokeWidth={
@@ -4166,7 +4222,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                                                 className="pointer-events-stroke"
                                             />
                                             <path
-                                                d={`M ${startX} ${startY} C ${midX} ${startY}, ${midX} ${endY}, ${endX} ${endY}`}
+                                                d={edgePath}
                                                 fill="none"
                                                 stroke="var(--color-accent)"
                                                 strokeOpacity="0.55"
@@ -4174,29 +4230,58 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                                                     2 / canvasView.scale
                                                 }
                                             />
-                                            <foreignObject
-                                                x={midX - 12}
-                                                y={midY - 12}
-                                                width={24}
-                                                height={24}
+                                            <g
+                                                transform={`translate(${midX} ${midY})`}
+                                                role="button"
+                                                tabIndex={0}
+                                                aria-label="Delete link"
+                                                onPointerDown={(event) =>
+                                                    event.stopPropagation()
+                                                }
+                                                onClick={(event) => {
+                                                    event.stopPropagation();
+                                                    setGraph((current) =>
+                                                        deleteWorkspaceEdge(
+                                                            current,
+                                                            edge.id,
+                                                        ),
+                                                    );
+                                                }}
+                                                onKeyDown={(event) => {
+                                                    if (
+                                                        event.key !== "Enter" &&
+                                                        event.key !== " "
+                                                    ) {
+                                                        return;
+                                                    }
+                                                    event.preventDefault();
+                                                    event.stopPropagation();
+                                                    setGraph((current) =>
+                                                        deleteWorkspaceEdge(
+                                                            current,
+                                                            edge.id,
+                                                        ),
+                                                    );
+                                                }}
+                                                className="workspace-edge-delete-control pointer-events-none cursor-pointer opacity-0 transition-opacity group-hover/edge:pointer-events-auto group-hover/edge:opacity-100"
                                             >
-                                                <button
-                                                    type="button"
-                                                    aria-label="Delete link"
-                                                    onClick={(event) => {
-                                                        event.stopPropagation();
-                                                        setGraph((current) =>
-                                                            deleteWorkspaceEdge(
-                                                                current,
-                                                                edge.id,
-                                                            ),
-                                                        );
-                                                    }}
-                                                    className="pointer-events-none flex h-6 w-6 items-center justify-center rounded-full border border-rose-500/40 bg-rose-500/10 text-rose-700 opacity-0 transition-opacity group-hover/edge:pointer-events-auto group-hover/edge:opacity-100 hover:bg-rose-500/20"
-                                                >
-                                                    <X className="h-3 w-3" />
-                                                </button>
-                                            </foreignObject>
+                                                <circle
+                                                    r="16"
+                                                    fill="transparent"
+                                                />
+                                                <circle
+                                                    r="12"
+                                                    fill="var(--danger-bg)"
+                                                    stroke="var(--danger-border)"
+                                                />
+                                                <path
+                                                    d="M -4 -4 L 4 4 M 4 -4 L -4 4"
+                                                    fill="none"
+                                                    stroke="var(--danger-text)"
+                                                    strokeLinecap="round"
+                                                    strokeWidth="1.5"
+                                                />
+                                            </g>
                                         </g>
                                     );
                                 })}
@@ -4223,13 +4308,20 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                                                   ? sourceNode.position.y
                                                   : linkDragState.sourceSide ===
                                                       "bottom"
-                                                  ? sourceNode.position.y +
-                                                    NODE_HEIGHT
-                                                  : sourceNode.position.y +
-                                                    NODE_HEIGHT_OFFSET;
+                                                    ? sourceNode.position.y +
+                                                      NODE_HEIGHT
+                                                    : sourceNode.position.y +
+                                                      NODE_HEIGHT_OFFSET;
+                                          const dragPath =
+                                              buildWorkspaceLinkPath({
+                                                  startX: sourceX,
+                                                  startY: sourceY,
+                                                  endX: linkDragState.point.x,
+                                                  endY: linkDragState.point.y,
+                                              });
                                           return (
                                               <path
-                                                  d={`M ${sourceX} ${sourceY} L ${linkDragState.point.x} ${linkDragState.point.y}`}
+                                                  d={dragPath}
                                                   fill="none"
                                                   stroke="var(--color-accent)"
                                                   strokeDasharray={`${6 / canvasView.scale} ${4 / canvasView.scale}`}
@@ -4576,8 +4668,7 @@ function WorkspaceFlowSetupModal({
 
                         {accountsError ? (
                             <div className="mt-3 border border-rose-500/30 bg-rose-500/10 p-3 text-[10px] leading-4 text-rose-700">
-                                Runtime accounts failed to load:{" "}
-                                {accountsError}
+                                Runtime accounts failed to load: {accountsError}
                             </div>
                         ) : null}
 
@@ -4611,14 +4702,14 @@ function WorkspaceFlowSetupModal({
                                                     ? "border-amber-500/30 bg-amber-500/10 text-amber-700"
                                                     : warnings.length > 0
                                                       ? "border-sky-500/30 bg-sky-500/10 text-sky-700"
-                                                    : "border-emerald-500/30 bg-emerald-500/10 text-emerald-700",
+                                                      : "border-emerald-500/30 bg-emerald-500/10 text-emerald-700",
                                             )}
                                         >
                                             {issues.length > 0
                                                 ? "needs input"
                                                 : warnings.length > 0
                                                   ? "review"
-                                                : "ready"}
+                                                  : "ready"}
                                         </span>
                                     </div>
                                 );
@@ -4657,14 +4748,14 @@ function WorkspaceFlowSetupModal({
                                                     ? "border-amber-500/30 bg-amber-500/10 text-amber-700"
                                                     : warnings.length > 0
                                                       ? "border-sky-500/30 bg-sky-500/10 text-sky-700"
-                                                    : "border-emerald-500/30 bg-emerald-500/10 text-emerald-700",
+                                                      : "border-emerald-500/30 bg-emerald-500/10 text-emerald-700",
                                             )}
                                         >
                                             {issues.length > 0
                                                 ? "Needs input"
                                                 : warnings.length > 0
                                                   ? "Review"
-                                                : "Ready"}
+                                                  : "Ready"}
                                         </span>
                                     </header>
                                     {issues.length > 0 ? (
@@ -4761,7 +4852,7 @@ function WorkspaceFlowSetupModal({
                             ? `Resolve ${issueCount} issue(s) before running this flow.`
                             : warningCount > 0
                               ? `Flow can run, but review ${warningCount} warning(s) first.`
-                            : "All executable nodes are ready. You can run the flow now."}
+                              : "All executable nodes are ready. You can run the flow now."}
                     </p>
                     <div className="flex items-center justify-end gap-2">
                         <button
@@ -4783,7 +4874,7 @@ function WorkspaceFlowSetupModal({
                             }
                             className="inline-flex items-center gap-1.5 border border-accent/35 bg-accent px-3 py-1.5 text-[11px] font-semibold text-white transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
                         >
-                            <Play className="h-3.5 w-3.5" />
+                            <FastForward className="h-3.5 w-3.5" />
                             Run Flow
                         </button>
                     </div>
@@ -5017,7 +5108,7 @@ function WorkspaceRunStatusPanel({
                             onClick={onRun}
                             className="inline-flex items-center gap-1.5 border border-accent/35 bg-accent/10 px-3 py-1.5 text-[11px] font-semibold text-accent transition-colors hover:bg-accent/15 disabled:cursor-not-allowed disabled:opacity-60"
                         >
-                            <Play className="h-3.5 w-3.5" />
+                            <FastForward className="h-3.5 w-3.5" />
                             {isRunningFlow ? "Running Flow..." : "Run Flow"}
                         </button>
                         <button
@@ -5526,8 +5617,9 @@ function NodeRuntimeConfig({
                             {shouldMirrorSetupRegions ? (
                                 <p className="mt-1 text-[10px] leading-4 text-emerald-700/90">
                                     Upstream video path has Mirror transform, so
-                                    fallback blur regions from this setup are auto
-                                    mirrored horizontally to match runtime video.
+                                    fallback blur regions from this setup are
+                                    auto mirrored horizontally to match runtime
+                                    video.
                                 </p>
                             ) : null}
                         </div>

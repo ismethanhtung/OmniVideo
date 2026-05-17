@@ -24,6 +24,10 @@ describe("WorkspaceCanvasPanel canvas interactions", () => {
     it("exposes a direct edge delete affordance", () => {
         expect(source).toContain("deleteWorkspaceEdge");
         expect(source).toContain('aria-label="Delete link"');
+        expect(source).toContain('role="button"');
+        expect(source).toContain('transform={`translate(${midX} ${midY})`}');
+        expect(source).toContain("workspace-edge-delete-control");
+        expect(source).not.toContain("<foreignObject");
     });
 
     it("uses a visual picker for Storage Asset nodes", () => {
@@ -55,8 +59,8 @@ describe("WorkspaceCanvasPanel canvas interactions", () => {
         expect(source).toContain("findMaskUpstreamVideoNode");
         expect(source).toContain("findMirrorParityToAncestorNode");
         expect(source).toContain("buildEffectiveMaskSetup");
-        expect(source).toContain(
-            "fallback blur regions from this setup are auto",
+        expect(source).toMatch(
+            /fallback blur regions from this setup are\s+auto mirrored horizontally/,
         );
         expect(source).toContain("Mirror output video");
     });
@@ -102,8 +106,12 @@ describe("WorkspaceCanvasPanel canvas interactions", () => {
     });
 
     it("patches stored artifact with generated VI metadata and aligns edit runtime setup sourcing", () => {
-        expect(source).toContain("findUpstreamSourceAssetNode(graph, sourceNode.id)");
-        expect(source).toContain("probeVideoDimensionsFromFile(source.file)");
+        expect(source).toMatch(
+            /findUpstreamSourceAssetNode\(\s*graph,\s*sourceNode\.id,\s*\)/,
+        );
+        expect(source).toMatch(
+            /probeVideoDimensionsFromFile\(\s*source\.file,\s*\)/,
+        );
         expect(source).toContain("subtitlePlayResX");
         expect(source).toContain("subtitlePlayResY");
         expect(source).toContain("Patch storage asset metadata");
@@ -129,5 +137,20 @@ describe("WorkspaceCanvasPanel canvas interactions", () => {
         expect(source).toContain("Review before run");
         expect(source).toContain("Flow can run, but review");
         expect(source).toContain("storageAssetMaskSetupIds");
+    });
+
+    it("keeps the subtle canvas dot grid attached to the transformed flow plane", () => {
+        expect(source).toContain(
+            'className="workspace-canvas-grid absolute left-0 top-0"',
+        );
+    });
+
+    it("renders dragged link previews as Bézier curves", () => {
+        expect(source).toContain("buildWorkspaceLinkPath");
+        expect(source).toContain("const dragPath =");
+        expect(source).toContain("d={dragPath}");
+        expect(source).not.toContain(
+            "L ${linkDragState.point.x} ${linkDragState.point.y}",
+        );
     });
 });

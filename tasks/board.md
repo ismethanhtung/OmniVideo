@@ -22,6 +22,9 @@
 
 ## Review
 
+- `FAST-WORKSPACE-028` - Remove blue focus outline from edge delete control.
+- `FAST-WORKSPACE-027` - Fix Workspace edge delete hitbox and curve drag preview.
+- `FAST-WORKSPACE-026` - Add subtle dot grid to Workspace canvas.
 - `FAST-OPS-005` - Persist finished Background Progress tasks across reloads.
 - `FAST-WORKSPACE-025` - Add missing mask setup warnings and soften progress separators.
 - `FAST-AUDIO-054` - Lower minimum voice speed floor to 1.30x.

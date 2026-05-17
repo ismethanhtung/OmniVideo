@@ -1,5 +1,29 @@
 # OmniVideo Changelog
 
+## FAST-WORKSPACE-028 - Remove Blue Focus Outline from Edge Delete Control
+
+- Bumped app version from `0.8.5` to `0.8.6` as a patch release for Workspace interaction polish.
+- Removed the browser-default blue outline that appeared after clicking the SVG edge-delete control.
+- Added a dedicated `workspace-edge-delete-control` style hook that suppresses mouse-click focus chrome while preserving an intentional theme-compatible `focus-visible` state for keyboard navigation.
+- Verification (FAST-WORKSPACE-028): `npm run test -- --run src/features/workspace/workspace-canvas-panel.test.ts` pass (1 file / 14 tests); `npm run build` pass with existing ESLint circular-config warning; `npm run guard:version` pass.
+
+## FAST-WORKSPACE-027 - Fix Edge Delete Hitbox and Curve Drag Preview
+
+- Bumped app version from `0.8.4` to `0.8.5` as a patch release for Workspace link interaction polish.
+- Replaced the SVG `foreignObject`-embedded edge delete button with an SVG-native centered control and a slightly larger invisible hit circle so the visible delete icon and click target share the same geometry.
+- Added pointer-down isolation on the delete control so canvas panning does not interfere with edge deletion clicks.
+- Switched in-progress drag-link previews from a straight `L` segment to the shared cubic Bézier path builder used by Workspace links.
+- Verification (FAST-WORKSPACE-027): `npm run test -- --run src/features/workspace/workspace-canvas-panel.test.ts src/features/workspace/workspace-linking-interactions.test.ts` pass (2 files / 15 tests); `npm run build` pass with existing ESLint circular-config warning; `npm run guard:version` pass.
+
+## FAST-WORKSPACE-026 - Add Subtle Dot Grid to Workspace Canvas
+
+- Bumped app version from `0.8.3` to `0.8.4` as a patch release for Workspace canvas polish.
+- Added a subtle theme-aware dotted background to the transformed Workspace coordinate plane so the node area feels less empty without competing with node cards or edges.
+- Anchored the pattern to the movable/zoomable flow plane so dots follow pan and zoom together with nodes and edges.
+- Raised dot contrast/size from the first pass so the pattern is actually visible on light themes while remaining understated.
+- Hardened existing Workspace source-level assertions to tolerate harmless formatting changes while adding coverage for the new `workspace-canvas-grid` hook.
+- Verification (FAST-WORKSPACE-026): `npm run test -- --run src/features/workspace/workspace-canvas-panel.test.ts` pass (1 file / 13 tests); `npm run build` pass with existing ESLint circular-config warning; `npm run guard:version` pass. Browser QA against `http://127.0.0.1:3000/workspace` was not completed because the in-app browser policy blocked that local target in this session.
+
 ## FAST-OPS-005 - Persist Finished Background Progress Tasks Across Reloads
 
 - Bumped app version from `0.8.2` to `0.8.3` as a patch release for Background Progress history durability.

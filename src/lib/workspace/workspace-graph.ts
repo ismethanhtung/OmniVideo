@@ -883,7 +883,7 @@ export const WORKSPACE_NODE_TEMPLATES: WorkspaceNodeTemplate[] = [
         version: "1.0.0",
         label: "Generate VI Metadata",
         description:
-            "Generate Vietnamese title, description, and hashtags from translated transcript.",
+            "Generate Vietnamese title, description, and hashtags from translated transcript. Create + Save, những node khác tự động sử dụng metadata đã được lưu.",
         category: "processing",
         status: "available",
         inputPorts: [
