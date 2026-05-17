@@ -19,6 +19,7 @@ Trường chính:
 - `url` (nullable)
 - `originPlatform` (`douyin`, `youtube`, `bilibili`, `other`)
 - `title`
+- `folder`
 - `tags`: string[]
 - `languageHint`
 - `ownershipStatus` (`unknown`, `owned`, `licensed`, `public_domain`, `restricted`)
@@ -39,6 +40,8 @@ Trường chính:
 - `durationMs`
 - `sizeBytes`
 - `metadata` (codec, width, height, fps)
+  - `folder` (nhóm nội dung logic)
+  - `tags` (`raw`, `processed`, ...)
 - `createdFrom` (run/step refs)
 - `createdAt`
 
@@ -195,9 +198,9 @@ Capability registry cho UI và validation social.
 
 1. `job_runs`: `{ status: 1, createdAt: -1 }`, `{ pipelineId: 1, createdAt: -1 }`.
 2. `step_runs`: `{ jobRunId: 1, nodeId: 1, attempt: -1 }`.
-3. `assets`: `{ checksumSha256: 1 }`, `{ createdAt: -1 }`.
+3. `assets`: `{ checksumSha256: 1 }`, `{ createdAt: -1 }`, `{ "metadata.folder": 1, createdAt: -1 }`.
 4. `inspiration_vault_items`: `{ createdAt: -1 }`, `{ id: 1 }` unique.
-4. `sources`: `{ sourceType: 1, originPlatform: 1, createdAt: -1 }`.
+4. `sources`: `{ sourceType: 1, originPlatform: 1, createdAt: -1 }`, `{ folder: 1, createdAt: -1 }`.
 5. `publish_records`: `{ socialAccountId: 1, publishedAt: -1 }`.
 6. `storage_provider_accounts`: `{ providerType: 1, status: 1, priority: -1 }`.
 7. `social_accounts`: `{ platform: 1, status: 1, label: 1 }`.

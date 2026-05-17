@@ -104,6 +104,7 @@ type IntakeRunHistory = {
     inputSnapshot?: {
         sourceUrl?: string;
         title?: string | null;
+        folder?: string | null;
         storageProvider?: string;
         storageProviderAccountId?: string | null;
     };
@@ -299,7 +300,9 @@ export function VideoIntakePanel({ section }: VideoIntakePanelProps) {
     const [sourceUrl, setSourceUrl] = useState("");
     const [title, setTitle] = useState("");
     const [description, setDescription] = useState("");
-    const [tags, setTags] = useState("intake, raw");
+    const [folder, setFolder] = useState("");
+    const [isCreatingFolder, setIsCreatingFolder] = useState(false);
+    const [knownFolders, setKnownFolders] = useState<string[]>([]);
     const [qualityPreference, setQualityPreference] =
         useState<IntakeQualityPreference>("best");
     const [formatSelector, setFormatSelector] = useState("");
@@ -327,6 +330,20 @@ export function VideoIntakePanel({ section }: VideoIntakePanelProps) {
         status: "idle",
         message: "Ready.",
     });
+
+    useEffect(() => {
+        fetch("/api/storage/folders", {
+            method: "GET",
+            cache: "no-store",
+        })
+            .then((response) => response.json())
+            .then((payload: { ok: boolean; data?: string[] }) => {
+                if (payload.ok && payload.data) {
+                    setKnownFolders(payload.data);
+                }
+            })
+            .catch(() => {});
+    }, []);
 
     const uploadAccounts = useMemo(
         () =>
@@ -535,10 +552,8 @@ export function VideoIntakePanel({ section }: VideoIntakePanelProps) {
                     description: description.trim() || undefined,
                     storageProvider: selectedAccount.providerType,
                     storageProviderAccountId: selectedAccount._id,
-                    tags: tags
-                        .split(",")
-                        .map((tag) => tag.trim())
-                        .filter(Boolean),
+                    folder: folder.trim(),
+                    tags: [folder.trim(), "raw"].filter(Boolean),
                     qualityPreference,
                     formatSelector: formatSelector.trim() || undefined,
                     contentIntent: "other",
@@ -616,6 +631,10 @@ export function VideoIntakePanel({ section }: VideoIntakePanelProps) {
         if (run.inputSnapshot?.title) {
             setTitle(run.inputSnapshot.title);
         }
+        if (run.inputSnapshot?.folder) {
+            setFolder(run.inputSnapshot.folder);
+            setIsCreatingFolder(!knownFolders.includes(run.inputSnapshot.folder));
+        }
         setSourceUrl(retrySourceUrl);
 
         const fallbackAccount = selectedAccount ?? uploadAccounts[0];
@@ -660,10 +679,8 @@ export function VideoIntakePanel({ section }: VideoIntakePanelProps) {
                     description: description.trim() || undefined,
                     storageProvider: retryAccount.providerType,
                     storageProviderAccountId: retryAccount._id,
-                    tags: tags
-                        .split(",")
-                        .map((tag) => tag.trim())
-                        .filter(Boolean),
+                    folder: folder.trim(),
+                    tags: [folder.trim(), "raw"].filter(Boolean),
                     qualityPreference,
                     formatSelector: formatSelector.trim() || undefined,
                     contentIntent: "other",
@@ -952,15 +969,44 @@ export function VideoIntakePanel({ section }: VideoIntakePanelProps) {
 
                             <label className="block">
                                 <span className="text-[12px] font-medium text-main">
-                                    Tags comma-separated
+                                    Folder
                                 </span>
-                                <input
-                                    value={tags}
-                                    onChange={(event) =>
-                                        setTags(event.target.value)
-                                    }
+                                <select
+                                    value={isCreatingFolder ? "__new__" : folder}
+                                    onChange={(event) => {
+                                        if (event.target.value === "__new__") {
+                                            setIsCreatingFolder(true);
+                                            setFolder("");
+                                            return;
+                                        }
+                                        setIsCreatingFolder(false);
+                                        setFolder(event.target.value);
+                                    }}
                                     className="mt-1 w-full border border-main bg-main px-3 py-2 text-[12px] text-main outline-none transition-colors focus:border-accent"
-                                />
+                                >
+                                    <option value="">Select folder</option>
+                                    {knownFolders.map((knownFolder) => (
+                                        <option
+                                            key={knownFolder}
+                                            value={knownFolder}
+                                        >
+                                            {knownFolder}
+                                        </option>
+                                    ))}
+                                    <option value="__new__">
+                                        New folder...
+                                    </option>
+                                </select>
+                                {isCreatingFolder ? (
+                                    <input
+                                        value={folder}
+                                        onChange={(event) =>
+                                            setFolder(event.target.value)
+                                        }
+                                        placeholder="Ví dụ: kiến thức sức khoẻ"
+                                        className="mt-2 w-full border border-main bg-main px-3 py-2 text-[12px] text-main outline-none transition-colors focus:border-accent"
+                                    />
+                                ) : null}
                             </label>
                         </div>
 
@@ -1099,7 +1145,9 @@ export function VideoIntakePanel({ section }: VideoIntakePanelProps) {
                         <button
                             type="submit"
                             disabled={
-                                state.status === "running" || !selectedAccount
+                                state.status === "running" ||
+                                !selectedAccount ||
+                                !folder.trim()
                             }
                             className="border border-main bg-secondary px-3 py-2 text-[12px] font-semibold text-main transition-colors hover:bg-secondary/75 disabled:cursor-not-allowed disabled:opacity-60"
                         >

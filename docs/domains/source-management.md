@@ -17,24 +17,25 @@ Nguồn là tài sản quan trọng nhất để duy trì content pipeline liên
 1. `sourceType`
 2. `originPlatform`
 3. `canonicalLink`
-4. `tags` (topic, format, campaign)
-5. `languageHint`
-6. `contentIntent` (`review`, `music`, `fun`, `knowledge`, `story`, `sales`, `other`)
-7. `ownershipStatus`
-8. `ingestedAt`
+4. `folder` (nhóm nội dung logic chính, ví dụ `kiến thức sức khoẻ`)
+5. `tags` hệ thống (ví dụ `raw`, `processed`)
+6. `languageHint`
+7. `contentIntent` (`review`, `music`, `fun`, `knowledge`, `story`, `sales`, `other`)
+8. `ownershipStatus`
+9. `ingestedAt`
 
 ## 4. Core Operations
 
 1. Ingest source mới.
 2. Chuẩn hóa metadata và deduplicate.
-3. Tagging bắt buộc.
+3. Gán folder bắt buộc; tags hệ thống dùng để phân biệt vòng đời asset.
 4. Link source với job runs.
 5. Đánh dấu source hiệu quả cao để tái khai thác.
 6. Capture inspiration item nhanh vào `inspiration_vault_items` trước khi promote thành source/job run chính thức.
 
 ## 5. Quality Rules
 
-1. Source mới phải có ít nhất 2 tags.
+1. Source mới phải có folder logic rõ ràng; hệ thống tự lưu thêm tag vòng đời như `raw`.
 2. Link nguồn không hợp lệ phải fail sớm ở bước validate.
 3. Mọi source được dùng để tạo output phải lưu trace vào `job_runs`.
 

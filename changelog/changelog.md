@@ -1,5 +1,22 @@
 # OmniVideo Changelog
 
+## FAST-UX-026 - Polish Folder Selector and Remove Navigation Leave Warnings
+
+- Bumped app version from `0.9.0` to `0.9.1` as a patch release for intake/navigation polish.
+- Replaced browser-native folder datalists in Video Intake and Local Upload Intake with standard select controls that match the existing Storage Provider dropdown style.
+- Preserved folder creation by adding a `New folder...` option that reveals a dedicated input only when needed.
+- Removed cross-section leave confirmation warnings when navigating away from Workspace or Audio Transcript.
+- Verification (FAST-UX-026): `npm run test -- --run src/components/layout/app-shell.test.ts src/features/video-intake/video-intake-panel.test.ts src/features/video-intake/local-upload-intake-panel.test.ts` pass (3 files / 7 tests); `npm run build` pass with existing ESLint circular-config warning; `npm run guard:version` pass.
+
+## P1-STORAGE-007 - Lightweight Folder Metadata and Asset Search
+
+- Bumped app version from `0.8.7` to `0.9.0` as a backward-compatible feature release for lightweight storage organization.
+- Replaced free-form intake tag inputs with `Folder` fields on Video Intake and Local Upload Intake, backed by suggestions from folders already used in source/asset metadata.
+- Added lightweight folder propagation so raw assets persist the selected folder with `raw`, while Workspace-stored artifacts inherit the upstream folder and persist `processed`.
+- Added accent-insensitive asset search helpers and wired searchable video asset pickers into Workspace, Audio Transcript, Video Tools Lab, and Publish Records.
+- Updated source/storage/data-model docs to distinguish logical folders from provider folders and system lifecycle tags.
+- Verification (P1-STORAGE-007): `npm run test -- --run src/lib/storage/asset-folder.test.ts src/lib/video-intake/validation.test.ts src/lib/video-intake/local-validation.test.ts src/lib/video-intake/asset-metadata.test.ts src/app/api/storage/folders/route.test.ts src/features/video-intake/video-intake-panel.test.ts src/features/video-intake/local-upload-intake-panel.test.ts src/features/workspace/workspace-canvas-panel.test.ts src/features/audio/chinese-transcription-panel.test.ts src/features/video-processing/video-tools-lab-panel.test.ts src/features/social/publish-records-panel.test.ts src/lib/video-intake/media-resolver.test.ts` pass (12 files / 58 tests); `npm run build` pass with existing ESLint circular-config warning; `npm run guard:version` pass.
+
 ## FAST-WORKSPACE-028 - Remove Blue Focus Outline from Edge Delete Control
 
 - Bumped app version from `0.8.5` to `0.8.6` as a patch release for Workspace interaction polish.

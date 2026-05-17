@@ -31,6 +31,7 @@ export async function createSource({
     originPlatform: input.originPlatform,
     title: input.title ?? null,
     description: input.description ?? null,
+    folder: input.folder,
     tags: input.tags,
     languageHint: input.languageHint ?? null,
     contentIntent: input.contentIntent ?? "other",
@@ -58,6 +59,7 @@ export async function createFileSource({
     originPlatform: "other",
     title: input.title ?? input.fileName,
     description: input.description ?? null,
+    folder: input.folder,
     tags: input.tags,
     languageHint: input.languageHint ?? null,
     contentIntent: input.contentIntent,
@@ -252,6 +254,8 @@ export async function createAsset({
   sourceId,
   media,
   upload,
+  folder,
+  tags,
   pipelineId,
 }: {
   db: Db;
@@ -259,6 +263,8 @@ export async function createAsset({
   sourceId: ObjectId;
   media: ResolvedMedia;
   upload: StorageUploadResult;
+  folder: string;
+  tags: string[];
   pipelineId?: string;
 }): Promise<ObjectId> {
   const now = new Date();
@@ -268,6 +274,8 @@ export async function createAsset({
       sourceId,
       media,
       upload,
+      folder,
+      tags,
       now,
       pipelineId,
     }),
@@ -437,6 +445,26 @@ export async function listVideoAssets(
       totalPages: Math.max(1, Math.ceil(total / normalizedPageSize)),
     },
   };
+}
+
+export async function listKnownVideoFolders(db: Db) {
+  const [sourceFolders, assetFolders] = await Promise.all([
+    db.collection("sources").distinct("folder", {
+      folder: { $type: "string", $ne: "" },
+    }),
+    db.collection("assets").distinct("metadata.folder", {
+      "metadata.folder": { $type: "string", $ne: "" },
+    }),
+  ]);
+
+  return Array.from(
+    new Set(
+      [...sourceFolders, ...assetFolders]
+        .filter((folder): folder is string => typeof folder === "string")
+        .map((folder) => folder.trim())
+        .filter(Boolean),
+    ),
+  ).sort((a, b) => a.localeCompare(b, "vi"));
 }
 
 export type ManualVideoAssetInput = {

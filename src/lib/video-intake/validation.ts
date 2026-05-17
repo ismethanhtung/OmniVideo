@@ -5,6 +5,11 @@ import {
   type IntakeQualityPreference,
   type ValidatedIntakeInput,
 } from "./types";
+import {
+  buildFolderAssetTags,
+  inferFolderFromTags,
+  normalizeAssetFolderName,
+} from "@/lib/storage/asset-folder";
 
 const SUPPORTED_STORAGE_PROVIDERS = new Set(["telegram", "drive"]);
 const SUPPORTED_QUALITY_PREFERENCES = new Set([
@@ -59,20 +64,32 @@ export function validateIntakeInput(input: unknown): ValidatedIntakeInput {
     });
   }
 
-  const tags = Array.isArray(payload.tags)
+  const submittedTags = Array.isArray(payload.tags)
     ? payload.tags
         .filter((tag): tag is string => typeof tag === "string")
         .map((tag) => tag.trim())
         .filter(Boolean)
     : [];
+  const folder =
+    normalizeAssetFolderName(payload.folder) || inferFolderFromTags(submittedTags);
 
-  if (tags.length < 2) {
+  if (!folder) {
     throw new IntakeError({
-      errorCode: "VAL_SOURCE_TAGS_REQUIRED",
-      message: "At least 2 tags are required for source traceability.",
+      errorCode: "VAL_SOURCE_FOLDER_REQUIRED",
+      message: "folder is required.",
       category: "validation",
     });
   }
+
+  const tags = buildFolderAssetTags({
+    folder,
+    lifecycle: submittedTags.some(
+      (tag) => tag.toLocaleLowerCase("vi-VN") === "processed",
+    )
+      ? "processed"
+      : "raw",
+    extraTags: submittedTags,
+  });
 
   const storageProviderAccountId = payload.storageProviderAccountId?.trim();
 
@@ -122,6 +139,7 @@ export function validateIntakeInput(input: unknown): ValidatedIntakeInput {
     originPlatform: detectOriginPlatform(canonicalUrl),
     storageProvider: payload.storageProvider,
     storageProviderAccountId,
+    folder,
     tags,
     qualityPreference,
     formatSelector: formatSelector || undefined,

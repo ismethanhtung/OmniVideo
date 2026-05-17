@@ -11,4 +11,13 @@ describe("Local Upload Intake View Mode errors", () => {
         expect(source).toContain('? "font-semibold text-rose-700"');
         expect(source).toContain('className="font-mono text-[11px] text-rose-700"');
     });
+
+    it("uses lightweight folder metadata instead of free-form tag input", () => {
+        expect(source).toContain("/api/storage/folders");
+        expect(source).toContain("Folder");
+        expect(source).toContain("New folder...");
+        expect(source).toContain("<select");
+        expect(source).not.toContain("<datalist");
+        expect(source).not.toContain("Tags comma-separated");
+    });
 });

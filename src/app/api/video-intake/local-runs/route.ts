@@ -110,6 +110,7 @@ export async function POST(request: Request) {
 
     const fileBytes = new Uint8Array(await file.arrayBuffer());
     const tagsRaw = readFormValue(formData, "tags");
+    const folder = readFormValue(formData, "folder");
     const payload: LocalIntakeInput = {
       storageProvider: readFormValue(formData, "storageProvider") as
         | "telegram"
@@ -119,6 +120,7 @@ export async function POST(request: Request) {
         .split(",")
         .map((tag) => tag.trim())
         .filter(Boolean),
+      folder: folder || undefined,
       title: readFormValue(formData, "title") || undefined,
       description: readFormValue(formData, "description") || undefined,
       languageHint: readFormValue(formData, "languageHint") || undefined,

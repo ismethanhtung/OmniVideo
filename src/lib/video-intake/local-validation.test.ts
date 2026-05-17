@@ -8,7 +8,8 @@ describe("validateLocalIntakeInput", () => {
     const result = validateLocalIntakeInput({
       storageProvider: "telegram",
       storageProviderAccountId: "507f1f77bcf86cd799439011",
-      tags: ["local", "raw"],
+      folder: "kiến thức sức khoẻ",
+      tags: [],
       title: "Demo local upload",
       description: " Desc ",
       fileName: "demo.mp4",
@@ -19,7 +20,8 @@ describe("validateLocalIntakeInput", () => {
 
     expect(result.storageProviderAccountId).toBe("507f1f77bcf86cd799439011");
     expect(result.storageProvider).toBe("telegram");
-    expect(result.tags).toEqual(["local", "raw"]);
+    expect(result.folder).toBe("kiến thức sức khoẻ");
+    expect(result.tags).toEqual(["kiến thức sức khoẻ", "raw"]);
     expect(result.contentIntent).toBe("other");
     expect(result.description).toBe("Desc");
     expect(result.ownershipStatus).toBe("unknown");
@@ -31,7 +33,8 @@ describe("validateLocalIntakeInput", () => {
     expect(() =>
       validateLocalIntakeInput({
         storageProvider: "telegram",
-        tags: ["local", "raw"],
+        folder: "kiến thức sức khoẻ",
+        tags: [],
         fileName: "demo.mp4",
         fileSizeBytes: 10,
         fileBytes: new Uint8Array([1]),
@@ -44,7 +47,8 @@ describe("validateLocalIntakeInput", () => {
       validateLocalIntakeInput({
         storageProvider: "telegram",
         storageProviderAccountId: "telegram-main",
-        tags: ["local", "raw"],
+        folder: "kiến thức sức khoẻ",
+        tags: [],
         fileName: "demo.mp4",
         fileSizeBytes: 10,
         fileBytes: new Uint8Array([1]),
@@ -57,7 +61,8 @@ describe("validateLocalIntakeInput", () => {
       validateLocalIntakeInput({
         storageProvider: "telegram",
         storageProviderAccountId: "507f1f77bcf86cd799439011",
-        tags: ["local", "raw"],
+        folder: "kiến thức sức khoẻ",
+        tags: [],
         fileName: "demo.mp4",
         fileSizeBytes: 10,
         fileBytes: new Uint8Array([]),
@@ -65,17 +70,17 @@ describe("validateLocalIntakeInput", () => {
     ).toThrow(IntakeError);
   });
 
-  it("rejects missing tags traceability", () => {
+  it("rejects missing folder metadata", () => {
     expect(() =>
       validateLocalIntakeInput({
         storageProvider: "telegram",
         storageProviderAccountId: "507f1f77bcf86cd799439011",
-        tags: ["local"],
+        tags: [],
         fileName: "demo.mp4",
         fileSizeBytes: 10,
         fileBytes: new Uint8Array([1]),
       }),
-    ).toThrow("At least 2 tags are required");
+    ).toThrow("folder is required");
   });
 
   it("rejects unsupported storage providers", () => {
@@ -83,7 +88,8 @@ describe("validateLocalIntakeInput", () => {
       validateLocalIntakeInput({
         storageProvider: "s3",
         storageProviderAccountId: "507f1f77bcf86cd799439011",
-        tags: ["local", "raw"],
+        folder: "kiến thức sức khoẻ",
+        tags: [],
         fileName: "demo.mp4",
         fileSizeBytes: 10,
         fileBytes: new Uint8Array([1]),

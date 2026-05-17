@@ -100,6 +100,7 @@ export async function POST(request: Request) {
             canonicalUrl,
             originPlatform: detectOriginPlatform(canonicalUrl),
             storageProvider: "drive",
+            folder: "workspace",
             tags: ["workspace", "url"],
             qualityPreference: body.qualityPreference,
             formatSelector: body.formatSelector || undefined,

@@ -13,6 +13,8 @@ describe("buildVideoAssetDocument", () => {
       sourceId,
       jobRunId,
       now,
+      folder: "kiến thức sức khoẻ",
+      tags: ["kiến thức sức khoẻ", "raw"],
       media: {
         originalUrl: "https://example.com/page",
         directMediaUrl: "https://cdn.example.com/video.mp4",
@@ -44,6 +46,8 @@ describe("buildVideoAssetDocument", () => {
     expect(result.metadata.requestedQuality).toBe("720p");
     expect(result.metadata.actualQuality).toBe("720p");
     expect(result.metadata.formatId).toBe("22");
+    expect(result.metadata.folder).toBe("kiến thức sức khoẻ");
+    expect(result.metadata.tags).toEqual(["kiến thức sức khoẻ", "raw"]);
     expect(result.createdFrom).toMatchObject({
       sourceId,
       jobRunId,
@@ -61,6 +65,8 @@ describe("buildVideoAssetDocument", () => {
       jobRunId,
       now,
       pipelineId: "mvp-local-intake-to-storage",
+      folder: "kiến thức sức khoẻ",
+      tags: ["kiến thức sức khoẻ", "raw"],
       media: {
         originalUrl: "local-file://demo.mp4",
         directMediaUrl: "local-file://demo.mp4",

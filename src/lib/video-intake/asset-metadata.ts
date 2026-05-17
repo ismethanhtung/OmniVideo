@@ -7,6 +7,8 @@ export function buildVideoAssetDocument({
   sourceId,
   media,
   upload,
+  folder,
+  tags,
   now,
   pipelineId = "mvp-url-intake-to-storage",
 }: {
@@ -14,6 +16,8 @@ export function buildVideoAssetDocument({
   sourceId: ObjectId;
   media: ResolvedMedia;
   upload: StorageUploadResult;
+  folder: string;
+  tags: string[];
   now: Date;
   pipelineId?: string;
 }) {
@@ -40,6 +44,8 @@ export function buildVideoAssetDocument({
       vietnameseTitle: null,
       vietnameseDescription: null,
       vietnameseHashtags: [],
+      folder,
+      tags,
       requestedQuality: media.requestedQuality ?? "best",
       formatSelector: media.formatSelector ?? null,
       hasAudio: media.hasAudio ?? null,

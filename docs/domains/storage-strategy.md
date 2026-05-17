@@ -28,6 +28,14 @@ Mỗi asset phải có:
 
 Domain logic luôn đọc asset qua storage adapter, không phụ thuộc pointer format cụ thể.
 
+### Lightweight folder metadata
+
+1. `metadata.folder` là nhãn nhóm nội dung logic chính của video asset, ví dụ `kiến thức sức khoẻ`.
+2. `metadata.tags` giữ nhãn hệ thống nhẹ như `raw` và `processed`.
+3. Asset xử lý sinh từ asset nguồn phải kế thừa cùng `folder` và thêm tag `processed`.
+4. Video asset picker nên cho phép search theo `folder`, title, tags và source URL để tránh duyệt danh sách phẳng.
+5. Đây là folder logic của app, không đồng nghĩa với folder thật ở binary provider.
+
 ## 5. Storage Account Management
 
 Storage provider account là cấu hình vận hành cho từng vault/bucket/folder/chat cụ thể.

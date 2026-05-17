@@ -17,6 +17,10 @@ import {
 } from "lucide-react";
 
 import type { LeftbarNavItem } from "@/components/layout/types";
+import {
+    getAssetFolderName,
+    matchesVideoAssetSearch,
+} from "@/lib/storage/asset-folder";
 import type {
     AudioTranscriptionStep,
     ChineseTranscriptionResult,
@@ -68,6 +72,8 @@ type StoredVideoAsset = {
         vietnameseTitle?: string | null;
         vietnameseDescription?: string | null;
         vietnameseHashtags?: string[] | null;
+        folder?: string | null;
+        tags?: string[] | null;
         sourceUrl?: string | null;
         originPlatform?: string | null;
         actualQuality?: string | null;
@@ -540,6 +546,7 @@ export function ChineseTranscriptionPanel({
     const [assetPreview, setAssetPreview] = useState<AssetPreviewState | null>(
         null,
     );
+    const [assetSearchQuery, setAssetSearchQuery] = useState("");
     const [language, setLanguage] = useState("zh");
     const [prompt, setPrompt] = useState("");
     const [includeWordTimestamps, setIncludeWordTimestamps] = useState(true);
@@ -1654,6 +1661,9 @@ export function ChineseTranscriptionPanel({
 
     const selectedAsset =
         assets.find((asset) => asset._id === selectedAssetId) ?? null;
+    const visibleAssets = assets.filter((asset) =>
+        matchesVideoAssetSearch(asset, assetSearchQuery),
+    );
     const copySegmentsToClipboard = useCallback(async (mode: "json" | "text") => {
         if (!result) return;
 
@@ -1787,13 +1797,25 @@ export function ChineseTranscriptionPanel({
                             </button>
                             {showAssetPicker ? (
                                 <div className="mt-2 max-h-56 overflow-y-auto border border-main bg-main">
-                                    {assets.length === 0 ? (
+                                    <div className="border-b border-main p-2">
+                                        <input
+                                            value={assetSearchQuery}
+                                            onChange={(event) =>
+                                                setAssetSearchQuery(
+                                                    event.target.value,
+                                                )
+                                            }
+                                            placeholder="Search title, folder, tags..."
+                                            className="w-full border border-main bg-main px-2 py-1 text-[11px] text-main outline-none transition-colors focus:border-accent"
+                                        />
+                                    </div>
+                                    {visibleAssets.length === 0 ? (
                                         <p className="px-3 py-4 text-[11px] text-muted">
-                                            No asset available.
+                                            No matching asset.
                                         </p>
                                     ) : (
                                         <div className="space-y-2 p-2">
-                                            {assets.map((asset) => {
+                                            {visibleAssets.map((asset) => {
                                                 const isSelected =
                                                     selectedAssetId ===
                                                     asset._id;
@@ -1829,6 +1851,13 @@ export function ChineseTranscriptionPanel({
                                                                 </p>
                                                                 <p className="mt-1 truncate text-[10px] text-muted">
                                                                     {[
+                                                                        getAssetFolderName(
+                                                                            asset,
+                                                                        ),
+                                                                        ...(asset
+                                                                            .metadata
+                                                                            ?.tags ??
+                                                                            []),
                                                                         asset
                                                                             .createdFrom
                                                                             ?.storageProviderLabel ??

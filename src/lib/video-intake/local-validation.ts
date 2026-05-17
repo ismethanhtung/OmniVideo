@@ -1,4 +1,14 @@
-import { IntakeError, type LocalIntakeInput, type ValidatedLocalIntakeInput } from "./types";
+import {
+  buildFolderAssetTags,
+  inferFolderFromTags,
+  normalizeAssetFolderName,
+} from "@/lib/storage/asset-folder";
+
+import {
+  IntakeError,
+  type LocalIntakeInput,
+  type ValidatedLocalIntakeInput,
+} from "./types";
 
 const OBJECT_ID_PATTERN = /^[a-f\d]{24}$/i;
 const SUPPORTED_STORAGE_PROVIDERS = new Set(["telegram", "drive"]);
@@ -76,24 +86,37 @@ export function validateLocalIntakeInput(
     });
   }
 
-  const tags = Array.isArray(input.tags)
+  const submittedTags = Array.isArray(input.tags)
     ? input.tags
         .filter((tag): tag is string => typeof tag === "string")
         .map((tag) => tag.trim())
         .filter(Boolean)
     : [];
+  const folder =
+    normalizeAssetFolderName(input.folder) || inferFolderFromTags(submittedTags);
 
-  if (tags.length < 2) {
+  if (!folder) {
     throw new IntakeError({
-      errorCode: "VAL_SOURCE_TAGS_REQUIRED",
-      message: "At least 2 tags are required for source traceability.",
+      errorCode: "VAL_SOURCE_FOLDER_REQUIRED",
+      message: "folder is required.",
       category: "validation",
     });
   }
 
+  const tags = buildFolderAssetTags({
+    folder,
+    lifecycle: submittedTags.some(
+      (tag) => tag.toLocaleLowerCase("vi-VN") === "processed",
+    )
+      ? "processed"
+      : "raw",
+    extraTags: submittedTags,
+  });
+
   return {
     storageProvider: storageProvider as "telegram" | "drive",
     storageProviderAccountId,
+    folder,
     tags,
     title: input.title?.trim() || undefined,
     description: input.description?.trim() || undefined,

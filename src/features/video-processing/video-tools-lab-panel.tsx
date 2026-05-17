@@ -16,6 +16,10 @@ import {
 
 import type { LeftbarNavItem } from "@/components/layout/types";
 import {
+    getAssetFolderName,
+    matchesVideoAssetSearch,
+} from "@/lib/storage/asset-folder";
+import {
     finishProgressTask,
     startProgressTask,
     updateProgressTask,
@@ -54,6 +58,8 @@ type StoredVideoAsset = {
     storageProvider: string;
     metadata?: {
         title?: string | null;
+        folder?: string | null;
+        tags?: string[] | null;
         originPlatform?: string | null;
         actualQuality?: string | null;
         videoEditSetup?: {
@@ -309,6 +315,7 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
     const [assets, setAssets] = useState<StoredVideoAsset[]>([]);
     const [selectedAssetId, setSelectedAssetId] = useState("");
     const [showAssetPicker, setShowAssetPicker] = useState(false);
+    const [assetSearchQuery, setAssetSearchQuery] = useState("");
     const [mirrorEnabled, setMirrorEnabled] = useState(false);
     const [blurEnabled, setBlurEnabled] = useState(true);
     const [subtitleOverlayEnabled, setSubtitleOverlayEnabled] = useState(true);
@@ -387,6 +394,9 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
 
     const selectedAsset =
         assets.find((asset) => asset._id === selectedAssetId) ?? null;
+    const visibleAssets = assets.filter((asset) =>
+        matchesVideoAssetSearch(asset, assetSearchQuery),
+    );
     const selectedAssetHasSavedSetup = hasSavedVideoEditSetup(selectedAsset);
 
     const sourceVideoUrl = useMemo(() => {
@@ -1049,13 +1059,25 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                             </button>
                             {showAssetPicker ? (
                                 <div className="mt-2 max-h-56 overflow-y-auto border border-main bg-main">
-                                    {assets.length === 0 ? (
+                                    <div className="border-b border-main p-2">
+                                        <input
+                                            value={assetSearchQuery}
+                                            onChange={(event) =>
+                                                setAssetSearchQuery(
+                                                    event.target.value,
+                                                )
+                                            }
+                                            placeholder="Search title, folder, tags..."
+                                            className="w-full border border-main bg-main px-2 py-1 text-[11px] text-main outline-none transition-colors focus:border-accent"
+                                        />
+                                    </div>
+                                    {visibleAssets.length === 0 ? (
                                         <p className="px-3 py-4 text-[11px] text-muted">
-                                            No asset available.
+                                            No matching asset.
                                         </p>
                                     ) : (
                                         <div className="space-y-2 p-2">
-                                            {assets.map((asset) => {
+                                            {visibleAssets.map((asset) => {
                                                 const isSelected =
                                                     selectedAssetId ===
                                                     asset._id;
@@ -1092,14 +1114,26 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                                                         </p>
                                                         <div className="mt-1 flex items-center justify-between gap-2">
                                                             <p className="truncate text-[10px] text-muted">
-                                                                {
-                                                                    asset.storageProvider
-                                                                }{" "}
-                                                                ·{" "}
-                                                                {formatBytes(
-                                                                    asset.sizeBytes ??
-                                                                        0,
-                                                                )}
+                                                                {[
+                                                                    getAssetFolderName(
+                                                                        asset,
+                                                                    ),
+                                                                    ...(asset
+                                                                        .metadata
+                                                                        ?.tags ??
+                                                                        []),
+                                                                    asset.storageProvider,
+                                                                    formatBytes(
+                                                                        asset.sizeBytes ??
+                                                                            0,
+                                                                    ),
+                                                                ]
+                                                                    .filter(
+                                                                        Boolean,
+                                                                    )
+                                                                    .join(
+                                                                        " · ",
+                                                                    )}
                                                             </p>
                                                             {hasSetup ? (
                                                                 <span className="shrink-0 border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-700">

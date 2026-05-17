@@ -8,14 +8,16 @@ describe("validateIntakeInput", () => {
     const result = validateIntakeInput({
       sourceUrl: "https://www.youtube.com/shorts/demo#x",
       storageProvider: "telegram",
-      tags: ["intake", "raw"],
+      folder: "kiến thức sức khoẻ",
+      tags: [],
       title: "Demo",
       description: " Desc ",
     });
 
     expect(result.canonicalUrl).toBe("https://www.youtube.com/shorts/demo");
     expect(result.originPlatform).toBe("youtube");
-    expect(result.tags).toEqual(["intake", "raw"]);
+    expect(result.folder).toBe("kiến thức sức khoẻ");
+    expect(result.tags).toEqual(["kiến thức sức khoẻ", "raw"]);
     expect(result.contentIntent).toBe("other");
     expect(result.description).toBe("Desc");
     expect(result.ownershipStatus).toBe("unknown");
@@ -27,19 +29,20 @@ describe("validateIntakeInput", () => {
       validateIntakeInput({
         sourceUrl: "not-a-url",
         storageProvider: "telegram",
-        tags: ["intake", "raw"],
+        folder: "kiến thức sức khoẻ",
+        tags: [],
       }),
     ).toThrow(IntakeError);
   });
 
-  it("requires at least 2 source tags for traceability", () => {
+  it("requires a source folder", () => {
     expect(() =>
       validateIntakeInput({
         sourceUrl: "https://example.com/video.mp4",
         storageProvider: "telegram",
-        tags: ["raw"],
+        tags: [],
       }),
-    ).toThrow("At least 2 tags are required");
+    ).toThrow("folder is required");
   });
 
   it("rejects unsupported storage providers", () => {
@@ -47,7 +50,8 @@ describe("validateIntakeInput", () => {
       validateIntakeInput({
         sourceUrl: "https://example.com/video.mp4",
         storageProvider: "local",
-        tags: ["intake", "raw"],
+        folder: "kiến thức sức khoẻ",
+        tags: [],
       }),
     ).toThrow("storageProvider must be telegram or drive");
   });
@@ -57,7 +61,8 @@ describe("validateIntakeInput", () => {
       sourceUrl: "https://cdn.example.com/video.mp4",
       storageProvider: "telegram",
       storageProviderAccountId: "507f1f77bcf86cd799439011",
-      tags: ["intake", "raw"],
+      folder: "kiến thức sức khoẻ",
+      tags: [],
     });
 
     expect(result.storageProviderAccountId).toBe("507f1f77bcf86cd799439011");
@@ -69,7 +74,8 @@ describe("validateIntakeInput", () => {
         sourceUrl: "https://cdn.example.com/video.mp4",
         storageProvider: "telegram",
         storageProviderAccountId: "telegram-main",
-        tags: ["intake", "raw"],
+        folder: "kiến thức sức khoẻ",
+        tags: [],
       }),
     ).toThrow("storageProviderAccountId must be a valid Mongo ObjectId");
   });
@@ -78,7 +84,8 @@ describe("validateIntakeInput", () => {
     const result = validateIntakeInput({
       sourceUrl: "https://www.youtube.com/watch?v=demo",
       storageProvider: "telegram",
-      tags: ["intake", "raw"],
+      folder: "kiến thức sức khoẻ",
+      tags: [],
       qualityPreference: "720p",
     });
 
@@ -89,7 +96,8 @@ describe("validateIntakeInput", () => {
     const result = validateIntakeInput({
       sourceUrl: "https://www.bilibili.com/video/BV1W2oSBWEYw/",
       storageProvider: "drive",
-      tags: ["intake", "raw"],
+      folder: "kiến thức sức khoẻ",
+      tags: [],
       formatSelector: "30080+30280",
     });
 
@@ -101,7 +109,8 @@ describe("validateIntakeInput", () => {
       validateIntakeInput({
         sourceUrl: "https://www.bilibili.com/video/BV1W2oSBWEYw/",
         storageProvider: "drive",
-        tags: ["intake", "raw"],
+        folder: "kiến thức sức khoẻ",
+        tags: [],
         formatSelector: "30080+30280\n--cookies-from-browser chrome",
       }),
     ).toThrow("formatSelector must be a single-line yt-dlp format selector");
@@ -112,7 +121,8 @@ describe("validateIntakeInput", () => {
       validateIntakeInput({
         sourceUrl: "https://www.youtube.com/watch?v=demo",
         storageProvider: "telegram",
-        tags: ["intake", "raw"],
+        folder: "kiến thức sức khoẻ",
+        tags: [],
         qualityPreference: "4k",
       }),
     ).toThrow("qualityPreference must be one of best, 1080p, 720p, 480p, 360p.");

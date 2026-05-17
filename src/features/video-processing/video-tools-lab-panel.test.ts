@@ -30,4 +30,9 @@ describe("Video Tools Lab source preview controls", () => {
         expect(source).toContain("Saved setup");
         expect(source).toContain("applyVideoEditSetup(videoEditSetup)");
     });
+
+    it("makes asset picking searchable by folder metadata", () => {
+        expect(source).toContain("matchesVideoAssetSearch");
+        expect(source).toContain("Search title, folder, tags...");
+    });
 });

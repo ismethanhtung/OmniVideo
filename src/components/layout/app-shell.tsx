@@ -61,18 +61,8 @@ export function AppShell() {
         [sectionCandidate],
     );
     const activeSection: AppSectionId = resolvedSection ?? DEFAULT_SECTION_ID;
-    const shouldWarnOnNavigate =
-        activeSection === "workspace" ||
-        activeSection === "chineseTranscription";
-
     const navigateToSection = (sectionId: AppSectionId) => {
         if (sectionId === activeSection) return;
-        if (shouldWarnOnNavigate) {
-            const confirmed = confirm(
-                "You have in-progress work. Are you sure you want to leave this page?",
-            );
-            if (!confirmed) return;
-        }
         router.push(toSectionPath(sectionId));
     };
 
@@ -99,7 +89,7 @@ export function AppShell() {
         return () => {
             window.removeEventListener("omnivideo:navigate", handleNavigate);
         };
-    }, [activeSection, shouldWarnOnNavigate, router]);
+    }, [activeSection, router]);
 
     const applyTheme = (theme: AppThemeKey) => {
         const root = document.documentElement;

@@ -54,6 +54,7 @@ describe("resolveMediaUrl", () => {
       sourceUrl: "https://www.youtube.com/watch?v=demo",
       canonicalUrl: "https://www.youtube.com/watch?v=demo",
       storageProvider: "telegram",
+      folder: "intake",
       tags: ["intake", "raw"],
       originPlatform: "youtube",
     });

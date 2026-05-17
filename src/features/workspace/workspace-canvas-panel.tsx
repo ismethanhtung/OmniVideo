@@ -13,6 +13,7 @@ import {
     Volume2,
     Workflow,
     FastForward,
+    Sprout,
 } from "lucide-react";
 
 import type { LeftbarNavItem } from "@/components/layout/types";
@@ -24,6 +25,11 @@ import {
     updateProgressStep,
     updateProgressTask,
 } from "@/lib/ui/progress-center";
+import {
+    buildFolderAssetTags,
+    getAssetFolderName,
+    matchesVideoAssetSearch,
+} from "@/lib/storage/asset-folder";
 import {
     fetchFacebookPagesForAccount,
     type FacebookPageOption,
@@ -115,6 +121,8 @@ type WorkspaceAsset = {
         vietnameseTitle?: string | null;
         vietnameseDescription?: string | null;
         vietnameseHashtags?: string[] | null;
+        folder?: string | null;
+        tags?: string[] | null;
         videoEditSetup?: {
             mirrorEnabled?: boolean;
             blurEnabled?: boolean;
@@ -3503,11 +3511,27 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         "storageProviderAccountId",
                         storageAccount._id,
                     );
+                    const upstreamAssetNode = findUpstreamSourceAssetNode(
+                        graph,
+                        artifactNode.id,
+                    );
+                    const upstreamAssetId = getStringConfig(
+                        upstreamAssetNode ?? undefined,
+                        "assetId",
+                    );
+                    const artifactFolder =
+                        getAssetFolderName(
+                            storageAssets.find(
+                                (asset) => asset._id === upstreamAssetId,
+                            ) ?? {},
+                        ) || "workspace";
+                    uploadForm.set("folder", artifactFolder);
                     uploadForm.set(
                         "tags",
-                        artifactNode.templateNodeType === "edit.mirror"
-                            ? "workspace,mirror"
-                            : "workspace,dubbing",
+                        buildFolderAssetTags({
+                            folder: artifactFolder,
+                            lifecycle: "processed",
+                        }).join(","),
                     );
                     uploadForm.set("title", artifact.fileName);
                     uploadForm.set("contentIntent", "other");
@@ -4342,9 +4366,8 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                                     <p className="mt-1 text-[11px] leading-5 text-muted">
                                         Add nodes from the catalog or seed a
                                         sample flow to start shaping the
-                                        pipeline. Bạn có thể nối tự do, ví dụ
-                                        Upload → Storage → 2 Publish Social khác
-                                        platform.
+                                        pipeline. Ex: Upload → Storage → Publish
+                                        Social.
                                     </p>
                                 </div>
                             ) : null}
@@ -6843,7 +6866,7 @@ function InspectorPanel({
                                     className="w-full border border-main bg-main px-2.5 py-2 text-left hover:bg-secondary"
                                 >
                                     <div className="flex items-center gap-1.5">
-                                        <Workflow className="h-3.5 w-3.5 text-muted" />
+                                        <Sprout className="h-3.5 w-3.5 text-muted" />
                                         <p className="text-[11px] font-semibold text-main">
                                             {seed.label}
                                         </p>
@@ -7138,7 +7161,11 @@ function WorkspaceStorageAssetPicker({
 }) {
     const [isOpen, setIsOpen] = useState(false);
     const [previewAssetId, setPreviewAssetId] = useState<string | null>(null);
+    const [searchQuery, setSearchQuery] = useState("");
     const selectedAsset = assets.find((asset) => asset._id === selectedAssetId);
+    const visibleAssets = assets.filter((asset) =>
+        matchesVideoAssetSearch(asset, searchQuery),
+    );
 
     return (
         <div>
@@ -7162,13 +7189,23 @@ function WorkspaceStorageAssetPicker({
             </button>
             {isOpen ? (
                 <div className="mt-2 max-h-56 overflow-y-auto border border-main bg-main">
-                    {assets.length === 0 ? (
+                    <div className="border-b border-main p-2">
+                        <input
+                            value={searchQuery}
+                            onChange={(event) =>
+                                setSearchQuery(event.target.value)
+                            }
+                            placeholder="Search title, folder, tags..."
+                            className="w-full border border-main bg-main px-2 py-1 text-[11px] text-main outline-none transition-colors focus:border-accent"
+                        />
+                    </div>
+                    {visibleAssets.length === 0 ? (
                         <p className="px-3 py-4 text-[11px] text-muted">
-                            No asset available.
+                            No matching asset.
                         </p>
                     ) : (
                         <div className="space-y-2 p-2">
-                            {assets.map((asset) => {
+                            {visibleAssets.map((asset) => {
                                 const isSelected =
                                     selectedAssetId === asset._id;
                                 const isPreviewing =
@@ -7194,6 +7231,11 @@ function WorkspaceStorageAssetPicker({
                                                 </p>
                                                 <p className="mt-1 truncate text-[10px] text-muted">
                                                     {[
+                                                        getAssetFolderName(
+                                                            asset,
+                                                        ),
+                                                        ...(asset.metadata
+                                                            ?.tags ?? []),
                                                         asset.storageProvider,
                                                         asset.createdAt
                                                             ? new Date(

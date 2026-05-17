@@ -13,4 +13,9 @@ describe("Publish Records View Mode errors", () => {
             'statusFailed\n                                        ? "font-semibold text-rose-700"',
         );
     });
+
+    it("makes video assets searchable by folder metadata", () => {
+        expect(source).toContain("matchesVideoAssetSearch");
+        expect(source).toContain("Search title, folder, tags...");
+    });
 });

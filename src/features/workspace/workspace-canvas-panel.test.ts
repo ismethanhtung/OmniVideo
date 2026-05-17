@@ -34,6 +34,8 @@ describe("WorkspaceCanvasPanel canvas interactions", () => {
         expect(source).toContain("WorkspaceStorageAssetPicker");
         expect(source).toContain("Select existing video");
         expect(source).toContain("/api/storage/assets/${asset._id}/download?disposition=inline");
+        expect(source).toContain("matchesVideoAssetSearch");
+        expect(source).toContain("Search title, folder, tags...");
     });
 
     it("asks confirmation before clearing draft", () => {

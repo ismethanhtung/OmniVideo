@@ -51,6 +51,7 @@ type IntakeRunHistory = {
     status: "running" | "failed" | "success" | "queued";
     inputSnapshot?: {
         title?: string | null;
+        folder?: string | null;
         storageProvider?: string;
         fileName?: string;
         fileSizeBytes?: number;
@@ -244,7 +245,9 @@ export function LocalUploadIntakePanel({
     const [videoFile, setVideoFile] = useState<File | null>(null);
     const [title, setTitle] = useState("");
     const [description, setDescription] = useState("");
-    const [tags, setTags] = useState("local, raw");
+    const [folder, setFolder] = useState("");
+    const [isCreatingFolder, setIsCreatingFolder] = useState(false);
+    const [knownFolders, setKnownFolders] = useState<string[]>([]);
     const [storageProviderAccountId, setStorageProviderAccountId] =
         useState("");
     const [storageAccounts, setStorageAccounts] = useState<
@@ -266,6 +269,20 @@ export function LocalUploadIntakePanel({
     });
     const [driveFallbackConfirmation, setDriveFallbackConfirmation] =
         useState<DriveFallbackConfirmation | null>(null);
+
+    useEffect(() => {
+        fetch("/api/storage/folders", {
+            method: "GET",
+            cache: "no-store",
+        })
+            .then((response) => response.json())
+            .then((payload: { ok: boolean; data?: string[] }) => {
+                if (payload.ok && payload.data) {
+                    setKnownFolders(payload.data);
+                }
+            })
+            .catch(() => {});
+    }, []);
 
     const uploadAccounts = useMemo(
         () =>
@@ -426,7 +443,11 @@ export function LocalUploadIntakePanel({
             if (description.trim()) {
                 formData.append("description", description.trim());
             }
-            formData.append("tags", tags);
+            formData.append("folder", folder.trim());
+            formData.append(
+                "tags",
+                [folder.trim(), "raw"].filter(Boolean).join(","),
+            );
             formData.append("storageProvider", targetAccount.providerType);
             formData.append("storageProviderAccountId", targetAccount._id);
             formData.append("contentIntent", "other");
@@ -693,15 +714,42 @@ export function LocalUploadIntakePanel({
 
                         <label className="block">
                             <span className="text-[12px] font-medium text-main">
-                                Tags comma-separated
+                                Folder
                             </span>
-                            <input
-                                value={tags}
-                                onChange={(event) =>
-                                    setTags(event.target.value)
-                                }
+                            <select
+                                value={isCreatingFolder ? "__new__" : folder}
+                                onChange={(event) => {
+                                    if (event.target.value === "__new__") {
+                                        setIsCreatingFolder(true);
+                                        setFolder("");
+                                        return;
+                                    }
+                                    setIsCreatingFolder(false);
+                                    setFolder(event.target.value);
+                                }}
                                 className="mt-1 w-full border border-main bg-main px-3 py-2 text-[12px] text-main outline-none transition-colors focus:border-accent"
-                            />
+                            >
+                                <option value="">Select folder</option>
+                                {knownFolders.map((knownFolder) => (
+                                    <option
+                                        key={knownFolder}
+                                        value={knownFolder}
+                                    >
+                                        {knownFolder}
+                                    </option>
+                                ))}
+                                <option value="__new__">New folder...</option>
+                            </select>
+                            {isCreatingFolder ? (
+                                <input
+                                    value={folder}
+                                    onChange={(event) =>
+                                        setFolder(event.target.value)
+                                    }
+                                    placeholder="Ví dụ: kiến thức sức khoẻ"
+                                    className="mt-2 w-full border border-main bg-main px-3 py-2 text-[12px] text-main outline-none transition-colors focus:border-accent"
+                                />
+                            ) : null}
                         </label>
 
                         <button
@@ -709,7 +757,8 @@ export function LocalUploadIntakePanel({
                             disabled={
                                 state.status === "running" ||
                                 !selectedAccount ||
-                                !videoFile
+                                !videoFile ||
+                                !folder.trim()
                             }
                             className="inline-flex items-center gap-2 border border-main bg-secondary px-3 py-2 text-[12px] font-semibold text-main transition-colors hover:bg-secondary/75 disabled:cursor-not-allowed disabled:opacity-60"
                         >

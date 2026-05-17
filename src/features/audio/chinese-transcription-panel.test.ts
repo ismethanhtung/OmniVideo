@@ -12,6 +12,8 @@ describe("Audio Transcript asset picker preview", () => {
     expect(source).toContain("/api/storage/assets/${asset._id}/download?disposition=inline");
     expect(source).toContain("preload=\"metadata\"");
     expect(source).toContain("<video");
+    expect(source).toContain("matchesVideoAssetSearch");
+    expect(source).toContain("Search title, folder, tags...");
   });
 
   it("keeps heavy transcript panels collapsed by default", () => {

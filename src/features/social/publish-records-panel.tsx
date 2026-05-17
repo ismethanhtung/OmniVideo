@@ -5,6 +5,10 @@ import { ExternalLink, Plus, RefreshCw, Trash2 } from "lucide-react";
 
 import type { LeftbarNavItem } from "@/components/layout/types";
 import { StatusText } from "@/components/ui/status-text";
+import {
+    getAssetFolderName,
+    matchesVideoAssetSearch,
+} from "@/lib/storage/asset-folder";
 import { getTelegramDownloadBlockedReason } from "@/lib/storage/telegram-download";
 import {
     finishProgressTask,
@@ -39,6 +43,8 @@ type StoredVideoAsset = {
     vietnameseTitle?: string | null;
     vietnameseDescription?: string | null;
     vietnameseHashtags?: string[] | null;
+    folder?: string | null;
+    tags?: string[] | null;
     sourceUrl?: string | null;
     width?: number | null;
     height?: number | null;
@@ -232,6 +238,7 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
     const [submitProgress, setSubmitProgress] = useState(0);
     const [showForm, setShowForm] = useState(false);
     const [showAssetPicker, setShowAssetPicker] = useState(false);
+    const [assetSearchQuery, setAssetSearchQuery] = useState("");
     const [assetPreview, setAssetPreview] = useState<AssetPreviewState | null>(
         null,
     );
@@ -254,6 +261,13 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
     const selectedAsset = useMemo(
         () => assets.find((asset) => asset._id === form.assetId),
         [assets, form.assetId],
+    );
+    const visibleAssets = useMemo(
+        () =>
+            assets.filter((asset) =>
+                matchesVideoAssetSearch(asset, assetSearchQuery),
+            ),
+        [assetSearchQuery, assets],
     );
     const hasYouTubeShortDestination = form.destinations.some(
         (destination) => destination.publishType === "youtube_short",
@@ -1201,13 +1215,25 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
                                 ) : null}
                                 {showAssetPicker ? (
                                     <div className="mt-2 max-h-64 overflow-y-auto border border-main bg-main">
-                                        {assets.length === 0 ? (
+                                        <div className="border-b border-main p-2">
+                                            <input
+                                                value={assetSearchQuery}
+                                                onChange={(event) =>
+                                                    setAssetSearchQuery(
+                                                        event.target.value,
+                                                    )
+                                                }
+                                                placeholder="Search title, folder, tags..."
+                                                className="w-full border border-main bg-main px-2 py-1 text-[11px] text-main outline-none transition-colors focus:border-accent"
+                                            />
+                                        </div>
+                                        {visibleAssets.length === 0 ? (
                                             <p className="px-3 py-4 text-[11px] text-muted">
-                                                No asset available.
+                                                No matching asset.
                                             </p>
                                         ) : (
                                             <div className="space-y-2 p-2">
-                                                {assets.map((asset) => {
+                                                {visibleAssets.map((asset) => {
                                                     const isSelected =
                                                         form.assetId ===
                                                         asset._id;
@@ -1289,6 +1315,13 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
                                                                     </p>
                                                                     <p className="mt-1 truncate text-[10px] text-muted">
                                                                         {[
+                                                                            getAssetFolderName(
+                                                                                asset,
+                                                                            ),
+                                                                            ...(asset
+                                                                                .metadata
+                                                                                ?.tags ??
+                                                                                []),
                                                                             asset
                                                                                 .createdFrom
                                                                                 ?.storageProviderLabel ??

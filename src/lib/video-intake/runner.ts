@@ -98,6 +98,7 @@ export async function runUrlIntakePipeline(
       sourceUrl: rawInput.sourceUrl,
       storageProvider: rawInput.storageProvider,
       storageProviderAccountId: rawInput.storageProviderAccountId ?? null,
+      folder: rawInput.folder ?? null,
       qualityPreference: rawInput.qualityPreference ?? "best",
       formatSelector: rawInput.formatSelector ?? null,
       tags: rawInput.tags,
@@ -178,6 +179,8 @@ export async function runUrlIntakePipeline(
           sourceId: sourceId as ObjectId,
           media,
           upload,
+          folder: input.folder,
+          tags: input.tags,
         }),
     });
 

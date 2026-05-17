@@ -22,6 +22,8 @@
 
 ## Review
 
+- `FAST-UX-026` - Polish Folder Selector and Remove Navigation Leave Warnings.
+- `P1-STORAGE-007` - Add Lightweight Folder Metadata and Asset Search.
 - `FAST-WORKSPACE-028` - Remove blue focus outline from edge delete control.
 - `FAST-WORKSPACE-027` - Fix Workspace edge delete hitbox and curve drag preview.
 - `FAST-WORKSPACE-026` - Add subtle dot grid to Workspace canvas.

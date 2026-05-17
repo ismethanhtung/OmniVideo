@@ -24,6 +24,7 @@ export type IntakeInput = {
   sourceUrl: string;
   storageProvider: StorageProvider;
   storageProviderAccountId?: string;
+  folder?: string;
   tags: string[];
   qualityPreference?: IntakeQualityPreference;
   formatSelector?: string;
@@ -34,7 +35,8 @@ export type IntakeInput = {
   ownershipStatus?: string;
 };
 
-export type ValidatedIntakeInput = IntakeInput & {
+export type ValidatedIntakeInput = Omit<IntakeInput, "folder"> & {
+  folder: string;
   canonicalUrl: string;
   originPlatform: OriginPlatform;
 };
@@ -93,6 +95,7 @@ export type YtDlpFormatSummary = {
 export type LocalIntakeInput = {
   storageProvider: StorageProvider;
   storageProviderAccountId: string;
+  folder?: string;
   tags: string[];
   title?: string;
   description?: string;
@@ -108,6 +111,7 @@ export type LocalIntakeInput = {
 export type ValidatedLocalIntakeInput = {
   storageProvider: StorageProvider;
   storageProviderAccountId: string;
+  folder: string;
   tags: string[];
   title?: string;
   description?: string;

@@ -107,6 +107,7 @@ export async function runLocalFileIntakePipeline(
       fileSizeBytes: rawInput.fileSizeBytes,
       storageProvider: rawInput.storageProvider,
       storageProviderAccountId: rawInput.storageProviderAccountId,
+      folder: rawInput.folder ?? null,
       tags: rawInput.tags,
       title: rawInput.title ?? null,
       description: rawInput.description ?? null,
@@ -189,6 +190,8 @@ export async function runLocalFileIntakePipeline(
           sourceId: sourceId as ObjectId,
           media,
           upload,
+          folder: input.folder,
+          tags: input.tags,
           pipelineId: "mvp-local-intake-to-storage",
         }),
     });
