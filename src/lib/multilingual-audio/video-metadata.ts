@@ -1,8 +1,13 @@
-import { ChineseTranscriptionError, type TranscriptTranslationSegment, type VietnameseVideoMetadataResult } from "./types";
+import {
+  ChineseTranscriptionError,
+  DEFAULT_TRANSLATION_MODEL,
+  type TranscriptTranslationSegment,
+  type VietnameseVideoMetadataResult,
+} from "./types";
 import { readGroqApiKey } from "./validation";
 
 const DEFAULT_GROQ_BASE_URL = "https://api.groq.com/openai/v1";
-const DEFAULT_MODEL = "llama-3.1-8b-instant";
+const DEFAULT_MODEL = DEFAULT_TRANSLATION_MODEL;
 
 export async function generateVietnameseVideoMetadata(input: {
   translatedSegments: TranscriptTranslationSegment[];

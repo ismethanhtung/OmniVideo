@@ -12,6 +12,7 @@
 
 - `FAST-AUDIO-008` - Align Edge TTS voice to segment timestamps.
 - `FAST-AUDIO-020` - Add asset preview in Audio Transcript Video Asset picker.
+- `FAST-AI-001` - Switch default translation provider/model to 9router.
 - `FAST-INTAKE-004` - Add Again retry action in Video Intake Run History.
 - `FAST-UX-008` - Global full-width layout and hide per-page header block.
 - `FAST-UX-009` - Add 5 typography options and 3 additional light themes.

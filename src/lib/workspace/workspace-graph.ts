@@ -756,7 +756,7 @@ export const WORKSPACE_NODE_TEMPLATES: WorkspaceNodeTemplate[] = [
                 label: "Translation model",
                 type: "select",
                 required: true,
-                defaultValue: "llama-3.1-8b-instant",
+                defaultValue: "cx/gpt-5.3-codex-low",
             },
             {
                 key: "originalAudioVolume",
@@ -871,7 +871,7 @@ export const WORKSPACE_NODE_TEMPLATES: WorkspaceNodeTemplate[] = [
                 label: "Translation model",
                 type: "select",
                 required: true,
-                defaultValue: "llama-3.1-8b-instant",
+                defaultValue: "cx/gpt-5.3-codex-low",
             },
             {
                 key: "targetLanguage",
@@ -919,7 +919,7 @@ export const WORKSPACE_NODE_TEMPLATES: WorkspaceNodeTemplate[] = [
                 label: "Metadata model",
                 type: "select",
                 required: true,
-                defaultValue: "llama-3.1-8b-instant",
+                defaultValue: "cx/gpt-5.3-codex-low",
             },
         ],
         timeoutMs: 300000,
@@ -2774,7 +2774,7 @@ export function createUploadDubbingToSocialSampleGraph(): WorkspaceGraph {
                 config: {
                     language: "zh",
                     targetLanguage: "vi",
-                    model: "llama-3.1-8b-instant",
+                    model: "cx/gpt-5.3-codex-low",
                     originalAudioVolume: 0.18,
                     voiceVolume: 1,
                     ttsPreserveTimestampGaps: true,
@@ -2846,7 +2846,7 @@ export function createUploadVietnameseMaskPublishSampleGraph(): WorkspaceGraph {
                 config: {
                     language: "zh",
                     targetLanguage: "vi",
-                    model: "llama-3.1-8b-instant",
+                    model: "cx/gpt-5.3-codex-low",
                     originalAudioVolume: 0.18,
                     voiceVolume: 1,
                     ttsPreserveTimestampGaps: true,
@@ -2959,7 +2959,7 @@ export function createAssetPreprocessDubbingSampleGraph(): WorkspaceGraph {
                 config: {
                     language: "zh",
                     targetLanguage: "vi",
-                    model: "llama-3.1-8b-instant",
+                    model: "cx/gpt-5.3-codex-low",
                     originalAudioVolume: 0.18,
                     voiceVolume: 1,
                     ttsNoiseScale: 0.667,
@@ -3034,7 +3034,7 @@ export function createAssetTranscriptFullProcessingSampleGraph(): WorkspaceGraph
                 config: {
                     language: "zh",
                     targetLanguage: "vi",
-                    model: "llama-3.1-8b-instant",
+                    model: "cx/gpt-5.3-codex-low",
                     originalAudioVolume: 0.18,
                     voiceVolume: 1,
                     ttsNoiseScale: 0.667,
@@ -3049,7 +3049,7 @@ export function createAssetTranscriptFullProcessingSampleGraph(): WorkspaceGraph
                 templateNodeType: "text.generate-vi-metadata",
                 label: "Generate VI metadata",
                 position: { x: 820, y: 90 },
-                config: { model: "llama-3.1-8b-instant" },
+                config: { model: "cx/gpt-5.3-codex-low" },
             },
             {
                 id: "edit-mirror-1",

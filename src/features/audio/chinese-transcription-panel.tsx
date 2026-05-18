@@ -19,6 +19,11 @@ import {
 import type { LeftbarNavItem } from "@/components/layout/types";
 import { AssetLifecycleBadges } from "@/components/ui/asset-lifecycle-badges";
 import {
+    DEFAULT_OPENAI_COMPATIBLE_PROVIDER_LABEL,
+    DEFAULT_OPENAI_COMPATIBLE_PROVIDER_TYPE,
+    resolveDefaultAiProviderId,
+} from "@/lib/ai-providers/default-provider";
+import {
     getAssetFolderName,
     matchesVideoAssetSearch,
 } from "@/lib/storage/asset-folder";
@@ -31,6 +36,7 @@ import type {
     VoiceSegmentTimingDiagnostic,
 } from "@/lib/multilingual-audio/types";
 import {
+    DEFAULT_TRANSLATION_MODEL,
     DEFAULT_PIPER_TTS_SETTINGS,
     PIPER_TTS_ALIGNMENT_SETTINGS,
 } from "@/lib/multilingual-audio/types";
@@ -571,7 +577,9 @@ export function ChineseTranscriptionPanel({
     const [aiProviders, setAiProviders] = useState<AiProviderOption[]>([]);
     const [selectedProviderId, setSelectedProviderId] = useState("");
     const [aiModels, setAiModels] = useState<AiModelOption[]>([]);
-    const [translationModel, setTranslationModel] = useState("");
+    const [translationModel, setTranslationModel] = useState(
+        DEFAULT_TRANSLATION_MODEL,
+    );
     const [isLoadingModels, setIsLoadingModels] = useState(false);
     const [ttsBinaryPath, setTtsBinaryPath] = useState<string>(
         DEFAULT_PIPER_TTS_SETTINGS.binaryPath,
@@ -665,7 +673,11 @@ export function ChineseTranscriptionPanel({
                     );
                     setAiProviders(active);
                     if (active.length > 0 && !selectedProviderId) {
-                        setSelectedProviderId(active[0]._id);
+                        const defaultProviderId =
+                            resolveDefaultAiProviderId(active);
+                        setSelectedProviderId(
+                            defaultProviderId || active[0]._id,
+                        );
                     }
                 }
             })
@@ -757,7 +769,7 @@ export function ChineseTranscriptionPanel({
     const fetchModelsForProvider = async (providerId: string) => {
         if (!providerId) {
             setAiModels([]);
-            setTranslationModel("");
+            setTranslationModel(DEFAULT_TRANSLATION_MODEL);
             return;
         }
         setIsLoadingModels(true);
@@ -770,7 +782,12 @@ export function ChineseTranscriptionPanel({
             if (payload.ok && payload.data) {
                 setAiModels(payload.data);
                 if (payload.data.length > 0) {
-                    setTranslationModel(payload.data[0].id);
+                    const preferredModel =
+                        payload.data.find(
+                            (model) =>
+                                model.id === DEFAULT_TRANSLATION_MODEL,
+                        )?.id ?? payload.data[0].id;
+                    setTranslationModel(preferredModel);
                 }
             } else {
                 setAiModels([]);
@@ -784,12 +801,15 @@ export function ChineseTranscriptionPanel({
 
     const handleProviderChange = (providerId: string) => {
         setSelectedProviderId(providerId);
-        setTranslationModel("");
+        setTranslationModel(DEFAULT_TRANSLATION_MODEL);
         setAiModels([]);
         if (providerId) {
             fetchModelsForProvider(providerId);
         }
     };
+
+    const effectiveProviderId =
+        selectedProviderId || resolveDefaultAiProviderId(aiProviders);
 
     const runTranscription = async () => {
         if (!file && !selectedAssetId) {
@@ -923,7 +943,7 @@ export function ChineseTranscriptionPanel({
                     sourceLanguage: result.language || language,
                     targetLanguage: "vi",
                     model: translationModel,
-                    providerId: selectedProviderId || undefined,
+                    providerId: effectiveProviderId || undefined,
                 }),
             });
             const payload = (await response.json()) as TranslationApiPayload;
@@ -1069,7 +1089,7 @@ export function ChineseTranscriptionPanel({
                     sourceDescription:
                         selectedAsset?.metadata?.description ?? "",
                     model: translationModel,
-                    providerId: selectedProviderId || undefined,
+                    providerId: effectiveProviderId || undefined,
                 }),
             });
             const payload = (await response.json()) as
@@ -2127,7 +2147,11 @@ export function ChineseTranscriptionPanel({
                                     className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main"
                                 >
                                     <option value="">
-                                        Default (env GROQ_API_KEY)
+                                        {DEFAULT_OPENAI_COMPATIBLE_PROVIDER_LABEL} (
+                                        {
+                                            DEFAULT_OPENAI_COMPATIBLE_PROVIDER_TYPE
+                                        }
+                                        )
                                     </option>
                                     {aiProviders.map((provider) => (
                                         <option
@@ -2177,7 +2201,7 @@ export function ChineseTranscriptionPanel({
                                                 event.currentTarget.value,
                                             )
                                         }
-                                        placeholder="llama-3.1-8b-instant"
+                                        placeholder="cx/gpt-5.3-codex-low"
                                         className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main placeholder:text-muted/60"
                                     />
                                 )}

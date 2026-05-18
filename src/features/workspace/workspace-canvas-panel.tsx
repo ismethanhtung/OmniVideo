@@ -37,6 +37,11 @@ import {
     type FacebookPageOption,
 } from "@/lib/social/facebook-pages-client";
 import {
+    DEFAULT_OPENAI_COMPATIBLE_PROVIDER_LABEL,
+    DEFAULT_OPENAI_COMPATIBLE_PROVIDER_TYPE,
+    resolveDefaultAiProviderId,
+} from "@/lib/ai-providers/default-provider";
+import {
     WORKSPACE_DRAFT_STORAGE_KEY,
     WORKSPACE_NODE_TEMPLATES,
     addWorkspaceNode,
@@ -2760,6 +2765,9 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         translationNode,
                         "translationProviderId",
                     ).trim();
+                    const effectiveTranslationProviderId =
+                        translationProviderId ||
+                        resolveDefaultAiProviderId(aiProviders);
 
                     setNodeStatus(
                         translationNode.id,
@@ -2794,7 +2802,8 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                                     "model",
                                     DEFAULT_TRANSLATION_MODEL,
                                 ),
-                                providerId: translationProviderId || undefined,
+                                providerId:
+                                    effectiveTranslationProviderId || undefined,
                             }),
                         },
                     });
@@ -2873,7 +2882,9 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                                     getStringConfig(
                                         metadataNode,
                                         "metadataProviderId",
-                                    ).trim() || undefined,
+                                    ).trim() ||
+                                    resolveDefaultAiProviderId(aiProviders) ||
+                                    undefined,
                             }),
                         },
                     });
@@ -3051,8 +3062,14 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         dubbingNode,
                         "translationProviderId",
                     ).trim();
-                    if (translationProviderId) {
-                        formData.set("providerId", translationProviderId);
+                    const effectiveTranslationProviderId =
+                        translationProviderId ||
+                        resolveDefaultAiProviderId(aiProviders);
+                    if (effectiveTranslationProviderId) {
+                        formData.set(
+                            "providerId",
+                            effectiveTranslationProviderId,
+                        );
                     }
                     formData.set(
                         "originalAudioVolume",
@@ -3917,9 +3934,8 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                                 )
                                     ? processedAssetId
                                     : undefined,
-                            ].filter(
-                                (assetId): assetId is string =>
-                                    Boolean(assetId),
+                            ].filter((assetId): assetId is string =>
+                                Boolean(assetId),
                             ),
                         ),
                     );
@@ -4538,11 +4554,11 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                             </svg>
 
                             {graph.nodes.length === 0 ? (
-                                <div className="absolute left-8 top-8 max-w-md border border-dashed border-main bg-main px-4 py-3">
-                                    <p className="text-[12px] font-semibold text-main">
+                                <div className="absolute left-16 top-16 max-w-md border border-dashed border-main bg-main px-4 py-3">
+                                    <p className="text-[16px] font-semibold text-main">
                                         Workspace draft is empty
                                     </p>
-                                    <p className="mt-1 text-[11px] leading-5 text-muted">
+                                    <p className="mt-1 text-[14px] leading-5 text-muted">
                                         Add nodes from the catalog or seed a
                                         sample flow to start shaping the
                                         pipeline. Ex: Upload → Storage → Publish
@@ -6575,9 +6591,9 @@ function NodeRuntimeConfig({
                         />
                     </label>
                     <p className="border border-main bg-main px-3 py-2 text-[10px] leading-4 text-muted">
-                        Nếu node này nằm sau Publish Social, cleanup chỉ chạy khi
-                        publish upstream thành công. Bản V1 chỉ xóa video gốc và
-                        asset processed cuối cùng đã lưu vào Storage.
+                        Nếu node này nằm sau Publish Social, cleanup chỉ chạy
+                        khi publish upstream thành công. Bản V1 chỉ xóa video
+                        gốc và asset processed cuối cùng đã lưu vào Storage.
                     </p>
                 </div>
             </InspectorSection>
@@ -6611,15 +6627,24 @@ function NodeRuntimeConfig({
                                 const models =
                                     await onEnsureAiProviderModels(value);
                                 if (models[0]) {
+                                    const preferredModelId =
+                                        models.find(
+                                            (model) =>
+                                                model.id ===
+                                                DEFAULT_TRANSLATION_MODEL,
+                                        )?.id ?? models[0].id;
                                     setConfig({
                                         translationProviderId: value,
-                                        model: models[0].id,
+                                        model: preferredModelId,
                                     });
                                 }
                             }
                         }}
                     >
-                        <option value="">Default (env GROQ_API_KEY)</option>
+                        <option value="">
+                            {DEFAULT_OPENAI_COMPATIBLE_PROVIDER_LABEL} (
+                            {DEFAULT_OPENAI_COMPATIBLE_PROVIDER_TYPE})
+                        </option>
                         {aiProviders.map((provider) => (
                             <option key={provider._id} value={provider._id}>
                                 {provider.label} ({provider.providerType})
@@ -6651,7 +6676,7 @@ function NodeRuntimeConfig({
                                 DEFAULT_TRANSLATION_MODEL,
                             )}
                             disabled={isRunningFlow}
-                            placeholder="llama-3.1-8b-instant"
+                            placeholder="cx/gpt-5.3-codex-low"
                             onChange={(value) => setConfig({ model: value })}
                         />
                     )}
@@ -6703,15 +6728,24 @@ function NodeRuntimeConfig({
                                 const models =
                                     await onEnsureAiProviderModels(value);
                                 if (models[0]) {
+                                    const preferredModelId =
+                                        models.find(
+                                            (model) =>
+                                                model.id ===
+                                                DEFAULT_TRANSLATION_MODEL,
+                                        )?.id ?? models[0].id;
                                     setConfig({
                                         metadataProviderId: value,
-                                        model: models[0].id,
+                                        model: preferredModelId,
                                     });
                                 }
                             }
                         }}
                     >
-                        <option value="">Default (env GROQ_API_KEY)</option>
+                        <option value="">
+                            {DEFAULT_OPENAI_COMPATIBLE_PROVIDER_LABEL} (
+                            {DEFAULT_OPENAI_COMPATIBLE_PROVIDER_TYPE})
+                        </option>
                         {aiProviders.map((provider) => (
                             <option key={provider._id} value={provider._id}>
                                 {provider.label} ({provider.providerType})
@@ -6740,7 +6774,7 @@ function NodeRuntimeConfig({
                                 DEFAULT_TRANSLATION_MODEL,
                             )}
                             disabled={isRunningFlow}
-                            placeholder="llama-3.1-8b-instant"
+                            placeholder="cx/gpt-5.3-codex-low"
                             onChange={(value) => setConfig({ model: value })}
                         />
                     )}
@@ -6802,16 +6836,23 @@ function NodeRuntimeConfig({
                                                 value,
                                             );
                                         if (models[0]) {
+                                            const preferredModelId =
+                                                models.find(
+                                                    (model) =>
+                                                        model.id ===
+                                                        DEFAULT_TRANSLATION_MODEL,
+                                                )?.id ?? models[0].id;
                                             setConfig({
                                                 translationProviderId: value,
-                                                model: models[0].id,
+                                                model: preferredModelId,
                                             });
                                         }
                                     }
                                 }}
                             >
                                 <option value="">
-                                    Default (env GROQ_API_KEY)
+                                    {DEFAULT_OPENAI_COMPATIBLE_PROVIDER_LABEL} (
+                                    {DEFAULT_OPENAI_COMPATIBLE_PROVIDER_TYPE})
                                 </option>
                                 {aiProviders.map((provider) => (
                                     <option
@@ -6851,7 +6892,7 @@ function NodeRuntimeConfig({
                                         DEFAULT_TRANSLATION_MODEL,
                                     )}
                                     disabled={isRunningFlow}
-                                    placeholder="llama-3.1-8b-instant"
+                                    placeholder="cx/gpt-5.3-codex-low"
                                     onChange={(value) =>
                                         setConfig({ model: value })
                                     }

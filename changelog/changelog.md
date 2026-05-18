@@ -1,5 +1,13 @@
 # OmniVideo Changelog
 
+## FAST-AI-001 - Switch Default Translation Provider/Model to 9router
+
+- Bumped app version from `0.9.10` to `0.9.11` as a patch release for translation default routing.
+- Changed default translation model from `llama-3.1-8b-instant` to `cx/gpt-5.3-codex-low` in shared multilingual defaults and Workspace node defaults.
+- Replaced fallback provider label `Default (env GROQ_API_KEY)` with `9router (openai-compatible)` in Workspace and Audio Transcript selector UIs.
+- Added reusable default-provider resolver so empty provider configs resolve to the active `9router (openai-compatible)` provider id when available.
+- Kept Whisper/STT paths unchanged; only translation/metadata/dubbing fallback provider-model defaults were updated.
+
 ## FAST-WORKSPACE-031 - Add Cleanup Assets Workspace Node
 
 - Bumped app version from `0.9.9` to `0.9.10` as a patch release for Workspace cleanup automation.
