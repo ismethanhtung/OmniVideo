@@ -67,6 +67,65 @@ describe("workspace graph helpers", () => {
         });
     });
 
+    it("creates cleanup nodes with explicit delete toggles defaulting off", () => {
+        const template = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "cleanup.delete-assets",
+        );
+
+        expect(template).toBeDefined();
+
+        const graph = addWorkspaceNode(
+            createEmptyWorkspaceGraph("Cleanup"),
+            template!,
+            { x: 120, y: 220 },
+        );
+
+        expect(template?.category).toBe("cleanup");
+        expect(graph.nodes[0]).toMatchObject({
+            id: "cleanup-delete-assets-1",
+            config: {
+                deleteOriginalAsset: false,
+                deleteProcessedAsset: false,
+            },
+        });
+    });
+
+    it("plans cleanup after a successful publish path with producer context", () => {
+        const assetTemplate = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "source.asset",
+        )!;
+        const publishTemplate = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "social.publish",
+        )!;
+        const cleanupTemplate = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "cleanup.delete-assets",
+        )!;
+        let graph = createEmptyWorkspaceGraph("Cleanup publish");
+        graph = addWorkspaceNode(graph, assetTemplate, { x: 0, y: 0 });
+        graph = addWorkspaceNode(graph, publishTemplate, { x: 220, y: 0 });
+        graph = addWorkspaceNode(graph, cleanupTemplate, { x: 440, y: 0 });
+        graph = connectWorkspaceNodes(
+            graph,
+            "source-asset-1",
+            "social-publish-1",
+        );
+        graph = connectWorkspaceNodes(
+            graph,
+            "social-publish-1",
+            "cleanup-delete-assets-1",
+        );
+
+        const plan = planWorkspaceFlow(graph);
+
+        expect(plan.ok).toBe(true);
+        expect(plan.steps).toContainEqual({
+            kind: "cleanup-assets",
+            cleanupNodeId: "cleanup-delete-assets-1",
+            producerNodeId: "source-asset-1",
+            publishNodeId: "social-publish-1",
+        });
+    });
+
     it("creates Piper workspace nodes with strict timing defaults", () => {
         for (const nodeType of [
             "audio.voice-generation",

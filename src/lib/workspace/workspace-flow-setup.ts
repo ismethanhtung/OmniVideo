@@ -56,6 +56,8 @@ function getStepNodeIds(step: WorkspaceFlowStep): string[] {
             ];
         case "store-artifact":
             return [step.artifactNodeId, step.storageNodeId];
+        case "cleanup-assets":
+            return [step.cleanupNodeId];
     }
 }
 

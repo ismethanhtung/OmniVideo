@@ -1,5 +1,13 @@
 # OmniVideo Changelog
 
+## FAST-WORKSPACE-031 - Add Cleanup Assets Workspace Node
+
+- Bumped app version from `0.9.9` to `0.9.10` as a patch release for Workspace cleanup automation.
+- Added a dedicated `cleanup` node category and new `Cleanup Assets` node with explicit `Delete original asset` / `Delete processed asset` runtime controls.
+- Extended Workspace planning with `cleanup-assets` steps that can run after stored-asset paths or after `Publish Social`.
+- Publish-gated cleanup now runs only when the upstream publish step succeeded, then reuses the existing storage asset DELETE API so selected Drive files, metadata, and related intake history are cleaned consistently.
+- Verification (FAST-WORKSPACE-031): `npm run test -- --run src/lib/workspace/workspace-graph.test.ts src/features/workspace/workspace-canvas-panel.test.ts` pass.
+
 ## FAST-STORAGE-007 - Delete Drive Files From Storage Library
 
 - Bumped app version from `0.9.8` to `0.9.9` as a patch release for Storage Library deletion behavior.

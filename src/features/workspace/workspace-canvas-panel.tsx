@@ -207,12 +207,14 @@ const CATEGORY_LABELS: Record<WorkspaceNodeCategory, string> = {
     input: "Input Nodes",
     processing: "Processing Nodes",
     output: "Output Nodes",
+    cleanup: "Cleanup Nodes",
 };
 
 const CATEGORY_ORDER: WorkspaceNodeCategory[] = [
     "input",
     "processing",
     "output",
+    "cleanup",
 ];
 const CANVAS_WIDTH = 2400;
 const CANVAS_HEIGHT = 1400;
@@ -733,6 +735,9 @@ function templateAccent(category: WorkspaceNodeCategory) {
     if (category === "output") {
         return "border-l-emerald-500";
     }
+    if (category === "cleanup") {
+        return "border-l-rose-500";
+    }
 
     return "border-l-violet-500";
 }
@@ -1248,6 +1253,9 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
             if (step.kind === "store-artifact") {
                 return Boolean(runtimeAssetIdsByNodeId[step.producerNodeId]);
             }
+            if (step.kind === "cleanup-assets") {
+                return false;
+            }
             return false;
         });
     }, [
@@ -1740,6 +1748,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                 : {};
         let completedPublishes = 0;
         let failedPublishes = 0;
+        const successfulPublishNodeIds = new Set<string>();
         const summary: string[] = [];
         const resolvedUrlFilesByNodeId: Record<string, File> = {};
         const resolvedAssetDownloadsByNodeId: Record<
@@ -1878,6 +1887,9 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     ? "Storage asset đã có từ lần chạy trước."
                     : null;
             }
+            if (step.kind === "cleanup-assets") {
+                return null;
+            }
             return null;
         };
 
@@ -1935,6 +1947,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
             if (step.kind === "edit-video") return step.editNodeId;
             if (step.kind === "store-artifact") return step.storageNodeId;
             if (step.kind === "publish") return step.publishNodeId;
+            if (step.kind === "cleanup-assets") return step.cleanupNodeId;
             return null;
         };
 
@@ -3849,12 +3862,119 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                             }.`,
                         );
                         completedPublishes += 1;
+                        successfulPublishNodeIds.add(publishNode.id);
                         advanceProgress(
                             `Publish ${publishNode.label} status ${
                                 finalStatus ?? "unknown"
                             }.`,
                         );
                     }
+                } else if (step.kind === "cleanup-assets") {
+                    const cleanupNode = findNode(step.cleanupNodeId);
+                    if (!cleanupNode) {
+                        throw new Error("Missing cleanup node.");
+                    }
+                    if (
+                        step.publishNodeId &&
+                        !successfulPublishNodeIds.has(step.publishNodeId)
+                    ) {
+                        setNodeStatus(
+                            cleanupNode.id,
+                            "skipped",
+                            "Publish upstream chưa thành công.",
+                        );
+                        advanceProgress(
+                            `Skip cleanup ${cleanupNode.label}: publish upstream chưa thành công.`,
+                            "skipped",
+                        );
+                        continue;
+                    }
+
+                    const originalAssetNode = findUpstreamSourceAssetNode(
+                        graph,
+                        cleanupNode.id,
+                    );
+                    const originalAssetId = originalAssetNode
+                        ? getStringConfig(originalAssetNode, "assetId").trim()
+                        : "";
+                    const processedAssetId = step.producerNodeId
+                        ? assetByProducer[step.producerNodeId]
+                        : undefined;
+                    const deleteTargets = Array.from(
+                        new Set(
+                            [
+                                getBooleanConfig(
+                                    cleanupNode,
+                                    "deleteOriginalAsset",
+                                    false,
+                                )
+                                    ? originalAssetId
+                                    : undefined,
+                                getBooleanConfig(
+                                    cleanupNode,
+                                    "deleteProcessedAsset",
+                                    false,
+                                )
+                                    ? processedAssetId
+                                    : undefined,
+                            ].filter(
+                                (assetId): assetId is string =>
+                                    Boolean(assetId),
+                            ),
+                        ),
+                    );
+
+                    if (deleteTargets.length === 0) {
+                        setNodeStatus(
+                            cleanupNode.id,
+                            "skipped",
+                            "Chưa chọn asset nào để xóa.",
+                        );
+                        advanceProgress(
+                            `Skip cleanup ${cleanupNode.label}: chưa chọn asset nào.`,
+                            "skipped",
+                        );
+                        continue;
+                    }
+
+                    setNodeStatus(
+                        cleanupNode.id,
+                        "running",
+                        `Deleting ${deleteTargets.length} asset(s)...`,
+                    );
+                    updateProgressStepDetail(step, {
+                        progressMode: "indeterminate",
+                        progress: 0,
+                        description: `Deleting ${deleteTargets.length} selected asset(s)...`,
+                    });
+
+                    for (const assetId of deleteTargets) {
+                        await fetchWorkspaceJson<{
+                            ok: true;
+                            data?: { _id?: string };
+                        }>({
+                            url: `/api/storage/assets/${assetId}`,
+                            actionLabel: "Cleanup asset",
+                            init: { method: "DELETE" },
+                        });
+                    }
+
+                    setStorageAssets((current) =>
+                        current.filter(
+                            (asset) => !deleteTargets.includes(asset._id),
+                        ),
+                    );
+                    setNodeStatus(
+                        cleanupNode.id,
+                        "success",
+                        `Deleted ${deleteTargets.length} asset(s).`,
+                    );
+                    summary.push(
+                        `Cleanup deleted ${deleteTargets.length} asset(s).`,
+                    );
+                    advanceProgress(
+                        `Cleanup ${cleanupNode.label} deleted ${deleteTargets.length} asset(s).`,
+                    );
                 }
             } catch (error) {
                 const message =
@@ -3876,7 +3996,8 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     step.kind === "dub-video" ||
                     step.kind === "mirror-video" ||
                     step.kind === "edit-video" ||
-                    step.kind === "store-artifact"
+                    step.kind === "store-artifact" ||
+                    step.kind === "cleanup-assets"
                 ) {
                     abortRemaining = true;
                     setRunError(message);
@@ -5387,6 +5508,16 @@ function describeStep(
             subtitle: `Publish from ${findLabel(step.producerNodeId)}`,
         };
     }
+    if (step.kind === "cleanup-assets") {
+        return {
+            key: `cleanup-${step.cleanupNodeId}`,
+            statusKey: step.cleanupNodeId,
+            label: `Cleanup · ${findLabel(step.cleanupNodeId)}`,
+            subtitle: step.publishNodeId
+                ? "Delete selected assets after successful publish"
+                : "Delete selected stored assets",
+        };
+    }
 
     return {
         key: "unknown-step",
@@ -6381,6 +6512,72 @@ function NodeRuntimeConfig({
                         {isPreprocessEnabled
                             ? "Node này tạo video artifact mới để các bước transcript, dubbing hoặc edit downstream dùng lại."
                             : "Preprocess đang tắt: flow sẽ dùng trực tiếp source video làm passthrough artifact cho downstream."}
+                    </p>
+                </div>
+            </InspectorSection>
+        );
+    }
+
+    if (node.templateNodeType === "cleanup.delete-assets") {
+        return (
+            <InspectorSection title="Runtime Config">
+                <div className="space-y-2 border border-main bg-secondary/20 p-2">
+                    <label className="flex items-center justify-between gap-3 border border-main bg-main px-3 py-2">
+                        <span>
+                            <span className="block text-[11px] font-semibold text-main">
+                                Delete original asset
+                            </span>
+                            <span className="block text-[10px] text-muted">
+                                Xóa video gốc upstream khi cleanup chạy.
+                            </span>
+                        </span>
+                        <input
+                            type="checkbox"
+                            checked={getBooleanConfig(
+                                node,
+                                "deleteOriginalAsset",
+                                false,
+                            )}
+                            disabled={isRunningFlow}
+                            onChange={(event) =>
+                                setConfig({
+                                    deleteOriginalAsset:
+                                        event.currentTarget.checked,
+                                })
+                            }
+                            className="h-4 w-4 accent-[var(--color-accent)]"
+                        />
+                    </label>
+                    <label className="flex items-center justify-between gap-3 border border-main bg-main px-3 py-2">
+                        <span>
+                            <span className="block text-[11px] font-semibold text-main">
+                                Delete processed asset
+                            </span>
+                            <span className="block text-[10px] text-muted">
+                                Xóa asset processed cuối cùng upstream.
+                            </span>
+                        </span>
+                        <input
+                            type="checkbox"
+                            checked={getBooleanConfig(
+                                node,
+                                "deleteProcessedAsset",
+                                false,
+                            )}
+                            disabled={isRunningFlow}
+                            onChange={(event) =>
+                                setConfig({
+                                    deleteProcessedAsset:
+                                        event.currentTarget.checked,
+                                })
+                            }
+                            className="h-4 w-4 accent-[var(--color-accent)]"
+                        />
+                    </label>
+                    <p className="border border-main bg-main px-3 py-2 text-[10px] leading-4 text-muted">
+                        Nếu node này nằm sau Publish Social, cleanup chỉ chạy khi
+                        publish upstream thành công. Bản V1 chỉ xóa video gốc và
+                        asset processed cuối cùng đã lưu vào Storage.
                     </p>
                 </div>
             </InspectorSection>

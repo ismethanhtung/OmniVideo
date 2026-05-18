@@ -1,4 +1,8 @@
-export type WorkspaceNodeCategory = "input" | "processing" | "output";
+export type WorkspaceNodeCategory =
+    | "input"
+    | "processing"
+    | "output"
+    | "cleanup";
 
 export type WorkspaceNodeImplementationStatus =
     | "available"
@@ -167,6 +171,12 @@ export type WorkspaceFlowStep =
           artifactNodeId: string;
           storageNodeId: string;
           producerNodeId: string;
+      }
+    | {
+          kind: "cleanup-assets";
+          cleanupNodeId: string;
+          producerNodeId?: string;
+          publishNodeId?: string;
       };
 
 export type WorkspaceFlowPlan = {
@@ -1033,6 +1043,42 @@ export const WORKSPACE_NODE_TEMPLATES: WorkspaceNodeTemplate[] = [
         traceabilityNotes:
             "Publish node must preserve account id, platform, target page/channel, publish record id, and platform response.",
     },
+    {
+        nodeType: "cleanup.delete-assets",
+        version: "1.0.0",
+        label: "Cleanup Assets",
+        description:
+            "Xóa asset nguồn và/hoặc asset processed cuối cùng sau khi flow hoàn tất.",
+        category: "cleanup",
+        status: "available",
+        inputPorts: [
+            { id: "asset", label: "Stored asset", dataType: "asset" },
+            { id: "publish", label: "Publish result", dataType: "publish" },
+        ],
+        outputPorts: [],
+        configFields: [
+            {
+                key: "deleteOriginalAsset",
+                label: "Delete original asset",
+                type: "boolean",
+                required: false,
+                defaultValue: false,
+            },
+            {
+                key: "deleteProcessedAsset",
+                label: "Delete processed asset",
+                type: "boolean",
+                required: false,
+                defaultValue: false,
+            },
+        ],
+        timeoutMs: 300000,
+        retryPolicy: { maxAttempts: 1, backoff: "none" },
+        idempotencyStrategy: "asset-checksum",
+        observabilityHooks: ["onStart", "onSuccess", "onError"],
+        traceabilityNotes:
+            "Cleanup must preserve explicit operator intent and only delete selected assets after upstream prerequisites are satisfied.",
+    },
 ];
 
 export function createEmptyWorkspaceGraph(
@@ -1490,6 +1536,9 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
     );
     const publishNodes = graph.nodes.filter(
         (node) => node.templateNodeType === "social.publish",
+    );
+    const cleanupNodes = graph.nodes.filter(
+        (node) => node.templateNodeType === "cleanup.delete-assets",
     );
 
     const consumedStorageByFile = new Map<string, string>();
@@ -2306,7 +2355,8 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
         });
     }
 
-    const publishSteps: WorkspaceFlowStep[] = [];
+    const publishSteps: Extract<WorkspaceFlowStep, { kind: "publish" }>[] =
+        [];
     for (const publishNode of publishNodes) {
         const producer = findUpstreamProducer(graph, publishNode.id, producers);
         if (!producer) {
@@ -2322,6 +2372,52 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
         });
     }
 
+    const cleanupSteps: WorkspaceFlowStep[] = [];
+    for (const cleanupNode of cleanupNodes) {
+        const directUpstreamPublishNodes = graph.edges
+            .filter((edge) => edge.toNodeId === cleanupNode.id)
+            .map((edge) =>
+                graph.nodes.find((node) => node.id === edge.fromNodeId),
+            )
+            .filter(
+                (node): node is WorkspaceNodeInstance =>
+                    node !== undefined &&
+                    node.templateNodeType === "social.publish",
+            );
+        if (directUpstreamPublishNodes.length > 1) {
+            errors.push(
+                `Cleanup Assets '${cleanupNode.label}' (${cleanupNode.id}) đang nhận nhiều Publish Social; chưa hỗ trợ fan-in.`,
+            );
+            continue;
+        }
+
+        const publishNodeId = directUpstreamPublishNodes[0]?.id;
+        const producerNodeId = publishNodeId
+            ? publishSteps.find((step) => step.publishNodeId === publishNodeId)
+                  ?.producerNodeId
+            : findUpstreamProducer(graph, cleanupNode.id, producers);
+
+        if (!producerNodeId && !publishNodeId) {
+            errors.push(
+                `Cleanup Assets '${cleanupNode.label}' (${cleanupNode.id}) cần upstream Save to Storage, Storage Asset hoặc Publish Social.`,
+            );
+            continue;
+        }
+        if (publishNodeId && !producerNodeId) {
+            errors.push(
+                `Cleanup Assets '${cleanupNode.label}' (${cleanupNode.id}) cần Publish Social upstream chạy được.`,
+            );
+            continue;
+        }
+
+        cleanupSteps.push({
+            kind: "cleanup-assets",
+            cleanupNodeId: cleanupNode.id,
+            producerNodeId,
+            publishNodeId,
+        });
+    }
+
     if (
         producerSteps.length === 0 &&
         preprocessSteps.length === 0 &&
@@ -2334,6 +2430,7 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
         editSteps.length === 0 &&
         artifactStorageSteps.length === 0 &&
         publishSteps.length === 0 &&
+        cleanupSteps.length === 0 &&
         errors.length === 0
     ) {
         errors.push(
@@ -2355,6 +2452,7 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
             ...editSteps,
             ...artifactStorageSteps,
             ...publishSteps,
+            ...cleanupSteps,
         ],
         errors,
     };

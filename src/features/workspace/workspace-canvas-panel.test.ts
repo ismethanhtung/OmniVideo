@@ -170,6 +170,15 @@ describe("WorkspaceCanvasPanel canvas interactions", () => {
         expect(source).toContain("useState(DEFAULT_CANVAS_VIEW)");
     });
 
+    it("supports cleanup assets runtime controls and delete execution", () => {
+        expect(source).toContain('node.templateNodeType === "cleanup.delete-assets"');
+        expect(source).toContain("Delete original asset");
+        expect(source).toContain("Delete processed asset");
+        expect(source).toContain('step.kind === "cleanup-assets"');
+        expect(source).toContain('actionLabel: "Cleanup asset"');
+        expect(source).toContain('init: { method: "DELETE" }');
+    });
+
     it("renders dragged link previews as Bézier curves", () => {
         expect(source).toContain("buildWorkspaceLinkPath");
         expect(source).toContain("const dragPath =");
