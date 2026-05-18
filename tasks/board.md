@@ -22,6 +22,7 @@
 
 ## Review
 
+- `FAST-AUDIO-055` - Prevent forced long pauses inside split voice segments.
 - `FAST-UX-026` - Polish Folder Selector and Remove Navigation Leave Warnings.
 - `P1-STORAGE-007` - Add Lightweight Folder Metadata and Asset Search.
 - `FAST-WORKSPACE-028` - Remove blue focus outline from edge delete control.

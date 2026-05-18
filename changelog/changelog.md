@@ -1,5 +1,13 @@
 # OmniVideo Changelog
 
+## FAST-AUDIO-055 - Prevent Forced Long Pauses Inside Split Voice Segments
+
+- Bumped app version from `0.9.1` to `0.9.2` as a patch release for shared audio timing polish.
+- Hardened the shared word-aware voice splitter so it only creates sub-chunks when translated sentence chunks and detected source timing clusters map one-to-one.
+- Ambiguous merged segments now stay as one continuous voice chunk instead of preserving a speculative long internal pause that can force the remaining speech to catch up at `1.75x`.
+- Audio Transcript, Workspace voice generation, and Workspace dubbing inherit the same fix because they all reuse the shared voice timing helper.
+- Verification (FAST-AUDIO-055): `npm run test -- --run src/lib/multilingual-audio/voice-segment-timing.test.ts src/lib/multilingual-audio/video-dubbing.test.ts src/features/audio/chinese-transcription-panel.test.ts src/features/workspace/workspace-canvas-panel.test.ts` pass (4 files / 33 tests); `npm run build` pass with existing ESLint circular-config warning; `npm run guard:version` pass.
+
 ## FAST-UX-026 - Polish Folder Selector and Remove Navigation Leave Warnings
 
 - Bumped app version from `0.9.0` to `0.9.1` as a patch release for intake/navigation polish.

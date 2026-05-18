@@ -188,14 +188,6 @@ function repairSuspiciousSegmentTiming(input: {
     };
 }
 
-function distributeItems<T>(items: T[], targetCount: number) {
-    return Array.from({ length: targetCount }, (_, index) => {
-        const start = Math.floor((index * items.length) / targetCount);
-        const end = Math.floor(((index + 1) * items.length) / targetCount);
-        return items.slice(start, Math.max(start + 1, end));
-    });
-}
-
 function buildSplitVoiceSegments(input: {
     segment: TranscriptTranslationSegment;
     words: AudioTranscriptWord[];
@@ -203,17 +195,13 @@ function buildSplitVoiceSegments(input: {
     const textChunks = splitTranslatedTextForVoice(input.segment.translatedText);
     const wordClusters = clusterWordsByPause(input.words);
     if (textChunks.length < 2 || wordClusters.length < 2) return null;
+    // Only split when translation structure and source timing evidence line up
+    // one-to-one. If they disagree, grouping extra text into a later cluster can
+    // create long dead air followed by rushed speech inside one parent segment.
+    if (textChunks.length !== wordClusters.length) return null;
 
-    const chunkCount = Math.min(textChunks.length, wordClusters.length);
-    const groupedTextChunks = distributeItems(textChunks, chunkCount).map(
-        (chunks) => chunks.join(" "),
-    );
-    const groupedWordClusters = distributeItems(wordClusters, chunkCount).map(
-        (clusters) => clusters.flat(),
-    );
-
-    return groupedTextChunks.map((text, index): VoiceGenerationSegment => {
-        const cluster = groupedWordClusters[index];
+    return textChunks.map((text, index): VoiceGenerationSegment => {
+        const cluster = wordClusters[index];
         const firstWord = cluster[0];
         const lastWord = cluster[cluster.length - 1];
         return {

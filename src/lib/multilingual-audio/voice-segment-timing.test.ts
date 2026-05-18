@@ -139,6 +139,43 @@ describe("word-aware voice segment timing", () => {
         ]);
     });
 
+    it("keeps one continuous voice segment when sentence chunks outnumber source timing clusters", () => {
+        expect(
+            buildWordAwareVoiceSegments({
+                translatedSegments: [
+                    {
+                        id: 66,
+                        start: 181.702,
+                        end: 193.773,
+                        sourceText:
+                            "今年没刷牙了吧你没关系此时你们需要的是备制充牙器轻轻一冲啊不是轻轻一冲口腔杂物全搞定温和不刺激",
+                        translatedText:
+                            "Cả năm không đánh răng hả? Không sao, lúc này thứ các bạn cần là máy tăm nước Beizhi. Xịt nhẹ một cái—à không, chỉ một cái là sạch hết cặn bẩn khoang miệng, dịu nhẹ không kích ứng.",
+                    },
+                ],
+                words: [
+                    { word: "今年", start: 181.702, end: 182.15 },
+                    { word: "没刷牙", start: 182.15, end: 182.72 },
+                    { word: "了吧", start: 182.72, end: 183.08 },
+                    { word: "你没关系", start: 188.4, end: 189.08 },
+                    { word: "此时", start: 189.08, end: 189.34 },
+                    { word: "你们需要的是", start: 189.34, end: 190.22 },
+                    { word: "备制充牙器", start: 190.22, end: 191.04 },
+                    { word: "轻轻一冲", start: 191.04, end: 191.58 },
+                    { word: "口腔杂物全搞定", start: 191.58, end: 192.52 },
+                    { word: "温和不刺激", start: 192.52, end: 193.2 },
+                ],
+            }),
+        ).toEqual([
+            {
+                id: 66,
+                start: 181.702,
+                end: 193.773,
+                text: "Cả năm không đánh răng hả? Không sao, lúc này thứ các bạn cần là máy tăm nước Beizhi. Xịt nhẹ một cái—à không, chỉ một cái là sạch hết cặn bẩn khoang miệng, dịu nhẹ không kích ứng.",
+            },
+        ]);
+    });
+
     it("repairs a short segment when Groq returns a hallucinated long first-word timestamp", () => {
         const result = buildWordAwareVoiceSegmentsWithDiagnostics({
             translatedSegments: [
