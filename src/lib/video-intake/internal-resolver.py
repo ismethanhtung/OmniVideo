@@ -1,6 +1,7 @@
 import json
 import mimetypes
 import os
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -9,6 +10,7 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from yt_dlp import YoutubeDL
+from yt_dlp.extractor.bilibili import BiliBiliIE
 
 SUPPORTED_QUALITY = {"best", "1080p", "720p", "480p", "360p"}
 SUPPORTED_COOKIE_BROWSERS = {"chrome", "chromium", "edge", "firefox", "safari"}
@@ -30,6 +32,13 @@ KNOWN_RESOLVER_HEADER_NAMES = {
     "sec-ch-ua",
     "sec-ch-ua-mobile",
     "sec-ch-ua-platform",
+}
+BILIBILI_HTML5_SELECTOR_PREFIX = "bilibili-html5-"
+BILIBILI_HTML5_QUALITY_HEIGHTS = {
+    80: 1080,
+    64: 720,
+    32: 480,
+    16: 360,
 }
 
 
@@ -70,10 +79,214 @@ def build_format_variants(quality_preference, format_selector=None):
 
     progressive_format = build_progressive_format_for_quality(quality_preference)
     merged_format = build_merged_format_for_quality(quality_preference)
-    variants = [("single-media", progressive_format)]
+    variants = [("merged-media", merged_format)]
     if merged_format != progressive_format:
-        variants.append(("merged-media", merged_format))
+        variants.append(("single-media", progressive_format))
     return variants
+
+
+def extract_bilibili_bvid(url):
+    parsed = urlparse(url)
+    path_match = re.search(r"/video/(?P<bvid>[Bb][Vv][^/?#&]+)", parsed.path)
+    if path_match:
+        return path_match.group("bvid")
+
+    query = parse_qs(parsed.query)
+    festival_bvid = query.get("bvid", [None])[0]
+    if festival_bvid and festival_bvid[:2].lower() == "bv":
+        return festival_bvid
+
+    return None
+
+
+def build_bilibili_html5_selector(quality):
+    return f"{BILIBILI_HTML5_SELECTOR_PREFIX}{quality}"
+
+
+def parse_bilibili_html5_selector(format_selector):
+    if not format_selector or not format_selector.startswith(
+        BILIBILI_HTML5_SELECTOR_PREFIX
+    ):
+        return None
+
+    raw_quality = format_selector.removeprefix(BILIBILI_HTML5_SELECTOR_PREFIX)
+    try:
+        quality = int(raw_quality)
+    except ValueError:
+        return None
+
+    return quality if quality in BILIBILI_HTML5_QUALITY_HEIGHTS else None
+
+
+def build_bilibili_html5_quality_candidates(quality_preference):
+    if quality_preference in {"best", "1080p"}:
+        return [80]
+    return []
+
+
+def build_bilibili_html5_payload(
+    play_info,
+    *,
+    source_url,
+    title=None,
+    duration_seconds=None,
+):
+    quality = play_info.get("quality")
+    height = BILIBILI_HTML5_QUALITY_HEIGHTS.get(quality)
+    durl_items = play_info.get("durl") or []
+    first_durl = durl_items[0] if durl_items else None
+    direct_url = first_durl.get("url") if first_durl else None
+
+    if not quality or not height or not direct_url:
+        return None
+
+    return {
+        "directMediaUrl": direct_url,
+        "downloadMode": "direct-url",
+        "resolverProfile": "bilibili-html5:no-cookie",
+        "formatSelector": build_bilibili_html5_selector(quality),
+        "hasAudio": True,
+        "hasVideo": True,
+        "title": title,
+        "mimeType": "video/mp4",
+        "sizeBytes": first_durl.get("size"),
+        "durationMs": int(duration_seconds * 1000) if duration_seconds else None,
+        "formatId": build_bilibili_html5_selector(quality),
+        "formatNote": f"html5 {height}p progressive",
+        "height": height,
+        "width": None,
+        "resolution": None,
+        "ext": play_info.get("format") or "mp4",
+        "vcodec": None,
+        "acodec": None,
+        "requestHeaders": {
+            "Referer": source_url,
+            "User-Agent": (
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/124.0.0.0 Safari/537.36"
+            ),
+        },
+    }
+
+
+def fetch_bilibili_view_data(bvid):
+    request = Request(
+        f"https://api.bilibili.com/x/web-interface/view?bvid={bvid}",
+        headers={
+            "Referer": "https://www.bilibili.com/",
+            "User-Agent": (
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/124.0.0.0 Safari/537.36"
+            ),
+        },
+    )
+    with urlopen(request, timeout=20) as response:
+        payload = json.load(response)
+
+    if payload.get("code") != 0 or not isinstance(payload.get("data"), dict):
+        raise RuntimeError("Bilibili view API did not return video metadata.")
+
+    return payload["data"]
+
+
+def fetch_bilibili_html5_playinfo(bvid, cid, source_url, quality):
+    with YoutubeDL({"quiet": True, "no_warnings": True}) as ydl:
+        extractor = BiliBiliIE(ydl)
+        return extractor._download_playinfo(
+            bvid,
+            cid,
+            headers={"Referer": source_url},
+            query={"platform": "html5", "qn": quality},
+        )
+
+
+def resolve_bilibili_html5_payload(url, quality_preference, forced_quality=None):
+    bvid = extract_bilibili_bvid(url)
+    if not bvid:
+        return None
+
+    candidate_qualities = (
+        [forced_quality]
+        if forced_quality is not None
+        else build_bilibili_html5_quality_candidates(quality_preference)
+    )
+    if not candidate_qualities:
+        return None
+
+    view_data = fetch_bilibili_view_data(bvid)
+    cid = view_data.get("cid")
+    if not cid:
+        return None
+
+    for quality in candidate_qualities:
+        play_info = fetch_bilibili_html5_playinfo(bvid, cid, url, quality)
+        payload = build_bilibili_html5_payload(
+            play_info,
+            source_url=url,
+            title=view_data.get("title"),
+            duration_seconds=view_data.get("duration"),
+        )
+        if payload and payload["height"] == BILIBILI_HTML5_QUALITY_HEIGHTS[quality]:
+            return payload
+
+    return None
+
+
+def list_bilibili_html5_formats(url):
+    bvid = extract_bilibili_bvid(url)
+    if not bvid:
+        return []
+
+    view_data = fetch_bilibili_view_data(bvid)
+    cid = view_data.get("cid")
+    if not cid:
+        return []
+
+    initial_play_info = fetch_bilibili_html5_playinfo(bvid, cid, url, 80)
+    available_qualities = initial_play_info.get("accept_quality") or []
+    formats = []
+
+    for quality in available_qualities:
+        if quality not in BILIBILI_HTML5_QUALITY_HEIGHTS:
+            continue
+        play_info = (
+            initial_play_info
+            if initial_play_info.get("quality") == quality
+            else fetch_bilibili_html5_playinfo(bvid, cid, url, quality)
+        )
+        payload = build_bilibili_html5_payload(
+            play_info,
+            source_url=url,
+            title=view_data.get("title"),
+            duration_seconds=view_data.get("duration"),
+        )
+        if not payload or payload["height"] != BILIBILI_HTML5_QUALITY_HEIGHTS[quality]:
+            continue
+        formats.append(
+            {
+                "formatId": payload["formatId"],
+                "ext": payload["ext"],
+                "formatNote": payload["formatNote"],
+                "resolution": payload["resolution"],
+                "width": payload["width"],
+                "height": payload["height"],
+                "fps": None,
+                "filesize": payload["sizeBytes"],
+                "filesizeApprox": None,
+                "protocol": "https",
+                "tbr": None,
+                "vbr": None,
+                "abr": None,
+                "vcodec": payload["vcodec"],
+                "acodec": payload["acodec"],
+                "hasAudio": True,
+                "hasVideo": True,
+            }
+        )
+
+    return formats
 
 
 def normalize_url_for_extractor(url):
@@ -525,6 +738,21 @@ def resolve_info(url, quality_preference, format_selector=None):
     cookie_browser = os.environ.get("VIDEO_RESOLVER_COOKIES_FROM_BROWSER")
     normalized_url = normalize_url_for_extractor(url)
     platform = detect_extractor_platform(normalized_url)
+    forced_html5_quality = parse_bilibili_html5_selector(format_selector)
+    if platform == "bilibili" and (
+        forced_html5_quality is not None or not format_selector
+    ):
+        try:
+            html5_payload = resolve_bilibili_html5_payload(
+                normalized_url,
+                quality_preference,
+                forced_quality=forced_html5_quality,
+            )
+        except Exception:
+            html5_payload = None
+        if html5_payload:
+            return html5_payload
+
     base_options = build_base_options(platform, quality_preference, skip_download=True)
     normalized_url, extraction_profiles = build_extraction_profiles(
         normalized_url, base_options, cookie_file, cookie_browser, format_selector
@@ -590,6 +818,31 @@ def list_formats(url, quality_preference):
                 for item in info.get("formats", [])
                 if item.get("format_id")
             ]
+            html5_formats = []
+            if platform == "bilibili":
+                try:
+                    html5_formats = list_bilibili_html5_formats(normalized_url)
+                except Exception:
+                    html5_formats = []
+            highest_html5 = max(
+                html5_formats,
+                key=lambda item: item.get("height") or 0,
+                default=None,
+            )
+            highest_default = max(
+                formats,
+                key=lambda item: item.get("height") or 0,
+                default=None,
+            )
+            recommended_selector = build_merged_format_for_quality(
+                quality_preference
+            )
+            if (
+                highest_html5
+                and (highest_html5.get("height") or 0)
+                > (highest_default.get("height") or 0)
+            ):
+                recommended_selector = highest_html5["formatId"]
             return {
                 "sourceUrl": normalized_url,
                 "title": info.get("title"),
@@ -598,10 +851,8 @@ def list_formats(url, quality_preference):
                 else None,
                 "originPlatform": platform,
                 "resolverProfile": profile_name,
-                "recommendedFormatSelector": build_merged_format_for_quality(
-                    quality_preference
-                ),
-                "formats": formats,
+                "recommendedFormatSelector": recommended_selector,
+                "formats": formats + html5_formats,
             }
         except Exception as error:
             candidate_error = f"{profile_name}: list_failed: {error}"

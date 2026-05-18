@@ -68,6 +68,7 @@ export async function PATCH(
         vietnameseTitle?: string | null;
         vietnameseDescription?: string | null;
         vietnameseHashtags?: string[] | null;
+        tags?: string[] | null;
         videoEditSetup?: Record<string, unknown> | null;
       };
     };
@@ -97,6 +98,16 @@ export async function PATCH(
               .map((entry) => entry.replace(/^#+/, "").trim())
               .filter(Boolean)
               .slice(0, 30)
+          : undefined,
+        tags: Array.isArray(metadata.tags)
+          ? Array.from(
+              new Set(
+                metadata.tags
+                  .filter((entry): entry is string => typeof entry === "string")
+                  .map((entry) => entry.trim())
+                  .filter(Boolean),
+              ),
+            ).slice(0, 30)
           : undefined,
         videoEditSetup:
           metadata.videoEditSetup &&

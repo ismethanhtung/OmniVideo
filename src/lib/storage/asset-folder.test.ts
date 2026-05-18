@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildFolderAssetTags,
+  buildRawSourceProcessedOutputTags,
   getAssetFolderName,
   inferFolderFromTags,
   matchesVideoAssetSearch,
@@ -32,6 +33,20 @@ describe("asset folder helpers", () => {
     expect(getAssetFolderName({ metadata: { tags: ["raw", "food"] } })).toBe(
       "food",
     );
+  });
+
+  it("marks raw sources with processed outputs without confusing folder inference", () => {
+    const tags = buildRawSourceProcessedOutputTags({
+      folder: "kiến thức sức khoẻ",
+      existingTags: ["raw", "kiến thức sức khoẻ"],
+    });
+
+    expect(tags).toEqual([
+      "kiến thức sức khoẻ",
+      "raw",
+      "has-processed-output",
+    ]);
+    expect(inferFolderFromTags(tags)).toBe("kiến thức sức khoẻ");
   });
 
   it("matches folder searches accent-insensitively", () => {

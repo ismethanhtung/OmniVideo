@@ -1,5 +1,21 @@
 # OmniVideo Changelog
 
+## FAST-WORKSPACE-029 - Smooth Preprocess Speed Editing and Mark Raw Sources with Outputs
+
+- Bumped app version from `0.9.3` to `0.9.4` as a patch release for Workspace editing and asset lifecycle clarity.
+- Replaced eager preprocess speed coercion with a decimal-friendly runtime number input that preserves draft text while the user edits and commits only validated values on blur/Enter.
+- Raw source assets now gain `has-processed-output` after Workspace successfully stores a processed derivative, while the new derived asset keeps the existing `processed` lifecycle tag.
+- Extended storage asset metadata patching to accept sanitized tag updates and taught folder inference to ignore the new lifecycle marker.
+- Verification (FAST-WORKSPACE-029): `npm run test -- --run src/features/workspace/workspace-canvas-panel.test.ts src/lib/storage/asset-folder.test.ts src/app/api/storage/assets/[assetId]/route.test.ts` pass (3 files / 21 tests); `npm run build` pass with existing ESLint circular-config warning; `npm run guard:version` pass.
+
+## FAST-INTAKE-006 - Restore Public Bilibili 1080p Intake via HTML5 Fallback
+
+- Bumped app version from `0.9.2` to `0.9.3` as a patch release for Bilibili intake reliability.
+- Added a public no-cookie Bilibili HTML5 progressive fallback that recovers `1080p` A/V media when the default DASH response only exposes lower video rows.
+- Format listing now surfaces `bilibili-html5-*` progressive entries and recommends the HTML5 1080p path when it is better than the default DASH formats.
+- Preserved the merged-media resolver path as fallback for non-Bilibili and lower-quality requests.
+- Verification (FAST-INTAKE-006): `PYTHONPATH=.vendor/python python3 src/lib/video-intake/internal-resolver-py.test.py` pass (17 tests); `npm run test -- --run src/lib/video-intake/internal-resolver.test.ts src/app/api/video-intake/formats/route.test.ts src/features/video-intake/video-intake-panel.test.ts src/features/video-intake/video-intake-v2-panel.test.ts` pass (3 files / 13 tests); live Bilibili smoke for both `BV1uG411A7N5` and the user-reported `BV1DA411Y78D` returns `bilibili-html5-80`, `1080p`, `hasAudio=true`, `hasVideo=true`.
+
 ## FAST-AUDIO-055 - Prevent Forced Long Pauses Inside Split Voice Segments
 
 - Bumped app version from `0.9.1` to `0.9.2` as a patch release for shared audio timing polish.

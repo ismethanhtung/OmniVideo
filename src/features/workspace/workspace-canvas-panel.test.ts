@@ -69,6 +69,9 @@ describe("WorkspaceCanvasPanel canvas interactions", () => {
 
     it("supports enable toggle for preprocess and passthrough behavior", () => {
         expect(source).toContain("Enable preprocess");
+        expect(source).toContain("function RuntimeNumberInput");
+        expect(source).toContain("onBlur={commitDraft}");
+        expect(source).toContain("onCommit={(value) => setConfig({ speedFactor: value })}");
         expect(source).toContain("getBooleanConfig(");
         expect(source).toContain('"enabled"');
         expect(source).toContain("Preprocess disabled (passthrough source)");
@@ -120,6 +123,12 @@ describe("WorkspaceCanvasPanel canvas interactions", () => {
         expect(source).toContain("vietnameseTitle");
         expect(source).toContain("vietnameseDescription");
         expect(source).toContain("vietnameseHashtags");
+    });
+
+    it("marks upstream raw assets once a processed output is stored", () => {
+        expect(source).toContain("buildRawSourceProcessedOutputTags");
+        expect(source).toContain("Mark raw source with processed output");
+        expect(source).toContain("processedSourceTags");
     });
 
     it("publishes step-aware background progress without fake step percentages", () => {

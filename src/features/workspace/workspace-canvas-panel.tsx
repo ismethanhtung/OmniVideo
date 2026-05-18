@@ -27,6 +27,7 @@ import {
 } from "@/lib/ui/progress-center";
 import {
     buildFolderAssetTags,
+    buildRawSourceProcessedOutputTags,
     getAssetFolderName,
     matchesVideoAssetSearch,
 } from "@/lib/storage/asset-folder";
@@ -2368,6 +2369,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         ...current,
                         [step.producerNodeId]: newAssetId,
                     }));
+
                     setNodeStatus(
                         fileNode.id,
                         "success",
@@ -3557,6 +3559,59 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         ...current,
                         [step.producerNodeId]: newAssetId,
                     }));
+
+                    const upstreamAsset = storageAssets.find(
+                        (asset) => asset._id === upstreamAssetId,
+                    );
+                    if (upstreamAssetId && upstreamAsset) {
+                        const processedSourceTags =
+                            buildRawSourceProcessedOutputTags({
+                                folder: artifactFolder,
+                                existingTags: upstreamAsset.metadata?.tags ?? [],
+                            });
+                        try {
+                            await fetchWorkspaceJson<{
+                                ok: true;
+                                data?: { _id?: string };
+                            }>({
+                                url: `/api/storage/assets/${upstreamAssetId}`,
+                                actionLabel:
+                                    "Mark raw source with processed output",
+                                init: {
+                                    method: "PATCH",
+                                    headers: {
+                                        "Content-Type": "application/json",
+                                    },
+                                    body: JSON.stringify({
+                                        metadata: {
+                                            tags: processedSourceTags,
+                                        },
+                                    }),
+                                },
+                            });
+                            setStorageAssets((current) =>
+                                current.map((asset) =>
+                                    asset._id === upstreamAssetId
+                                        ? {
+                                              ...asset,
+                                              metadata: {
+                                                  ...asset.metadata,
+                                                  tags: processedSourceTags,
+                                              },
+                                          }
+                                        : asset,
+                                ),
+                            );
+                        } catch (patchSourceTagsError) {
+                            summary.push(
+                                `Stored asset ${newAssetId} nhưng patch source tags thất bại: ${
+                                    patchSourceTagsError instanceof Error
+                                        ? patchSourceTagsError.message
+                                        : "unknown error"
+                                }.`,
+                            );
+                        }
+                    }
 
                     const upstreamMetadataNodeId =
                         findUpstreamMetadataNode(graph, storageNode.id)?.id ??
@@ -5412,6 +5467,69 @@ function RuntimeTextInput({
     );
 }
 
+function RuntimeNumberInput({
+    label,
+    value,
+    disabled,
+    placeholder,
+    min,
+    max,
+    step,
+    onCommit,
+}: {
+    label: string;
+    value: number;
+    disabled?: boolean;
+    placeholder?: string;
+    min: number;
+    max: number;
+    step?: number;
+    onCommit: (value: number) => void;
+}) {
+    const [draft, setDraft] = useState(String(value));
+
+    useEffect(() => {
+        setDraft(String(value));
+    }, [value]);
+
+    const commitDraft = () => {
+        const parsed = Number(draft);
+        if (!Number.isFinite(parsed)) {
+            setDraft(String(value));
+            return;
+        }
+        const nextValue = clampNumber(parsed, min, max);
+        setDraft(String(nextValue));
+        onCommit(nextValue);
+    };
+
+    return (
+        <label className="block min-w-0">
+            <span className="mb-1 block text-[10px] font-semibold text-muted">
+                {label}
+            </span>
+            <input
+                type="number"
+                inputMode="decimal"
+                min={min}
+                max={max}
+                step={step}
+                value={draft}
+                disabled={disabled}
+                placeholder={placeholder}
+                onChange={(event) => setDraft(event.currentTarget.value)}
+                onBlur={commitDraft}
+                onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                        event.currentTarget.blur();
+                    }
+                }}
+                className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main placeholder:text-muted/60"
+            />
+        </label>
+    );
+}
+
 function NodeRuntimeConfig({
     node,
     graph,
@@ -6246,16 +6364,15 @@ function NodeRuntimeConfig({
                             className="h-4 w-4 accent-[var(--color-accent)]"
                         />
                     </label>
-                    <RuntimeTextInput
+                    <RuntimeNumberInput
                         label="Video speed"
-                        value={String(
-                            getNumberConfig(node, "speedFactor", 0.7),
-                        )}
+                        value={getNumberConfig(node, "speedFactor", 0.7)}
                         disabled={isRunningFlow}
                         placeholder="0.7"
-                        onChange={(value) =>
-                            setConfig({ speedFactor: Number(value) })
-                        }
+                        min={0.5}
+                        max={2}
+                        step={0.1}
+                        onCommit={(value) => setConfig({ speedFactor: value })}
                     />
                     <p className="border border-main bg-main px-3 py-2 text-[10px] leading-4 text-muted">
                         {isPreprocessEnabled

@@ -595,6 +595,7 @@ export async function updateVideoAssetMetadataById({
     vietnameseTitle?: string | null;
     vietnameseDescription?: string | null;
     vietnameseHashtags?: string[] | null;
+    tags?: string[] | null;
     videoEditSetup?: Record<string, unknown> | null;
   };
 }) {
@@ -620,6 +621,9 @@ export async function updateVideoAssetMetadataById({
   }
   if (patch.vietnameseHashtags !== undefined) {
     setPatch["metadata.vietnameseHashtags"] = patch.vietnameseHashtags;
+  }
+  if (patch.tags !== undefined) {
+    setPatch["metadata.tags"] = patch.tags;
   }
   if (patch.videoEditSetup !== undefined) {
     setPatch["metadata.videoEditSetup"] = patch.videoEditSetup;

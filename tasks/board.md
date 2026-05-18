@@ -22,6 +22,8 @@
 
 ## Review
 
+- `FAST-WORKSPACE-029` - Smooth preprocess speed editing and mark raw sources with outputs.
+- `FAST-INTAKE-006` - Restore public Bilibili 1080p intake via HTML5 fallback.
 - `FAST-AUDIO-055` - Prevent forced long pauses inside split voice segments.
 - `FAST-UX-026` - Polish Folder Selector and Remove Navigation Leave Warnings.
 - `P1-STORAGE-007` - Add Lightweight Folder Metadata and Asset Search.

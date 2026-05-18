@@ -102,11 +102,13 @@ sec-ch-ua
         variants = resolver.build_cookie_variants("bilibili", None, "chrome")
         self.assertEqual(variants, [("no-cookie", {})])
 
-    def test_build_format_variants_include_merged_audio_video_fallback(self):
+    def test_build_format_variants_prefer_merged_audio_video_before_progressive_fallback(
+        self,
+    ):
         variants = resolver.build_format_variants("best")
         variant_map = dict(variants)
 
-        self.assertEqual(variants[0][0], "single-media")
+        self.assertEqual(variants[0][0], "merged-media")
         self.assertIn("merged-media", variant_map)
         self.assertIn("bv*+ba", variant_map["merged-media"])
         self.assertNotIn("bestvideo", variant_map["merged-media"])
@@ -154,7 +156,7 @@ sec-ch-ua
         self.assertEqual(
             normalized_url, "https://www.bilibili.com/video/BV1W2oSBWEYw/"
         )
-        self.assertEqual(profile_names[0], "default:no-cookie")
+        self.assertEqual(profile_names[0], "default:no-cookie:merged-media")
         self.assertIn("default:no-cookie:merged-media", profile_names)
         self.assertTrue(all("cookie-browser" not in name for name in profile_names))
         self.assertTrue(all("cookie-file" not in name for name in profile_names))
@@ -209,6 +211,61 @@ sec-ch-ua
         self.assertEqual(payload["downloadMode"], "direct-url")
         self.assertFalse(payload["hasAudio"])
         self.assertTrue(payload["hasVideo"])
+
+    def test_extract_bilibili_bvid_from_video_or_festival_urls(self):
+        self.assertEqual(
+            resolver.extract_bilibili_bvid(
+                "https://www.bilibili.com/video/BV1uG411A7N5/"
+            ),
+            "BV1uG411A7N5",
+        )
+        self.assertEqual(
+            resolver.extract_bilibili_bvid(
+                "https://www.bilibili.com/festival/demo?bvid=BV1demo123"
+            ),
+            "BV1demo123",
+        )
+
+    def test_build_bilibili_html5_payload_marks_progressive_av_1080p(self):
+        payload = resolver.build_bilibili_html5_payload(
+            {
+                "quality": 80,
+                "format": "mp4",
+                "durl": [
+                    {
+                        "url": "https://cdn.example.com/demo.mp4",
+                        "size": 1234,
+                    }
+                ],
+            },
+            source_url="https://www.bilibili.com/video/BV1uG411A7N5/",
+            title="Demo",
+            duration_seconds=12,
+        )
+
+        self.assertEqual(payload["formatId"], "bilibili-html5-80")
+        self.assertEqual(payload["height"], 1080)
+        self.assertEqual(payload["downloadMode"], "direct-url")
+        self.assertEqual(payload["directMediaUrl"], "https://cdn.example.com/demo.mp4")
+        self.assertTrue(payload["hasAudio"])
+        self.assertTrue(payload["hasVideo"])
+        self.assertEqual(payload["sizeBytes"], 1234)
+
+    def test_build_bilibili_html5_quality_candidates_only_prefers_high_quality_flows(
+        self,
+    ):
+        self.assertEqual(
+            resolver.build_bilibili_html5_quality_candidates("best"),
+            [80],
+        )
+        self.assertEqual(
+            resolver.build_bilibili_html5_quality_candidates("1080p"),
+            [80],
+        )
+        self.assertEqual(
+            resolver.build_bilibili_html5_quality_candidates("720p"),
+            [],
+        )
 
 
 if __name__ == "__main__":

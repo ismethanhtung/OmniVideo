@@ -10,7 +10,13 @@ export type FolderSearchableAsset = {
 };
 
 const FOLDER_MAX_LENGTH = 120;
-const LIFECYCLE_TAGS = new Set(["raw", "processed"]);
+export const RAW_SOURCE_WITH_PROCESSED_OUTPUT_TAG = "has-processed-output";
+
+const LIFECYCLE_TAGS = new Set([
+  "raw",
+  "processed",
+  RAW_SOURCE_WITH_PROCESSED_OUTPUT_TAG,
+]);
 
 export function normalizeAssetFolderName(value: unknown) {
   if (typeof value !== "string") {
@@ -52,6 +58,20 @@ export function buildFolderAssetTags({
     }
     seen.add(key);
     return true;
+  });
+}
+
+export function buildRawSourceProcessedOutputTags({
+  folder,
+  existingTags = [],
+}: {
+  folder: string;
+  existingTags?: string[];
+}) {
+  return buildFolderAssetTags({
+    folder,
+    lifecycle: "raw",
+    extraTags: [...existingTags, RAW_SOURCE_WITH_PROCESSED_OUTPUT_TAG],
   });
 }
 
