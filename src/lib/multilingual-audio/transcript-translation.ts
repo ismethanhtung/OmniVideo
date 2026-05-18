@@ -306,6 +306,7 @@ function splitSegmentsForTranslation(
 
 function buildTranslationPrompt(input: {
     segments: AudioTranscriptSegment[];
+    fullTranscriptContext: string;
     sourceLanguage: string;
     targetLanguage: string;
     retryMode?: boolean;
@@ -318,6 +319,7 @@ function buildTranslationPrompt(input: {
         "Male cues: 他, 师兄, 师弟, 公子, 少年, 男子, 男修. Use Vietnamese male references such as 'hắn', 'anh ấy', or 'chàng' only when the referent is clearly male.",
         "When a name/title establishes gender in one segment, keep that gender for later pronouns that refer to the same person, even if later Chinese uses 他 ambiguously.",
         "If gender is ambiguous, prefer a neutral Vietnamese wording that avoids gendered pronouns instead of guessing.",
+        "Never insert pronouns inside another word; pronouns must remain separate Vietnamese words only when they are actually needed.",
         "Keep each segment aligned to its original timing. Do not merge, split, reorder, or drop segments.",
         "This translation will be synthesized as Vietnamese voice-over. Prefer concise spoken Vietnamese that fits the segment duration at a natural speaking pace.",
         "Do not force Vietnamese to match the source character count exactly; Chinese and Vietnamese have different written length and spoken duration. Use source length only as a compression signal: short Chinese segments need short Vietnamese, long Chinese segments can use fuller wording if timing allows.",
@@ -334,6 +336,9 @@ function buildTranslationPrompt(input: {
         'Return JSON only. Do not wrap it in markdown. Do not add explanations before or after JSON. The first character must be "{" and the last character must be "}".',
         'Required shape: {"translations":[{"id":0,"text":"..."}]}. You may use key "translatedText" instead of "text".',
         `Source language: ${input.sourceLanguage}. Target language: ${input.targetLanguage}.`,
+        "Full source transcript context (read-only):",
+        "Use this only to resolve continuity, names, referents, relationships, and tone across the entire transcript. Do not translate or output this whole context. Return translations only for the requested Segments below.",
+        input.fullTranscriptContext,
         "Segments:",
         JSON.stringify(
             input.segments.map((segment) => ({
@@ -346,6 +351,7 @@ function buildTranslationPrompt(input: {
 
 async function requestTranslationChunk(input: {
     segments: AudioTranscriptSegment[];
+    fullTranscriptContext: string;
     sourceLanguage: string;
     targetLanguage: string;
     model: string;
@@ -369,6 +375,7 @@ async function requestTranslationChunk(input: {
                 role: "user",
                 content: buildTranslationPrompt({
                     segments: input.segments,
+                    fullTranscriptContext: input.fullTranscriptContext,
                     sourceLanguage: input.sourceLanguage,
                     targetLanguage: input.targetLanguage,
                     retryMode: input.retryMode,
@@ -442,6 +449,7 @@ async function requestTranslationChunk(input: {
 
 async function requestSingleSegmentPlainTextFallback(input: {
     segment: AudioTranscriptSegment;
+    fullTranscriptContext: string;
     sourceLanguage: string;
     targetLanguage: string;
     model: string;
@@ -463,6 +471,9 @@ async function requestSingleSegmentPlainTextFallback(input: {
                 role: "user",
                 content: [
                     `Source language: ${input.sourceLanguage}. Target language: ${input.targetLanguage}.`,
+                    "Full source transcript context (read-only):",
+                    "Use this only to resolve continuity, names, referents, relationships, and tone. Return only the translation for the single target segment below.",
+                    input.fullTranscriptContext,
                     "Translate this one transcript segment into concise natural Vietnamese for TTS.",
                     `Source text: ${input.segment.text}`,
                 ].join("\n"),
@@ -559,6 +570,7 @@ function isInvalidJsonError(error: unknown) {
 
 async function translateChunkAdaptive(input: {
     segments: AudioTranscriptSegment[];
+    fullTranscriptContext: string;
     sourceLanguage: string;
     targetLanguage: string;
     model: string;
@@ -658,6 +670,7 @@ async function translateChunkAdaptive(input: {
         ) {
             const fallback = await requestSingleSegmentPlainTextFallback({
                 segment: input.segments[0],
+                fullTranscriptContext: input.fullTranscriptContext,
                 sourceLanguage: input.sourceLanguage,
                 targetLanguage: input.targetLanguage,
                 model: input.model,
@@ -696,6 +709,10 @@ export async function translateTranscriptSegments(input: {
     const sourceLanguage = input.sourceLanguage?.trim() || "zh";
     const targetLanguage = input.targetLanguage?.trim() || "vi";
     const fetcher = input.fetchImpl ?? fetch;
+    const fullTranscriptContext = input.segments
+        .map((segment) => segment.text.trim())
+        .filter(Boolean)
+        .join("");
     const isGroqCompatibleDefault = /api\.groq\.com/i.test(baseUrl);
     const chunks = splitSegmentsForTranslation(
         input.segments,
@@ -712,6 +729,7 @@ export async function translateTranscriptSegments(input: {
         (chunk) =>
             translateChunkAdaptive({
                 segments: chunk,
+                fullTranscriptContext,
                 sourceLanguage,
                 targetLanguage,
                 model,

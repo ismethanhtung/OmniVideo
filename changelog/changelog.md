@@ -1,5 +1,29 @@
 # OmniVideo Changelog
 
+## FAST-WORKSPACE-030 - Reframe Default Workspace Canvas View
+
+- Bumped app version from `0.9.6` to `0.9.7` as a patch release for Workspace canvas framing.
+- Reduced the initial Workspace canvas scale from `0.88` to `0.52` so seeded flows open with a wider overview without becoming too small after follow-up tuning.
+- Shifted the initial canvas x-offset from `32` to `-24` so the first view moves left after user review corrected the intended direction.
+- Moved the initial transform into a named `DEFAULT_CANVAS_VIEW` constant for easier future tuning.
+- Verification (FAST-WORKSPACE-030): `npm run test -- --run src/features/workspace/workspace-canvas-panel.test.ts` pass.
+
+## FAST-UX-027 - Color-code Asset Lifecycle Tags
+
+- Bumped app version from `0.9.5` to `0.9.6` as a patch release for asset browsing clarity.
+- Added reusable lifecycle badges so `raw`, `processed`, and `has-processed-output` are visually distinct instead of disappearing inside plain metadata text.
+- Chose restrained lifecycle colors: amber for raw source material, emerald for processed outputs, and rose for raw assets that already produced a processed derivative.
+- Surfaced lifecycle badges in Storage Library plus asset pickers across Audio Transcript, Workspace, Video Tools Lab, and Publish Records.
+- Verification (FAST-UX-027): `npm run test -- --run src/lib/storage/asset-lifecycle-tags.test.ts src/features/storage/storage-library-panel.test.ts src/features/audio/chinese-transcription-panel.test.ts src/features/workspace/workspace-canvas-panel.test.ts src/features/video-processing/video-tools-lab-panel.test.ts src/features/social/publish-records-panel.test.ts` pass (6 files / 34 tests).
+
+## FAST-AUDIO-056 - Add Full Transcript Context to Every Translation Chunk
+
+- Bumped app version from `0.9.4` to `0.9.5` as a patch release for long-form translation continuity.
+- Every transcript translation request now includes the full source transcript as read-only context while still returning output only for the active chunk.
+- Adaptive retry/split requests and the single-segment plain-text fallback keep the same full-transcript context, so long narrative references do not disappear when a chunk is retried.
+- Strengthened the translation prompt to explicitly separate global context from the current `Segments` output contract.
+- Verification (FAST-AUDIO-056): `npm run test -- --run src/lib/multilingual-audio/transcript-translation.test.ts` pass (1 file / 15 tests).
+
 ## FAST-WORKSPACE-029 - Smooth Preprocess Speed Editing and Mark Raw Sources with Outputs
 
 - Bumped app version from `0.9.3` to `0.9.4` as a patch release for Workspace editing and asset lifecycle clarity.

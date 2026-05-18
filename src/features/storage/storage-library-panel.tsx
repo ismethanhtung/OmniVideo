@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Download, ExternalLink, Plus, RefreshCw, Trash2 } from "lucide-react";
 
 import type { LeftbarNavItem } from "@/components/layout/types";
+import { AssetLifecycleBadges } from "@/components/ui/asset-lifecycle-badges";
 import { buildStorageLocationUrl } from "@/lib/storage/storage-location";
 import { getTelegramDownloadBlockedReason } from "@/lib/storage/telegram-download";
 
@@ -36,6 +37,7 @@ type StoredVideoAsset = {
         ext?: string | null;
         vcodec?: string | null;
         acodec?: string | null;
+        tags?: string[] | null;
     };
     createdFrom?: {
         sourceId?: string;
@@ -455,6 +457,11 @@ export function StorageLibraryPanel({ section }: StorageLibraryPanelProps) {
                                                 {asset.metadata?.sourceUrl ??
                                                     "-"}
                                             </p>
+                                            <div className="mt-1">
+                                                <AssetLifecycleBadges
+                                                    tags={asset.metadata?.tags}
+                                                />
+                                            </div>
                                         </td>
                                         <td className="px-4 py-3 text-main">
                                             <p className="font-mono text-[11px]">
@@ -883,6 +890,16 @@ export function StorageLibraryPanel({ section }: StorageLibraryPanelProps) {
                                         ) ?? null
                                     }
                                 />
+                                <div className="border border-main bg-main px-3 py-2">
+                                    <p className="text-[10px] font-bold uppercase tracking-wide text-muted">
+                                        Lifecycle
+                                    </p>
+                                    <div className="mt-1">
+                                        <AssetLifecycleBadges
+                                            tags={selectedAsset.metadata?.tags}
+                                        />
+                                    </div>
+                                </div>
                             </div>
 
                             <div className="border border-main bg-main px-3 py-2">

@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 
 import type { LeftbarNavItem } from "@/components/layout/types";
+import { AssetLifecycleBadges } from "@/components/ui/asset-lifecycle-badges";
 import {
     getAssetFolderName,
     matchesVideoAssetSearch,
@@ -1880,6 +1881,15 @@ export function ChineseTranscriptionPanel({
                                                                             " · ",
                                                                         )}
                                                                 </p>
+                                                                <div className="mt-1">
+                                                                    <AssetLifecycleBadges
+                                                                        tags={
+                                                                            asset
+                                                                                .metadata
+                                                                                ?.tags
+                                                                        }
+                                                                    />
+                                                                </div>
                                                                 {asset.metadata
                                                                     ?.sourceUrl ? (
                                                                     <p className="mt-1 truncate text-[10px] text-muted">

@@ -13,19 +13,23 @@ describe("WorkspaceCanvasPanel canvas interactions", () => {
         expect(source).toContain("getClosestNodeHandleSide");
         expect(source).toContain("activeSourceSide");
         expect(source).toContain("activeTargetSide");
-        expect(source).toContain('aria-label={`Start link from ${side}`}');
-        expect(source).toContain('(["top", "right", "bottom", "left"] as const)');
+        expect(source).toContain("aria-label={`Start link from ${side}`}");
+        expect(source).toContain(
+            '(["top", "right", "bottom", "left"] as const)',
+        );
         expect(source).toContain("activeSourceSide === side");
         expect(source).toContain("activeTargetSide === side");
-        expect(source).toContain("shouldRevealNodeHandles ? \"block\" : \"hidden\"");
-        expect(source).toContain("\"border-indigo-600 ring-1 ring-indigo-300\"");
+        expect(source).toContain(
+            'shouldRevealNodeHandles ? "block" : "hidden"',
+        );
+        expect(source).toContain('"border-indigo-600 ring-1 ring-indigo-300"');
     });
 
     it("exposes a direct edge delete affordance", () => {
         expect(source).toContain("deleteWorkspaceEdge");
         expect(source).toContain('aria-label="Delete link"');
         expect(source).toContain('role="button"');
-        expect(source).toContain('transform={`translate(${midX} ${midY})`}');
+        expect(source).toContain("transform={`translate(${midX} ${midY})`}");
         expect(source).toContain("workspace-edge-delete-control");
         expect(source).not.toContain("<foreignObject");
     });
@@ -33,13 +37,18 @@ describe("WorkspaceCanvasPanel canvas interactions", () => {
     it("uses a visual picker for Storage Asset nodes", () => {
         expect(source).toContain("WorkspaceStorageAssetPicker");
         expect(source).toContain("Select existing video");
-        expect(source).toContain("/api/storage/assets/${asset._id}/download?disposition=inline");
+        expect(source).toContain(
+            "/api/storage/assets/${asset._id}/download?disposition=inline",
+        );
         expect(source).toContain("matchesVideoAssetSearch");
         expect(source).toContain("Search title, folder, tags...");
+        expect(source).toContain("AssetLifecycleBadges");
     });
 
     it("asks confirmation before clearing draft", () => {
-        expect(source).toContain("Clear current Workspace draft and runtime state? This action cannot be undone.");
+        expect(source).toContain(
+            "Clear current Workspace draft and runtime state? This action cannot be undone.",
+        );
         expect(source).toContain("if (");
         expect(source).toContain("!confirm(");
     });
@@ -71,7 +80,9 @@ describe("WorkspaceCanvasPanel canvas interactions", () => {
         expect(source).toContain("Enable preprocess");
         expect(source).toContain("function RuntimeNumberInput");
         expect(source).toContain("onBlur={commitDraft}");
-        expect(source).toContain("onCommit={(value) => setConfig({ speedFactor: value })}");
+        expect(source).toContain(
+            "onCommit={(value) => setConfig({ speedFactor: value })}",
+        );
         expect(source).toContain("getBooleanConfig(");
         expect(source).toContain('"enabled"');
         expect(source).toContain("Preprocess disabled (passthrough source)");
@@ -91,12 +102,8 @@ describe("WorkspaceCanvasPanel canvas interactions", () => {
         );
         expect(source).toContain("upstreamMetadataNodeId");
         expect(source).toContain("fallbackMetadata");
-        expect(source).toContain(
-            "<WorkspaceFlowSetupModal",
-        );
-        expect(source).toContain(
-            "runtimeVietnameseMetadataByNodeId={",
-        );
+        expect(source).toContain("<WorkspaceFlowSetupModal");
+        expect(source).toContain("runtimeVietnameseMetadataByNodeId={");
     });
 
     it("persists lightweight resume checkpoints and supports publish-only continuation", () => {
@@ -132,7 +139,7 @@ describe("WorkspaceCanvasPanel canvas interactions", () => {
     });
 
     it("publishes step-aware background progress without fake step percentages", () => {
-        expect(source).toContain("progressMode: \"indeterminate\"");
+        expect(source).toContain('progressMode: "indeterminate"');
         expect(source).toContain("startProgressStep");
         expect(source).toContain("finishProgressStep");
         expect(source).toContain("readWorkspaceResponseBlob");
@@ -154,6 +161,13 @@ describe("WorkspaceCanvasPanel canvas interactions", () => {
         expect(source).toContain(
             'className="workspace-canvas-grid absolute left-0 top-0"',
         );
+    });
+
+    it("starts from a zoomed-out right-shifted canvas view", () => {
+        expect(source).toContain(
+            "const DEFAULT_CANVAS_VIEW = { x: 0, y: 0, scale: 0.6 };",
+        );
+        expect(source).toContain("useState(DEFAULT_CANVAS_VIEW)");
     });
 
     it("renders dragged link previews as Bézier curves", () => {

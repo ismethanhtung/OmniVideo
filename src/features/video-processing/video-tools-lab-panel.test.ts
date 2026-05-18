@@ -34,5 +34,6 @@ describe("Video Tools Lab source preview controls", () => {
     it("makes asset picking searchable by folder metadata", () => {
         expect(source).toContain("matchesVideoAssetSearch");
         expect(source).toContain("Search title, folder, tags...");
+        expect(source).toContain("AssetLifecycleBadges");
     });
 });

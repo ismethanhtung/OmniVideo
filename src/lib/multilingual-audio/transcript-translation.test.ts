@@ -226,6 +226,9 @@ describe("transcript translation", () => {
     expect(prompt).toContain("Male cues:");
     expect(prompt).toContain("prefer a neutral Vietnamese wording");
     expect(prompt).toContain("Never insert pronouns inside another word");
+    expect(prompt).toContain("Full source transcript context (read-only):");
+    expect(prompt).toContain("Do not translate or output this whole context");
+    expect(prompt).toContain("寻导人做梦都想不到一个被海关滞留许久的集装箱盲盒");
     expect(prompt).toContain("Do not force Vietnamese to match the source character count exactly");
     expect(prompt).toContain("short Chinese segments need short Vietnamese");
     expect(prompt).toContain("20 -> hai mươi");
@@ -360,6 +363,21 @@ describe("transcript translation", () => {
 
     expect(fetchImpl).toHaveBeenCalledTimes(2);
     expect(result.chunks.map((chunk) => chunk.segmentCount)).toEqual([100, 1]);
+
+    const prompts = fetchImpl.mock.calls.map(([, init]) => {
+      const body = JSON.parse((init as RequestInit).body as string);
+      return body.messages[1].content as string;
+    });
+    expect(prompts[0]).toContain("短句0");
+    expect(prompts[0]).toContain("短句100");
+    expect(prompts[1]).toContain("短句0");
+    expect(prompts[1]).toContain("短句100");
+
+    const requestSegments = prompts.map((prompt) =>
+      JSON.parse(prompt.slice(prompt.indexOf("Segments:\n") + "Segments:\n".length)),
+    ) as Array<Array<{ id: number; text: string }>>;
+    expect(requestSegments[0]).toHaveLength(100);
+    expect(requestSegments[1]).toEqual([{ id: 100, text: "短句100" }]);
   });
 
   it("falls back to plain-text translation for a single segment after invalid JSON retries", async () => {
@@ -399,6 +417,12 @@ describe("transcript translation", () => {
     expect(fallbackBody.messages[0].content).toContain(
       "Keep gender pronouns consistent with Chinese context cues.",
     );
+    expect(fallbackBody.messages[1].content).toContain(
+      "Full source transcript context (read-only):",
+    );
+    expect(fallbackBody.messages[1].content).toContain(
+      "YoYo Television Series Exclusive",
+    );
     expect(result.translatedSegments).toEqual([
       {
         id: 7,
@@ -428,7 +452,10 @@ describe("transcript translation", () => {
         );
       }
 
-      const id = content.includes(sourceSegments[1].text) ? 1 : 0;
+      const requestSegments = JSON.parse(
+        content.slice(content.indexOf("Segments:\n") + "Segments:\n".length),
+      ) as Array<{ id: number; text: string }>;
+      const id = requestSegments[0].id;
       const sourceText = id === 0 ? sourceSegments[0].text : sourceSegments[1].text;
       return new Response(
         JSON.stringify({

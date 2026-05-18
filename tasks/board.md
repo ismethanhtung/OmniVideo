@@ -22,6 +22,9 @@
 
 ## Review
 
+- `FAST-WORKSPACE-030` - Reframe default Workspace canvas view.
+- `FAST-UX-027` - Color-code asset lifecycle tags.
+- `FAST-AUDIO-056` - Add full transcript context to every translation chunk.
 - `FAST-WORKSPACE-029` - Smooth preprocess speed editing and mark raw sources with outputs.
 - `FAST-INTAKE-006` - Restore public Bilibili 1080p intake via HTML5 fallback.
 - `FAST-AUDIO-055` - Prevent forced long pauses inside split voice segments.

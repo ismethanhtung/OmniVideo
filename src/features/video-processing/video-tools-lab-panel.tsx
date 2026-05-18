@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 
 import type { LeftbarNavItem } from "@/components/layout/types";
+import { AssetLifecycleBadges } from "@/components/ui/asset-lifecycle-badges";
 import {
     getAssetFolderName,
     matchesVideoAssetSearch,
@@ -1135,6 +1136,13 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                                                                         " · ",
                                                                     )}
                                                             </p>
+                                                            <AssetLifecycleBadges
+                                                                tags={
+                                                                    asset
+                                                                        .metadata
+                                                                        ?.tags
+                                                                }
+                                                            />
                                                             {hasSetup ? (
                                                                 <span className="shrink-0 border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-700">
                                                                     Saved setup

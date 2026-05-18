@@ -17,5 +17,6 @@ describe("Publish Records View Mode errors", () => {
     it("makes video assets searchable by folder metadata", () => {
         expect(source).toContain("matchesVideoAssetSearch");
         expect(source).toContain("Search title, folder, tags...");
+        expect(source).toContain("AssetLifecycleBadges");
     });
 });

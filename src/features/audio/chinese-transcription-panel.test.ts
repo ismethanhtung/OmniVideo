@@ -14,6 +14,7 @@ describe("Audio Transcript asset picker preview", () => {
     expect(source).toContain("<video");
     expect(source).toContain("matchesVideoAssetSearch");
     expect(source).toContain("Search title, folder, tags...");
+    expect(source).toContain("AssetLifecycleBadges");
   });
 
   it("keeps heavy transcript panels collapsed by default", () => {

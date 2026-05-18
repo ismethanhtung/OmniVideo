@@ -23,4 +23,9 @@ describe("Storage Library pagination", () => {
     expect(source).toContain('statusFailed ? "text-rose-700" : "text-muted"');
     expect(source).toContain('statusFailed ? "font-semibold text-rose-700" : "text-muted"');
   });
+
+  it("renders lifecycle badges for assets", () => {
+    expect(source).toContain("AssetLifecycleBadges");
+    expect(source).toContain("tags={asset.metadata?.tags}");
+  });
 });

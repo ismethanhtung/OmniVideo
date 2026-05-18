@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 
 import type { LeftbarNavItem } from "@/components/layout/types";
+import { AssetLifecycleBadges } from "@/components/ui/asset-lifecycle-badges";
 import {
     finishProgressStep,
     finishProgressTask,
@@ -222,6 +223,7 @@ const NODE_HANDLE_HIT_SIZE = 18;
 const NODE_HANDLE_VISUAL_SIZE = 8;
 const WORKSPACE_RUNTIME_RESUME_STORAGE_KEY =
     "omnivideo.workspace.runtime.resume.v1";
+const DEFAULT_CANVAS_VIEW = { x: 0, y: 0, scale: 0.6 };
 
 type WorkspaceRuntimeResumeSnapshot = {
     version: 1;
@@ -1066,7 +1068,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
         string | null
     >(null);
     const [connectionError, setConnectionError] = useState<string | null>(null);
-    const [canvasView, setCanvasView] = useState({ x: 32, y: 32, scale: 0.88 });
+    const [canvasView, setCanvasView] = useState(DEFAULT_CANVAS_VIEW);
     const [storageAccounts, setStorageAccounts] = useState<
         WorkspaceStorageAccount[]
     >([]);
@@ -3567,7 +3569,8 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         const processedSourceTags =
                             buildRawSourceProcessedOutputTags({
                                 folder: artifactFolder,
-                                existingTags: upstreamAsset.metadata?.tags ?? [],
+                                existingTags:
+                                    upstreamAsset.metadata?.tags ?? [],
                             });
                         try {
                             await fetchWorkspaceJson<{
@@ -7365,6 +7368,13 @@ function WorkspaceStorageAssetPicker({
                                                         .filter(Boolean)
                                                         .join(" · ")}
                                                 </p>
+                                                <div className="mt-1">
+                                                    <AssetLifecycleBadges
+                                                        tags={
+                                                            asset.metadata?.tags
+                                                        }
+                                                    />
+                                                </div>
                                             </button>
                                             <button
                                                 type="button"
