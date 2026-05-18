@@ -22,6 +22,7 @@
 
 ## Review
 
+- `FAST-STORAGE-007` - Delete Drive files from Storage Library.
 - `FAST-OPS-006` - Notify when Background Progress tasks finish.
 - `FAST-WORKSPACE-030` - Reframe default Workspace canvas view.
 - `FAST-UX-027` - Color-code asset lifecycle tags.

@@ -1,5 +1,14 @@
 # OmniVideo Changelog
 
+## FAST-STORAGE-007 - Delete Drive Files From Storage Library
+
+- Bumped app version from `0.9.8` to `0.9.9` as a patch release for Storage Library deletion behavior.
+- Deleting a Drive-backed asset from Storage Library now deletes the matching Google Drive file before removing the local asset record.
+- Drive deletion reuses the stored asset file id and configured Drive credentials, and local metadata is preserved if the remote delete fails.
+- Storage Library deletion also removes intake run history and trace records tied to the deleted asset, so Video Intake no longer keeps orphaned `No preview` rows.
+- Non-Drive assets keep the existing metadata-only delete behavior.
+- Verification (FAST-STORAGE-007): `npm run test -- --run src/lib/storage/asset-delete.test.ts src/app/api/storage/assets/[assetId]/route.test.ts` pass.
+
 ## FAST-OPS-006 - Notify When Background Tasks Finish
 
 - Bumped app version from `0.9.7` to `0.9.8` as a patch release for completion awareness.

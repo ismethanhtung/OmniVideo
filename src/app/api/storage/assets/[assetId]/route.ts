@@ -3,9 +3,15 @@ import { NextResponse } from "next/server";
 import { requireWriteAccess } from "@/lib/access-control/route-guards";
 import {
   deleteVideoAssetById,
+  deleteIntakeJobRunsByAssetId,
+  getVideoAssetById,
   getIntakeDb,
   updateVideoAssetMetadataById,
 } from "@/lib/video-intake/repository";
+import {
+  deleteRemoteAssetIfNeeded,
+  type DeletableStoredAsset,
+} from "@/lib/storage/asset-delete";
 
 export const runtime = "nodejs";
 
@@ -19,6 +25,23 @@ export async function DELETE(
 
     const { assetId } = await params;
     const db = await getIntakeDb();
+    const asset = await getVideoAssetById({ db, assetId });
+
+    if (!asset) {
+      return NextResponse.json(
+        {
+          ok: false,
+          errorCode: "VAL_STORAGE_ASSET_NOT_FOUND",
+          error: "Storage asset was not found.",
+        },
+        { status: 404 },
+      );
+    }
+
+    await deleteRemoteAssetIfNeeded({
+      db,
+      asset: asset as DeletableStoredAsset,
+    });
     const deleted = await deleteVideoAssetById({ db, assetId });
 
     if (!deleted) {
@@ -31,6 +54,8 @@ export async function DELETE(
         { status: 404 },
       );
     }
+
+    await deleteIntakeJobRunsByAssetId({ db, assetId });
 
     return NextResponse.json({
       ok: true,

@@ -816,6 +816,50 @@ export async function deleteUrlIntakeJobRunById({
   };
 }
 
+export async function deleteIntakeJobRunsByAssetId({
+  db,
+  assetId,
+}: {
+  db: Db;
+  assetId: string;
+}) {
+  if (!ObjectId.isValid(assetId)) {
+    return {
+      deletedRuns: 0,
+      deletedStepRuns: 0,
+      deletedRunEvents: 0,
+    };
+  }
+
+  const objectId = new ObjectId(assetId);
+  const runs = await db
+    .collection("job_runs")
+    .find({ "outputSummary.assetId": objectId })
+    .project({ _id: 1 })
+    .toArray();
+  const runIds = runs.map((run) => run._id);
+
+  if (runIds.length === 0) {
+    return {
+      deletedRuns: 0,
+      deletedStepRuns: 0,
+      deletedRunEvents: 0,
+    };
+  }
+
+  const [stepResult, eventResult, runResult] = await Promise.all([
+    db.collection("step_runs").deleteMany({ jobRunId: { $in: runIds } }),
+    db.collection("run_events").deleteMany({ jobRunId: { $in: runIds } }),
+    db.collection("job_runs").deleteMany({ _id: { $in: runIds } }),
+  ]);
+
+  return {
+    deletedRuns: runResult.deletedCount,
+    deletedStepRuns: stepResult.deletedCount,
+    deletedRunEvents: eventResult.deletedCount,
+  };
+}
+
 export async function getIntakeRunDetail({
   db,
   runId,
