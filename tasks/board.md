@@ -22,6 +22,7 @@
 
 ## Review
 
+- `FAST-OPS-006` - Notify when Background Progress tasks finish.
 - `FAST-WORKSPACE-030` - Reframe default Workspace canvas view.
 - `FAST-UX-027` - Color-code asset lifecycle tags.
 - `FAST-AUDIO-056` - Add full transcript context to every translation chunk.

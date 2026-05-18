@@ -1,5 +1,14 @@
 # OmniVideo Changelog
 
+## FAST-OPS-006 - Notify When Background Tasks Finish
+
+- Bumped app version from `0.9.7` to `0.9.8` as a patch release for completion awareness.
+- Added one-shot completion detection for newly finished Background Progress jobs while ignoring historical tasks restored from browser storage.
+- Added top-right in-app completion toasts when OmniVideo is the visible tab.
+- Added optional browser notifications for hidden tabs after the user explicitly enables notification permission from the Progress modal.
+- Added an explicit `Send test notification` action plus explanatory copy so permission can be verified without waiting for a real background job to finish.
+- Verification (FAST-OPS-006): `npm run test -- --run src/lib/ui/progress-notifications.test.ts src/components/layout/topbar.test.ts` pass.
+
 ## FAST-WORKSPACE-030 - Reframe Default Workspace Canvas View
 
 - Bumped app version from `0.9.6` to `0.9.7` as a patch release for Workspace canvas framing.

@@ -15,4 +15,14 @@ describe("Topbar background progress modal", () => {
         expect(source).toContain("measured progress");
         expect(source).toContain("divide-y divide-soft");
     });
+
+    it("supports completion toasts and optional browser notifications", () => {
+        expect(source).toContain("CompletionToastStack");
+        expect(source).toContain("collectNewlyFinishedProgressTasks");
+        expect(source).toContain("getProgressNotificationChannel");
+        expect(source).toContain("Enable notifications");
+        expect(source).toContain("Send test notification");
+        expect(source).toContain("onSendTestNotification");
+        expect(source).toContain("new Notification(task.title");
+    });
 });

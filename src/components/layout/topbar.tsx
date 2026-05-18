@@ -4,6 +4,7 @@ import {
     useCallback,
     useEffect,
     useMemo,
+    useRef,
     useState,
     useSyncExternalStore,
 } from "react";
@@ -35,6 +36,11 @@ import {
     type ProgressTaskStep,
     type ProgressTask,
 } from "@/lib/ui/progress-center";
+import {
+    buildProgressStatusMap,
+    collectNewlyFinishedProgressTasks,
+    getProgressNotificationChannel,
+} from "@/lib/ui/progress-notifications";
 import { INSPIRATION_VAULT_UPDATED_EVENT } from "@/lib/inspiration-vault/inspiration-vault";
 import { createInspirationVaultItemFromApi } from "@/lib/inspiration-vault/client";
 
@@ -60,6 +66,16 @@ export function Topbar({
     const [quickCaptureStatus, setQuickCaptureStatus] = useState<
         "idle" | "saving" | "saved" | "empty" | "error" | "locked"
     >("idle");
+    const [completionToasts, setCompletionToasts] = useState<ProgressTask[]>(
+        [],
+    );
+    const [notificationPermission, setNotificationPermission] = useState<
+        NotificationPermission | "unsupported"
+    >("unsupported");
+    const previousProgressStatusesRef = useRef(
+        new Map<string, ProgressTask["status"]>(),
+    );
+    const hasSeededProgressStatusesRef = useRef(false);
     const progressTasks = useSyncExternalStore(
         subscribeProgressTasks,
         getProgressTasksSnapshot,
@@ -87,6 +103,71 @@ export function Topbar({
     useEffect(() => {
         void loadAppAccess();
     }, [loadAppAccess]);
+
+    useEffect(() => {
+        setNotificationPermission(
+            typeof Notification === "undefined"
+                ? "unsupported"
+                : Notification.permission,
+        );
+    }, []);
+
+    useEffect(() => {
+        if (!hasSeededProgressStatusesRef.current) {
+            const seededStatuses = buildProgressStatusMap(progressTasks);
+            previousProgressStatusesRef.current.clear();
+            for (const [taskId, status] of seededStatuses) {
+                previousProgressStatusesRef.current.set(taskId, status);
+            }
+            hasSeededProgressStatusesRef.current = true;
+            return;
+        }
+
+        const newlyFinished = collectNewlyFinishedProgressTasks({
+            previousStatuses: previousProgressStatusesRef.current,
+            tasks: progressTasks,
+        });
+
+        for (const task of newlyFinished) {
+            const channel = getProgressNotificationChannel({
+                visibilityState: document.visibilityState,
+                browserPermission:
+                    typeof Notification === "undefined"
+                        ? undefined
+                        : Notification.permission,
+            });
+
+            if (channel === "browser") {
+                new Notification(task.title, {
+                    body:
+                        task.description ??
+                        (task.status === "success"
+                            ? "Task completed."
+                            : "Task failed."),
+                });
+            } else if (channel === "toast") {
+                setCompletionToasts((current) => [...current, task]);
+            }
+        }
+
+        const nextStatuses = buildProgressStatusMap(progressTasks);
+        previousProgressStatusesRef.current.clear();
+        for (const [taskId, status] of nextStatuses) {
+            previousProgressStatusesRef.current.set(taskId, status);
+        }
+    }, [progressTasks]);
+
+    useEffect(() => {
+        if (completionToasts.length === 0) {
+            return;
+        }
+
+        const timeoutId = window.setTimeout(() => {
+            setCompletionToasts((current) => current.slice(1));
+        }, 4500);
+
+        return () => window.clearTimeout(timeoutId);
+    }, [completionToasts]);
 
     const submitQuickCapture = async () => {
         if (isReadOnlyDemo) {
@@ -235,6 +316,29 @@ export function Topbar({
                 <ProgressModal
                     tasks={progressTasks}
                     onClose={() => setShowProgress(false)}
+                    notificationPermission={notificationPermission}
+                    onRequestNotificationPermission={async () => {
+                        if (typeof Notification === "undefined") {
+                            setNotificationPermission("unsupported");
+                            return;
+                        }
+
+                        const permission =
+                            await Notification.requestPermission();
+                        setNotificationPermission(permission);
+                    }}
+                    onSendTestNotification={() => {
+                        if (
+                            typeof Notification === "undefined" ||
+                            Notification.permission !== "granted"
+                        ) {
+                            return;
+                        }
+
+                        new Notification("OmniVideo notifications", {
+                            body: "Thông báo ngoài tab đang hoạt động.",
+                        });
+                    }}
                 />
             ) : null}
             {showSystemSnapshot ? (
@@ -249,6 +353,14 @@ export function Topbar({
                     onAccessChanged={() => void loadAppAccess()}
                 />
             ) : null}
+            <CompletionToastStack
+                tasks={completionToasts}
+                onDismiss={(taskId) =>
+                    setCompletionToasts((current) =>
+                        current.filter((task) => task.id !== taskId),
+                    )
+                }
+            />
         </header>
     );
 }
@@ -677,9 +789,15 @@ function formatDurationMs(from: number, to: number) {
 function ProgressModal({
     tasks,
     onClose,
+    notificationPermission,
+    onRequestNotificationPermission,
+    onSendTestNotification,
 }: {
     tasks: ProgressTask[];
     onClose: () => void;
+    notificationPermission: NotificationPermission | "unsupported";
+    onRequestNotificationPermission: () => Promise<void>;
+    onSendTestNotification: () => void;
 }) {
     const [now, setNow] = useState(() => Date.now());
 
@@ -718,14 +836,46 @@ function ProgressModal({
                     <span className="text-[11px] text-muted">
                         {tasks.length} task(s)
                     </span>
-                    <button
-                        type="button"
-                        onClick={clearFinishedProgressTasks}
-                        className="border border-main bg-main px-2.5 py-1 text-[11px] font-semibold text-main hover:bg-secondary"
-                    >
-                        Clear finished
-                    </button>
+                    <div className="flex items-center gap-2">
+                        {notificationPermission === "default" ? (
+                            <button
+                                type="button"
+                                onClick={() =>
+                                    void onRequestNotificationPermission()
+                                }
+                                className="border border-main bg-main px-2.5 py-1 text-[11px] font-semibold text-main hover:bg-secondary"
+                            >
+                                Enable notifications
+                            </button>
+                        ) : notificationPermission === "granted" ? (
+                            <>
+                                <span className="text-[11px] font-semibold text-emerald-700">
+                                    Notifications enabled
+                                </span>
+                                <button
+                                    type="button"
+                                    onClick={onSendTestNotification}
+                                    className="border border-main bg-main px-2.5 py-1 text-[11px] font-semibold text-main hover:bg-secondary"
+                                >
+                                    Send test notification
+                                </button>
+                            </>
+                        ) : null}
+                        <button
+                            type="button"
+                            onClick={clearFinishedProgressTasks}
+                            className="border border-main bg-main px-2.5 py-1 text-[11px] font-semibold text-main hover:bg-secondary"
+                        >
+                            Clear finished
+                        </button>
+                    </div>
                 </div>
+                {notificationPermission === "granted" ? (
+                    <p className="border-b border-main px-4 py-2 text-[11px] text-muted">
+                        Khi tab OmniVideo đang ở nền, thông báo ngoài app chỉ
+                        hiện lúc một task mới hoàn tất.
+                    </p>
+                ) : null}
 
                 <div className="min-h-0 overflow-y-auto">
                     {tasks.length === 0 ? (
@@ -824,6 +974,51 @@ function ProgressModal({
                     )}
                 </div>
             </section>
+        </div>
+    );
+}
+
+function CompletionToastStack({
+    tasks,
+    onDismiss,
+}: {
+    tasks: ProgressTask[];
+    onDismiss: (taskId: string) => void;
+}) {
+    if (tasks.length === 0) {
+        return null;
+    }
+
+    return (
+        <div className="fixed right-4 top-16 z-40 flex w-full max-w-sm flex-col gap-2">
+            {tasks.map((task) => (
+                <div
+                    key={task.id}
+                    className="border border-main bg-main p-3 shadow-lg"
+                >
+                    <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                            <p className="text-[12px] font-semibold text-main">
+                                {task.title}
+                            </p>
+                            <p className="mt-1 text-[11px] text-muted">
+                                {task.description ??
+                                    (task.status === "success"
+                                        ? "Task completed."
+                                        : "Task failed.")}
+                            </p>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => onDismiss(task.id)}
+                            className="border border-main bg-main p-1 text-main hover:bg-secondary"
+                            aria-label="Dismiss completion toast"
+                        >
+                            <X className="h-3 w-3" />
+                        </button>
+                    </div>
+                </div>
+            ))}
         </div>
     );
 }
