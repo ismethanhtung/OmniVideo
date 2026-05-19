@@ -44,6 +44,7 @@ Tài liệu chính thức cho repo OmniVideo (single-user system), định hư�
 - `docs/domains/storage-strategy.md`: chiến lược lưu trữ binary + metadata.
 - `docs/domains/video-pipeline.md`: pipeline video module hóa.
 - `docs/domains/multilingual-audio.md`: định hướng audio đa ngôn ngữ (Việt/Anh).
+- `docs/domains/thumbnail-studio.md`: domain draft cho quản lý/chỉnh sửa thumbnail và workflow hook YouTube.
 - `docs/domains/affiliate-automation.md`: blueprint affiliate automation (deferred).
 
 ### Operations

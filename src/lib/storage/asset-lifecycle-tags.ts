@@ -13,7 +13,7 @@ const LIFECYCLE_BADGES: Record<string, LifecycleBadge> = {
         className: "border-emerald-500/35 bg-emerald-500/12 text-emerald-700",
     },
     "has-processed-output": {
-        label: "has processed output",
+        label: "has output",
         className: "border-rose-500/35 bg-rose-500/12 text-rose-700",
     },
 };

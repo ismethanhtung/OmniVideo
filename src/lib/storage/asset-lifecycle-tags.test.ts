@@ -21,7 +21,7 @@ describe("asset lifecycle badges", () => {
                 className: expect.stringContaining("emerald"),
             }),
             expect.objectContaining({
-                label: "has processed output",
+                label: "has output",
                 className: expect.stringContaining("rose"),
             }),
         ]);

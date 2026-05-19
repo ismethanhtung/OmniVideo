@@ -14,6 +14,7 @@ export type AppSectionId =
   | "chineseTranscription2"
   | "piperTtsSandbox"
   | "videoToolsLab"
+  | "thumbnailStudio"
   | "storageProviders"
   | "storageLibrary"
   | "socialAccounts"

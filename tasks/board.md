@@ -64,6 +64,7 @@
 - `FAST-AUDIO-046` - Harden Piper voice generation against empty-phoneme wave header failures.
 - `FAST-UX-007` - Redesign AI Provider Chat Test Modal in English.
 - `FAST-VIDEO-004` - Keep Video Tools preview controls outside blur frame.
+- `FAST-VIDEO-005` - Build Thumbnail Studio UI shell (library + editor).
 - `FAST-AUDIO-019` - Smooth Piper dubbing speech rate.
 - `FAST-VIDEO-003` - Multi-region interactive blur tool.
 - `FAST-WORKSPACE-010` - End-to-end video metadata flow (title/description/hashtags).

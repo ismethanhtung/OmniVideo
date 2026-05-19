@@ -13,6 +13,7 @@ import {
     Send,
     BookOpen,
     Clapperboard,
+    ImagePlus,
     ListVideo,
     Mic2,
     RadioTower,
@@ -115,6 +116,13 @@ export const LEFTBAR_NAV: LeftbarNavGroup[] = [
                 label: "Video Tools Lab",
                 description:
                     "Test upload, preview và mirror video bằng ffmpeg trước khi đưa vào pipeline.",
+            },
+            {
+                id: "thumbnailStudio",
+                icon: ImagePlus,
+                label: "Thumbnail Studio",
+                description:
+                    "Quản lý thư viện thumbnail, nhân bản biến thể và chuẩn bị ảnh cover cho YouTube publish.",
             },
             {
                 id: "storageLibrary",
@@ -236,6 +244,7 @@ const SECTION_SLUG_BY_ID: Record<AppSectionId, string> = {
     chineseTranscription2: "audio-transcript-2",
     piperTtsSandbox: "piper-tts-sandbox",
     videoToolsLab: "video-tools-lab",
+    thumbnailStudio: "thumbnail-studio",
     storageProviders: "storage-providers",
     storageLibrary: "storage-library",
     socialAccounts: "social-accounts",
@@ -261,6 +270,7 @@ const LEGACY_SECTION_BY_CAMEL: Record<string, AppSectionId> = {
     chineseTranscription2: "chineseTranscription2",
     piperTtsSandbox: "piperTtsSandbox",
     videoToolsLab: "videoToolsLab",
+    thumbnailStudio: "thumbnailStudio",
     storageProviders: "storageProviders",
     storageLibrary: "storageLibrary",
     socialAccounts: "socialAccounts",

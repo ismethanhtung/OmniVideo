@@ -1,5 +1,20 @@
 # OmniVideo Changelog
 
+## FAST-VIDEO-005 - Build Thumbnail Studio UI Shell (Library + Editor)
+
+- Bumped app version from `0.9.11` to `0.10.0` as a backward-compatible feature release for thumbnail workflow foundation.
+- Added a new `Thumbnail Studio` section in Video Pipeline navigation and route mapping (`/thumbnail-studio`).
+- Introduced a split-page UI shell that mirrors existing OmniVideo styling patterns: left `Library` pane and right `Editor` pane.
+- Added first-pass thumbnail library interactions in UI: drag-drop import, URL import, search, lifecycle filtering, and lifecycle badges (`raw`, `processed`, `has-processed-output`).
+- Added thumbnail preview visuals directly in each library item, removed noisy `Updated ...` meta labels, and attached per-item `Duplicate` + `Delete` actions for faster episodic workflows.
+- Added first-pass editor interactions in UI: rename, non-destructive default mode (`Create variant`), optional `Overwrite current`, crop preset, blur strength, and rich text overlay controls (font/size/fill/stroke) with drag-on-canvas text positioning.
+- Reworked lifecycle filtering UX so `all/raw/processed/has-processed-output` now lives inside a compact filter icon menu next to search instead of occupying a full inline row.
+- Widened the library pane and changed thumbnail list into a denser 2-card-per-row grid for faster visual scanning.
+- Fixed invalid nested button structure in thumbnail cards to prevent Next.js hydration errors, and polished top-right duplicate/delete icon contrast for clearer visibility.
+- Added workflow/storage integration placeholders in UI for upcoming Drive persistence and publish-node thumbnail selection.
+- Added/updated tests for navigation/route registry and thumbnail panel structure markers.
+- Verification (FAST-VIDEO-005): `npm run test -- --run src/components/layout/navigation.test.ts src/features/thumbnails/thumbnail-studio-panel.test.ts` pass (2 files / 12 tests); `npm run build` pass with existing ESLint circular-config warning.
+
 ## FAST-AI-001 - Switch Default Translation Provider/Model to 9router
 
 - Bumped app version from `0.9.10` to `0.9.11` as a patch release for translation default routing.

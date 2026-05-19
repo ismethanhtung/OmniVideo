@@ -96,7 +96,8 @@ Nguyên tắc dữ liệu:
 4. Storage Strategy: binary provider pluggable + metadata tracking.
 5. Video Pipeline: pipeline module hóa theo stages.
 6. Multilingual Audio: định hướng research-heavy (Việt + Anh ưu tiên).
-7. Affiliate Automation: blueprint deferred, chưa triển khai phase setup.
+7. Thumbnail Studio: quản lý thư viện thumbnail, chỉnh sửa biến thể, và hook chọn thumbnail cho workflow publish.
+8. Affiliate Automation: blueprint deferred, chưa triển khai phase setup.
 
 ## 8. Operations & reliability
 
@@ -180,7 +181,8 @@ Nguyên tắc dữ liệu:
 4. `docs/domains/storage-strategy.md`
 5. `docs/domains/video-pipeline.md`
 6. `docs/domains/multilingual-audio.md`
-7. `docs/domains/affiliate-automation.md`
+7. `docs/domains/thumbnail-studio.md`
+8. `docs/domains/affiliate-automation.md`
 
 ### Operations
 

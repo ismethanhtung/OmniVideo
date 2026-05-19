@@ -35,12 +35,16 @@ describe("navigation registry", () => {
     expect(pipelineGroup?.items.map((item) => item.id)).toContain(
       "chineseTranscription2",
     );
+    expect(pipelineGroup?.items.map((item) => item.id)).toContain(
+      "thumbnailStudio",
+    );
     expect(LEFTBAR_NAV.flatMap((group) => group.items.map((item) => item.id))).toContain(
       "inspirationVault",
     );
     expect(getNavItem("chineseTranscription")?.description).toContain("Groq");
     expect(getNavItem("chineseTranscription")?.label).toBe("Audio Transcript");
-    expect(getNavItem("chineseTranscription2")?.label).toBe("Audio Transcript 2");
+    expect(getNavItem("chineseTranscription2")?.label).toBe("Audio Transcript 2 - Test");
+    expect(getNavItem("thumbnailStudio")?.label).toBe("Thumbnail Studio");
     expect(getNavItem("inspirationVault")?.label).toBe("Inspiration Vault");
   });
 
@@ -69,6 +73,7 @@ describe("navigation registry", () => {
     expect(toSectionPath("inspirationVault")).toBe("/inspiration-vault");
     expect(toSectionPath("videoIntake")).toBe("/video-intake");
     expect(toSectionPath("chineseTranscription2")).toBe("/audio-transcript-2");
+    expect(toSectionPath("thumbnailStudio")).toBe("/thumbnail-studio");
     expect(toSectionPath("publishedContent")).toBe("/published-content");
   });
 
@@ -85,6 +90,8 @@ describe("navigation registry", () => {
     expect(resolveSectionFromSegment("published-content")).toBe("publishedContent");
     expect(resolveSectionFromSegment("publishedContent")).toBe("publishedContent");
     expect(resolveSectionFromSegment("audio-transcript-2")).toBe("chineseTranscription2");
+    expect(resolveSectionFromSegment("thumbnail-studio")).toBe("thumbnailStudio");
+    expect(resolveSectionFromSegment("thumbnailStudio")).toBe("thumbnailStudio");
     expect(resolveSectionFromSegment("")).toBe("workspace");
     expect(resolveSectionFromSegment("unknown")).toBeNull();
   });
