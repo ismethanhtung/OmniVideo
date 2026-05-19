@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
     Copy,
+    Droplets,
     Trash2,
     DownloadCloud,
     Filter,
@@ -81,6 +82,12 @@ type TextOverlayDraft = {
     textColor: string;
     strokeColor: string;
     strokeWidth: number;
+    shadowEnabled: boolean;
+    shadowColor: string;
+    shadowBlur: number;
+    shadowSpread: number;
+    shadowOffsetX: number;
+    shadowOffsetY: number;
     x: number;
     y: number;
 };
@@ -136,6 +143,122 @@ const PRESET_CROP_OPTIONS: Array<{
     { value: "1:1", label: "1:1 Square" },
     { value: "4:5", label: "4:5 Feed" },
     { value: "custom", label: "Custom" },
+];
+
+const THUMBNAIL_TEXT_FONT_OPTIONS: Array<{
+    value: string;
+    label: string;
+    cssVariable: string;
+    fallbackFamily: string;
+}> = [
+    {
+        value: "Montserrat",
+        label: "Montserrat",
+        cssVariable: "--font-thumb-montserrat",
+        fallbackFamily: '"Montserrat", sans-serif',
+    },
+    {
+        value: "Oswald",
+        label: "Oswald",
+        cssVariable: "--font-thumb-oswald",
+        fallbackFamily: '"Oswald", sans-serif',
+    },
+    {
+        value: "Bebas Neue",
+        label: "Bebas Neue",
+        cssVariable: "--font-thumb-bebas-neue",
+        fallbackFamily: '"Bebas Neue", sans-serif',
+    },
+    {
+        value: "Anton",
+        label: "Anton",
+        cssVariable: "--font-thumb-anton",
+        fallbackFamily: '"Anton", sans-serif',
+    },
+    {
+        value: "Sora",
+        label: "Sora",
+        cssVariable: "--font-app-sora",
+        fallbackFamily: '"Sora", sans-serif',
+    },
+    {
+        value: "Bangers",
+        label: "Bangers",
+        cssVariable: "--font-thumb-bangers",
+        fallbackFamily: '"Bangers", sans-serif',
+    },
+    {
+        value: "Barlow Condensed",
+        label: "Barlow Condensed",
+        cssVariable: "--font-thumb-barlow-condensed",
+        fallbackFamily: '"Barlow Condensed", sans-serif',
+    },
+    {
+        value: "Be Vietnam Pro",
+        label: "Be Vietnam Pro",
+        cssVariable: "--font-thumb-be-vietnam-pro",
+        fallbackFamily: '"Be Vietnam Pro", sans-serif',
+    },
+    {
+        value: "Braah One",
+        label: "Braah One",
+        cssVariable: "--font-thumb-braah-one",
+        fallbackFamily: '"Braah One", sans-serif',
+    },
+    {
+        value: "Freeman",
+        label: "Freeman",
+        cssVariable: "--font-thumb-freeman",
+        fallbackFamily: '"Freeman", sans-serif',
+    },
+    {
+        value: "Paytone One",
+        label: "Paytone One",
+        cssVariable: "--font-thumb-paytone-one",
+        fallbackFamily: '"Paytone One", sans-serif',
+    },
+    {
+        value: "Lobster",
+        label: "Lobster",
+        cssVariable: "--font-thumb-lobster",
+        fallbackFamily: '"Lobster", cursive',
+    },
+    {
+        value: "Pacifico",
+        label: "Pacifico",
+        cssVariable: "--font-thumb-pacifico",
+        fallbackFamily: '"Pacifico", cursive',
+    },
+    {
+        value: "Sriracha",
+        label: "Sriracha",
+        cssVariable: "--font-thumb-sriracha",
+        fallbackFamily: '"Sriracha", cursive',
+    },
+    {
+        value: "Beau Rivage",
+        label: "Beau Rivage",
+        cssVariable: "--font-thumb-beau-rivage",
+        fallbackFamily: '"Beau Rivage", cursive',
+    },
+    {
+        value: "Love Light",
+        label: "Love Light",
+        cssVariable: "--font-thumb-love-light",
+        fallbackFamily: '"Love Light", cursive',
+    },
+    {
+        value: "Lovers Quarrel",
+        label: "Lovers Quarrel",
+        cssVariable: "--font-thumb-lovers-quarrel",
+        fallbackFamily: '"Lovers Quarrel", cursive',
+    },
+    {
+        value: "Yeseva One",
+        label: "Yeseva One",
+        cssVariable: "--font-thumb-yeseva-one",
+        fallbackFamily: '"Yeseva One", serif',
+    },
 ];
 
 const EDITOR_FRAME_RATIO = 16 / 9;
@@ -286,11 +409,12 @@ function isLegacyDefaultTextOverlay(overlay: TextOverlayDraft) {
     return (
         overlay.text.trim() === "TEXT" &&
         overlay.fontFamily === "Montserrat" &&
-        overlay.fontSize === 15 &&
+        overlay.fontSize === 40 &&
         overlay.fontWeight === 800 &&
         overlay.textColor.toLowerCase() === "#ffffff" &&
         overlay.strokeColor.toLowerCase() === "#111827" &&
         overlay.strokeWidth === 0 &&
+        (overlay.shadowEnabled ?? false) === false &&
         Math.abs(overlay.x - 50) < 0.001 &&
         Math.abs(overlay.y - 78) < 0.001
     );
@@ -445,6 +569,68 @@ function buildUploadTitleWithTime(date = new Date()) {
     return `upload ${hour}:${minute}:${second}`;
 }
 
+function getBlurPixelsFromStrength(strength: number) {
+    const normalizedStrength = clampValue(strength, 0, 100);
+    if (normalizedStrength <= 0) return 0;
+    return Math.max(1, Math.round(normalizedStrength / 2.5));
+}
+
+function getThumbnailTextFontOption(fontFamily: string) {
+    return (
+        THUMBNAIL_TEXT_FONT_OPTIONS.find(
+            (option) => option.value === fontFamily,
+        ) ?? THUMBNAIL_TEXT_FONT_OPTIONS[0]
+    );
+}
+
+function getThumbnailTextPreviewFontFamily(fontFamily: string) {
+    const option = getThumbnailTextFontOption(fontFamily);
+    return `var(${option.cssVariable}), ${option.fallbackFamily}`;
+}
+
+function getThumbnailTextCanvasFontFamily(fontFamily: string) {
+    const option = getThumbnailTextFontOption(fontFamily);
+    if (typeof document === "undefined") {
+        return option.fallbackFamily;
+    }
+
+    const resolvedFontFamily = getComputedStyle(document.documentElement)
+        .getPropertyValue(option.cssVariable)
+        .trim();
+    return resolvedFontFamily
+        ? `${resolvedFontFamily}, ${option.fallbackFamily}`
+        : option.fallbackFamily;
+}
+
+function buildTextGlowCss({
+    shadowEnabled,
+    shadowColor,
+    shadowBlur,
+    shadowSpread,
+    shadowOffsetX,
+    shadowOffsetY,
+    scale = 1,
+}: {
+    shadowEnabled: boolean;
+    shadowColor: string;
+    shadowBlur: number;
+    shadowSpread: number;
+    shadowOffsetX: number;
+    shadowOffsetY: number;
+    scale?: number;
+}) {
+    if (!shadowEnabled) return "none";
+    const blur = Math.max(0, shadowBlur * scale);
+    const spread = Math.max(0, shadowSpread * scale);
+    const offsetX = shadowOffsetX * scale;
+    const offsetY = shadowOffsetY * scale;
+    return [
+        `0 0 ${spread}px ${shadowColor}`,
+        `0 0 ${Math.max(spread, blur * 0.55)}px ${shadowColor}`,
+        `${offsetX}px ${offsetY}px ${blur}px ${shadowColor}`,
+    ].join(", ");
+}
+
 async function loadImage(url: string) {
     const image = new Image();
     image.crossOrigin = "anonymous";
@@ -518,7 +704,8 @@ async function renderThumbnailBlob({
                 1,
                 Math.round((region.height / 100) * EDITOR_FRAME_SIZE.height),
             );
-            const blurPixels = Math.max(2, Math.round(region.strength / 2.5));
+            const blurPixels = getBlurPixelsFromStrength(region.strength);
+            if (blurPixels <= 0) continue;
             const samplePadding = Math.max(4, Math.ceil(blurPixels * 2));
             const sampleX = Math.max(0, regionX - samplePadding);
             const sampleY = Math.max(0, regionY - samplePadding);
@@ -587,6 +774,15 @@ async function renderThumbnailBlob({
             0,
             Math.round(overlay.strokeWidth * fontScale),
         );
+        const canvasFontFamily = getThumbnailTextCanvasFontFamily(
+            overlay.fontFamily,
+        );
+
+        if ("fonts" in document && typeof document.fonts?.load === "function") {
+            await document.fonts.load(
+                `${overlay.fontWeight} ${fontSize}px ${canvasFontFamily}`,
+            );
+        }
 
         context.textAlign = "center";
         context.textBaseline = "middle";
@@ -594,7 +790,13 @@ async function renderThumbnailBlob({
         context.strokeStyle = overlay.strokeColor;
         context.lineJoin = "round";
         context.lineWidth = strokeWidth;
-        context.font = `${overlay.fontWeight} ${fontSize}px ${overlay.fontFamily}, sans-serif`;
+        context.font = `${overlay.fontWeight} ${fontSize}px ${canvasFontFamily}`;
+        const shadowEnabled = overlay.shadowEnabled ?? false;
+        const shadowBlur = overlay.shadowBlur ?? 0;
+        const shadowSpread = overlay.shadowSpread ?? 0;
+        const shadowOffsetX = overlay.shadowOffsetX ?? 0;
+        const shadowOffsetY = overlay.shadowOffsetY ?? 0;
+        const shadowColor = overlay.shadowColor ?? "#facc15";
 
         const lines = text.split("\n");
         const lineHeight = Math.round(fontSize * 1.2);
@@ -602,6 +804,30 @@ async function renderThumbnailBlob({
 
         lines.forEach((line, index) => {
             const lineY = startY + index * lineHeight;
+            if (shadowEnabled) {
+                context.save();
+                context.textAlign = "center";
+                context.textBaseline = "middle";
+                context.font = `${overlay.fontWeight} ${fontSize}px ${canvasFontFamily}`;
+                context.lineJoin = "round";
+                context.strokeStyle = shadowColor;
+                context.lineWidth =
+                    strokeWidth + Math.max(1, shadowSpread * fontScale * 2);
+                context.shadowColor = shadowColor;
+                context.shadowBlur = Math.max(
+                    0,
+                    Math.round(shadowBlur * fontScale),
+                );
+                context.shadowOffsetX = shadowOffsetX * fontScale;
+                context.shadowOffsetY = shadowOffsetY * fontScale;
+                context.strokeText(line, x, lineY);
+                context.restore();
+            }
+
+            context.shadowColor = "transparent";
+            context.shadowBlur = 0;
+            context.shadowOffsetX = 0;
+            context.shadowOffsetY = 0;
             if (strokeWidth > 0) {
                 context.strokeText(line, x, lineY);
             }
@@ -809,6 +1035,9 @@ export function ThumbnailStudioPanel({
     const [editingLibraryTitleValue, setEditingLibraryTitleValue] =
         useState("");
     const [isSaving, setIsSaving] = useState(false);
+    const [previewFrameHeight, setPreviewFrameHeight] = useState(
+        EDITOR_FRAME_SIZE.height,
+    );
 
     const previewFrameRef = useRef<HTMLDivElement | null>(null);
 
@@ -900,6 +1129,26 @@ export function ThumbnailStudioPanel({
         fetchThumbnails();
     }, []);
 
+    useEffect(() => {
+        const frame = previewFrameRef.current;
+        if (!frame) return;
+
+        const syncPreviewFrameHeight = () => {
+            const bounds = frame.getBoundingClientRect();
+            if (bounds.height > 0) {
+                setPreviewFrameHeight(bounds.height);
+            }
+        };
+
+        syncPreviewFrameHeight();
+
+        if (typeof ResizeObserver === "undefined") return;
+
+        const observer = new ResizeObserver(syncPreviewFrameHeight);
+        observer.observe(frame);
+        return () => observer.disconnect();
+    }, []);
+
     const selectedThumbnail =
         thumbnails.find((item) => item._id === selectedThumbnailId) ?? null;
 
@@ -975,6 +1224,10 @@ export function ThumbnailStudioPanel({
         blurRegions.find((item) => item.id === activeBlurRegionId) ?? null;
     const activeTextOverlay =
         textOverlays.find((item) => item.id === activeTextOverlayId) ?? null;
+    const previewTextScale = Math.max(
+        0.01,
+        previewFrameHeight / EDITOR_FRAME_SIZE.height,
+    );
 
     const updateActiveBlurRegion = (patch: Partial<BlurRegionDraft>) => {
         if (!activeBlurRegion) return;
@@ -1037,6 +1290,22 @@ export function ThumbnailStudioPanel({
                         patch.strokeWidth === undefined
                             ? item.strokeWidth
                             : clampValue(Number(patch.strokeWidth), 0, 12),
+                    shadowBlur:
+                        patch.shadowBlur === undefined
+                            ? item.shadowBlur
+                            : clampValue(Number(patch.shadowBlur), 0, 80),
+                    shadowSpread:
+                        patch.shadowSpread === undefined
+                            ? item.shadowSpread
+                            : clampValue(Number(patch.shadowSpread), 0, 40),
+                    shadowOffsetX:
+                        patch.shadowOffsetX === undefined
+                            ? item.shadowOffsetX
+                            : clampValue(Number(patch.shadowOffsetX), -60, 60),
+                    shadowOffsetY:
+                        patch.shadowOffsetY === undefined
+                            ? item.shadowOffsetY
+                            : clampValue(Number(patch.shadowOffsetY), -60, 60),
                 };
             }),
         );
@@ -1072,6 +1341,22 @@ export function ThumbnailStudioPanel({
                         patch.strokeWidth === undefined
                             ? item.strokeWidth
                             : clampValue(Number(patch.strokeWidth), 0, 12),
+                    shadowBlur:
+                        patch.shadowBlur === undefined
+                            ? item.shadowBlur
+                            : clampValue(Number(patch.shadowBlur), 0, 80),
+                    shadowSpread:
+                        patch.shadowSpread === undefined
+                            ? item.shadowSpread
+                            : clampValue(Number(patch.shadowSpread), 0, 40),
+                    shadowOffsetX:
+                        patch.shadowOffsetX === undefined
+                            ? item.shadowOffsetX
+                            : clampValue(Number(patch.shadowOffsetX), -60, 60),
+                    shadowOffsetY:
+                        patch.shadowOffsetY === undefined
+                            ? item.shadowOffsetY
+                            : clampValue(Number(patch.shadowOffsetY), -60, 60),
                 };
             }),
         );
@@ -1107,11 +1392,17 @@ export function ThumbnailStudioPanel({
             id: buildId("text"),
             text: "NEW TEXT",
             fontFamily: "Montserrat",
-            fontSize: 15,
+            fontSize: 40,
             fontWeight: 800,
             textColor: "#ffffff",
             strokeColor: "#111827",
-            strokeWidth: 0,
+            strokeWidth: 4,
+            shadowEnabled: true,
+            shadowColor: "#facc15",
+            shadowBlur: 18,
+            shadowSpread: 5,
+            shadowOffsetX: 0,
+            shadowOffsetY: 2,
             x: 50,
             y: 70,
         };
@@ -1430,12 +1721,14 @@ export function ThumbnailStudioPanel({
         title,
         lifecycle,
         overwriteAssetId,
+        selectAssetIdAfterUpload,
     }: {
         file?: File;
         sourceUrl?: string;
         title: string;
         lifecycle: "raw" | "processed";
         overwriteAssetId?: string;
+        selectAssetIdAfterUpload?: string;
     }) => {
         if (!selectedStorageAccountId) {
             setImportMessage(
@@ -1476,7 +1769,7 @@ export function ThumbnailStudioPanel({
             throw new Error(payload.error ?? "Thumbnail upload failed.");
         }
 
-        await fetchThumbnails(payload.data._id);
+        await fetchThumbnails(selectAssetIdAfterUpload ?? payload.data._id);
     };
 
     const handleDropUpload = async (file: File | null) => {
@@ -1643,12 +1936,17 @@ export function ThumbnailStudioPanel({
             );
 
             setImportMessage("Uploading rendered thumbnail to storage...");
+            const sourceThumbnailId = selectedThumbnailId;
             await uploadThumbnailFile({
                 file,
                 title: thumbnailName || "Untitled thumbnail",
                 lifecycle: "processed",
                 overwriteAssetId:
                     editMode === "overwrite" ? selectedThumbnailId : undefined,
+                selectAssetIdAfterUpload:
+                    editMode === "create-variant"
+                        ? sourceThumbnailId
+                        : undefined,
             });
 
             setImportMessage(
@@ -2295,17 +2593,23 @@ export function ThumbnailStudioPanel({
                                                     "move",
                                                 )
                                             }
-                                            className="absolute border border-main bg-black/40 cursor-move"
+                                            className="absolute cursor-move border border-main"
                                             style={{
                                                 left: `${region.x}%`,
                                                 top: `${region.y}%`,
                                                 width: `${region.width}%`,
                                                 height: `${region.height}%`,
-                                                backdropFilter: `blur(${Math.max(
-                                                    2,
-                                                    Math.round(
-                                                        region.strength / 3,
-                                                    ),
+                                                backgroundColor:
+                                                    getBlurPixelsFromStrength(
+                                                        region.strength,
+                                                    ) > 0
+                                                        ? "rgba(255, 255, 255, 0.01)"
+                                                        : "transparent",
+                                                backdropFilter: `blur(${getBlurPixelsFromStrength(
+                                                    region.strength,
+                                                )}px)`,
+                                                WebkitBackdropFilter: `blur(${getBlurPixelsFromStrength(
+                                                    region.strength,
                                                 )}px)`,
                                             }}
                                         >
@@ -2344,12 +2648,45 @@ export function ThumbnailStudioPanel({
                                                 left: `${overlay.x}%`,
                                                 top: `${overlay.y}%`,
                                                 color: overlay.textColor,
-                                                fontFamily: overlay.fontFamily,
-                                                fontSize: `${overlay.fontSize}px`,
+                                                fontFamily:
+                                                    getThumbnailTextPreviewFontFamily(
+                                                        overlay.fontFamily,
+                                                    ),
+                                                fontSize: `${Math.max(
+                                                    1,
+                                                    overlay.fontSize *
+                                                        previewTextScale,
+                                                )}px`,
                                                 fontWeight: overlay.fontWeight,
-                                                WebkitTextStroke: `${overlay.strokeWidth}px ${overlay.strokeColor}`,
-                                                textShadow:
-                                                    "0 2px 14px rgba(0, 0, 0, 0.35)",
+                                                lineHeight: 1.2,
+                                                WebkitTextStroke: `${Math.max(
+                                                    0,
+                                                    overlay.strokeWidth *
+                                                        previewTextScale,
+                                                )}px ${overlay.strokeColor}`,
+                                                textShadow: buildTextGlowCss(
+                                                    {
+                                                        shadowEnabled:
+                                                            overlay.shadowEnabled ??
+                                                            false,
+                                                        shadowColor:
+                                                            overlay.shadowColor ??
+                                                            "#facc15",
+                                                        shadowBlur:
+                                                            overlay.shadowBlur ??
+                                                            0,
+                                                        shadowSpread:
+                                                            overlay.shadowSpread ??
+                                                            0,
+                                                        shadowOffsetX:
+                                                            overlay.shadowOffsetX ??
+                                                            0,
+                                                        shadowOffsetY:
+                                                            overlay.shadowOffsetY ??
+                                                            0,
+                                                        scale: previewTextScale,
+                                                    },
+                                                ),
                                             }}
                                             className={cn(
                                                 "absolute -translate-x-1/2 -translate-y-1/2 text-center tracking-wide",
@@ -2784,21 +3121,20 @@ export function ThumbnailStudioPanel({
                                                     }
                                                     className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main"
                                                 >
-                                                    <option value="Montserrat">
-                                                        Montserrat
-                                                    </option>
-                                                    <option value="Oswald">
-                                                        Oswald
-                                                    </option>
-                                                    <option value="Bebas Neue">
-                                                        Bebas Neue
-                                                    </option>
-                                                    <option value="Anton">
-                                                        Anton
-                                                    </option>
-                                                    <option value="Sora">
-                                                        Sora
-                                                    </option>
+                                                    {THUMBNAIL_TEXT_FONT_OPTIONS.map(
+                                                        (option) => (
+                                                            <option
+                                                                key={
+                                                                    option.value
+                                                                }
+                                                                value={
+                                                                    option.value
+                                                                }
+                                                            >
+                                                                {option.label}
+                                                            </option>
+                                                        ),
+                                                    )}
                                                 </select>
                                             </label>
                                             <label className="block">
@@ -2933,6 +3269,156 @@ export function ThumbnailStudioPanel({
                                                 className="w-full accent-[var(--color-accent)]"
                                             />
                                         </label>
+
+                                        <label className="flex items-center gap-2 border border-main bg-main px-3 py-2">
+                                            <input
+                                                type="checkbox"
+                                                checked={
+                                                    activeTextOverlay.shadowEnabled
+                                                }
+                                                onChange={(event) =>
+                                                    updateActiveTextOverlay({
+                                                        shadowEnabled:
+                                                            event.currentTarget
+                                                                .checked,
+                                                    })
+                                                }
+                                                className="h-4 w-4 accent-[var(--color-accent)]"
+                                            />
+                                            <span className="text-[11px] font-semibold text-main">
+                                                Glow behind text
+                                            </span>
+                                        </label>
+
+                                        <div className="grid gap-2 sm:grid-cols-2">
+                                            <label className="block">
+                                                <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                                    Glow color
+                                                </span>
+                                                <input
+                                                    type="color"
+                                                    disabled={
+                                                        !activeTextOverlay.shadowEnabled
+                                                    }
+                                                    value={
+                                                        activeTextOverlay.shadowColor
+                                                    }
+                                                    onChange={(event) =>
+                                                        updateActiveTextOverlay(
+                                                            {
+                                                                shadowColor:
+                                                                    event
+                                                                        .currentTarget
+                                                                        .value,
+                                                            },
+                                                        )
+                                                    }
+                                                    className="h-9 w-full border border-main bg-main p-1 disabled:cursor-not-allowed disabled:opacity-50"
+                                                />
+                                            </label>
+                                            <label className="block">
+                                                <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                                    Glow blur:{" "}
+                                                    {
+                                                        activeTextOverlay.shadowBlur
+                                                    }
+                                                    px
+                                                </span>
+                                                <input
+                                                    type="range"
+                                                    min={0}
+                                                    max={80}
+                                                    disabled={
+                                                        !activeTextOverlay.shadowEnabled
+                                                    }
+                                                    value={
+                                                        activeTextOverlay.shadowBlur
+                                                    }
+                                                    onChange={(event) =>
+                                                        updateActiveTextOverlay(
+                                                            {
+                                                                shadowBlur:
+                                                                    Number(
+                                                                        event
+                                                                            .currentTarget
+                                                                            .value,
+                                                                    ),
+                                                            },
+                                                        )
+                                                    }
+                                                    className="w-full accent-[var(--color-accent)] disabled:cursor-not-allowed disabled:opacity-50"
+                                                />
+                                            </label>
+                                        </div>
+
+                                        <div className="grid gap-2 sm:grid-cols-2">
+                                            <label className="block">
+                                                <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                                    Glow spread:{" "}
+                                                    {
+                                                        activeTextOverlay.shadowSpread
+                                                    }
+                                                    px
+                                                </span>
+                                                <input
+                                                    type="range"
+                                                    min={0}
+                                                    max={40}
+                                                    disabled={
+                                                        !activeTextOverlay.shadowEnabled
+                                                    }
+                                                    value={
+                                                        activeTextOverlay.shadowSpread
+                                                    }
+                                                    onChange={(event) =>
+                                                        updateActiveTextOverlay(
+                                                            {
+                                                                shadowSpread:
+                                                                    Number(
+                                                                        event
+                                                                            .currentTarget
+                                                                            .value,
+                                                                    ),
+                                                            },
+                                                        )
+                                                    }
+                                                    className="w-full accent-[var(--color-accent)] disabled:cursor-not-allowed disabled:opacity-50"
+                                                />
+                                            </label>
+                                            <label className="block">
+                                                <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                                    Glow drop:{" "}
+                                                    {
+                                                        activeTextOverlay.shadowOffsetY
+                                                    }
+                                                    px
+                                                </span>
+                                                <input
+                                                    type="range"
+                                                    min={-60}
+                                                    max={60}
+                                                    disabled={
+                                                        !activeTextOverlay.shadowEnabled
+                                                    }
+                                                    value={
+                                                        activeTextOverlay.shadowOffsetY
+                                                    }
+                                                    onChange={(event) =>
+                                                        updateActiveTextOverlay(
+                                                            {
+                                                                shadowOffsetY:
+                                                                    Number(
+                                                                        event
+                                                                            .currentTarget
+                                                                            .value,
+                                                                    ),
+                                                            },
+                                                        )
+                                                    }
+                                                    className="w-full accent-[var(--color-accent)] disabled:cursor-not-allowed disabled:opacity-50"
+                                                />
+                                            </label>
+                                        </div>
                                     </>
                                 ) : (
                                     <p className="text-[10px] text-muted">
@@ -2979,7 +3465,7 @@ export function ThumbnailStudioPanel({
 
                             <div className="space-y-2 border border-main bg-secondary/20 p-3">
                                 <div className="flex items-center gap-2">
-                                    <Scissors className="h-4 w-4 text-muted" />
+                                    <Droplets className="h-4 w-4 text-muted" />
                                     <p className="text-[12px] font-semibold text-main">
                                         Blur
                                     </p>

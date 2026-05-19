@@ -1,5 +1,21 @@
 # OmniVideo Changelog
 
+## FAST-VIDEO-008 - Fix Thumbnail Studio Blur and Text Preview Fidelity
+
+- Bumped app version from `0.10.4` to `0.10.5` as a patch release for Thumbnail Studio preview fidelity fixes.
+- Fixed blur strength `0` so it maps to `0px` and export skips blur drawing for zero-strength regions.
+- Aligned preview and export blur strength conversion through one shared `getBlurPixelsFromStrength` helper.
+- Removed the dark blur preview overlay that made regions look darker instead of showing the real blur effect.
+- Replaced the Blur panel icon with `Droplets` so the icon better matches blur/softening behavior without using crop/scissors or filter/funnel semantics.
+- Loaded thumbnail text fonts (`Montserrat`, `Oswald`, `Bebas Neue`, `Anton`) through the app root layout and resolved the same font variables in canvas export.
+- Scaled preview text and stroke by the actual preview frame height against the 720px export baseline so saved text no longer appears much smaller than the preview.
+- Create-variant save now keeps the source thumbnail selected after upload, preserving the current base image and edit setup for producing multiple episode variants.
+- Expanded Text Overlay with additional display/script thumbnail fonts: `Bangers`, `Barlow Condensed`, `Be Vietnam Pro`, `Braah One`, `Freeman`, `Paytone One`, `Lobster`, `Pacifico`, `Sriracha`, `Beau Rivage`, `Love Light`, `Lovers Quarrel`, and `Yeseva One`.
+- Reworked the colored text effect into an explicit `Glow behind text` toggle with `Glow color`, `Glow blur`, `Glow spread`, and `Glow drop` controls.
+- Canvas export now renders glow as a colored outer halo stroke behind the main black stroke and fill, closer to the yellow/red reference thumbnail style than a normal offset shadow.
+- Updated Thumbnail Studio regression tests for blur-zero behavior, shared blur mapping, blur icon, font loading, preview text scaling, create-variant selection, expanded fonts, and colored glow controls.
+- Verification (FAST-VIDEO-008): `npm run test -- --run src/features/thumbnails/thumbnail-studio-panel.test.ts` pass (1 file / 5 tests); `npm run build` pass with existing ESLint circular-config warning; `npm run guard:version` pass.
+
 ## FAST-VIDEO-007 - Make Thumbnail Studio Production-Ready with Storage Persistence
 
 - Bumped app version from `0.10.1` to `0.10.4` as a patch release for Thumbnail Studio persistence and layout/UX refinements.

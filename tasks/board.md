@@ -23,6 +23,7 @@
 
 ## Review
 
+- `FAST-VIDEO-008` - Fix Thumbnail Studio blur and text preview fidelity.
 - `FAST-VIDEO-007` - Make Thumbnail Studio production-ready with storage persistence.
 - `FAST-AUDIO-057` - Remove redundant Audio Transcript 2 test page.
 - `FAST-VIDEO-006` - Compact Thumbnail Studio labels and multi-layer blur/text summaries.
