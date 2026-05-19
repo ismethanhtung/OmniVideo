@@ -65,7 +65,7 @@ describe("Audio Transcript asset picker preview", () => {
     expect(source).toContain("repaired");
   });
 
-  it("supports optional video preprocess speed control for Audio Transcript 2", () => {
+  it("supports optional video preprocess speed control for Audio Transcript", () => {
     expect(source).toContain("enableVideoPreprocess");
     expect(source).toContain("enableVideoPreprocess = true");
     expect(source).toContain("defaultVideoSpeedFactor = 0.7");

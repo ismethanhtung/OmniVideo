@@ -6,7 +6,6 @@ import { AiProvidersPanel } from "@/features/ai-providers/ai-providers-panel";
 import { ConnectionTestPanel } from "@/features/connections/connection-test-panel";
 import { InspirationVaultPanel } from "@/features/inspiration-vault/inspiration-vault-panel";
 import { ChineseTranscriptionPanel } from "@/features/audio/chinese-transcription-panel";
-import { ChineseTranscriptionV2Panel } from "@/features/audio/chinese-transcription-v2-panel";
 import { PiperTtsSandboxPanel } from "@/features/audio/piper-tts-sandbox-panel";
 import { StorageLibraryPanel } from "@/features/storage/storage-library-panel";
 import { StorageProvidersPanel } from "@/features/storage/storage-providers-panel";
@@ -36,7 +35,6 @@ const SECTION_COMPONENTS: Partial<
     inspirationVault: InspirationVaultPanel,
     storageLibrary: StorageLibraryPanel,
     chineseTranscription: ChineseTranscriptionPanel,
-    chineseTranscription2: ChineseTranscriptionV2Panel,
     piperTtsSandbox: PiperTtsSandboxPanel,
     localUploadIntake: LocalUploadIntakePanel,
     storageProviders: StorageProvidersPanel,

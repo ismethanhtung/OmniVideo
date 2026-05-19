@@ -6,14 +6,11 @@ import {
     Trash2,
     DownloadCloud,
     Filter,
-    FolderSync,
-    ImagePlus,
-    Link2,
     Scissors,
     Search,
     Sparkles,
     Type,
-    Wand2,
+    X,
 } from "lucide-react";
 
 import type { LeftbarNavItem } from "@/components/layout/types";
@@ -33,6 +30,50 @@ type ThumbnailItem = {
     tags: ThumbnailLifecycleTag[];
     sourceLabel: string;
     previewGradient: string;
+};
+
+type BlurRegionDraft = {
+    id: string;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    start: number;
+    end: number;
+    strength: number;
+};
+
+type TextOverlayDraft = {
+    id: string;
+    text: string;
+    fontFamily: string;
+    fontSize: number;
+    fontWeight: number;
+    textColor: string;
+    strokeColor: string;
+    strokeWidth: number;
+    x: number;
+    y: number;
+};
+
+type BlurInteractionState = {
+    regionId: string;
+    mode: "move" | "n" | "s" | "e" | "w" | "ne" | "nw" | "se" | "sw";
+    startClientX: number;
+    startClientY: number;
+    startX: number;
+    startY: number;
+    startWidth: number;
+    startHeight: number;
+};
+
+type TextDragState = {
+    overlayId: string;
+    offsetXPercent: number;
+    offsetYPercent: number;
+    startClientX: number;
+    startClientY: number;
+    moved: boolean;
 };
 
 const THUMBNAIL_LIBRARY_SEED: ThumbnailItem[] = [
@@ -82,6 +123,11 @@ function clampPercent(value: number) {
     return Math.max(0, Math.min(100, value));
 }
 
+function clampValue(value: number, min: number, max: number) {
+    if (!Number.isFinite(value)) return min;
+    return Math.max(min, Math.min(max, value));
+}
+
 const LIFECYCLE_FILTERS: Array<"all" | ThumbnailLifecycleTag> = [
     "all",
     "raw",
@@ -89,8 +135,101 @@ const LIFECYCLE_FILTERS: Array<"all" | ThumbnailLifecycleTag> = [
     "has-processed-output",
 ];
 
-export function ThumbnailStudioPanel({ section }: ThumbnailStudioPanelProps) {
-    const Icon = section.icon ?? ImagePlus;
+const DEFAULT_BLUR_REGIONS: BlurRegionDraft[] = [
+    {
+        id: "blur-1",
+        x: 8,
+        y: 8,
+        width: 32,
+        height: 28,
+        start: 0,
+        end: 36000,
+        strength: 28,
+    },
+];
+
+const DEFAULT_TEXT_OVERLAYS: TextOverlayDraft[] = [
+    {
+        id: "text-1",
+        text: "TEXT",
+        fontFamily: "Montserrat",
+        fontSize: 15,
+        fontWeight: 800,
+        textColor: "#ffffff",
+        strokeColor: "#111827",
+        strokeWidth: 0,
+        x: 50,
+        y: 78,
+    },
+];
+
+function formatBlurRegionSummary(region: BlurRegionDraft, index: number) {
+    return `#${index + 1} x:${region.x.toFixed(1)} y:${region.y.toFixed(1)} w:${region.width.toFixed(1)} h:${region.height.toFixed(1)} t:${region.start}s-${region.end}s s:${region.strength}`;
+}
+
+function formatTextOverlaySummary(overlay: TextOverlayDraft, index: number) {
+    const text = (overlay.text || "EMPTY").replace(/\s+/gu, " ").trim();
+    const clipped = text.slice(0, 24);
+    return `#${index + 1} x:${overlay.x.toFixed(1)} y:${overlay.y.toFixed(1)} z:${overlay.fontSize} w:${overlay.fontWeight} "${clipped}"`;
+}
+
+function cloneDefaultBlurRegions() {
+    return DEFAULT_BLUR_REGIONS.map((item) => ({ ...item }));
+}
+
+function cloneDefaultTextOverlays() {
+    return DEFAULT_TEXT_OVERLAYS.map((item) => ({ ...item }));
+}
+
+const BLUR_RESIZE_HANDLES: Array<{
+    mode: "n" | "s" | "e" | "w" | "ne" | "nw" | "se" | "sw";
+    className: string;
+}> = [
+    {
+        mode: "n",
+        className:
+            "left-1/2 top-0 h-3 w-8 -translate-x-1/2 -translate-y-1/2 cursor-ns-resize",
+    },
+    {
+        mode: "s",
+        className:
+            "left-1/2 bottom-0 h-3 w-8 -translate-x-1/2 translate-y-1/2 cursor-ns-resize",
+    },
+    {
+        mode: "e",
+        className:
+            "right-0 top-1/2 h-8 w-3 translate-x-1/2 -translate-y-1/2 cursor-ew-resize",
+    },
+    {
+        mode: "w",
+        className:
+            "left-0 top-1/2 h-8 w-3 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize",
+    },
+    {
+        mode: "ne",
+        className:
+            "right-0 top-0 h-4 w-4 translate-x-1/2 -translate-y-1/2 cursor-nesw-resize",
+    },
+    {
+        mode: "nw",
+        className:
+            "left-0 top-0 h-4 w-4 -translate-x-1/2 -translate-y-1/2 cursor-nwse-resize",
+    },
+    {
+        mode: "se",
+        className:
+            "right-0 bottom-0 h-4 w-4 translate-x-1/2 translate-y-1/2 cursor-nwse-resize",
+    },
+    {
+        mode: "sw",
+        className:
+            "left-0 bottom-0 h-4 w-4 -translate-x-1/2 translate-y-1/2 cursor-nesw-resize",
+    },
+];
+
+export function ThumbnailStudioPanel({
+    section: _section,
+}: ThumbnailStudioPanelProps) {
     const [thumbnails, setThumbnails] = useState(THUMBNAIL_LIBRARY_SEED);
     const [selectedThumbnailId, setSelectedThumbnailId] = useState(
         THUMBNAIL_LIBRARY_SEED[0]?.id ?? "",
@@ -104,18 +243,27 @@ export function ThumbnailStudioPanel({ section }: ThumbnailStudioPanelProps) {
     const [editMode, setEditMode] =
         useState<ThumbnailEditMode>("create-variant");
     const [cropPreset, setCropPreset] = useState<ThumbnailCropPreset>("16:9");
-    const [blurEnabled, setBlurEnabled] = useState(true);
-    const [blurStrength, setBlurStrength] = useState(28);
-    const [overlayText, setOverlayText] = useState("EPISODE 01");
-    const [fontFamily, setFontFamily] = useState("Montserrat");
-    const [fontSize, setFontSize] = useState(72);
-    const [fontWeight, setFontWeight] = useState(800);
-    const [textColor, setTextColor] = useState("#ffffff");
-    const [strokeColor, setStrokeColor] = useState("#111827");
-    const [strokeWidth, setStrokeWidth] = useState(4);
-    const [textPositionX, setTextPositionX] = useState(50);
-    const [textPositionY, setTextPositionY] = useState(78);
-    const [isDraggingText, setIsDraggingText] = useState(false);
+    const [blurEnabled, setBlurEnabled] = useState(false);
+    const [blurRegions, setBlurRegions] = useState<BlurRegionDraft[]>(
+        cloneDefaultBlurRegions(),
+    );
+    const [activeBlurRegionId, setActiveBlurRegionId] = useState(
+        DEFAULT_BLUR_REGIONS[0]?.id ?? "",
+    );
+    const [textOverlays, setTextOverlays] = useState<TextOverlayDraft[]>(
+        cloneDefaultTextOverlays(),
+    );
+    const [activeTextOverlayId, setActiveTextOverlayId] = useState(
+        DEFAULT_TEXT_OVERLAYS[0]?.id ?? "",
+    );
+    const [editingTextOverlayId, setEditingTextOverlayId] = useState<
+        string | null
+    >(null);
+    const [textDragState, setTextDragState] = useState<TextDragState | null>(
+        null,
+    );
+    const [blurInteraction, setBlurInteraction] =
+        useState<BlurInteractionState | null>(null);
     const [importMessage, setImportMessage] = useState("Ready.");
     const previewFrameRef = useRef<HTMLDivElement | null>(null);
 
@@ -141,6 +289,10 @@ export function ThumbnailStudioPanel({ section }: ThumbnailStudioPanelProps) {
 
     const selectedThumbnail =
         thumbnails.find((item) => item.id === selectedThumbnailId) ?? null;
+    const activeBlurRegion =
+        blurRegions.find((item) => item.id === activeBlurRegionId) ?? null;
+    const activeTextOverlay =
+        textOverlays.find((item) => item.id === activeTextOverlayId) ?? null;
 
     const upsertThumbnail = (input: { name: string; sourceLabel: string }) => {
         const nextThumbnail: ThumbnailItem = {
@@ -223,35 +375,251 @@ export function ThumbnailStudioPanel({ section }: ThumbnailStudioPanelProps) {
     const handleResetEditor = () => {
         setEditMode("create-variant");
         setCropPreset("16:9");
-        setBlurEnabled(true);
-        setBlurStrength(28);
-        setOverlayText("EPISODE 01");
-        setFontFamily("Montserrat");
-        setFontSize(72);
-        setFontWeight(800);
-        setTextColor("#ffffff");
-        setStrokeColor("#111827");
-        setStrokeWidth(4);
-        setTextPositionX(50);
-        setTextPositionY(78);
+        setBlurEnabled(false);
+        const resetBlurRegions = cloneDefaultBlurRegions();
+        setBlurRegions(resetBlurRegions);
+        setActiveBlurRegionId(resetBlurRegions[0]?.id ?? "");
+        const resetTextOverlays = cloneDefaultTextOverlays();
+        setTextOverlays(resetTextOverlays);
+        setActiveTextOverlayId(resetTextOverlays[0]?.id ?? "");
         setImportMessage("Editor reset to default.");
     };
 
-    const handleCanvasTextDrag = (clientX: number, clientY: number) => {
+    const updateActiveBlurRegion = (patch: Partial<BlurRegionDraft>) => {
+        if (!activeBlurRegion) return;
+        setBlurRegions((current) =>
+            current.map((item) => {
+                if (item.id !== activeBlurRegion.id) return item;
+                return {
+                    ...item,
+                    ...patch,
+                    x:
+                        patch.x === undefined
+                            ? item.x
+                            : clampPercent(Number(patch.x)),
+                    y:
+                        patch.y === undefined
+                            ? item.y
+                            : clampPercent(Number(patch.y)),
+                    width:
+                        patch.width === undefined
+                            ? item.width
+                            : clampPercent(Number(patch.width)),
+                    height:
+                        patch.height === undefined
+                            ? item.height
+                            : clampPercent(Number(patch.height)),
+                    start:
+                        patch.start === undefined
+                            ? item.start
+                            : Math.max(0, Number(patch.start)),
+                    end:
+                        patch.end === undefined
+                            ? item.end
+                            : Math.max(0, Number(patch.end)),
+                    strength:
+                        patch.strength === undefined
+                            ? item.strength
+                            : Math.max(
+                                  0,
+                                  Math.min(100, Number(patch.strength)),
+                              ),
+                };
+            }),
+        );
+    };
+
+    const addBlurRegion = () => {
+        const nextRegion: BlurRegionDraft = {
+            id: buildId(),
+            x: 10,
+            y: 10,
+            width: 20,
+            height: 10,
+            start: 0,
+            end: 36000,
+            strength: 50,
+        };
+        setBlurRegions((current) => [...current, nextRegion]);
+        setActiveBlurRegionId(nextRegion.id);
+    };
+
+    const removeBlurRegionById = (regionId: string) => {
+        setBlurRegions((current) => {
+            const remaining = current.filter((item) => item.id !== regionId);
+            setActiveBlurRegionId((currentActive) =>
+                currentActive === regionId
+                    ? (remaining[0]?.id ?? "")
+                    : currentActive,
+            );
+            return remaining;
+        });
+    };
+
+    const updateActiveTextOverlay = (patch: Partial<TextOverlayDraft>) => {
+        if (!activeTextOverlay) return;
+        setTextOverlays((current) =>
+            current.map((item) => {
+                if (item.id !== activeTextOverlay.id) return item;
+                return {
+                    ...item,
+                    ...patch,
+                    x:
+                        patch.x === undefined
+                            ? item.x
+                            : clampPercent(Number(patch.x)),
+                    y:
+                        patch.y === undefined
+                            ? item.y
+                            : clampPercent(Number(patch.y)),
+                    fontSize:
+                        patch.fontSize === undefined
+                            ? item.fontSize
+                            : Math.max(
+                                  10,
+                                  Math.min(140, Number(patch.fontSize)),
+                              ),
+                    fontWeight:
+                        patch.fontWeight === undefined
+                            ? item.fontWeight
+                            : Math.max(
+                                  600,
+                                  Math.min(900, Number(patch.fontWeight)),
+                              ),
+                    strokeWidth:
+                        patch.strokeWidth === undefined
+                            ? item.strokeWidth
+                            : Math.max(
+                                  0,
+                                  Math.min(12, Number(patch.strokeWidth)),
+                              ),
+                };
+            }),
+        );
+    };
+
+    const updateTextOverlayById = (
+        overlayId: string,
+        patch: Partial<TextOverlayDraft>,
+    ) => {
+        setTextOverlays((current) =>
+            current.map((item) => {
+                if (item.id !== overlayId) return item;
+                return {
+                    ...item,
+                    ...patch,
+                    x:
+                        patch.x === undefined
+                            ? item.x
+                            : clampPercent(Number(patch.x)),
+                    y:
+                        patch.y === undefined
+                            ? item.y
+                            : clampPercent(Number(patch.y)),
+                    fontSize:
+                        patch.fontSize === undefined
+                            ? item.fontSize
+                            : Math.max(
+                                  10,
+                                  Math.min(140, Number(patch.fontSize)),
+                              ),
+                    fontWeight:
+                        patch.fontWeight === undefined
+                            ? item.fontWeight
+                            : Math.max(
+                                  600,
+                                  Math.min(900, Number(patch.fontWeight)),
+                              ),
+                    strokeWidth:
+                        patch.strokeWidth === undefined
+                            ? item.strokeWidth
+                            : Math.max(
+                                  0,
+                                  Math.min(12, Number(patch.strokeWidth)),
+                              ),
+                };
+            }),
+        );
+    };
+
+    const addTextOverlay = () => {
+        const nextTextOverlay: TextOverlayDraft = {
+            id: buildId(),
+            text: "NEW TEXT",
+            fontFamily: "Montserrat",
+            fontSize: 15,
+            fontWeight: 800,
+            textColor: "#ffffff",
+            strokeColor: "#111827",
+            strokeWidth: 0,
+            x: 50,
+            y: 70,
+        };
+        setTextOverlays((current) => [...current, nextTextOverlay]);
+        setActiveTextOverlayId(nextTextOverlay.id);
+    };
+
+    const removeTextOverlayById = (overlayId: string) => {
+        setTextOverlays((current) => {
+            const remaining = current.filter((item) => item.id !== overlayId);
+            setActiveTextOverlayId((currentActive) =>
+                currentActive === overlayId
+                    ? (remaining[0]?.id ?? "")
+                    : currentActive,
+            );
+            return remaining;
+        });
+    };
+
+    const handleCanvasTextDrag = (
+        overlayId: string,
+        clientX: number,
+        clientY: number,
+    ) => {
+        if (!textDragState || textDragState.overlayId !== overlayId) return;
         const frame = previewFrameRef.current;
         if (!frame) return;
         const bounds = frame.getBoundingClientRect();
         if (bounds.width <= 0 || bounds.height <= 0) return;
         const xPercent = ((clientX - bounds.left) / bounds.width) * 100;
         const yPercent = ((clientY - bounds.top) / bounds.height) * 100;
-        setTextPositionX(clampPercent(xPercent));
-        setTextPositionY(clampPercent(yPercent));
+        updateTextOverlayById(overlayId, {
+            x: clampPercent(xPercent - textDragState.offsetXPercent),
+            y: clampPercent(yPercent - textDragState.offsetYPercent),
+        });
+    };
+
+    const startBlurInteraction = (
+        event: {
+            clientX: number;
+            clientY: number;
+            preventDefault: () => void;
+            stopPropagation: () => void;
+        },
+        region: BlurRegionDraft,
+        mode: BlurInteractionState["mode"],
+    ) => {
+        event.preventDefault();
+        event.stopPropagation();
+        setTextDragState(null);
+        setEditingTextOverlayId(null);
+        setActiveBlurRegionId(region.id);
+        setBlurInteraction({
+            regionId: region.id,
+            mode,
+            startClientX: event.clientX,
+            startClientY: event.clientY,
+            startX: region.x,
+            startY: region.y,
+            startWidth: region.width,
+            startHeight: region.height,
+        });
     };
 
     return (
         <section className="w-full max-w-none border border-main bg-main">
-            <div className="grid w-full gap-4 p-5 xl:grid-cols-[3fr_5fr]">
-                <aside className="space-y-3">
+            <div className="grid w-full gap-4 p-5 xl:grid-cols-[minmax(0,3fr)_minmax(0,5fr)]">
+                <aside className="min-w-0 space-y-3">
                     <div className="border border-main bg-secondary/20 p-4">
                         <div className="flex items-center gap-2">
                             <DownloadCloud className="h-4 w-4 text-muted" />
@@ -427,7 +795,10 @@ export function ThumbnailStudioPanel({ section }: ThumbnailStudioPanelProps) {
                                                     )}
                                                 />
                                             </div>
-                                            <p className="px-1.5 pt-1.5 text-[11px] font-semibold text-main">
+                                            <p
+                                                title={thumbnail.name}
+                                                className="truncate px-1.5 pt-1.5 text-[11px] font-semibold text-main"
+                                            >
                                                 {thumbnail.name}
                                             </p>
                                             <p className="px-1.5 pb-1 truncate text-[9px] text-muted">
@@ -451,24 +822,229 @@ export function ThumbnailStudioPanel({ section }: ThumbnailStudioPanelProps) {
                     </div>
                 </aside>
 
-                <div className="space-y-3">
-                    <div className="grid gap-3 xl:grid-cols-[3fr_2fr]">
-                        <div className="space-y-3">
+                <div className="min-w-0 space-y-3">
+                    <div className="grid gap-3 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+                        <div className="min-w-0 space-y-3">
                             <div className="border border-main p-3">
                                 <div
                                     ref={previewFrameRef}
                                     className="relative mx-auto aspect-video max-w-[900px] overflow-hidden border border-main bg-zinc-900"
                                     onPointerMove={(event) => {
-                                        if (!isDraggingText) return;
-                                        handleCanvasTextDrag(
-                                            event.clientX,
-                                            event.clientY,
-                                        );
+                                        const frame = previewFrameRef.current;
+                                        if (
+                                            blurInteraction &&
+                                            frame &&
+                                            blurEnabled
+                                        ) {
+                                            const bounds =
+                                                frame.getBoundingClientRect();
+                                            if (
+                                                bounds.width > 0 &&
+                                                bounds.height > 0
+                                            ) {
+                                                const deltaXPercent =
+                                                    ((event.clientX -
+                                                        blurInteraction.startClientX) /
+                                                        bounds.width) *
+                                                    100;
+                                                const deltaYPercent =
+                                                    ((event.clientY -
+                                                        blurInteraction.startClientY) /
+                                                        bounds.height) *
+                                                    100;
+                                                setBlurRegions((current) =>
+                                                    current.map((item) => {
+                                                        if (
+                                                            item.id !==
+                                                            blurInteraction.regionId
+                                                        ) {
+                                                            return item;
+                                                        }
+                                                        if (
+                                                            blurInteraction.mode ===
+                                                            "move"
+                                                        ) {
+                                                            const nextX =
+                                                                clampPercent(
+                                                                    blurInteraction.startX +
+                                                                        deltaXPercent,
+                                                                );
+                                                            const nextY =
+                                                                clampPercent(
+                                                                    blurInteraction.startY +
+                                                                        deltaYPercent,
+                                                                );
+                                                            return {
+                                                                ...item,
+                                                                x: Math.min(
+                                                                    nextX,
+                                                                    Math.max(
+                                                                        0,
+                                                                        100 -
+                                                                            item.width,
+                                                                    ),
+                                                                ),
+                                                                y: Math.min(
+                                                                    nextY,
+                                                                    Math.max(
+                                                                        0,
+                                                                        100 -
+                                                                            item.height,
+                                                                    ),
+                                                                ),
+                                                            };
+                                                        }
+                                                        const minSize = 2;
+                                                        const mode =
+                                                            blurInteraction.mode;
+                                                        const horizontalMode =
+                                                            mode.includes("e")
+                                                                ? "e"
+                                                                : mode.includes(
+                                                                        "w",
+                                                                    )
+                                                                  ? "w"
+                                                                  : null;
+                                                        const verticalMode =
+                                                            mode.includes("s")
+                                                                ? "s"
+                                                                : mode.includes(
+                                                                        "n",
+                                                                    )
+                                                                  ? "n"
+                                                                  : null;
+                                                        const startLeft =
+                                                            blurInteraction.startX;
+                                                        const startTop =
+                                                            blurInteraction.startY;
+                                                        const startRight =
+                                                            startLeft +
+                                                            blurInteraction.startWidth;
+                                                        const startBottom =
+                                                            startTop +
+                                                            blurInteraction.startHeight;
+                                                        let nextLeft =
+                                                            startLeft;
+                                                        let nextRight =
+                                                            startRight;
+                                                        let nextTop = startTop;
+                                                        let nextBottom =
+                                                            startBottom;
+
+                                                        if (
+                                                            horizontalMode ===
+                                                            "e"
+                                                        ) {
+                                                            nextRight =
+                                                                clampValue(
+                                                                    startRight +
+                                                                        deltaXPercent,
+                                                                    startLeft +
+                                                                        minSize,
+                                                                    100,
+                                                                );
+                                                        } else if (
+                                                            horizontalMode ===
+                                                            "w"
+                                                        ) {
+                                                            nextLeft =
+                                                                clampValue(
+                                                                    startLeft +
+                                                                        deltaXPercent,
+                                                                    0,
+                                                                    startRight -
+                                                                        minSize,
+                                                                );
+                                                        }
+
+                                                        if (
+                                                            verticalMode === "s"
+                                                        ) {
+                                                            nextBottom =
+                                                                clampValue(
+                                                                    startBottom +
+                                                                        deltaYPercent,
+                                                                    startTop +
+                                                                        minSize,
+                                                                    100,
+                                                                );
+                                                        } else if (
+                                                            verticalMode === "n"
+                                                        ) {
+                                                            nextTop =
+                                                                clampValue(
+                                                                    startTop +
+                                                                        deltaYPercent,
+                                                                    0,
+                                                                    startBottom -
+                                                                        minSize,
+                                                                );
+                                                        }
+
+                                                        return {
+                                                            ...item,
+                                                            x: nextLeft,
+                                                            y: nextTop,
+                                                            width:
+                                                                nextRight -
+                                                                nextLeft,
+                                                            height:
+                                                                nextBottom -
+                                                                nextTop,
+                                                        };
+                                                    }),
+                                                );
+                                            }
+                                        } else if (textDragState) {
+                                            const deltaX = Math.abs(
+                                                event.clientX -
+                                                    textDragState.startClientX,
+                                            );
+                                            const deltaY = Math.abs(
+                                                event.clientY -
+                                                    textDragState.startClientY,
+                                            );
+                                            const hasMoved =
+                                                deltaX > 2 || deltaY > 2;
+                                            if (hasMoved) {
+                                                if (!textDragState.moved) {
+                                                    setTextDragState(
+                                                        (current) =>
+                                                            current
+                                                                ? {
+                                                                      ...current,
+                                                                      moved: true,
+                                                                  }
+                                                                : current,
+                                                    );
+                                                }
+                                                handleCanvasTextDrag(
+                                                    textDragState.overlayId,
+                                                    event.clientX,
+                                                    event.clientY,
+                                                );
+                                            }
+                                        }
                                     }}
-                                    onPointerUp={() => setIsDraggingText(false)}
-                                    onPointerLeave={() =>
-                                        setIsDraggingText(false)
-                                    }
+                                    onPointerUp={() => {
+                                        if (
+                                            textDragState &&
+                                            !textDragState.moved
+                                        ) {
+                                            setEditingTextOverlayId(
+                                                textDragState.overlayId,
+                                            );
+                                            setActiveTextOverlayId(
+                                                textDragState.overlayId,
+                                            );
+                                        }
+                                        setTextDragState(null);
+                                        setBlurInteraction(null);
+                                    }}
+                                    onPointerLeave={() => {
+                                        setTextDragState(null);
+                                        setBlurInteraction(null);
+                                    }}
                                 >
                                     <div
                                         className={cn(
@@ -477,74 +1053,322 @@ export function ThumbnailStudioPanel({ section }: ThumbnailStudioPanelProps) {
                                                 "from-slate-600/70 via-slate-500/35 to-zinc-900/70",
                                         )}
                                     />
-                                    {blurEnabled ? (
+                                    {blurEnabled
+                                        ? blurRegions.map((region) => (
+                                              <div
+                                                  key={region.id}
+                                                  role="button"
+                                                  tabIndex={0}
+                                                  onPointerDown={(event) =>
+                                                      startBlurInteraction(
+                                                          event,
+                                                          region,
+                                                          "move",
+                                                      )
+                                                  }
+                                                  onKeyDown={(event) => {
+                                                      const step = 1;
+                                                      if (
+                                                          event.key ===
+                                                          "ArrowLeft"
+                                                      ) {
+                                                          setActiveBlurRegionId(
+                                                              region.id,
+                                                          );
+                                                          updateActiveBlurRegion(
+                                                              {
+                                                                  x:
+                                                                      region.x -
+                                                                      step,
+                                                              },
+                                                          );
+                                                      }
+                                                      if (
+                                                          event.key ===
+                                                          "ArrowRight"
+                                                      ) {
+                                                          setActiveBlurRegionId(
+                                                              region.id,
+                                                          );
+                                                          updateActiveBlurRegion(
+                                                              {
+                                                                  x:
+                                                                      region.x +
+                                                                      step,
+                                                              },
+                                                          );
+                                                      }
+                                                      if (
+                                                          event.key ===
+                                                          "ArrowUp"
+                                                      ) {
+                                                          setActiveBlurRegionId(
+                                                              region.id,
+                                                          );
+                                                          updateActiveBlurRegion(
+                                                              {
+                                                                  y:
+                                                                      region.y -
+                                                                      step,
+                                                              },
+                                                          );
+                                                      }
+                                                      if (
+                                                          event.key ===
+                                                          "ArrowDown"
+                                                      ) {
+                                                          setActiveBlurRegionId(
+                                                              region.id,
+                                                          );
+                                                          updateActiveBlurRegion(
+                                                              {
+                                                                  y:
+                                                                      region.y +
+                                                                      step,
+                                                              },
+                                                          );
+                                                      }
+                                                  }}
+                                                  className={cn(
+                                                      "absolute border border-main bg-black/40 cursor-move",
+                                                  )}
+                                                  style={{
+                                                      left: `${region.x}%`,
+                                                      top: `${region.y}%`,
+                                                      width: `${region.width}%`,
+                                                      height: `${region.height}%`,
+                                                      backdropFilter: `blur(${Math.max(
+                                                          2,
+                                                          Math.round(
+                                                              region.strength /
+                                                                  3,
+                                                          ),
+                                                      )}px)`,
+                                                  }}
+                                              >
+                                                  {activeBlurRegionId ===
+                                                  region.id
+                                                      ? BLUR_RESIZE_HANDLES.map(
+                                                            (handle) => (
+                                                                <div
+                                                                    key={
+                                                                        handle.mode
+                                                                    }
+                                                                    role="button"
+                                                                    tabIndex={0}
+                                                                    aria-label={`Resize blur region ${handle.mode}`}
+                                                                    onPointerDown={(
+                                                                        event,
+                                                                    ) =>
+                                                                        startBlurInteraction(
+                                                                            event,
+                                                                            region,
+                                                                            handle.mode,
+                                                                        )
+                                                                    }
+                                                                    className={cn(
+                                                                        "absolute z-10 bg-transparent",
+                                                                        handle.className,
+                                                                    )}
+                                                                />
+                                                            ),
+                                                        )
+                                                      : null}
+                                              </div>
+                                          ))
+                                        : null}
+                                    {textOverlays.map((overlay, index) => (
                                         <div
-                                            className="absolute left-[8%] top-[8%] h-[28%] w-[32%] rounded-sm bg-black/40"
+                                            key={overlay.id}
                                             style={{
-                                                backdropFilter: `blur(${Math.max(
-                                                    2,
-                                                    Math.round(
-                                                        blurStrength / 3,
-                                                    ),
-                                                )}px)`,
+                                                left: `${overlay.x}%`,
+                                                top: `${overlay.y}%`,
+                                                color: overlay.textColor,
+                                                fontFamily: overlay.fontFamily,
+                                                fontSize: `${overlay.fontSize}px`,
+                                                fontWeight: overlay.fontWeight,
+                                                WebkitTextStroke: `${overlay.strokeWidth}px ${overlay.strokeColor}`,
+                                                textShadow:
+                                                    "0 2px 14px rgba(0, 0, 0, 0.35)",
                                             }}
-                                        />
-                                    ) : null}
-                                    <div
-                                        role="button"
-                                        tabIndex={0}
-                                        aria-label="Drag text overlay on preview"
-                                        onPointerDown={(event) => {
-                                            event.preventDefault();
-                                            setIsDraggingText(true);
-                                            handleCanvasTextDrag(
-                                                event.clientX,
-                                                event.clientY,
-                                            );
-                                        }}
-                                        onKeyDown={(event) => {
-                                            const step = 1;
-                                            if (event.key === "ArrowLeft") {
-                                                setTextPositionX((value) =>
-                                                    clampPercent(value - step),
-                                                );
-                                            }
-                                            if (event.key === "ArrowRight") {
-                                                setTextPositionX((value) =>
-                                                    clampPercent(value + step),
-                                                );
-                                            }
-                                            if (event.key === "ArrowUp") {
-                                                setTextPositionY((value) =>
-                                                    clampPercent(value - step),
-                                                );
-                                            }
-                                            if (event.key === "ArrowDown") {
-                                                setTextPositionY((value) =>
-                                                    clampPercent(value + step),
-                                                );
-                                            }
-                                        }}
-                                        className={cn(
-                                            "absolute max-w-[82%] -translate-x-1/2 -translate-y-1/2 break-words text-center uppercase tracking-wide",
-                                            isDraggingText
-                                                ? "cursor-grabbing"
-                                                : "cursor-grab",
-                                        )}
-                                        style={{
-                                            left: `${textPositionX}%`,
-                                            top: `${textPositionY}%`,
-                                            color: textColor,
-                                            fontFamily,
-                                            fontSize: `${fontSize}px`,
-                                            fontWeight,
-                                            WebkitTextStroke: `${strokeWidth}px ${strokeColor}`,
-                                            textShadow:
-                                                "0 2px 14px rgba(0, 0, 0, 0.35)",
-                                        }}
-                                    >
-                                        {overlayText || "YOUR HEADLINE"}
-                                    </div>
+                                            className={cn(
+                                                "absolute -translate-x-1/2 -translate-y-1/2 text-center uppercase tracking-wide",
+                                                activeTextOverlayId ===
+                                                    overlay.id
+                                                    ? "ring-1 ring-accent/70"
+                                                    : "",
+                                            )}
+                                        >
+                                            {editingTextOverlayId ===
+                                            overlay.id ? (
+                                                <input
+                                                    autoFocus
+                                                    aria-label={`Edit text overlay on preview #${index + 1}`}
+                                                    value={overlay.text}
+                                                    onChange={(event) =>
+                                                        updateTextOverlayById(
+                                                            overlay.id,
+                                                            {
+                                                                text: event
+                                                                    .currentTarget
+                                                                    .value,
+                                                            },
+                                                        )
+                                                    }
+                                                    onBlur={() =>
+                                                        setEditingTextOverlayId(
+                                                            null,
+                                                        )
+                                                    }
+                                                    onKeyDown={(event) => {
+                                                        if (
+                                                            event.key ===
+                                                            "Enter"
+                                                        ) {
+                                                            event.currentTarget.blur();
+                                                        }
+                                                        if (
+                                                            event.key ===
+                                                            "Escape"
+                                                        ) {
+                                                            setEditingTextOverlayId(
+                                                                null,
+                                                            );
+                                                        }
+                                                    }}
+                                                    className="min-w-[180px] max-w-[82vw] border border-main bg-main/90 px-2 py-1 text-center text-[inherit] font-[inherit] text-main outline-none"
+                                                />
+                                            ) : (
+                                                <div
+                                                    role="button"
+                                                    tabIndex={0}
+                                                    aria-label={`Drag text overlay on preview #${index + 1}`}
+                                                    onPointerDown={(event) => {
+                                                        event.preventDefault();
+                                                        setEditingTextOverlayId(
+                                                            null,
+                                                        );
+                                                        setActiveTextOverlayId(
+                                                            overlay.id,
+                                                        );
+                                                        const frame =
+                                                            previewFrameRef.current;
+                                                        if (!frame) return;
+                                                        const bounds =
+                                                            frame.getBoundingClientRect();
+                                                        if (
+                                                            bounds.width <= 0 ||
+                                                            bounds.height <= 0
+                                                        ) {
+                                                            return;
+                                                        }
+                                                        const pointerXPercent =
+                                                            ((event.clientX -
+                                                                bounds.left) /
+                                                                bounds.width) *
+                                                            100;
+                                                        const pointerYPercent =
+                                                            ((event.clientY -
+                                                                bounds.top) /
+                                                                bounds.height) *
+                                                            100;
+                                                        setTextDragState({
+                                                            overlayId:
+                                                                overlay.id,
+                                                            offsetXPercent:
+                                                                pointerXPercent -
+                                                                overlay.x,
+                                                            offsetYPercent:
+                                                                pointerYPercent -
+                                                                overlay.y,
+                                                            startClientX:
+                                                                event.clientX,
+                                                            startClientY:
+                                                                event.clientY,
+                                                            moved: false,
+                                                        });
+                                                    }}
+                                                    onKeyDown={(event) => {
+                                                        const step = 1;
+                                                        if (
+                                                            activeTextOverlayId !==
+                                                            overlay.id
+                                                        ) {
+                                                            return;
+                                                        }
+                                                        if (
+                                                            event.key ===
+                                                            "Enter"
+                                                        ) {
+                                                            setEditingTextOverlayId(
+                                                                overlay.id,
+                                                            );
+                                                            return;
+                                                        }
+                                                        if (
+                                                            event.key ===
+                                                            "ArrowLeft"
+                                                        ) {
+                                                            updateActiveTextOverlay(
+                                                                {
+                                                                    x:
+                                                                        overlay.x -
+                                                                        step,
+                                                                },
+                                                            );
+                                                        }
+                                                        if (
+                                                            event.key ===
+                                                            "ArrowRight"
+                                                        ) {
+                                                            updateActiveTextOverlay(
+                                                                {
+                                                                    x:
+                                                                        overlay.x +
+                                                                        step,
+                                                                },
+                                                            );
+                                                        }
+                                                        if (
+                                                            event.key ===
+                                                            "ArrowUp"
+                                                        ) {
+                                                            updateActiveTextOverlay(
+                                                                {
+                                                                    y:
+                                                                        overlay.y -
+                                                                        step,
+                                                                },
+                                                            );
+                                                        }
+                                                        if (
+                                                            event.key ===
+                                                            "ArrowDown"
+                                                        ) {
+                                                            updateActiveTextOverlay(
+                                                                {
+                                                                    y:
+                                                                        overlay.y +
+                                                                        step,
+                                                                },
+                                                            );
+                                                        }
+                                                    }}
+                                                    className={cn(
+                                                        "cursor-grab whitespace-pre",
+                                                        textDragState
+                                                            ?.overlayId ===
+                                                            overlay.id
+                                                            ? "cursor-grabbing"
+                                                            : "cursor-grab",
+                                                    )}
+                                                >
+                                                    {overlay.text ||
+                                                        "YOUR HEADLINE"}
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))}
                                 </div>
                             </div>
 
@@ -611,7 +1435,7 @@ export function ThumbnailStudioPanel({ section }: ThumbnailStudioPanelProps) {
                                 <div className="mt-3 grid grid-cols-2 gap-2 lg:grid-cols-4">
                                     <button
                                         type="button"
-                                        className="inline-flex items-center justify-center gap-1 border border-main bg-main px-2 py-1.5 text-[10px] font-semibold text-main hover:bg-secondary"
+                                        className="inline-flex items-center justify-center gap-1 border border-accent/40 bg-accent/15 px-2 py-1.5 text-[10px] font-semibold text-accent hover:bg-accent/25"
                                     >
                                         <Sparkles className="h-3 w-3" />
                                         Save
@@ -620,7 +1444,7 @@ export function ThumbnailStudioPanel({ section }: ThumbnailStudioPanelProps) {
                                         type="button"
                                         onClick={handleDuplicateSelected}
                                         disabled={!selectedThumbnail}
-                                        className="inline-flex items-center justify-center gap-1 border border-main bg-main px-2 py-1.5 text-[10px] font-semibold text-main hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-60"
+                                        className="inline-flex items-center justify-center gap-1 border border-main bg-secondary/70 px-2 py-1.5 text-[10px] font-semibold text-main hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-60"
                                     >
                                         <Copy className="h-3 w-3" />
                                         Duplicate
@@ -628,7 +1452,7 @@ export function ThumbnailStudioPanel({ section }: ThumbnailStudioPanelProps) {
                                     <button
                                         type="button"
                                         onClick={handleResetEditor}
-                                        className="inline-flex items-center justify-center border border-main bg-main px-2 py-1.5 text-[10px] font-semibold text-main hover:bg-secondary"
+                                        className="inline-flex items-center justify-center border border-main bg-secondary/70 px-2 py-1.5 text-[10px] font-semibold text-main hover:bg-secondary"
                                     >
                                         Reset
                                     </button>
@@ -636,7 +1460,7 @@ export function ThumbnailStudioPanel({ section }: ThumbnailStudioPanelProps) {
                                         type="button"
                                         onClick={handleDeleteSelected}
                                         disabled={!selectedThumbnail}
-                                        className="inline-flex items-center justify-center gap-1 border border-main bg-main px-2 py-1.5 text-[10px] font-semibold text-main hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-60"
+                                        className="inline-flex items-center justify-center gap-1 border border-rose-500/35 bg-rose-500/10 px-2 py-1.5 text-[10px] font-semibold text-rose-700 hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-60"
                                     >
                                         <Trash2 className="h-3 w-3" />
                                         Delete
@@ -645,7 +1469,272 @@ export function ThumbnailStudioPanel({ section }: ThumbnailStudioPanelProps) {
                             </div>
                         </div>
 
-                        <div className="space-y-3">
+                        <div className="min-w-0 space-y-3">
+                            <div className="space-y-2 border border-main bg-secondary/20 p-3">
+                                <div className="flex items-center gap-2">
+                                    <Type className="h-4 w-4 text-muted" />
+                                    <p className="text-[12px] font-semibold text-main">
+                                        Text Overlay
+                                    </p>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={addTextOverlay}
+                                    className="w-full border border-accent/40 bg-accent/15 px-2 py-1.5 text-[10px] font-semibold text-accent hover:bg-accent/25"
+                                >
+                                    Add text layer
+                                </button>
+                                <div className="max-h-28 space-y-2 overflow-y-auto border border-main bg-secondary/20 p-2">
+                                    {textOverlays.length === 0 ? (
+                                        <p className="text-[10px] text-muted">
+                                            No text layer yet.
+                                        </p>
+                                    ) : (
+                                        textOverlays.map((overlay, index) => (
+                                            <div
+                                                key={overlay.id}
+                                                className={cn(
+                                                    "flex w-full max-w-full items-center gap-1 overflow-hidden border px-1.5 py-1",
+                                                    activeTextOverlayId ===
+                                                        overlay.id
+                                                        ? "border-accent bg-accent/10 text-main"
+                                                        : "border-main bg-main text-main",
+                                                )}
+                                            >
+                                                <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                        setActiveTextOverlayId(
+                                                            overlay.id,
+                                                        )
+                                                    }
+                                                    title={formatTextOverlaySummary(
+                                                        overlay,
+                                                        index,
+                                                    )}
+                                                    className="min-w-0 max-w-full flex-1 truncate whitespace-nowrap text-left text-[10px]"
+                                                >
+                                                    {formatTextOverlaySummary(
+                                                        overlay,
+                                                        index,
+                                                    )}
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    aria-label={`Remove text layer #${index + 1}`}
+                                                    onClick={() =>
+                                                        removeTextOverlayById(
+                                                            overlay.id,
+                                                        )
+                                                    }
+                                                    className="shrink-0 px-1 text-[10px] font-semibold text-rose-700 hover:text-rose-800"
+                                                >
+                                                    <X className="h-3 w-3" />
+                                                </button>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+                                {activeTextOverlay ? (
+                                    <>
+                                        <label className="block">
+                                            <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                                Headline text
+                                            </span>
+                                            <textarea
+                                                rows={2}
+                                                value={activeTextOverlay.text}
+                                                onChange={(event) =>
+                                                    updateActiveTextOverlay({
+                                                        text: event
+                                                            .currentTarget
+                                                            .value,
+                                                    })
+                                                }
+                                                className="w-full resize-y border border-main bg-main px-2 py-1.5 text-[11px] text-main"
+                                            />
+                                        </label>
+                                        <div className="grid gap-2 sm:grid-cols-2">
+                                            <label className="block">
+                                                <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                                    Font family
+                                                </span>
+                                                <select
+                                                    value={
+                                                        activeTextOverlay.fontFamily
+                                                    }
+                                                    onChange={(event) =>
+                                                        updateActiveTextOverlay(
+                                                            {
+                                                                fontFamily:
+                                                                    event
+                                                                        .currentTarget
+                                                                        .value,
+                                                            },
+                                                        )
+                                                    }
+                                                    className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main"
+                                                >
+                                                    <option value="Montserrat">
+                                                        Montserrat
+                                                    </option>
+                                                    <option value="Oswald">
+                                                        Oswald
+                                                    </option>
+                                                    <option value="Bebas Neue">
+                                                        Bebas Neue
+                                                    </option>
+                                                    <option value="Anton">
+                                                        Anton
+                                                    </option>
+                                                    <option value="Sora">
+                                                        Sora
+                                                    </option>
+                                                </select>
+                                            </label>
+                                            <label className="block">
+                                                <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                                    Font weight
+                                                </span>
+                                                <select
+                                                    value={
+                                                        activeTextOverlay.fontWeight
+                                                    }
+                                                    onChange={(event) =>
+                                                        updateActiveTextOverlay(
+                                                            {
+                                                                fontWeight:
+                                                                    Number(
+                                                                        event
+                                                                            .currentTarget
+                                                                            .value,
+                                                                    ),
+                                                            },
+                                                        )
+                                                    }
+                                                    className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main"
+                                                >
+                                                    <option value={600}>
+                                                        600
+                                                    </option>
+                                                    <option value={700}>
+                                                        700
+                                                    </option>
+                                                    <option value={800}>
+                                                        800
+                                                    </option>
+                                                    <option value={900}>
+                                                        900
+                                                    </option>
+                                                </select>
+                                            </label>
+                                        </div>
+
+                                        <label className="block">
+                                            <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                                Font size:{" "}
+                                                {activeTextOverlay.fontSize}px
+                                            </span>
+                                            <input
+                                                type="range"
+                                                min={10}
+                                                max={140}
+                                                value={
+                                                    activeTextOverlay.fontSize
+                                                }
+                                                onChange={(event) =>
+                                                    updateActiveTextOverlay({
+                                                        fontSize: Number(
+                                                            event.currentTarget
+                                                                .value,
+                                                        ),
+                                                    })
+                                                }
+                                                className="w-full accent-[var(--color-accent)]"
+                                            />
+                                        </label>
+
+                                        <div className="grid gap-2 sm:grid-cols-2">
+                                            <label className="block">
+                                                <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                                    Text color
+                                                </span>
+                                                <input
+                                                    type="color"
+                                                    value={
+                                                        activeTextOverlay.textColor
+                                                    }
+                                                    onChange={(event) =>
+                                                        updateActiveTextOverlay(
+                                                            {
+                                                                textColor:
+                                                                    event
+                                                                        .currentTarget
+                                                                        .value,
+                                                            },
+                                                        )
+                                                    }
+                                                    className="h-9 w-full border border-main bg-main p-1"
+                                                />
+                                            </label>
+                                            <label className="block">
+                                                <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                                    Stroke color
+                                                </span>
+                                                <input
+                                                    type="color"
+                                                    value={
+                                                        activeTextOverlay.strokeColor
+                                                    }
+                                                    onChange={(event) =>
+                                                        updateActiveTextOverlay(
+                                                            {
+                                                                strokeColor:
+                                                                    event
+                                                                        .currentTarget
+                                                                        .value,
+                                                            },
+                                                        )
+                                                    }
+                                                    className="h-9 w-full border border-main bg-main p-1"
+                                                />
+                                            </label>
+                                        </div>
+                                        <label className="block">
+                                            <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                                Stroke width:{" "}
+                                                {activeTextOverlay.strokeWidth}
+                                                px
+                                            </span>
+                                            <input
+                                                type="range"
+                                                min={0}
+                                                max={12}
+                                                value={
+                                                    activeTextOverlay.strokeWidth
+                                                }
+                                                onChange={(event) =>
+                                                    updateActiveTextOverlay({
+                                                        strokeWidth: Number(
+                                                            event.currentTarget
+                                                                .value,
+                                                        ),
+                                                    })
+                                                }
+                                                className="w-full accent-[var(--color-accent)]"
+                                            />
+                                        </label>
+                                    </>
+                                ) : (
+                                    <p className="text-[10px] text-muted">
+                                        Select a text layer to edit.
+                                    </p>
+                                )}
+                                <p className="border border-main bg-main px-2 py-1.5 text-[10px] text-muted">
+                                    Text position: drag directly on preview
+                                    canvas.
+                                </p>
+                            </div>
                             <div className="space-y-2 border border-main bg-secondary/20 p-3">
                                 <div className="flex items-center gap-2">
                                     <Scissors className="h-4 w-4 text-muted" />
@@ -697,214 +1786,95 @@ export function ThumbnailStudioPanel({ section }: ThumbnailStudioPanelProps) {
                                         className="h-4 w-4 accent-[var(--color-accent)]"
                                     />
                                 </label>
-                                <label className="block">
-                                    <span className="mb-1 block text-[10px] font-semibold text-muted">
-                                        Blur strength: {blurStrength}
-                                    </span>
-                                    <input
-                                        type="range"
-                                        min={0}
-                                        max={100}
-                                        value={blurStrength}
-                                        onChange={(event) =>
-                                            setBlurStrength(
-                                                Number(
-                                                    event.currentTarget.value,
-                                                ),
-                                            )
-                                        }
-                                        className="w-full accent-[var(--color-accent)]"
-                                    />
-                                </label>
-                            </div>
-
-                            <div className="space-y-2 border border-main bg-secondary/20 p-3">
-                                <div className="flex items-center gap-2">
-                                    <Type className="h-4 w-4 text-muted" />
-                                    <p className="text-[12px] font-semibold text-main">
-                                        Text Overlay
+                                <button
+                                    type="button"
+                                    onClick={addBlurRegion}
+                                    className="w-full border border-accent/40 bg-accent/15 px-2 py-1.5 text-[10px] font-semibold text-accent hover:bg-accent/25"
+                                >
+                                    Add blur region
+                                </button>
+                                <div className="max-h-28 space-y-2 overflow-y-auto border border-main bg-secondary/20 p-2">
+                                    {blurRegions.length === 0 ? (
+                                        <p className="text-[10px] text-muted">
+                                            No blur region yet.
+                                        </p>
+                                    ) : (
+                                        blurRegions.map((region, index) => (
+                                            <div
+                                                key={region.id}
+                                                className={cn(
+                                                    "flex w-full max-w-full items-center gap-1 overflow-hidden border px-1.5 py-1",
+                                                    activeBlurRegionId ===
+                                                        region.id
+                                                        ? "border-accent bg-accent/10 text-main"
+                                                        : "border-main bg-main text-main",
+                                                )}
+                                            >
+                                                <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                        setActiveBlurRegionId(
+                                                            region.id,
+                                                        )
+                                                    }
+                                                    title={formatBlurRegionSummary(
+                                                        region,
+                                                        index,
+                                                    )}
+                                                    className="min-w-0 max-w-full flex-1 truncate whitespace-nowrap text-left text-[10px]"
+                                                >
+                                                    {formatBlurRegionSummary(
+                                                        region,
+                                                        index,
+                                                    )}
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    aria-label={`Remove blur region #${index + 1}`}
+                                                    onClick={() =>
+                                                        removeBlurRegionById(
+                                                            region.id,
+                                                        )
+                                                    }
+                                                    className="shrink-0 px-1 text-[10px] font-semibold text-rose-700 hover:text-rose-800"
+                                                >
+                                                    <X className="h-3 w-3" />
+                                                </button>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+                                {activeBlurRegion ? (
+                                    <>
+                                        <label className="block">
+                                            <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                                Blur strength:{" "}
+                                                {activeBlurRegion.strength}
+                                            </span>
+                                            <input
+                                                type="range"
+                                                min={0}
+                                                max={100}
+                                                value={
+                                                    activeBlurRegion.strength
+                                                }
+                                                onChange={(event) =>
+                                                    updateActiveBlurRegion({
+                                                        strength: Number(
+                                                            event.currentTarget
+                                                                .value,
+                                                        ),
+                                                    })
+                                                }
+                                                className="w-full accent-[var(--color-accent)]"
+                                            />
+                                        </label>
+                                    </>
+                                ) : (
+                                    <p className="text-[10px] text-muted">
+                                        Select a blur region to edit.
                                     </p>
-                                </div>
-                                <label className="block">
-                                    <span className="mb-1 block text-[10px] font-semibold text-muted">
-                                        Headline text
-                                    </span>
-                                    <textarea
-                                        rows={3}
-                                        value={overlayText}
-                                        onChange={(event) =>
-                                            setOverlayText(
-                                                event.currentTarget.value,
-                                            )
-                                        }
-                                        className="w-full resize-y border border-main bg-main px-2 py-1.5 text-[11px] text-main"
-                                    />
-                                </label>
-                                <div className="grid gap-2 sm:grid-cols-2">
-                                    <label className="block">
-                                        <span className="mb-1 block text-[10px] font-semibold text-muted">
-                                            Font family
-                                        </span>
-                                        <select
-                                            value={fontFamily}
-                                            onChange={(event) =>
-                                                setFontFamily(
-                                                    event.currentTarget.value,
-                                                )
-                                            }
-                                            className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main"
-                                        >
-                                            <option value="Montserrat">
-                                                Montserrat
-                                            </option>
-                                            <option value="Oswald">
-                                                Oswald
-                                            </option>
-                                            <option value="Bebas Neue">
-                                                Bebas Neue
-                                            </option>
-                                            <option value="Anton">Anton</option>
-                                            <option value="Sora">Sora</option>
-                                        </select>
-                                    </label>
-                                    <label className="block">
-                                        <span className="mb-1 block text-[10px] font-semibold text-muted">
-                                            Font weight
-                                        </span>
-                                        <select
-                                            value={fontWeight}
-                                            onChange={(event) =>
-                                                setFontWeight(
-                                                    Number(
-                                                        event.currentTarget
-                                                            .value,
-                                                    ),
-                                                )
-                                            }
-                                            className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main"
-                                        >
-                                            <option value={600}>600</option>
-                                            <option value={700}>700</option>
-                                            <option value={800}>800</option>
-                                            <option value={900}>900</option>
-                                        </select>
-                                    </label>
-                                </div>
-
-                                <label className="block">
-                                    <span className="mb-1 block text-[10px] font-semibold text-muted">
-                                        Font size: {fontSize}px
-                                    </span>
-                                    <input
-                                        type="range"
-                                        min={24}
-                                        max={140}
-                                        value={fontSize}
-                                        onChange={(event) =>
-                                            setFontSize(
-                                                Number(
-                                                    event.currentTarget.value,
-                                                ),
-                                            )
-                                        }
-                                        className="w-full accent-[var(--color-accent)]"
-                                    />
-                                </label>
-
-                                <div className="grid gap-2 sm:grid-cols-2">
-                                    <label className="block">
-                                        <span className="mb-1 block text-[10px] font-semibold text-muted">
-                                            Text color
-                                        </span>
-                                        <input
-                                            type="color"
-                                            value={textColor}
-                                            onChange={(event) =>
-                                                setTextColor(
-                                                    event.currentTarget.value,
-                                                )
-                                            }
-                                            className="h-9 w-full border border-main bg-main p-1"
-                                        />
-                                    </label>
-                                    <label className="block">
-                                        <span className="mb-1 block text-[10px] font-semibold text-muted">
-                                            Stroke color
-                                        </span>
-                                        <input
-                                            type="color"
-                                            value={strokeColor}
-                                            onChange={(event) =>
-                                                setStrokeColor(
-                                                    event.currentTarget.value,
-                                                )
-                                            }
-                                            className="h-9 w-full border border-main bg-main p-1"
-                                        />
-                                    </label>
-                                </div>
-                                <label className="block">
-                                    <span className="mb-1 block text-[10px] font-semibold text-muted">
-                                        Stroke width: {strokeWidth}px
-                                    </span>
-                                    <input
-                                        type="range"
-                                        min={0}
-                                        max={12}
-                                        value={strokeWidth}
-                                        onChange={(event) =>
-                                            setStrokeWidth(
-                                                Number(
-                                                    event.currentTarget.value,
-                                                ),
-                                            )
-                                        }
-                                        className="w-full accent-[var(--color-accent)]"
-                                    />
-                                </label>
-                                <p className="border border-main bg-main px-2 py-1.5 text-[10px] text-muted">
-                                    Text position: drag directly on preview
-                                    canvas.
-                                </p>
-                            </div>
-
-                            <div className="space-y-2 border border-main bg-secondary/20 p-3">
-                                <div className="flex items-center gap-2">
-                                    <Wand2 className="h-4 w-4 text-muted" />
-                                    <p className="text-[12px] font-semibold text-main">
-                                        Workflow Output Hook
-                                    </p>
-                                </div>
-                                <label className="block">
-                                    <span className="mb-1 block text-[10px] font-semibold text-muted">
-                                        Publish node target
-                                    </span>
-                                    <select className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main">
-                                        <option>YouTube Video Publish</option>
-                                        <option>YouTube Shorts Publish</option>
-                                    </select>
-                                </label>
-                                <label className="block">
-                                    <span className="mb-1 block text-[10px] font-semibold text-muted">
-                                        Thumbnail apply strategy
-                                    </span>
-                                    <select className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main">
-                                        <option>Use selected thumbnail</option>
-                                        <option>
-                                            Fallback to latest processed
-                                        </option>
-                                        <option>
-                                            Require explicit selection
-                                        </option>
-                                    </select>
-                                </label>
-                                <div className="border border-main bg-main px-3 py-2 text-[10px] text-muted">
-                                    <Link2 className="mr-1 inline-block h-3.5 w-3.5" />
-                                    Planned node key:{" "}
-                                    <span className="font-semibold text-main">
-                                        workflow.thumbnail.select
-                                    </span>
-                                </div>
+                                )}
                             </div>
                         </div>
                     </div>

@@ -23,6 +23,8 @@
 
 ## Review
 
+- `FAST-AUDIO-057` - Remove redundant Audio Transcript 2 test page.
+- `FAST-VIDEO-006` - Compact Thumbnail Studio labels and multi-layer blur/text summaries.
 - `FAST-WORKSPACE-031` - Add Cleanup Assets Workspace node.
 - `FAST-STORAGE-007` - Delete Drive files from Storage Library.
 - `FAST-OPS-006` - Notify when Background Progress tasks finish.

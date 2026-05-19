@@ -1,5 +1,33 @@
 # OmniVideo Changelog
 
+## FAST-AUDIO-057 - Remove Redundant Audio Transcript 2 Test Page
+
+- Removed `Audio Transcript 2 - Test` from leftbar navigation after test completion.
+- Removed `chineseTranscription2` section wiring from app section types, content router, and navigation slug/legacy resolution.
+- Deleted obsolete wrapper component `src/features/audio/chinese-transcription-v2-panel.tsx`.
+- Kept `Audio Transcript` main page and preprocess capabilities unchanged.
+- Updated navigation and transcript panel source tests to reflect the cleanup.
+- Verification (FAST-AUDIO-057): `npm run test -- --run src/components/layout/navigation.test.ts src/features/audio/chinese-transcription-panel.test.ts src/features/thumbnails/thumbnail-studio-panel.test.ts` pass (3 files / 20 tests); `npm run build` pass with existing ESLint circular-config warning; `npm run guard:version` pass.
+
+## FAST-VIDEO-006 - Compact Thumbnail Studio Labels and Multi-Layer Blur/Text Summaries
+
+- Bumped app version from `0.10.0` to `0.10.1` as a patch release for Thumbnail Studio UX refinement.
+- Updated Thumbnail Studio library cards so long thumbnail names now stay on one line with truncation instead of wrapping across lines.
+- Replaced single-region blur editing with a multi-region list model and compact one-line summaries in the same style as Video Tools Lab (`#n x:.. y:.. w:.. h:.. t:.. s:..`).
+- Added multi-layer text overlay management with compact one-line summaries (`#n x:.. y:.. z:.. w:.. "text..."`) so users can scan and switch layers quickly.
+- Moved remove actions inline: each blur/text summary row now has a trailing close icon for direct deletion.
+- Blur regions can now be moved by drag-and-drop and resized from an in-preview corner handle, replacing coordinate/time numeric form editing for positioning.
+- Kept blur region border with square corners (no rounded corners), matched border tone to panel styling, and upgraded resize controls to full edge+corner handles (8 directions) with non-visual handle hit areas (no blue dots).
+- Kept drag-on-preview text positioning and applied it to the currently selected text layer.
+- Disabled `Region blur` by default in Thumbnail Studio editor.
+- Removed the non-functional `Workflow Output Hook` placeholder block from Thumbnail Studio.
+- Fixed multi-text drag behavior: dragging now tracks the grabbed text layer id + pointer offset, so switching selected layers no longer drags the wrong text and drag no longer snaps text center to cursor.
+- Increased CTA button contrast in Thumbnail Studio editor so `Add text layer`, `Add blur region`, and action buttons (`Save`, `Duplicate`, `Reset`, `Delete`) are easier to spot and operate.
+- Added direct in-preview text editing: click a text overlay to edit its content inline on the canvas.
+- Hardened text drag interaction with click-vs-drag thresholding so quick selection clicks no longer trigger unintended movement.
+- Fixed summary-row layout expansion by locking grid tracks with `minmax(0, …)` and enforcing overflow truncation on blur/text summary rows so long text no longer pushes adjacent panes.
+- Verification (FAST-VIDEO-006): `npm run test -- --run src/features/thumbnails/thumbnail-studio-panel.test.ts` pass (1 file / 5 tests); `npm run build` pass with existing ESLint circular-config warning; `npm run guard:version` pass.
+
 ## FAST-VIDEO-005 - Build Thumbnail Studio UI Shell (Library + Editor)
 
 - Bumped app version from `0.9.11` to `0.10.0` as a backward-compatible feature release for thumbnail workflow foundation.

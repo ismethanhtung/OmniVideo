@@ -104,13 +104,6 @@ export const LEFTBAR_NAV: LeftbarNavGroup[] = [
                     "Extract audio từ video/audio và gọi Groq Whisper Large v3 Turbo để lấy text + timestamp.",
             },
             {
-                id: "chineseTranscription2",
-                icon: Mic2,
-                label: "Audio Transcript 2 - Test",
-                description:
-                    "Bản clone Audio Transcript để thử nghiệm tính năng mới trước khi tích hợp trang chính.",
-            },
-            {
                 id: "videoToolsLab",
                 icon: Clapperboard,
                 label: "Video Tools Lab",
@@ -241,7 +234,6 @@ const SECTION_SLUG_BY_ID: Record<AppSectionId, string> = {
     videoIntake: "video-intake",
     localUploadIntake: "local-upload-intake",
     chineseTranscription: "audio-transcript",
-    chineseTranscription2: "audio-transcript-2",
     piperTtsSandbox: "piper-tts-sandbox",
     videoToolsLab: "video-tools-lab",
     thumbnailStudio: "thumbnail-studio",
@@ -267,7 +259,6 @@ const LEGACY_SECTION_BY_CAMEL: Record<string, AppSectionId> = {
     videoIntake: "videoIntake",
     localUploadIntake: "localUploadIntake",
     chineseTranscription: "chineseTranscription",
-    chineseTranscription2: "chineseTranscription2",
     piperTtsSandbox: "piperTtsSandbox",
     videoToolsLab: "videoToolsLab",
     thumbnailStudio: "thumbnailStudio",
