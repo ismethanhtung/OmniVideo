@@ -11,10 +11,18 @@ describe("Thumbnail Studio UI shell", () => {
         expect(source).toContain("xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]");
         expect(source).toContain("Thumbnail Library");
         expect(source).toContain("Text Overlay");
-        expect(source).toContain("Crop + Blur");
+        expect(source).toContain("Crop");
+        expect(source).toContain("Blur");
         expect(source).toContain("aspect-video overflow-hidden border-b border-main bg-zinc-900");
-        expect(source).toContain("grid-cols-3 gap-2");
+        expect(source).toContain("grid auto-rows-max grid-cols-3 content-start gap-2");
+        expect(source).toContain("thin-scrollbar min-h-0 flex-1 overflow-y-auto pr-1");
         expect(source).toContain("truncate px-1.5 pt-1.5 text-[11px] font-semibold text-main");
+        expect(source).toContain("buildLibraryMetaLabel");
+        expect(source).toContain("formatDateLabel(createdAt)");
+        expect(source).toContain("formatSizeMbLabel(sizeBytes)");
+        expect(source).toContain("return `${day}.${month}.${year}`;");
+        expect(source).toContain("·");
+        expect(source).toContain("onLoad={(event) => {");
     });
 
     it("supports import affordances for drag-drop and URL", () => {
@@ -22,6 +30,10 @@ describe("Thumbnail Studio UI shell", () => {
         expect(source).toContain("Import from URL");
         expect(source).toContain("handleDropUpload");
         expect(source).toContain("handleImportFromUrl");
+        expect(source).toContain("if (event.key === \"Enter\")");
+        expect(source).toContain("title: importUrl.trim()");
+        expect(source).toContain("buildUploadTitleWithTime()");
+        expect(source).not.toContain("title: file.name.replace");
     });
 
     it("keeps lifecycle tags and non-destructive edit defaults visible", () => {
@@ -33,8 +45,8 @@ describe("Thumbnail Studio UI shell", () => {
         expect(source).not.toContain("Active filter:");
     });
 
-    it("includes rename, duplicate/delete controls, and workflow integration", () => {
-        expect(source).toContain("const [blurEnabled, setBlurEnabled] = useState(false);");
+    it("includes rename, duplicate/delete controls, and storage-backed workflow integration", () => {
+        expect(source).not.toContain("const [blurEnabled, setBlurEnabled] = useState(false);");
         expect(source).toContain("Thumbnail name");
         expect(source).toContain("Save");
         expect(source).toContain("Duplicate");
@@ -43,11 +55,23 @@ describe("Thumbnail Studio UI shell", () => {
         expect(source).toContain("handleDuplicateSelected");
         expect(source).toContain("handleDeleteSelected");
         expect(source).toContain("handleResetEditor");
+        expect(source).toContain("/api/storage/thumbnail-assets");
+        expect(source).toContain("/api/storage/providers");
+        expect(source).toContain("storageProviderAccountId");
+        expect(source).toContain("uploadThumbnailFile");
+        expect(source).toContain("renderThumbnailBlob");
+        expect(source).toContain("cropSelection");
+        expect(source).toContain("getOutputSizeForCrop");
+        expect(source).toContain("outputContext.drawImage(");
+        expect(source).not.toContain("thumbnailSetupJson");
+        expect(source).not.toContain("thumbnailStudioSetup");
+        expect(source).toContain("handleInlineTitleRename");
+        expect(source).toContain("onDoubleClick");
+        expect(source).toContain("Thumbnail name updated.");
         expect(source).not.toContain('aria-label="Duplicate thumbnail"');
         expect(source).not.toContain('aria-label="Delete thumbnail"');
-        expect(source).toContain("w-full border text-left overflow-hidden");
+        expect(source).toContain("flex h-fit w-full flex-col border text-left");
         expect(source).not.toContain("w-full border p-2 text-left");
-        expect(source).toContain("duplicateThumbnail(");
         expect(source).not.toContain("Updated 12m ago");
         expect(source).not.toContain("Rename freely for better search and pipeline mapping.");
         expect(source).not.toContain("Workflow Output Hook");
@@ -56,8 +80,27 @@ describe("Thumbnail Studio UI shell", () => {
     });
 
     it("uses compact multi-item blur/text summaries and drag-to-position text", () => {
+        expect(source).toContain("PRESET_CROP_OPTIONS");
+        expect(source).toContain("{ value: \"none\", label: \"None\" }");
+        expect(source).toContain("{ value: \"custom\", label: \"Custom\" }");
+        expect(source).toContain("applyCropPreset(");
+        expect(source).toContain("option.value");
+        expect(source).toContain("Crop selection");
+        expect(source).toContain("cropPreset !== \"none\"");
+        expect(source).toContain("const [cropPreset, setCropPreset] = useState<ThumbnailCropPreset>(\"none\");");
+        expect(source).toContain("border-2 border-emerald-400");
+        expect(source).toContain("CROP_RESIZE_HANDLES");
+        expect(source).toContain("startCropInteraction");
+        expect(source).toContain("handleCropPointerMove");
+        expect(source).toContain("const DEFAULT_BLUR_REGIONS: BlurRegionDraft[] = [];");
+        expect(source).toContain("const DEFAULT_TEXT_OVERLAYS: TextOverlayDraft[] = [];");
         expect(source).toContain("formatBlurRegionSummary");
         expect(source).toContain("formatTextOverlaySummary");
+        expect(source).not.toContain("t:${region.start}s-${region.end}s");
+        expect(source).toContain("const samplePadding = Math.max(4, Math.ceil(blurPixels * 2));");
+        expect(source).toContain("context.beginPath();");
+        expect(source).toContain("context.clip();");
+        expect(source).not.toContain("context.clearRect(regionX, regionY, regionWidth, regionHeight);");
         expect(source).toContain("Add blur region");
         expect(source).toContain("Add text layer");
         expect(source).toContain("min-w-0 max-w-full flex-1 truncate whitespace-nowrap text-left text-[10px]");
@@ -80,6 +123,8 @@ describe("Thumbnail Studio UI shell", () => {
         expect(source).not.toContain("Height %");
         expect(source).not.toContain("Start (s)");
         expect(source).not.toContain("End (s)");
+        expect(source).not.toContain("Region blur");
+        expect(source).not.toContain("Blur logos/faces by region.");
         expect(source).toContain("Text position: drag directly on preview");
         expect(source).toContain("onPointerDown");
         expect(source).toContain("onPointerMove");

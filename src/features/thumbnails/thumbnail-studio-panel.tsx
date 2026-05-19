@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
     Copy,
     Trash2,
@@ -15,6 +15,10 @@ import {
 
 import type { LeftbarNavItem } from "@/components/layout/types";
 import { AssetLifecycleBadges } from "@/components/ui/asset-lifecycle-badges";
+import {
+    getAssetFolderName,
+    matchesVideoAssetSearch,
+} from "@/lib/storage/asset-folder";
 
 type ThumbnailStudioPanelProps = {
     section: LeftbarNavItem;
@@ -22,14 +26,34 @@ type ThumbnailStudioPanelProps = {
 
 type ThumbnailLifecycleTag = "raw" | "processed" | "has-processed-output";
 type ThumbnailEditMode = "create-variant" | "overwrite";
-type ThumbnailCropPreset = "16:9" | "9:16" | "1:1" | "4:5";
+type ThumbnailCropPreset = "none" | "16:9" | "9:16" | "1:1" | "4:5" | "custom";
 
-type ThumbnailItem = {
-    id: string;
-    name: string;
-    tags: ThumbnailLifecycleTag[];
-    sourceLabel: string;
-    previewGradient: string;
+type ThumbnailAsset = {
+    _id: string;
+    providerAssetId?: string | null;
+    storageProvider?: string;
+    storagePointer?: Record<string, unknown>;
+    sizeBytes?: number | null;
+    metadata?: {
+        title?: string | null;
+        folder?: string | null;
+        tags?: string[] | null;
+        sourceUrl?: string | null;
+        width?: number | null;
+        height?: number | null;
+        resolution?: string | null;
+    };
+    createdFrom?: {
+        storageProviderLabel?: string | null;
+    };
+    createdAt?: string;
+};
+
+type StorageProviderAccount = {
+    _id: string;
+    label: string;
+    providerType: "telegram" | "drive";
+    status: string;
 };
 
 type BlurRegionDraft = {
@@ -38,9 +62,14 @@ type BlurRegionDraft = {
     y: number;
     width: number;
     height: number;
-    start: number;
-    end: number;
     strength: number;
+};
+
+type CropSelectionDraft = {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
 };
 
 type TextOverlayDraft = {
@@ -67,6 +96,16 @@ type BlurInteractionState = {
     startHeight: number;
 };
 
+type CropInteractionState = {
+    mode: "move" | "n" | "s" | "e" | "w" | "ne" | "nw" | "se" | "sw";
+    startClientX: number;
+    startClientY: number;
+    startX: number;
+    startY: number;
+    startWidth: number;
+    startHeight: number;
+};
+
 type TextDragState = {
     overlayId: string;
     offsetXPercent: number;
@@ -76,46 +115,69 @@ type TextDragState = {
     moved: boolean;
 };
 
-const THUMBNAIL_LIBRARY_SEED: ThumbnailItem[] = [
-    {
-        id: "thumb-001",
-        name: "Movie Episode 01 - Hero Reveal",
-        tags: ["raw"],
-        sourceLabel: "Drive /movies/season-01",
-        previewGradient: "from-amber-400/65 via-orange-300/45 to-rose-300/60",
-    },
-    {
-        id: "thumb-002",
-        name: "Movie Episode 02 - Tunnel Chase",
-        tags: ["processed"],
-        sourceLabel: "Drive /movies/season-01",
-        previewGradient: "from-cyan-400/60 via-sky-300/40 to-indigo-400/60",
-    },
-    {
-        id: "thumb-003",
-        name: "Movie Episode 03 - Final Twist",
-        tags: ["raw", "has-processed-output"],
-        sourceLabel: "Drive /movies/season-01",
-        previewGradient: "from-emerald-400/60 via-lime-300/35 to-yellow-300/55",
-    },
+const LIFECYCLE_FILTERS: Array<"all" | ThumbnailLifecycleTag> = [
+    "all",
+    "raw",
+    "processed",
+    "has-processed-output",
 ];
+
+const DEFAULT_BLUR_REGIONS: BlurRegionDraft[] = [];
+
+const DEFAULT_TEXT_OVERLAYS: TextOverlayDraft[] = [];
+
+const PRESET_CROP_OPTIONS: Array<{
+    value: ThumbnailCropPreset;
+    label: string;
+}> = [
+    { value: "none", label: "None" },
+    { value: "16:9", label: "16:9 YouTube" },
+    { value: "9:16", label: "9:16 Shorts" },
+    { value: "1:1", label: "1:1 Square" },
+    { value: "4:5", label: "4:5 Feed" },
+    { value: "custom", label: "Custom" },
+];
+
+const EDITOR_FRAME_RATIO = 16 / 9;
+const EDITOR_FRAME_SIZE = { width: 1280, height: 720 };
+const DEFAULT_CROP_SELECTION: CropSelectionDraft = {
+    x: 0,
+    y: 0,
+    width: 100,
+    height: 100,
+};
+
+const OUTPUT_SIZE_BY_PRESET: Record<
+    Exclude<ThumbnailCropPreset, "none" | "custom">,
+    { width: number; height: number }
+> = {
+    "16:9": { width: 1280, height: 720 },
+    "9:16": { width: 1080, height: 1920 },
+    "1:1": { width: 1080, height: 1080 },
+    "4:5": { width: 1080, height: 1350 },
+};
+
+const CROP_RATIO_BY_PRESET: Record<
+    Exclude<ThumbnailCropPreset, "none" | "custom">,
+    number
+> = {
+    "16:9": 16 / 9,
+    "9:16": 9 / 16,
+    "1:1": 1,
+    "4:5": 4 / 5,
+};
 
 function cn(...classes: Array<string | false | null | undefined>) {
     return classes.filter(Boolean).join(" ");
 }
 
-function buildId() {
-    return `thumb-${Math.random().toString(36).slice(2, 9)}`;
+function buildId(prefix = "thumb") {
+    return `${prefix}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
 function buildDuplicateName(name: string) {
     const trimmed = name.trim();
     return trimmed ? `${trimmed} (Copy)` : "Untitled thumbnail (Copy)";
-}
-
-function buildImportedName(value: string) {
-    const clean = value.trim();
-    return clean || "Untitled thumbnail";
 }
 
 function clampPercent(value: number) {
@@ -128,57 +190,471 @@ function clampValue(value: number, min: number, max: number) {
     return Math.max(min, Math.min(max, value));
 }
 
-const LIFECYCLE_FILTERS: Array<"all" | ThumbnailLifecycleTag> = [
-    "all",
-    "raw",
-    "processed",
-    "has-processed-output",
-];
-
-const DEFAULT_BLUR_REGIONS: BlurRegionDraft[] = [
-    {
-        id: "blur-1",
-        x: 8,
-        y: 8,
-        width: 32,
-        height: 28,
-        start: 0,
-        end: 36000,
-        strength: 28,
-    },
-];
-
-const DEFAULT_TEXT_OVERLAYS: TextOverlayDraft[] = [
-    {
-        id: "text-1",
-        text: "TEXT",
-        fontFamily: "Montserrat",
-        fontSize: 15,
-        fontWeight: 800,
-        textColor: "#ffffff",
-        strokeColor: "#111827",
-        strokeWidth: 0,
-        x: 50,
-        y: 78,
-    },
-];
-
-function formatBlurRegionSummary(region: BlurRegionDraft, index: number) {
-    return `#${index + 1} x:${region.x.toFixed(1)} y:${region.y.toFixed(1)} w:${region.width.toFixed(1)} h:${region.height.toFixed(1)} t:${region.start}s-${region.end}s s:${region.strength}`;
-}
-
-function formatTextOverlaySummary(overlay: TextOverlayDraft, index: number) {
-    const text = (overlay.text || "EMPTY").replace(/\s+/gu, " ").trim();
-    const clipped = text.slice(0, 24);
-    return `#${index + 1} x:${overlay.x.toFixed(1)} y:${overlay.y.toFixed(1)} z:${overlay.fontSize} w:${overlay.fontWeight} "${clipped}"`;
-}
-
 function cloneDefaultBlurRegions() {
     return DEFAULT_BLUR_REGIONS.map((item) => ({ ...item }));
 }
 
 function cloneDefaultTextOverlays() {
     return DEFAULT_TEXT_OVERLAYS.map((item) => ({ ...item }));
+}
+
+function cloneDefaultCropSelection() {
+    return { ...DEFAULT_CROP_SELECTION };
+}
+
+function normalizeCropSelection(
+    selection?: Partial<CropSelectionDraft> | null,
+) {
+    const width = clampValue(Number(selection?.width) || 100, 2, 100);
+    const height = clampValue(Number(selection?.height) || 100, 2, 100);
+    return {
+        x: clampValue(Number(selection?.x) || 0, 0, 100 - width),
+        y: clampValue(Number(selection?.y) || 0, 0, 100 - height),
+        width,
+        height,
+    };
+}
+
+function buildCenteredCropSelectionForRatio(ratio: number) {
+    if (!Number.isFinite(ratio) || ratio <= 0) {
+        return cloneDefaultCropSelection();
+    }
+
+    if (ratio >= EDITOR_FRAME_RATIO) {
+        const height = clampValue((EDITOR_FRAME_RATIO / ratio) * 100, 2, 100);
+        return {
+            x: 0,
+            y: (100 - height) / 2,
+            width: 100,
+            height,
+        };
+    }
+
+    const width = clampValue((ratio / EDITOR_FRAME_RATIO) * 100, 2, 100);
+    return {
+        x: (100 - width) / 2,
+        y: 0,
+        width,
+        height: 100,
+    };
+}
+
+function getCropSelectionRatio(selection: CropSelectionDraft) {
+    if (selection.height <= 0) return EDITOR_FRAME_RATIO;
+    return (selection.width / selection.height) * EDITOR_FRAME_RATIO;
+}
+
+function getOutputSizeForCrop({
+    cropPreset,
+    cropSelection,
+}: {
+    cropPreset: ThumbnailCropPreset;
+    cropSelection: CropSelectionDraft;
+}) {
+    if (cropPreset === "none") {
+        return EDITOR_FRAME_SIZE;
+    }
+    if (cropPreset !== "custom") {
+        return OUTPUT_SIZE_BY_PRESET[cropPreset];
+    }
+
+    const ratio = getCropSelectionRatio(cropSelection);
+    if (ratio >= 1) {
+        return {
+            width: 1280,
+            height: Math.max(1, Math.round(1280 / ratio)),
+        };
+    }
+
+    return {
+        width: Math.max(1, Math.round(1280 * ratio)),
+        height: 1280,
+    };
+}
+
+function isLegacyDefaultBlurRegion(region: BlurRegionDraft) {
+    return (
+        Math.abs(region.x - 8) < 0.001 &&
+        Math.abs(region.y - 8) < 0.001 &&
+        Math.abs(region.width - 32) < 0.001 &&
+        Math.abs(region.height - 28) < 0.001 &&
+        Math.abs(region.strength - 28) < 0.001
+    );
+}
+
+function isLegacyDefaultTextOverlay(overlay: TextOverlayDraft) {
+    return (
+        overlay.text.trim() === "TEXT" &&
+        overlay.fontFamily === "Montserrat" &&
+        overlay.fontSize === 15 &&
+        overlay.fontWeight === 800 &&
+        overlay.textColor.toLowerCase() === "#ffffff" &&
+        overlay.strokeColor.toLowerCase() === "#111827" &&
+        overlay.strokeWidth === 0 &&
+        Math.abs(overlay.x - 50) < 0.001 &&
+        Math.abs(overlay.y - 78) < 0.001
+    );
+}
+
+function formatBlurRegionSummary(region: BlurRegionDraft, index: number) {
+    return `#${index + 1} x:${region.x.toFixed(1)} y:${region.y.toFixed(1)} w:${region.width.toFixed(1)} h:${region.height.toFixed(1)} s:${region.strength}`;
+}
+
+function formatTextOverlaySummary(overlay: TextOverlayDraft, index: number) {
+    const text = (overlay.text || "EMPTY").replace(/\s+/gu, " ").trim();
+    const clipped = text.slice(0, 24);
+    return `#${index + 1} x:${overlay.x.toFixed(1)} y:${overlay.y.toFixed(1)} z:${overlay.fontSize} w:${overlay.fontWeight} \"${clipped}\"`;
+}
+
+function parseTagsInput(value: string) {
+    return Array.from(
+        new Set(
+            value
+                .split(",")
+                .map((entry) => entry.trim())
+                .filter(Boolean),
+        ),
+    );
+}
+
+function getCenterCropRect(width: number, height: number, targetRatio: number) {
+    const sourceRatio = width / height;
+    if (sourceRatio > targetRatio) {
+        const cropWidth = height * targetRatio;
+        const left = (width - cropWidth) / 2;
+        return { x: left, y: 0, width: cropWidth, height };
+    }
+    const cropHeight = width / targetRatio;
+    const top = (height - cropHeight) / 2;
+    return { x: 0, y: top, width, height: cropHeight };
+}
+
+function buildTagString(asset: ThumbnailAsset | null) {
+    const tags = Array.isArray(asset?.metadata?.tags)
+        ? asset?.metadata?.tags.filter(
+              (entry): entry is string => typeof entry === "string",
+          )
+        : [];
+    const nonLifecycle = tags.filter((entry) => {
+        const normalized = entry.trim().toLowerCase();
+        return (
+            normalized !== "raw" &&
+            normalized !== "processed" &&
+            normalized !== "has-processed-output"
+        );
+    });
+    return nonLifecycle.join(", ");
+}
+
+function filterLibraryLifecycleTags(tags?: string[] | null) {
+    return (tags ?? []).filter((entry) => {
+        const normalized = entry.trim().toLowerCase();
+        return normalized !== "has-processed-output";
+    });
+}
+
+function formatDateLabel(value?: string) {
+    if (!value) return "-";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "-";
+    const day = String(date.getDate()).padStart(2, "0");
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const year = String(date.getFullYear()).slice(-2);
+    return `${day}.${month}.${year}`;
+}
+
+function formatSizeMbLabel(sizeBytes?: number | null) {
+    if (
+        typeof sizeBytes !== "number" ||
+        !Number.isFinite(sizeBytes) ||
+        sizeBytes <= 0
+    ) {
+        return "- MB";
+    }
+    const sizeMb = sizeBytes / (1024 * 1024);
+    return `${sizeMb.toFixed(1)} MB`;
+}
+
+function parseResolutionLabel(
+    resolution: string | null | undefined,
+): { width: number; height: number } | null {
+    if (!resolution) return null;
+    const normalized = resolution.trim().toLowerCase();
+    const matched = normalized.match(/^(\d{2,5})x(\d{2,5})$/);
+    if (!matched) return null;
+    const width = Number(matched[1]);
+    const height = Number(matched[2]);
+    if (
+        !Number.isFinite(width) ||
+        !Number.isFinite(height) ||
+        width <= 0 ||
+        height <= 0
+    ) {
+        return null;
+    }
+    return { width, height };
+}
+
+function formatDimensionLabel({
+    width,
+    height,
+}: {
+    width?: number | null;
+    height?: number | null;
+}) {
+    if (
+        typeof width === "number" &&
+        Number.isFinite(width) &&
+        width > 0 &&
+        typeof height === "number" &&
+        Number.isFinite(height) &&
+        height > 0
+    ) {
+        return `${Math.round(width)}x${Math.round(height)}`;
+    }
+    return "-";
+}
+
+function buildLibraryMetaLabel({
+    createdAt,
+    sizeBytes,
+    metadata,
+    previewSize,
+}: {
+    createdAt?: string;
+    sizeBytes?: number | null;
+    metadata?: ThumbnailAsset["metadata"];
+    previewSize?: { width: number; height: number } | null;
+}) {
+    const fallbackResolution = parseResolutionLabel(metadata?.resolution);
+    const dimensionLabel = formatDimensionLabel({
+        width:
+            previewSize?.width ?? metadata?.width ?? fallbackResolution?.width,
+        height:
+            previewSize?.height ??
+            metadata?.height ??
+            fallbackResolution?.height,
+    });
+    return `${formatDateLabel(createdAt)} · ${formatSizeMbLabel(sizeBytes)} · ${dimensionLabel}`;
+}
+
+function buildUploadTitleWithTime(date = new Date()) {
+    const hour = String(date.getHours()).padStart(2, "0");
+    const minute = String(date.getMinutes()).padStart(2, "0");
+    const second = String(date.getSeconds()).padStart(2, "0");
+    return `upload ${hour}:${minute}:${second}`;
+}
+
+async function loadImage(url: string) {
+    const image = new Image();
+    image.crossOrigin = "anonymous";
+    image.decoding = "async";
+
+    await new Promise<void>((resolve, reject) => {
+        image.onload = () => resolve();
+        image.onerror = () =>
+            reject(new Error("Cannot load thumbnail source image."));
+        image.src = url;
+    });
+
+    return image;
+}
+
+async function renderThumbnailBlob({
+    sourceUrl,
+    cropPreset,
+    cropSelection,
+    blurRegions,
+    textOverlays,
+}: {
+    sourceUrl: string;
+    cropPreset: ThumbnailCropPreset;
+    cropSelection: CropSelectionDraft;
+    blurRegions: BlurRegionDraft[];
+    textOverlays: TextOverlayDraft[];
+}) {
+    const image = await loadImage(sourceUrl);
+    const outputSize = getOutputSizeForCrop({ cropPreset, cropSelection });
+    const targetRatio = EDITOR_FRAME_RATIO;
+    const cropRect = getCenterCropRect(
+        image.naturalWidth,
+        image.naturalHeight,
+        targetRatio,
+    );
+    const baseCanvas = document.createElement("canvas");
+    baseCanvas.width = EDITOR_FRAME_SIZE.width;
+    baseCanvas.height = EDITOR_FRAME_SIZE.height;
+
+    const context = baseCanvas.getContext("2d");
+    if (!context) {
+        throw new Error("Cannot initialize thumbnail canvas renderer.");
+    }
+
+    context.drawImage(
+        image,
+        cropRect.x,
+        cropRect.y,
+        cropRect.width,
+        cropRect.height,
+        0,
+        0,
+        EDITOR_FRAME_SIZE.width,
+        EDITOR_FRAME_SIZE.height,
+    );
+
+    if (blurRegions.length > 0) {
+        for (const region of blurRegions) {
+            const regionX = Math.round(
+                (region.x / 100) * EDITOR_FRAME_SIZE.width,
+            );
+            const regionY = Math.round(
+                (region.y / 100) * EDITOR_FRAME_SIZE.height,
+            );
+            const regionWidth = Math.max(
+                1,
+                Math.round((region.width / 100) * EDITOR_FRAME_SIZE.width),
+            );
+            const regionHeight = Math.max(
+                1,
+                Math.round((region.height / 100) * EDITOR_FRAME_SIZE.height),
+            );
+            const blurPixels = Math.max(2, Math.round(region.strength / 2.5));
+            const samplePadding = Math.max(4, Math.ceil(blurPixels * 2));
+            const sampleX = Math.max(0, regionX - samplePadding);
+            const sampleY = Math.max(0, regionY - samplePadding);
+            const sampleRight = Math.min(
+                EDITOR_FRAME_SIZE.width,
+                regionX + regionWidth + samplePadding,
+            );
+            const sampleBottom = Math.min(
+                EDITOR_FRAME_SIZE.height,
+                regionY + regionHeight + samplePadding,
+            );
+            const sampleWidth = Math.max(1, sampleRight - sampleX);
+            const sampleHeight = Math.max(1, sampleBottom - sampleY);
+
+            const sampleCanvas = document.createElement("canvas");
+            sampleCanvas.width = sampleWidth;
+            sampleCanvas.height = sampleHeight;
+            const sampleContext = sampleCanvas.getContext("2d");
+            if (!sampleContext) continue;
+
+            sampleContext.drawImage(
+                baseCanvas,
+                sampleX,
+                sampleY,
+                sampleWidth,
+                sampleHeight,
+                0,
+                0,
+                sampleWidth,
+                sampleHeight,
+            );
+
+            const blurredCanvas = document.createElement("canvas");
+            blurredCanvas.width = sampleWidth;
+            blurredCanvas.height = sampleHeight;
+            const blurredContext = blurredCanvas.getContext("2d");
+            if (!blurredContext) continue;
+
+            blurredContext.filter = `blur(${blurPixels}px)`;
+            blurredContext.drawImage(sampleCanvas, 0, 0);
+
+            context.save();
+            context.beginPath();
+            context.rect(regionX, regionY, regionWidth, regionHeight);
+            context.clip();
+            context.drawImage(
+                blurredCanvas,
+                sampleX,
+                sampleY,
+                sampleWidth,
+                sampleHeight,
+            );
+            context.restore();
+        }
+    }
+
+    const fontScale = EDITOR_FRAME_SIZE.height / 720;
+    for (const overlay of textOverlays) {
+        const text = overlay.text || "";
+        if (!text.trim()) continue;
+
+        const x = (overlay.x / 100) * EDITOR_FRAME_SIZE.width;
+        const y = (overlay.y / 100) * EDITOR_FRAME_SIZE.height;
+        const fontSize = Math.max(12, Math.round(overlay.fontSize * fontScale));
+        const strokeWidth = Math.max(
+            0,
+            Math.round(overlay.strokeWidth * fontScale),
+        );
+
+        context.textAlign = "center";
+        context.textBaseline = "middle";
+        context.fillStyle = overlay.textColor;
+        context.strokeStyle = overlay.strokeColor;
+        context.lineJoin = "round";
+        context.lineWidth = strokeWidth;
+        context.font = `${overlay.fontWeight} ${fontSize}px ${overlay.fontFamily}, sans-serif`;
+
+        const lines = text.split("\n");
+        const lineHeight = Math.round(fontSize * 1.2);
+        const startY = y - ((lines.length - 1) * lineHeight) / 2;
+
+        lines.forEach((line, index) => {
+            const lineY = startY + index * lineHeight;
+            if (strokeWidth > 0) {
+                context.strokeText(line, x, lineY);
+            }
+            context.fillText(line, x, lineY);
+        });
+    }
+
+    const activeCropSelection =
+        cropPreset === "none" ? cloneDefaultCropSelection() : cropSelection;
+    const cropSourceX = Math.round(
+        (activeCropSelection.x / 100) * EDITOR_FRAME_SIZE.width,
+    );
+    const cropSourceY = Math.round(
+        (activeCropSelection.y / 100) * EDITOR_FRAME_SIZE.height,
+    );
+    const cropSourceWidth = Math.max(
+        1,
+        Math.round((activeCropSelection.width / 100) * EDITOR_FRAME_SIZE.width),
+    );
+    const cropSourceHeight = Math.max(
+        1,
+        Math.round(
+            (activeCropSelection.height / 100) * EDITOR_FRAME_SIZE.height,
+        ),
+    );
+    const canvas = document.createElement("canvas");
+    canvas.width = outputSize.width;
+    canvas.height = outputSize.height;
+    const outputContext = canvas.getContext("2d");
+    if (!outputContext) {
+        throw new Error("Cannot initialize thumbnail crop renderer.");
+    }
+    outputContext.drawImage(
+        baseCanvas,
+        cropSourceX,
+        cropSourceY,
+        cropSourceWidth,
+        cropSourceHeight,
+        0,
+        0,
+        outputSize.width,
+        outputSize.height,
+    );
+
+    const blob = await new Promise<Blob | null>((resolve) => {
+        canvas.toBlob((result) => resolve(result), "image/png", 0.95);
+    });
+
+    if (!blob) {
+        throw new Error("Cannot export rendered thumbnail image.");
+    }
+
+    return blob;
 }
 
 const BLUR_RESIZE_HANDLES: Array<{
@@ -227,23 +703,81 @@ const BLUR_RESIZE_HANDLES: Array<{
     },
 ];
 
+const CROP_RESIZE_HANDLES: Array<{
+    mode: CropInteractionState["mode"];
+    className: string;
+}> = [
+    {
+        mode: "n",
+        className:
+            "left-1/2 top-0 h-4 w-12 -translate-x-1/2 -translate-y-1/2 cursor-ns-resize",
+    },
+    {
+        mode: "s",
+        className:
+            "left-1/2 bottom-0 h-4 w-12 -translate-x-1/2 translate-y-1/2 cursor-ns-resize",
+    },
+    {
+        mode: "e",
+        className:
+            "right-0 top-1/2 h-12 w-4 translate-x-1/2 -translate-y-1/2 cursor-ew-resize",
+    },
+    {
+        mode: "w",
+        className:
+            "left-0 top-1/2 h-12 w-4 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize",
+    },
+    {
+        mode: "ne",
+        className:
+            "right-0 top-0 h-5 w-5 translate-x-1/2 -translate-y-1/2 cursor-nesw-resize",
+    },
+    {
+        mode: "nw",
+        className:
+            "left-0 top-0 h-5 w-5 -translate-x-1/2 -translate-y-1/2 cursor-nwse-resize",
+    },
+    {
+        mode: "se",
+        className:
+            "right-0 bottom-0 h-5 w-5 translate-x-1/2 translate-y-1/2 cursor-nwse-resize",
+    },
+    {
+        mode: "sw",
+        className:
+            "left-0 bottom-0 h-5 w-5 -translate-x-1/2 translate-y-1/2 cursor-nesw-resize",
+    },
+];
+
 export function ThumbnailStudioPanel({
     section: _section,
 }: ThumbnailStudioPanelProps) {
-    const [thumbnails, setThumbnails] = useState(THUMBNAIL_LIBRARY_SEED);
-    const [selectedThumbnailId, setSelectedThumbnailId] = useState(
-        THUMBNAIL_LIBRARY_SEED[0]?.id ?? "",
-    );
+    const [thumbnails, setThumbnails] = useState<ThumbnailAsset[]>([]);
+    const [isLoading, setIsLoading] = useState(false);
+    const [selectedThumbnailId, setSelectedThumbnailId] = useState("");
     const [searchQuery, setSearchQuery] = useState("");
     const [lifecycleFilter, setLifecycleFilter] = useState<
         "all" | ThumbnailLifecycleTag
     >("all");
     const [isFilterMenuOpen, setIsFilterMenuOpen] = useState(false);
     const [importUrl, setImportUrl] = useState("");
+    const [importMessage, setImportMessage] = useState("Ready.");
+    const [storageAccounts, setStorageAccounts] = useState<
+        StorageProviderAccount[]
+    >([]);
+    const [selectedStorageAccountId, setSelectedStorageAccountId] =
+        useState("");
+
+    const [thumbnailName, setThumbnailName] = useState("Untitled thumbnail");
+    const [folderName, setFolderName] = useState("thumbnails");
+    const [tagsInput, setTagsInput] = useState("");
+
     const [editMode, setEditMode] =
         useState<ThumbnailEditMode>("create-variant");
-    const [cropPreset, setCropPreset] = useState<ThumbnailCropPreset>("16:9");
-    const [blurEnabled, setBlurEnabled] = useState(false);
+    const [cropPreset, setCropPreset] = useState<ThumbnailCropPreset>("none");
+    const [cropSelection, setCropSelection] = useState<CropSelectionDraft>(
+        cloneDefaultCropSelection(),
+    );
     const [blurRegions, setBlurRegions] = useState<BlurRegionDraft[]>(
         cloneDefaultBlurRegions(),
     );
@@ -264,126 +798,183 @@ export function ThumbnailStudioPanel({
     );
     const [blurInteraction, setBlurInteraction] =
         useState<BlurInteractionState | null>(null);
-    const [importMessage, setImportMessage] = useState("Ready.");
+    const [cropInteraction, setCropInteraction] =
+        useState<CropInteractionState | null>(null);
+    const [thumbnailPreviewSizes, setThumbnailPreviewSizes] = useState<
+        Record<string, { width: number; height: number }>
+    >({});
+    const [editingLibraryTitleId, setEditingLibraryTitleId] = useState<
+        string | null
+    >(null);
+    const [editingLibraryTitleValue, setEditingLibraryTitleValue] =
+        useState("");
+    const [isSaving, setIsSaving] = useState(false);
+
     const previewFrameRef = useRef<HTMLDivElement | null>(null);
 
-    const visibleThumbnails = useMemo(() => {
-        const normalizedQuery = searchQuery.trim().toLowerCase();
-        return thumbnails.filter((thumbnail) => {
-            const matchesTag =
-                lifecycleFilter === "all" ||
-                thumbnail.tags.includes(lifecycleFilter);
-            if (!matchesTag) return false;
-            if (!normalizedQuery) return true;
+    const fetchThumbnails = async (targetAssetId?: string) => {
+        setIsLoading(true);
+        try {
+            const response = await fetch(
+                "/api/storage/thumbnail-assets?limit=200",
+                {
+                    method: "GET",
+                    cache: "no-store",
+                },
+            );
+            const payload = (await response.json()) as {
+                ok: boolean;
+                data?: ThumbnailAsset[];
+                error?: string;
+            };
 
-            const haystack = [
-                thumbnail.name,
-                thumbnail.sourceLabel,
-                ...thumbnail.tags,
-            ]
-                .join(" ")
-                .toLowerCase();
-            return haystack.includes(normalizedQuery);
-        });
-    }, [lifecycleFilter, searchQuery, thumbnails]);
+            if (!response.ok || !payload.ok || !payload.data) {
+                throw new Error(
+                    payload.error ?? "Cannot load thumbnail library.",
+                );
+            }
+
+            const data = payload.data;
+            setThumbnails(data);
+            setThumbnailPreviewSizes((current) => {
+                const next: Record<string, { width: number; height: number }> =
+                    {};
+                for (const thumbnail of data) {
+                    const existing = current[thumbnail._id];
+                    if (existing) {
+                        next[thumbnail._id] = existing;
+                    }
+                }
+                return next;
+            });
+            setSelectedThumbnailId((current) => {
+                if (targetAssetId) return targetAssetId;
+                if (current && data.some((item) => item._id === current)) {
+                    return current;
+                }
+                return data[0]?._id ?? "";
+            });
+        } catch (error) {
+            setImportMessage(
+                error instanceof Error
+                    ? error.message
+                    : "Cannot load thumbnail library.",
+            );
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const fetchStorageAccounts = async () => {
+        try {
+            const response = await fetch("/api/storage/providers", {
+                method: "GET",
+                cache: "no-store",
+            });
+            const payload = (await response.json()) as {
+                ok: boolean;
+                data?: StorageProviderAccount[];
+            };
+
+            if (!response.ok || !payload.ok || !payload.data) {
+                return;
+            }
+
+            const uploadableAccounts = payload.data.filter(
+                (account) =>
+                    (account.providerType === "drive" ||
+                        account.providerType === "telegram") &&
+                    account.status !== "error",
+            );
+            setStorageAccounts(uploadableAccounts);
+            setSelectedStorageAccountId(
+                (current) => current || uploadableAccounts[0]?._id || "",
+            );
+        } catch {
+            // best effort; UI will show empty account state
+        }
+    };
+
+    useEffect(() => {
+        fetchStorageAccounts();
+        fetchThumbnails();
+    }, []);
 
     const selectedThumbnail =
-        thumbnails.find((item) => item.id === selectedThumbnailId) ?? null;
+        thumbnails.find((item) => item._id === selectedThumbnailId) ?? null;
+
+    const selectedThumbnailPreviewUrl = selectedThumbnail
+        ? `/api/storage/thumbnail-assets/${selectedThumbnail._id}/download?disposition=inline&ts=${encodeURIComponent(selectedThumbnail.createdAt ?? "")}`
+        : null;
+
+    useEffect(() => {
+        if (!selectedThumbnail) {
+            setThumbnailName("Untitled thumbnail");
+            setFolderName("thumbnails");
+            setTagsInput("");
+            setCropPreset("none");
+            setCropSelection(cloneDefaultCropSelection());
+            setBlurRegions([]);
+            setActiveBlurRegionId("");
+            setTextOverlays([]);
+            setActiveTextOverlayId("");
+            return;
+        }
+
+        setThumbnailName(
+            selectedThumbnail.metadata?.title?.trim() || "Untitled thumbnail",
+        );
+        setFolderName(getAssetFolderName(selectedThumbnail) || "thumbnails");
+        setTagsInput(buildTagString(selectedThumbnail));
+        setCropPreset("none");
+        setCropSelection(cloneDefaultCropSelection());
+        setBlurRegions([]);
+        setActiveBlurRegionId("");
+        setTextOverlays([]);
+        setActiveTextOverlayId("");
+    }, [selectedThumbnail?._id]);
+
+    useEffect(() => {
+        setEditingLibraryTitleId(null);
+        setEditingLibraryTitleValue("");
+    }, [selectedThumbnailId]);
+
+    const visibleThumbnails = useMemo(() => {
+        const lifecycleFiltered = thumbnails.filter((thumbnail) => {
+            const tags = Array.isArray(thumbnail.metadata?.tags)
+                ? thumbnail.metadata.tags.filter(
+                      (entry): entry is string => typeof entry === "string",
+                  )
+                : [];
+            if (lifecycleFilter === "all") {
+                return true;
+            }
+            return tags.some(
+                (tag) => tag.trim().toLowerCase() === lifecycleFilter,
+            );
+        });
+
+        return lifecycleFiltered.filter((thumbnail) =>
+            matchesVideoAssetSearch(
+                {
+                    _id: thumbnail._id,
+                    providerAssetId: thumbnail.providerAssetId,
+                    metadata: {
+                        title: thumbnail.metadata?.title,
+                        folder: thumbnail.metadata?.folder,
+                        tags: thumbnail.metadata?.tags,
+                        sourceUrl: thumbnail.metadata?.sourceUrl,
+                    },
+                },
+                searchQuery,
+            ),
+        );
+    }, [lifecycleFilter, searchQuery, thumbnails]);
+
     const activeBlurRegion =
         blurRegions.find((item) => item.id === activeBlurRegionId) ?? null;
     const activeTextOverlay =
         textOverlays.find((item) => item.id === activeTextOverlayId) ?? null;
-
-    const upsertThumbnail = (input: { name: string; sourceLabel: string }) => {
-        const nextThumbnail: ThumbnailItem = {
-            id: buildId(),
-            name: buildImportedName(input.name),
-            tags: ["raw"],
-            sourceLabel: input.sourceLabel,
-            previewGradient:
-                "from-violet-400/60 via-fuchsia-300/40 to-pink-300/60",
-        };
-        setThumbnails((current) => [nextThumbnail, ...current]);
-        setSelectedThumbnailId(nextThumbnail.id);
-        setImportMessage(`Imported: ${nextThumbnail.name}`);
-    };
-
-    const handleDropUpload = (file: File | null) => {
-        if (!file) return;
-        upsertThumbnail({
-            name: file.name.replace(/\.[a-z0-9]+$/iu, ""),
-            sourceLabel: "Local drop upload",
-        });
-    };
-
-    const handleImportFromUrl = () => {
-        if (!importUrl.trim()) {
-            setImportMessage("Please input an image URL first.");
-            return;
-        }
-        upsertThumbnail({
-            name: "Imported from URL",
-            sourceLabel: "Remote URL import",
-        });
-        setImportUrl("");
-    };
-
-    const duplicateThumbnail = (thumbnail: ThumbnailItem) => {
-        const nextThumbnail: ThumbnailItem = {
-            ...thumbnail,
-            id: buildId(),
-            name: buildDuplicateName(thumbnail.name),
-            tags:
-                editMode === "overwrite"
-                    ? thumbnail.tags
-                    : ["raw", "has-processed-output"],
-        };
-        setThumbnails((current) => [nextThumbnail, ...current]);
-        setSelectedThumbnailId(nextThumbnail.id);
-        setImportMessage(`Duplicated: ${thumbnail.name}`);
-    };
-
-    const handleRename = (name: string) => {
-        if (!selectedThumbnail) return;
-        setThumbnails((current) =>
-            current.map((item) =>
-                item.id === selectedThumbnail.id ? { ...item, name } : item,
-            ),
-        );
-    };
-
-    const handleDelete = (thumbnailId: string) => {
-        setThumbnails((current) => {
-            const remaining = current.filter((item) => item.id !== thumbnailId);
-            if (selectedThumbnailId === thumbnailId) {
-                setSelectedThumbnailId(remaining[0]?.id ?? "");
-            }
-            return remaining;
-        });
-    };
-
-    const handleDuplicateSelected = () => {
-        if (!selectedThumbnail) return;
-        duplicateThumbnail(selectedThumbnail);
-    };
-
-    const handleDeleteSelected = () => {
-        if (!selectedThumbnail) return;
-        handleDelete(selectedThumbnail.id);
-    };
-
-    const handleResetEditor = () => {
-        setEditMode("create-variant");
-        setCropPreset("16:9");
-        setBlurEnabled(false);
-        const resetBlurRegions = cloneDefaultBlurRegions();
-        setBlurRegions(resetBlurRegions);
-        setActiveBlurRegionId(resetBlurRegions[0]?.id ?? "");
-        const resetTextOverlays = cloneDefaultTextOverlays();
-        setTextOverlays(resetTextOverlays);
-        setActiveTextOverlayId(resetTextOverlays[0]?.id ?? "");
-        setImportMessage("Editor reset to default.");
-    };
 
     const updateActiveBlurRegion = (patch: Partial<BlurRegionDraft>) => {
         if (!activeBlurRegion) return;
@@ -409,51 +1000,13 @@ export function ThumbnailStudioPanel({
                         patch.height === undefined
                             ? item.height
                             : clampPercent(Number(patch.height)),
-                    start:
-                        patch.start === undefined
-                            ? item.start
-                            : Math.max(0, Number(patch.start)),
-                    end:
-                        patch.end === undefined
-                            ? item.end
-                            : Math.max(0, Number(patch.end)),
                     strength:
                         patch.strength === undefined
                             ? item.strength
-                            : Math.max(
-                                  0,
-                                  Math.min(100, Number(patch.strength)),
-                              ),
+                            : clampValue(Number(patch.strength), 0, 100),
                 };
             }),
         );
-    };
-
-    const addBlurRegion = () => {
-        const nextRegion: BlurRegionDraft = {
-            id: buildId(),
-            x: 10,
-            y: 10,
-            width: 20,
-            height: 10,
-            start: 0,
-            end: 36000,
-            strength: 50,
-        };
-        setBlurRegions((current) => [...current, nextRegion]);
-        setActiveBlurRegionId(nextRegion.id);
-    };
-
-    const removeBlurRegionById = (regionId: string) => {
-        setBlurRegions((current) => {
-            const remaining = current.filter((item) => item.id !== regionId);
-            setActiveBlurRegionId((currentActive) =>
-                currentActive === regionId
-                    ? (remaining[0]?.id ?? "")
-                    : currentActive,
-            );
-            return remaining;
-        });
     };
 
     const updateActiveTextOverlay = (patch: Partial<TextOverlayDraft>) => {
@@ -475,24 +1028,15 @@ export function ThumbnailStudioPanel({
                     fontSize:
                         patch.fontSize === undefined
                             ? item.fontSize
-                            : Math.max(
-                                  10,
-                                  Math.min(140, Number(patch.fontSize)),
-                              ),
+                            : clampValue(Number(patch.fontSize), 10, 140),
                     fontWeight:
                         patch.fontWeight === undefined
                             ? item.fontWeight
-                            : Math.max(
-                                  600,
-                                  Math.min(900, Number(patch.fontWeight)),
-                              ),
+                            : clampValue(Number(patch.fontWeight), 600, 900),
                     strokeWidth:
                         patch.strokeWidth === undefined
                             ? item.strokeWidth
-                            : Math.max(
-                                  0,
-                                  Math.min(12, Number(patch.strokeWidth)),
-                              ),
+                            : clampValue(Number(patch.strokeWidth), 0, 12),
                 };
             }),
         );
@@ -519,32 +1063,48 @@ export function ThumbnailStudioPanel({
                     fontSize:
                         patch.fontSize === undefined
                             ? item.fontSize
-                            : Math.max(
-                                  10,
-                                  Math.min(140, Number(patch.fontSize)),
-                              ),
+                            : clampValue(Number(patch.fontSize), 10, 140),
                     fontWeight:
                         patch.fontWeight === undefined
                             ? item.fontWeight
-                            : Math.max(
-                                  600,
-                                  Math.min(900, Number(patch.fontWeight)),
-                              ),
+                            : clampValue(Number(patch.fontWeight), 600, 900),
                     strokeWidth:
                         patch.strokeWidth === undefined
                             ? item.strokeWidth
-                            : Math.max(
-                                  0,
-                                  Math.min(12, Number(patch.strokeWidth)),
-                              ),
+                            : clampValue(Number(patch.strokeWidth), 0, 12),
                 };
             }),
         );
     };
 
+    const addBlurRegion = () => {
+        const nextRegion: BlurRegionDraft = {
+            id: buildId("blur"),
+            x: 10,
+            y: 10,
+            width: 20,
+            height: 10,
+            strength: 50,
+        };
+        setBlurRegions((current) => [...current, nextRegion]);
+        setActiveBlurRegionId(nextRegion.id);
+    };
+
+    const removeBlurRegionById = (regionId: string) => {
+        setBlurRegions((current) => {
+            const remaining = current.filter((item) => item.id !== regionId);
+            setActiveBlurRegionId((currentActive) =>
+                currentActive === regionId
+                    ? (remaining[0]?.id ?? "")
+                    : currentActive,
+            );
+            return remaining;
+        });
+    };
+
     const addTextOverlay = () => {
         const nextTextOverlay: TextOverlayDraft = {
-            id: buildId(),
+            id: buildId("text"),
             text: "NEW TEXT",
             fontFamily: "Montserrat",
             fontSize: 15,
@@ -616,10 +1176,500 @@ export function ThumbnailStudioPanel({
         });
     };
 
+    const applyCropPreset = (preset: ThumbnailCropPreset) => {
+        setCropPreset(preset);
+        setCropInteraction(null);
+        if (preset === "none") {
+            setCropSelection(cloneDefaultCropSelection());
+            return;
+        }
+        if (preset === "custom") {
+            setCropSelection((current) => normalizeCropSelection(current));
+            return;
+        }
+        setCropSelection(
+            buildCenteredCropSelectionForRatio(CROP_RATIO_BY_PRESET[preset]),
+        );
+    };
+
+    const startCropInteraction = (
+        event: {
+            clientX: number;
+            clientY: number;
+            preventDefault: () => void;
+            stopPropagation: () => void;
+        },
+        mode: CropInteractionState["mode"],
+    ) => {
+        event.preventDefault();
+        event.stopPropagation();
+        setTextDragState(null);
+        setBlurInteraction(null);
+        setEditingTextOverlayId(null);
+        setCropInteraction({
+            mode,
+            startClientX: event.clientX,
+            startClientY: event.clientY,
+            startX: cropSelection.x,
+            startY: cropSelection.y,
+            startWidth: cropSelection.width,
+            startHeight: cropSelection.height,
+        });
+    };
+
+    const buildFreeCropResize = (
+        interaction: CropInteractionState,
+        deltaXPercent: number,
+        deltaYPercent: number,
+    ) => {
+        const minSize = 4;
+        const horizontalMode = interaction.mode.includes("e")
+            ? "e"
+            : interaction.mode.includes("w")
+              ? "w"
+              : null;
+        const verticalMode = interaction.mode.includes("s")
+            ? "s"
+            : interaction.mode.includes("n")
+              ? "n"
+              : null;
+        const startLeft = interaction.startX;
+        const startTop = interaction.startY;
+        const startRight = startLeft + interaction.startWidth;
+        const startBottom = startTop + interaction.startHeight;
+        let nextLeft = startLeft;
+        let nextRight = startRight;
+        let nextTop = startTop;
+        let nextBottom = startBottom;
+
+        if (horizontalMode === "e") {
+            nextRight = clampValue(
+                startRight + deltaXPercent,
+                startLeft + minSize,
+                100,
+            );
+        } else if (horizontalMode === "w") {
+            nextLeft = clampValue(
+                startLeft + deltaXPercent,
+                0,
+                startRight - minSize,
+            );
+        }
+
+        if (verticalMode === "s") {
+            nextBottom = clampValue(
+                startBottom + deltaYPercent,
+                startTop + minSize,
+                100,
+            );
+        } else if (verticalMode === "n") {
+            nextTop = clampValue(
+                startTop + deltaYPercent,
+                0,
+                startBottom - minSize,
+            );
+        }
+
+        return {
+            x: nextLeft,
+            y: nextTop,
+            width: nextRight - nextLeft,
+            height: nextBottom - nextTop,
+        };
+    };
+
+    const buildRatioLockedCropResize = (
+        interaction: CropInteractionState,
+        deltaXPercent: number,
+        deltaYPercent: number,
+        ratio: number,
+    ) => {
+        const minSize = 4;
+        const horizontalMode = interaction.mode.includes("e")
+            ? "e"
+            : interaction.mode.includes("w")
+              ? "w"
+              : null;
+        const verticalMode = interaction.mode.includes("s")
+            ? "s"
+            : interaction.mode.includes("n")
+              ? "n"
+              : null;
+        let nextWidth = interaction.startWidth;
+        let nextHeight = interaction.startHeight;
+        const widthFromHeight = (height: number) =>
+            (height * ratio) / EDITOR_FRAME_RATIO;
+        const heightFromWidth = (width: number) =>
+            (width * EDITOR_FRAME_RATIO) / ratio;
+
+        if (
+            horizontalMode &&
+            (!verticalMode ||
+                Math.abs(deltaXPercent) >= Math.abs(deltaYPercent))
+        ) {
+            const rawWidth =
+                horizontalMode === "e"
+                    ? interaction.startWidth + deltaXPercent
+                    : interaction.startWidth - deltaXPercent;
+            nextWidth = clampValue(rawWidth, minSize, 100);
+            nextHeight = heightFromWidth(nextWidth);
+        } else {
+            const rawHeight =
+                verticalMode === "s"
+                    ? interaction.startHeight + deltaYPercent
+                    : interaction.startHeight - deltaYPercent;
+            nextHeight = clampValue(rawHeight, minSize, 100);
+            nextWidth = widthFromHeight(nextHeight);
+        }
+
+        if (nextWidth > 100) {
+            nextWidth = 100;
+            nextHeight = heightFromWidth(nextWidth);
+        }
+        if (nextHeight > 100) {
+            nextHeight = 100;
+            nextWidth = widthFromHeight(nextHeight);
+        }
+
+        let nextX =
+            horizontalMode === "w"
+                ? interaction.startX + interaction.startWidth - nextWidth
+                : horizontalMode === "e"
+                  ? interaction.startX
+                  : interaction.startX +
+                    (interaction.startWidth - nextWidth) / 2;
+        let nextY =
+            verticalMode === "n"
+                ? interaction.startY + interaction.startHeight - nextHeight
+                : verticalMode === "s"
+                  ? interaction.startY
+                  : interaction.startY +
+                    (interaction.startHeight - nextHeight) / 2;
+
+        nextX = clampValue(nextX, 0, 100 - nextWidth);
+        nextY = clampValue(nextY, 0, 100 - nextHeight);
+        return normalizeCropSelection({
+            x: nextX,
+            y: nextY,
+            width: nextWidth,
+            height: nextHeight,
+        });
+    };
+
+    const handleCropPointerMove = (
+        clientX: number,
+        clientY: number,
+        bounds: DOMRect,
+    ) => {
+        if (
+            !cropInteraction ||
+            cropPreset === "none" ||
+            bounds.width <= 0 ||
+            bounds.height <= 0
+        ) {
+            return;
+        }
+        const deltaXPercent =
+            ((clientX - cropInteraction.startClientX) / bounds.width) * 100;
+        const deltaYPercent =
+            ((clientY - cropInteraction.startClientY) / bounds.height) * 100;
+
+        if (cropInteraction.mode === "move") {
+            setCropSelection((current) => ({
+                ...current,
+                x: clampValue(
+                    cropInteraction.startX + deltaXPercent,
+                    0,
+                    100 - current.width,
+                ),
+                y: clampValue(
+                    cropInteraction.startY + deltaYPercent,
+                    0,
+                    100 - current.height,
+                ),
+            }));
+            return;
+        }
+
+        const nextSelection =
+            cropPreset === "custom"
+                ? buildFreeCropResize(
+                      cropInteraction,
+                      deltaXPercent,
+                      deltaYPercent,
+                  )
+                : buildRatioLockedCropResize(
+                      cropInteraction,
+                      deltaXPercent,
+                      deltaYPercent,
+                      CROP_RATIO_BY_PRESET[cropPreset],
+                  );
+        setCropSelection(normalizeCropSelection(nextSelection));
+    };
+
+    const handleResetEditor = () => {
+        setEditMode("create-variant");
+        setCropPreset("none");
+        setCropSelection(cloneDefaultCropSelection());
+        const resetBlur = cloneDefaultBlurRegions();
+        const resetText = cloneDefaultTextOverlays();
+        setBlurRegions(resetBlur);
+        setActiveBlurRegionId(resetBlur[0]?.id ?? "");
+        setTextOverlays(resetText);
+        setActiveTextOverlayId(resetText[0]?.id ?? "");
+        setEditingTextOverlayId(null);
+        setTextDragState(null);
+        setBlurInteraction(null);
+        setCropInteraction(null);
+        setImportMessage("Editor reset to default.");
+    };
+
+    const uploadThumbnailFile = async ({
+        file,
+        sourceUrl,
+        title,
+        lifecycle,
+        overwriteAssetId,
+    }: {
+        file?: File;
+        sourceUrl?: string;
+        title: string;
+        lifecycle: "raw" | "processed";
+        overwriteAssetId?: string;
+    }) => {
+        if (!selectedStorageAccountId) {
+            setImportMessage(
+                "Please select a storage account before importing/saving.",
+            );
+            return;
+        }
+
+        const formData = new FormData();
+        formData.set("storageProviderAccountId", selectedStorageAccountId);
+        formData.set("title", title);
+        formData.set("folder", folderName || "thumbnails");
+        formData.set("tags", parseTagsInput(tagsInput).join(","));
+        formData.set("lifecycle", lifecycle);
+        if (sourceUrl) {
+            formData.set("sourceUrl", sourceUrl);
+        }
+        if (file) {
+            formData.set("thumbnailFile", file);
+        }
+        if (selectedThumbnailId) {
+            formData.set("sourceAssetId", selectedThumbnailId);
+        }
+        if (overwriteAssetId) {
+            formData.set("overwriteAssetId", overwriteAssetId);
+        }
+        const response = await fetch("/api/storage/thumbnail-assets", {
+            method: "POST",
+            body: formData,
+        });
+        const payload = (await response.json()) as {
+            ok: boolean;
+            data?: { _id: string };
+            error?: string;
+        };
+
+        if (!response.ok || !payload.ok || !payload.data) {
+            throw new Error(payload.error ?? "Thumbnail upload failed.");
+        }
+
+        await fetchThumbnails(payload.data._id);
+    };
+
+    const handleDropUpload = async (file: File | null) => {
+        if (!file) return;
+        try {
+            setImportMessage("Uploading image to storage...");
+            await uploadThumbnailFile({
+                file,
+                title: buildUploadTitleWithTime(),
+                lifecycle: "raw",
+            });
+            setImportMessage("Imported image and saved to storage.");
+        } catch (error) {
+            setImportMessage(
+                error instanceof Error ? error.message : "Import failed.",
+            );
+        }
+    };
+
+    const handleImportFromUrl = async () => {
+        if (!importUrl.trim()) {
+            setImportMessage("Please input an image URL first.");
+            return;
+        }
+
+        try {
+            setImportMessage("Downloading URL and uploading to storage...");
+            await uploadThumbnailFile({
+                sourceUrl: importUrl.trim(),
+                title: importUrl.trim(),
+                lifecycle: "raw",
+            });
+            setImportUrl("");
+            setImportMessage("Imported image URL and saved to storage.");
+        } catch (error) {
+            setImportMessage(
+                error instanceof Error ? error.message : "Import URL failed.",
+            );
+        }
+    };
+
+    const handleInlineTitleRename = async ({
+        thumbnailId,
+        nextTitle,
+    }: {
+        thumbnailId: string;
+        nextTitle: string;
+    }) => {
+        const trimmedTitle = nextTitle.trim();
+        if (!trimmedTitle) {
+            setEditingLibraryTitleId(null);
+            setEditingLibraryTitleValue("");
+            return;
+        }
+        try {
+            const response = await fetch(
+                `/api/storage/thumbnail-assets/${thumbnailId}`,
+                {
+                    method: "PATCH",
+                    headers: {
+                        "content-type": "application/json",
+                    },
+                    body: JSON.stringify({
+                        metadata: {
+                            title: trimmedTitle,
+                        },
+                    }),
+                },
+            );
+            const payload = (await response.json()) as {
+                ok: boolean;
+                error?: string;
+            };
+            if (!response.ok || !payload.ok) {
+                throw new Error(payload.error ?? "Rename failed.");
+            }
+            setThumbnails((current) =>
+                current.map((item) => {
+                    if (item._id !== thumbnailId) return item;
+                    return {
+                        ...item,
+                        metadata: {
+                            ...item.metadata,
+                            title: trimmedTitle,
+                        },
+                    };
+                }),
+            );
+            if (selectedThumbnailId === thumbnailId) {
+                setThumbnailName(trimmedTitle);
+            }
+            setImportMessage("Thumbnail name updated.");
+        } catch (error) {
+            setImportMessage(
+                error instanceof Error ? error.message : "Rename failed.",
+            );
+        } finally {
+            setEditingLibraryTitleId(null);
+            setEditingLibraryTitleValue("");
+        }
+    };
+
+    const handleDeleteSelected = async () => {
+        if (!selectedThumbnailId) return;
+        try {
+            setImportMessage("Deleting selected thumbnail...");
+            const response = await fetch(
+                `/api/storage/thumbnail-assets/${selectedThumbnailId}`,
+                {
+                    method: "DELETE",
+                },
+            );
+            const payload = (await response.json()) as {
+                ok: boolean;
+                error?: string;
+            };
+            if (!response.ok || !payload.ok) {
+                throw new Error(payload.error ?? "Delete failed.");
+            }
+
+            await fetchThumbnails();
+            setImportMessage("Deleted selected thumbnail.");
+        } catch (error) {
+            setImportMessage(
+                error instanceof Error ? error.message : "Delete failed.",
+            );
+        }
+    };
+
+    const handleDuplicateSelected = () => {
+        if (!selectedThumbnail) return;
+        setEditMode("create-variant");
+        setThumbnailName(
+            buildDuplicateName(selectedThumbnail.metadata?.title || ""),
+        );
+        setImportMessage(
+            "Duplicate mode: edit then press Save to create a new thumbnail.",
+        );
+    };
+
+    const handleSave = async () => {
+        if (!selectedThumbnailPreviewUrl) {
+            setImportMessage("Please import/select a thumbnail image first.");
+            return;
+        }
+
+        try {
+            setIsSaving(true);
+            setImportMessage("Rendering thumbnail output...");
+            const renderedBlob = await renderThumbnailBlob({
+                sourceUrl: selectedThumbnailPreviewUrl,
+                cropPreset,
+                cropSelection,
+                blurRegions,
+                textOverlays,
+            });
+
+            const file = new File(
+                [renderedBlob],
+                `${(thumbnailName || "thumbnail").replace(/\s+/g, "-")}.png`,
+                {
+                    type: "image/png",
+                },
+            );
+
+            setImportMessage("Uploading rendered thumbnail to storage...");
+            await uploadThumbnailFile({
+                file,
+                title: thumbnailName || "Untitled thumbnail",
+                lifecycle: "processed",
+                overwriteAssetId:
+                    editMode === "overwrite" ? selectedThumbnailId : undefined,
+            });
+
+            setImportMessage(
+                editMode === "overwrite"
+                    ? "Saved and overwritten selected thumbnail."
+                    : "Saved as a new thumbnail variant.",
+            );
+            setEditMode("create-variant");
+        } catch (error) {
+            setImportMessage(
+                error instanceof Error ? error.message : "Save failed.",
+            );
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
     return (
-        <section className="w-full max-w-none border border-main bg-main">
-            <div className="grid w-full gap-4 p-5 xl:grid-cols-[minmax(0,3fr)_minmax(0,5fr)]">
-                <aside className="min-w-0 space-y-3">
+        <section className="h-full min-h-0 w-full max-w-none border border-main bg-main">
+            <div className="grid h-full min-h-0 w-full gap-4 p-5 xl:grid-cols-[minmax(0,3fr)_minmax(0,5fr)]">
+                <aside className="flex min-h-0 min-w-0 flex-col gap-3">
                     <div className="border border-main bg-secondary/20 p-4">
                         <div className="flex items-center gap-2">
                             <DownloadCloud className="h-4 w-4 text-muted" />
@@ -627,6 +1677,32 @@ export function ThumbnailStudioPanel({
                                 Import Thumbnails
                             </p>
                         </div>
+                        <label className="mt-3 block">
+                            <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                Storage account
+                            </span>
+                            <select
+                                value={selectedStorageAccountId}
+                                onChange={(event) =>
+                                    setSelectedStorageAccountId(
+                                        event.currentTarget.value,
+                                    )
+                                }
+                                className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main"
+                            >
+                                <option value="">
+                                    Select storage account...
+                                </option>
+                                {storageAccounts.map((account) => (
+                                    <option
+                                        key={account._id}
+                                        value={account._id}
+                                    >
+                                        {account.label} ({account.providerType})
+                                    </option>
+                                ))}
+                            </select>
+                        </label>
                         <div
                             role="button"
                             tabIndex={0}
@@ -658,6 +1734,12 @@ export function ThumbnailStudioPanel({
                                     onChange={(event) =>
                                         setImportUrl(event.currentTarget.value)
                                     }
+                                    onKeyDown={(event) => {
+                                        if (event.key === "Enter") {
+                                            event.preventDefault();
+                                            handleImportFromUrl();
+                                        }
+                                    }}
                                     placeholder="https://..."
                                     className="min-w-0 flex-1 border border-main bg-main px-2 py-1.5 text-[11px] text-main"
                                 />
@@ -675,13 +1757,15 @@ export function ThumbnailStudioPanel({
                         </p>
                     </div>
 
-                    <div className="space-y-3 border border-main bg-secondary/20 p-4">
+                    <div className="flex min-h-0 flex-1 flex-col space-y-3 border border-main bg-secondary/20 p-4">
                         <div className="flex items-center justify-between gap-2">
                             <p className="text-[12px] font-semibold text-main">
                                 Thumbnail Library
                             </p>
                             <span className="border border-main bg-main px-2 py-1 text-[10px] text-muted">
-                                {visibleThumbnails.length} items
+                                {isLoading
+                                    ? "Loading..."
+                                    : `${visibleThumbnails.length} items`}
                             </span>
                         </div>
 
@@ -752,77 +1836,213 @@ export function ThumbnailStudioPanel({
                             </div>
                         </label>
 
-                        <div className="thin-scrollbar grid max-h-[420px] grid-cols-3 gap-2 overflow-y-auto pr-1">
-                            {visibleThumbnails.map((thumbnail) => {
-                                const isSelected =
-                                    thumbnail.id === selectedThumbnailId;
-                                return (
-                                    <div
-                                        key={thumbnail.id}
-                                        className={cn(
-                                            "w-full border text-left overflow-hidden",
-                                            isSelected
-                                                ? "border-accent bg-secondary/35"
-                                                : "border-main bg-main hover:bg-secondary/20",
-                                        )}
-                                    >
+                        <div className="thin-scrollbar min-h-0 flex-1 overflow-y-auto pr-1">
+                            <div className="grid auto-rows-max grid-cols-3 content-start gap-2">
+                                {visibleThumbnails.map((thumbnail) => {
+                                    const isSelected =
+                                        thumbnail._id === selectedThumbnailId;
+                                    const title =
+                                        thumbnail.metadata?.title?.trim() ||
+                                        "Untitled thumbnail";
+                                    const infoLabel = buildLibraryMetaLabel({
+                                        createdAt: thumbnail.createdAt,
+                                        sizeBytes: thumbnail.sizeBytes,
+                                        metadata: thumbnail.metadata,
+                                        previewSize:
+                                            thumbnailPreviewSizes[
+                                                thumbnail._id
+                                            ] ?? null,
+                                    });
+                                    const previewUrl = `/api/storage/thumbnail-assets/${thumbnail._id}/download?disposition=inline`;
+
+                                    return (
                                         <div
-                                            role="button"
-                                            tabIndex={0}
-                                            onClick={() =>
-                                                setSelectedThumbnailId(
-                                                    thumbnail.id,
-                                                )
-                                            }
-                                            onKeyDown={(event) => {
-                                                if (
-                                                    event.key === "Enter" ||
-                                                    event.key === " "
-                                                ) {
-                                                    event.preventDefault();
-                                                    setSelectedThumbnailId(
-                                                        thumbnail.id,
-                                                    );
-                                                }
-                                            }}
-                                            className="w-full text-left"
+                                            key={thumbnail._id}
+                                            className={cn(
+                                                "flex h-fit w-full flex-col border text-left",
+                                                isSelected
+                                                    ? "border-accent bg-secondary/35"
+                                                    : "border-main bg-main hover:bg-secondary/20",
+                                            )}
                                         >
-                                            <div className="relative aspect-video overflow-hidden border-b border-main bg-zinc-900">
-                                                <div
-                                                    className={cn(
-                                                        "absolute inset-0 bg-gradient-to-br",
-                                                        thumbnail.previewGradient,
+                                            <div
+                                                role="button"
+                                                tabIndex={0}
+                                                onClick={() =>
+                                                    setSelectedThumbnailId(
+                                                        thumbnail._id,
+                                                    )
+                                                }
+                                                onKeyDown={(event) => {
+                                                    if (
+                                                        event.key === "Enter" ||
+                                                        event.key === " "
+                                                    ) {
+                                                        event.preventDefault();
+                                                        setSelectedThumbnailId(
+                                                            thumbnail._id,
+                                                        );
+                                                    }
+                                                }}
+                                                className="w-full text-left"
+                                            >
+                                                <div className="aspect-video overflow-hidden border-b border-main bg-zinc-900">
+                                                    <img
+                                                        src={previewUrl}
+                                                        alt={title}
+                                                        className="h-full w-full object-cover"
+                                                        loading="lazy"
+                                                        onLoad={(event) => {
+                                                            const image =
+                                                                event.currentTarget;
+                                                            const width =
+                                                                image.naturalWidth;
+                                                            const height =
+                                                                image.naturalHeight;
+                                                            if (
+                                                                width <= 0 ||
+                                                                height <= 0
+                                                            )
+                                                                return;
+                                                            setThumbnailPreviewSizes(
+                                                                (current) => {
+                                                                    const existing =
+                                                                        current[
+                                                                            thumbnail
+                                                                                ._id
+                                                                        ];
+                                                                    if (
+                                                                        existing &&
+                                                                        existing.width ===
+                                                                            width &&
+                                                                        existing.height ===
+                                                                            height
+                                                                    ) {
+                                                                        return current;
+                                                                    }
+                                                                    return {
+                                                                        ...current,
+                                                                        [thumbnail._id]:
+                                                                            {
+                                                                                width,
+                                                                                height,
+                                                                            },
+                                                                    };
+                                                                },
+                                                            );
+                                                        }}
+                                                    />
+                                                </div>
+                                                {editingLibraryTitleId ===
+                                                thumbnail._id ? (
+                                                    <input
+                                                        value={
+                                                            editingLibraryTitleValue
+                                                        }
+                                                        onChange={(event) =>
+                                                            setEditingLibraryTitleValue(
+                                                                event
+                                                                    .currentTarget
+                                                                    .value,
+                                                            )
+                                                        }
+                                                        onClick={(event) =>
+                                                            event.stopPropagation()
+                                                        }
+                                                        onDoubleClick={(
+                                                            event,
+                                                        ) =>
+                                                            event.stopPropagation()
+                                                        }
+                                                        onBlur={() =>
+                                                            handleInlineTitleRename(
+                                                                {
+                                                                    thumbnailId:
+                                                                        thumbnail._id,
+                                                                    nextTitle:
+                                                                        editingLibraryTitleValue,
+                                                                },
+                                                            )
+                                                        }
+                                                        onKeyDown={(event) => {
+                                                            if (
+                                                                event.key ===
+                                                                "Enter"
+                                                            ) {
+                                                                event.preventDefault();
+                                                                handleInlineTitleRename(
+                                                                    {
+                                                                        thumbnailId:
+                                                                            thumbnail._id,
+                                                                        nextTitle:
+                                                                            editingLibraryTitleValue,
+                                                                    },
+                                                                );
+                                                            }
+                                                            if (
+                                                                event.key ===
+                                                                "Escape"
+                                                            ) {
+                                                                event.preventDefault();
+                                                                setEditingLibraryTitleId(
+                                                                    null,
+                                                                );
+                                                                setEditingLibraryTitleValue(
+                                                                    "",
+                                                                );
+                                                            }
+                                                        }}
+                                                        className="mx-1.5 mt-1.5 w-[calc(100%-12px)] border border-main bg-main px-1.5 py-1 text-[11px] font-semibold text-main"
+                                                        autoFocus
+                                                    />
+                                                ) : (
+                                                    <p
+                                                        title={title}
+                                                        onDoubleClick={(
+                                                            event,
+                                                        ) => {
+                                                            event.preventDefault();
+                                                            event.stopPropagation();
+                                                            setEditingLibraryTitleId(
+                                                                thumbnail._id,
+                                                            );
+                                                            setEditingLibraryTitleValue(
+                                                                title,
+                                                            );
+                                                        }}
+                                                        className="truncate px-1.5 pt-1.5 text-[11px] font-semibold text-main"
+                                                    >
+                                                        {title}
+                                                    </p>
+                                                )}
+                                                <p className="truncate px-1.5 pb-1 text-[9px] text-muted">
+                                                    {infoLabel}
+                                                </p>
+                                            </div>
+                                            <div className="px-1.5 pb-1.5">
+                                                <AssetLifecycleBadges
+                                                    tags={filterLibraryLifecycleTags(
+                                                        thumbnail.metadata
+                                                            ?.tags,
                                                     )}
                                                 />
                                             </div>
-                                            <p
-                                                title={thumbnail.name}
-                                                className="truncate px-1.5 pt-1.5 text-[11px] font-semibold text-main"
-                                            >
-                                                {thumbnail.name}
-                                            </p>
-                                            <p className="px-1.5 pb-1 truncate text-[9px] text-muted">
-                                                {thumbnail.sourceLabel}
-                                            </p>
                                         </div>
-                                        <div className="px-1.5 pb-1.5">
-                                            <AssetLifecycleBadges
-                                                tags={thumbnail.tags}
-                                            />
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                            {visibleThumbnails.length === 0 ? (
-                                <p className="border border-main bg-main px-3 py-4 text-center text-[11px] text-muted">
-                                    No thumbnail matches current search/filter.
-                                </p>
-                            ) : null}
+                                    );
+                                })}
+                                {!isLoading &&
+                                visibleThumbnails.length === 0 ? (
+                                    <p className="border border-main bg-main px-3 py-4 text-center text-[11px] text-muted">
+                                        No thumbnail matches current
+                                        search/filter.
+                                    </p>
+                                ) : null}
+                            </div>
                         </div>
                     </div>
                 </aside>
 
-                <div className="min-w-0 space-y-3">
+                <div className="thin-scrollbar min-h-0 min-w-0 space-y-3 overflow-y-auto pr-1">
                     <div className="grid gap-3 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
                         <div className="min-w-0 space-y-3">
                             <div className="border border-main p-3">
@@ -831,11 +2051,13 @@ export function ThumbnailStudioPanel({
                                     className="relative mx-auto aspect-video max-w-[900px] overflow-hidden border border-main bg-zinc-900"
                                     onPointerMove={(event) => {
                                         const frame = previewFrameRef.current;
-                                        if (
-                                            blurInteraction &&
-                                            frame &&
-                                            blurEnabled
-                                        ) {
+                                        if (cropInteraction && frame) {
+                                            handleCropPointerMove(
+                                                event.clientX,
+                                                event.clientY,
+                                                frame.getBoundingClientRect(),
+                                            );
+                                        } else if (blurInteraction && frame) {
                                             const bounds =
                                                 frame.getBoundingClientRect();
                                             if (
@@ -1040,143 +2262,81 @@ export function ThumbnailStudioPanel({
                                         }
                                         setTextDragState(null);
                                         setBlurInteraction(null);
+                                        setCropInteraction(null);
                                     }}
                                     onPointerLeave={() => {
                                         setTextDragState(null);
                                         setBlurInteraction(null);
+                                        setCropInteraction(null);
                                     }}
                                 >
-                                    <div
-                                        className={cn(
-                                            "absolute inset-0 bg-gradient-to-br",
-                                            selectedThumbnail?.previewGradient ??
-                                                "from-slate-600/70 via-slate-500/35 to-zinc-900/70",
-                                        )}
-                                    />
-                                    {blurEnabled
-                                        ? blurRegions.map((region) => (
-                                              <div
-                                                  key={region.id}
-                                                  role="button"
-                                                  tabIndex={0}
-                                                  onPointerDown={(event) =>
-                                                      startBlurInteraction(
-                                                          event,
-                                                          region,
-                                                          "move",
-                                                      )
-                                                  }
-                                                  onKeyDown={(event) => {
-                                                      const step = 1;
-                                                      if (
-                                                          event.key ===
-                                                          "ArrowLeft"
-                                                      ) {
-                                                          setActiveBlurRegionId(
-                                                              region.id,
-                                                          );
-                                                          updateActiveBlurRegion(
-                                                              {
-                                                                  x:
-                                                                      region.x -
-                                                                      step,
-                                                              },
-                                                          );
-                                                      }
-                                                      if (
-                                                          event.key ===
-                                                          "ArrowRight"
-                                                      ) {
-                                                          setActiveBlurRegionId(
-                                                              region.id,
-                                                          );
-                                                          updateActiveBlurRegion(
-                                                              {
-                                                                  x:
-                                                                      region.x +
-                                                                      step,
-                                                              },
-                                                          );
-                                                      }
-                                                      if (
-                                                          event.key ===
-                                                          "ArrowUp"
-                                                      ) {
-                                                          setActiveBlurRegionId(
-                                                              region.id,
-                                                          );
-                                                          updateActiveBlurRegion(
-                                                              {
-                                                                  y:
-                                                                      region.y -
-                                                                      step,
-                                                              },
-                                                          );
-                                                      }
-                                                      if (
-                                                          event.key ===
-                                                          "ArrowDown"
-                                                      ) {
-                                                          setActiveBlurRegionId(
-                                                              region.id,
-                                                          );
-                                                          updateActiveBlurRegion(
-                                                              {
-                                                                  y:
-                                                                      region.y +
-                                                                      step,
-                                                              },
-                                                          );
-                                                      }
-                                                  }}
-                                                  className={cn(
-                                                      "absolute border border-main bg-black/40 cursor-move",
-                                                  )}
-                                                  style={{
-                                                      left: `${region.x}%`,
-                                                      top: `${region.y}%`,
-                                                      width: `${region.width}%`,
-                                                      height: `${region.height}%`,
-                                                      backdropFilter: `blur(${Math.max(
-                                                          2,
-                                                          Math.round(
-                                                              region.strength /
-                                                                  3,
-                                                          ),
-                                                      )}px)`,
-                                                  }}
-                                              >
-                                                  {activeBlurRegionId ===
-                                                  region.id
-                                                      ? BLUR_RESIZE_HANDLES.map(
-                                                            (handle) => (
-                                                                <div
-                                                                    key={
-                                                                        handle.mode
-                                                                    }
-                                                                    role="button"
-                                                                    tabIndex={0}
-                                                                    aria-label={`Resize blur region ${handle.mode}`}
-                                                                    onPointerDown={(
-                                                                        event,
-                                                                    ) =>
-                                                                        startBlurInteraction(
-                                                                            event,
-                                                                            region,
-                                                                            handle.mode,
-                                                                        )
-                                                                    }
-                                                                    className={cn(
-                                                                        "absolute z-10 bg-transparent",
-                                                                        handle.className,
-                                                                    )}
-                                                                />
-                                                            ),
-                                                        )
-                                                      : null}
-                                              </div>
-                                          ))
-                                        : null}
+                                    {selectedThumbnailPreviewUrl ? (
+                                        <img
+                                            src={selectedThumbnailPreviewUrl}
+                                            alt={
+                                                selectedThumbnail?.metadata
+                                                    ?.title ??
+                                                "Selected thumbnail"
+                                            }
+                                            className="absolute inset-0 h-full w-full object-cover"
+                                        />
+                                    ) : (
+                                        <div className="absolute inset-0 bg-gradient-to-br from-slate-600/70 via-slate-500/35 to-zinc-900/70" />
+                                    )}
+                                    {blurRegions.map((region) => (
+                                        <div
+                                            key={region.id}
+                                            role="button"
+                                            tabIndex={0}
+                                            onPointerDown={(event) =>
+                                                startBlurInteraction(
+                                                    event,
+                                                    region,
+                                                    "move",
+                                                )
+                                            }
+                                            className="absolute border border-main bg-black/40 cursor-move"
+                                            style={{
+                                                left: `${region.x}%`,
+                                                top: `${region.y}%`,
+                                                width: `${region.width}%`,
+                                                height: `${region.height}%`,
+                                                backdropFilter: `blur(${Math.max(
+                                                    2,
+                                                    Math.round(
+                                                        region.strength / 3,
+                                                    ),
+                                                )}px)`,
+                                            }}
+                                        >
+                                            {activeBlurRegionId === region.id
+                                                ? BLUR_RESIZE_HANDLES.map(
+                                                      (handle) => (
+                                                          <div
+                                                              key={handle.mode}
+                                                              role="button"
+                                                              tabIndex={0}
+                                                              aria-label={`Resize blur region ${handle.mode}`}
+                                                              onPointerDown={(
+                                                                  event,
+                                                              ) =>
+                                                                  startBlurInteraction(
+                                                                      event,
+                                                                      region,
+                                                                      handle.mode,
+                                                                  )
+                                                              }
+                                                              className={cn(
+                                                                  "absolute z-10 bg-transparent",
+                                                                  handle.className,
+                                                              )}
+                                                          />
+                                                      ),
+                                                  )
+                                                : null}
+                                        </div>
+                                    ))}
+
                                     {textOverlays.map((overlay, index) => (
                                         <div
                                             key={overlay.id}
@@ -1192,7 +2352,7 @@ export function ThumbnailStudioPanel({
                                                     "0 2px 14px rgba(0, 0, 0, 0.35)",
                                             }}
                                             className={cn(
-                                                "absolute -translate-x-1/2 -translate-y-1/2 text-center uppercase tracking-wide",
+                                                "absolute -translate-x-1/2 -translate-y-1/2 text-center tracking-wide",
                                                 activeTextOverlayId ===
                                                     overlay.id
                                                     ? "ring-1 ring-accent/70"
@@ -1259,9 +2419,8 @@ export function ThumbnailStudioPanel({
                                                         if (
                                                             bounds.width <= 0 ||
                                                             bounds.height <= 0
-                                                        ) {
+                                                        )
                                                             return;
-                                                        }
                                                         const pointerXPercent =
                                                             ((event.clientX -
                                                                 bounds.left) /
@@ -1288,76 +2447,9 @@ export function ThumbnailStudioPanel({
                                                             moved: false,
                                                         });
                                                     }}
-                                                    onKeyDown={(event) => {
-                                                        const step = 1;
-                                                        if (
-                                                            activeTextOverlayId !==
-                                                            overlay.id
-                                                        ) {
-                                                            return;
-                                                        }
-                                                        if (
-                                                            event.key ===
-                                                            "Enter"
-                                                        ) {
-                                                            setEditingTextOverlayId(
-                                                                overlay.id,
-                                                            );
-                                                            return;
-                                                        }
-                                                        if (
-                                                            event.key ===
-                                                            "ArrowLeft"
-                                                        ) {
-                                                            updateActiveTextOverlay(
-                                                                {
-                                                                    x:
-                                                                        overlay.x -
-                                                                        step,
-                                                                },
-                                                            );
-                                                        }
-                                                        if (
-                                                            event.key ===
-                                                            "ArrowRight"
-                                                        ) {
-                                                            updateActiveTextOverlay(
-                                                                {
-                                                                    x:
-                                                                        overlay.x +
-                                                                        step,
-                                                                },
-                                                            );
-                                                        }
-                                                        if (
-                                                            event.key ===
-                                                            "ArrowUp"
-                                                        ) {
-                                                            updateActiveTextOverlay(
-                                                                {
-                                                                    y:
-                                                                        overlay.y -
-                                                                        step,
-                                                                },
-                                                            );
-                                                        }
-                                                        if (
-                                                            event.key ===
-                                                            "ArrowDown"
-                                                        ) {
-                                                            updateActiveTextOverlay(
-                                                                {
-                                                                    y:
-                                                                        overlay.y +
-                                                                        step,
-                                                                },
-                                                            );
-                                                        }
-                                                    }}
                                                     className={cn(
                                                         "cursor-grab whitespace-pre",
-                                                        textDragState
-                                                            ?.overlayId ===
+                                                        textDragState?.overlayId ===
                                                             overlay.id
                                                             ? "cursor-grabbing"
                                                             : "cursor-grab",
@@ -1369,6 +2461,85 @@ export function ThumbnailStudioPanel({
                                             )}
                                         </div>
                                     ))}
+                                    {selectedThumbnailPreviewUrl &&
+                                    cropPreset !== "none" ? (
+                                        <div
+                                            aria-label="Crop selection"
+                                            className="pointer-events-none absolute z-30 border-2 border-emerald-400"
+                                            style={{
+                                                left: `${cropSelection.x}%`,
+                                                top: `${cropSelection.y}%`,
+                                                width: `${cropSelection.width}%`,
+                                                height: `${cropSelection.height}%`,
+                                            }}
+                                        >
+                                            <button
+                                                type="button"
+                                                aria-label="Move crop selection top edge"
+                                                onPointerDown={(event) =>
+                                                    startCropInteraction(
+                                                        event,
+                                                        "move",
+                                                    )
+                                                }
+                                                className="pointer-events-auto absolute left-0 top-0 h-3 w-full -translate-y-1/2 cursor-move bg-transparent"
+                                            />
+                                            <button
+                                                type="button"
+                                                aria-label="Move crop selection bottom edge"
+                                                onPointerDown={(event) =>
+                                                    startCropInteraction(
+                                                        event,
+                                                        "move",
+                                                    )
+                                                }
+                                                className="pointer-events-auto absolute bottom-0 left-0 h-3 w-full translate-y-1/2 cursor-move bg-transparent"
+                                            />
+                                            <button
+                                                type="button"
+                                                aria-label="Move crop selection left edge"
+                                                onPointerDown={(event) =>
+                                                    startCropInteraction(
+                                                        event,
+                                                        "move",
+                                                    )
+                                                }
+                                                className="pointer-events-auto absolute left-0 top-0 h-full w-3 -translate-x-1/2 cursor-move bg-transparent"
+                                            />
+                                            <button
+                                                type="button"
+                                                aria-label="Move crop selection right edge"
+                                                onPointerDown={(event) =>
+                                                    startCropInteraction(
+                                                        event,
+                                                        "move",
+                                                    )
+                                                }
+                                                className="pointer-events-auto absolute right-0 top-0 h-full w-3 translate-x-1/2 cursor-move bg-transparent"
+                                            />
+                                            {CROP_RESIZE_HANDLES.map(
+                                                (handle) => (
+                                                    <button
+                                                        key={handle.mode}
+                                                        type="button"
+                                                        aria-label={`Resize crop selection ${handle.mode}`}
+                                                        onPointerDown={(
+                                                            event,
+                                                        ) =>
+                                                            startCropInteraction(
+                                                                event,
+                                                                handle.mode,
+                                                            )
+                                                        }
+                                                        className={cn(
+                                                            "pointer-events-auto absolute z-10 bg-transparent",
+                                                            handle.className,
+                                                        )}
+                                                    />
+                                                ),
+                                            )}
+                                        </div>
+                                    ) : null}
                                 </div>
                             </div>
 
@@ -1378,9 +2549,9 @@ export function ThumbnailStudioPanel({
                                         Thumbnail name
                                     </span>
                                     <input
-                                        value={selectedThumbnail?.name ?? ""}
+                                        value={thumbnailName}
                                         onChange={(event) =>
-                                            handleRename(
+                                            setThumbnailName(
                                                 event.currentTarget.value,
                                             )
                                         }
@@ -1388,6 +2559,39 @@ export function ThumbnailStudioPanel({
                                         className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main"
                                     />
                                 </label>
+
+                                <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                                    <label className="block">
+                                        <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                            Folder
+                                        </span>
+                                        <input
+                                            value={folderName}
+                                            onChange={(event) =>
+                                                setFolderName(
+                                                    event.currentTarget.value,
+                                                )
+                                            }
+                                            placeholder="thumbnails/movies"
+                                            className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main"
+                                        />
+                                    </label>
+                                    <label className="block">
+                                        <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                            Tags (comma separated)
+                                        </span>
+                                        <input
+                                            value={tagsInput}
+                                            onChange={(event) =>
+                                                setTagsInput(
+                                                    event.currentTarget.value,
+                                                )
+                                            }
+                                            placeholder="movie, ep1, action"
+                                            className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main"
+                                        />
+                                    </label>
+                                </div>
 
                                 <div className="mt-3 grid gap-2 sm:grid-cols-2">
                                     <label className="flex items-center gap-2 border border-main bg-main px-3 py-2">
@@ -1435,10 +2639,15 @@ export function ThumbnailStudioPanel({
                                 <div className="mt-3 grid grid-cols-2 gap-2 lg:grid-cols-4">
                                     <button
                                         type="button"
-                                        className="inline-flex items-center justify-center gap-1 border border-accent/40 bg-accent/15 px-2 py-1.5 text-[10px] font-semibold text-accent hover:bg-accent/25"
+                                        onClick={handleSave}
+                                        disabled={
+                                            isSaving ||
+                                            !selectedThumbnailPreviewUrl
+                                        }
+                                        className="inline-flex items-center justify-center gap-1 border border-accent/40 bg-accent/15 px-2 py-1.5 text-[10px] font-semibold text-accent hover:bg-accent/25 disabled:cursor-not-allowed disabled:opacity-60"
                                     >
                                         <Sparkles className="h-3 w-3" />
-                                        Save
+                                        {isSaving ? "Saving..." : "Save"}
                                     </button>
                                     <button
                                         type="button"
@@ -1735,57 +2944,46 @@ export function ThumbnailStudioPanel({
                                     canvas.
                                 </p>
                             </div>
+
                             <div className="space-y-2 border border-main bg-secondary/20 p-3">
                                 <div className="flex items-center gap-2">
                                     <Scissors className="h-4 w-4 text-muted" />
                                     <p className="text-[12px] font-semibold text-main">
-                                        Crop + Blur
+                                        Crop
                                     </p>
                                 </div>
-                                <label className="block">
-                                    <span className="mb-1 block text-[10px] font-semibold text-muted">
-                                        Crop ratio
-                                    </span>
-                                    <select
-                                        value={cropPreset}
-                                        onChange={(event) =>
-                                            setCropPreset(
-                                                event.currentTarget
-                                                    .value as ThumbnailCropPreset,
-                                            )
-                                        }
-                                        className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main"
-                                    >
-                                        <option value="16:9">
-                                            16:9 YouTube
-                                        </option>
-                                        <option value="9:16">
-                                            9:16 Shorts
-                                        </option>
-                                        <option value="1:1">1:1 Square</option>
-                                        <option value="4:5">4:5 Feed</option>
-                                    </select>
-                                </label>
-                                <label className="flex items-center justify-between gap-2 border border-main bg-main px-3 py-2">
-                                    <span>
-                                        <span className="block text-[11px] font-semibold text-main">
-                                            Region blur
-                                        </span>
-                                        <span className="block text-[10px] text-muted">
-                                            Blur logos/faces by region.
-                                        </span>
-                                    </span>
-                                    <input
-                                        type="checkbox"
-                                        checked={blurEnabled}
-                                        onChange={(event) =>
-                                            setBlurEnabled(
-                                                event.currentTarget.checked,
-                                            )
-                                        }
-                                        className="h-4 w-4 accent-[var(--color-accent)]"
-                                    />
-                                </label>
+                                <div>
+                                    <div className="grid grid-cols-2 gap-1.5">
+                                        {PRESET_CROP_OPTIONS.map((option) => (
+                                            <button
+                                                key={option.value}
+                                                type="button"
+                                                onClick={() =>
+                                                    applyCropPreset(
+                                                        option.value,
+                                                    )
+                                                }
+                                                className={cn(
+                                                    "border px-2 py-1.5 text-[10px] font-semibold",
+                                                    cropPreset === option.value
+                                                        ? "border-emerald-500 bg-emerald-500/10 text-emerald-700"
+                                                        : "border-main bg-main text-main hover:bg-secondary/70",
+                                                )}
+                                            >
+                                                {option.label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="space-y-2 border border-main bg-secondary/20 p-3">
+                                <div className="flex items-center gap-2">
+                                    <Scissors className="h-4 w-4 text-muted" />
+                                    <p className="text-[12px] font-semibold text-main">
+                                        Blur
+                                    </p>
+                                </div>
                                 <button
                                     type="button"
                                     onClick={addBlurRegion}
@@ -1845,31 +3043,27 @@ export function ThumbnailStudioPanel({
                                     )}
                                 </div>
                                 {activeBlurRegion ? (
-                                    <>
-                                        <label className="block">
-                                            <span className="mb-1 block text-[10px] font-semibold text-muted">
-                                                Blur strength:{" "}
-                                                {activeBlurRegion.strength}
-                                            </span>
-                                            <input
-                                                type="range"
-                                                min={0}
-                                                max={100}
-                                                value={
-                                                    activeBlurRegion.strength
-                                                }
-                                                onChange={(event) =>
-                                                    updateActiveBlurRegion({
-                                                        strength: Number(
-                                                            event.currentTarget
-                                                                .value,
-                                                        ),
-                                                    })
-                                                }
-                                                className="w-full accent-[var(--color-accent)]"
-                                            />
-                                        </label>
-                                    </>
+                                    <label className="block">
+                                        <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                            Blur strength:{" "}
+                                            {activeBlurRegion.strength}
+                                        </span>
+                                        <input
+                                            type="range"
+                                            min={0}
+                                            max={100}
+                                            value={activeBlurRegion.strength}
+                                            onChange={(event) =>
+                                                updateActiveBlurRegion({
+                                                    strength: Number(
+                                                        event.currentTarget
+                                                            .value,
+                                                    ),
+                                                })
+                                            }
+                                            className="w-full accent-[var(--color-accent)]"
+                                        />
+                                    </label>
                                 ) : (
                                     <p className="text-[10px] text-muted">
                                         Select a blur region to edit.

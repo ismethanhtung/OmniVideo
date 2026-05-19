@@ -1,5 +1,32 @@
 # OmniVideo Changelog
 
+## FAST-VIDEO-007 - Make Thumbnail Studio Production-Ready with Storage Persistence
+
+- Bumped app version from `0.10.1` to `0.10.4` as a patch release for Thumbnail Studio persistence and layout/UX refinements.
+- Added dedicated thumbnail storage APIs:
+  - `GET/POST /api/storage/thumbnail-assets`
+  - `PATCH/DELETE /api/storage/thumbnail-assets/[assetId]`
+  - `GET /api/storage/thumbnail-assets/[assetId]/download`
+- Added thumbnail repository support for `assetType=image` in `assets` collection, including lifecycle-aware tags and storage-backed thumbnail metadata.
+- Thumbnail Studio now loads real thumbnail library data from storage instead of local seed gradients.
+- Added storage account selection and real import flows:
+  - drag/drop image upload to storage;
+  - URL image import (server-side fetch then upload).
+- Save action now performs real client-side render (crop preset + blur regions + text overlays) and persists rendered thumbnails to storage.
+- Implemented save modes:
+  - `Create variant` (default): creates a new processed thumbnail;
+  - `Overwrite current`: uploads replacement then deletes old thumbnail asset + remote file.
+- Added metadata controls for folder/tags in Thumbnail Studio and kept duplicate/reset/delete operations connected to persisted assets.
+- Added new route tests for thumbnail-assets endpoints and updated Thumbnail Studio source-level UI contract tests.
+- Removed `has output` lifecycle badge from Thumbnail Library cards to keep thumbnail tags focused.
+- Aligned Thumbnail Studio page shell with Workspace-style viewport framing: fixed-height panel inside equal 4-side page padding, with internal scroll regions instead of drifting page height gaps.
+- Reworked crop editing from a passive preset select into an interactive crop box: preset buttons (`16:9`, `9:16`, `1:1`, `4:5`, `Custom`) now show a green crop rectangle on the thumbnail preview, support drag/resize during the edit session, and save by cutting the rendered image to that crop.
+- Split the editor control surface into explicit `Crop ratio` and `Blur` sections so crop selection and blur-region creation are visually separate.
+- Added `None` as the default crop mode so opening/selecting a thumbnail shows no crop box until the user chooses a crop preset or custom crop.
+- Split `Text`, `Crop`, and `Blur` into three separate editor panels on the right side of Thumbnail Studio.
+- Stopped persisting transient crop/blur/text editor setup onto thumbnail assets; selecting a saved output thumbnail now starts with clean tools instead of inheriting the source image's edit box/layers.
+- Verification (FAST-VIDEO-007): `npm run test -- --run src/app/api/storage/thumbnail-assets/route.test.ts src/app/api/storage/thumbnail-assets/[assetId]/route.test.ts src/app/api/storage/thumbnail-assets/[assetId]/download/route.test.ts src/features/thumbnails/thumbnail-studio-panel.test.ts src/components/layout/navigation.test.ts` pass (5 files / 18 tests); latest crop/setup follow-up `npm run test -- --run src/features/thumbnails/thumbnail-studio-panel.test.ts src/app/api/storage/thumbnail-assets/route.test.ts` pass (2 files / 8 tests); `npm run build` pass with existing ESLint circular-config warning; `npm run guard:version` pass.
+
 ## FAST-AUDIO-057 - Remove Redundant Audio Transcript 2 Test Page
 
 - Removed `Audio Transcript 2 - Test` from leftbar navigation after test completion.

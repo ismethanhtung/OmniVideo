@@ -13,7 +13,7 @@ import {
     Send,
     BookOpen,
     Clapperboard,
-    ImagePlus,
+    Image,
     ListVideo,
     Mic2,
     RadioTower,
@@ -112,7 +112,7 @@ export const LEFTBAR_NAV: LeftbarNavGroup[] = [
             },
             {
                 id: "thumbnailStudio",
-                icon: ImagePlus,
+                icon: Image,
                 label: "Thumbnail Studio",
                 description:
                     "Quản lý thư viện thumbnail, nhân bản biến thể và chuẩn bị ảnh cover cho YouTube publish.",
