@@ -124,6 +124,7 @@ export type PublishRecordCreateInput = {
   assetId: string;
   socialAccountId: string;
   publishType: SocialPublishType;
+  thumbnailAssetId?: string;
   facebookPageId?: string;
   publishNow?: boolean;
   privacyStatus?: YouTubePrivacyStatus;
@@ -137,6 +138,7 @@ export type ValidatedPublishRecordInput = {
   assetId: string;
   socialAccountId: string;
   publishType: SocialPublishType;
+  thumbnailAssetId: string | null;
   facebookPageId: string | null;
   publishMode: PublishMode;
   privacyStatus: YouTubePrivacyStatus;
@@ -151,6 +153,7 @@ export type PublishRecordDocument = {
   socialAccountId: import("mongodb").ObjectId;
   platform: SocialPlatform;
   publishType: SocialPublishType;
+  thumbnailAssetId: import("mongodb").ObjectId | null;
   facebookPageId: string | null;
   publishMode: PublishMode;
   privacyStatus: YouTubePrivacyStatus;

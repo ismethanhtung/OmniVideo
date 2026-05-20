@@ -1080,6 +1080,7 @@ export function ThumbnailStudioPanel({
     );
 
     const previewFrameRef = useRef<HTMLDivElement | null>(null);
+    const uploadFileInputRef = useRef<HTMLInputElement | null>(null);
 
     const fetchThumbnails = async (targetAssetId?: string) => {
         setIsLoading(true);
@@ -2095,7 +2096,27 @@ export function ThumbnailStudioPanel({
                             }}
                             className="mt-3 border border-dashed border-main bg-main px-3 py-4 text-center text-[11px] text-muted"
                         >
-                            Drag image into this box to import
+                            <p>Drag image into this box to import</p>
+                            <button
+                                type="button"
+                                onClick={() =>
+                                    uploadFileInputRef.current?.click()
+                                }
+                                className="mt-2 border border-main bg-secondary px-2 py-1 text-[10px] font-semibold text-main hover:bg-secondary/75"
+                            >
+                                Upload
+                            </button>
+                            <input
+                                ref={uploadFileInputRef}
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                onChange={(event) =>
+                                    handleDropUpload(
+                                        event.currentTarget.files?.[0] ?? null,
+                                    )
+                                }
+                            />
                         </div>
                         <label className="mt-3 block">
                             <span className="mb-1 block text-[10px] font-semibold text-muted">

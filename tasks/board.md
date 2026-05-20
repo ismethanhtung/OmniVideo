@@ -26,8 +26,10 @@
 - `FAST-VIDEO-008` - Fix Thumbnail Studio blur and text preview fidelity.
 - `FAST-VIDEO-007` - Make Thumbnail Studio production-ready with storage persistence.
 - `FAST-AUDIO-057` - Remove redundant Audio Transcript 2 test page.
+- `FAST-AUDIO-058` - Lower default original audio mix volume to 0.10.
 - `FAST-VIDEO-006` - Compact Thumbnail Studio labels and multi-layer blur/text summaries.
 - `FAST-WORKSPACE-031` - Add Cleanup Assets Workspace node.
+- `FAST-WORKSPACE-032` - Add thumbnail support to Workspace Publish Social node.
 - `FAST-STORAGE-007` - Delete Drive files from Storage Library.
 - `FAST-OPS-006` - Notify when Background Progress tasks finish.
 - `FAST-WORKSPACE-030` - Reframe default Workspace canvas view.

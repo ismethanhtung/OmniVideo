@@ -91,6 +91,9 @@
 - Quick style preset clicks now always create new text layers instead of mutating the currently selected layer.
 - New quick style layers now use the preset label as text content (for example `Red glow Montserrat`) instead of generic `NEW TEXT`.
 - Text color and Glow color now use native color picker inputs aligned with Stroke color.
+- Quick style preset labels and quick-text preset labels now render with configured glow colors to better reflect final visual intent.
+- Deleting a selected thumbnail now requires an explicit confirmation step before calling delete API.
+- Drag-and-drop import box now includes an `Upload` button that opens file picker and routes through the same image import flow.
 - Reworked the weak shadow controls into an explicit `Glow behind text` toggle with `Glow color`, `Glow blur`, `Glow spread`, and `Glow drop`.
 - Canvas export now draws the glow as a colored outer stroke/halo behind the black stroke and fill, matching the yellow/red reference thumbnail style more closely than a normal offset shadow.
 - Preview now uses a separate glow text layer behind the main text so the on-canvas sample better matches the saved image.
@@ -115,4 +118,4 @@
 - Test results summary:
   - Thumbnail Studio source-level regression test passes (1 file / 5 tests).
   - `npm run build` passes; existing ESLint circular-config warning remains unchanged from repo baseline.
-  - `npm run guard:version` passes after patch bump `0.10.5 -> 0.10.6`.
+  - `npm run guard:version` passes after patch bump `0.10.6 -> 0.10.7`.

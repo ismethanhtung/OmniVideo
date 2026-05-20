@@ -1,8 +1,36 @@
 # OmniVideo Changelog
 
+## FAST-AUDIO-058 - Lower Default Original Audio Mix Volume to 0.10
+
+- Bumped app version from `0.10.7` to `0.10.8` as a patch release for dubbing mix balance polish.
+- Lowered video dubbing runtime fallback `originalAudioVolume` from `0.18` to `0.10`.
+- Lowered Workspace audio dubbing defaults for `originalAudioVolume` from `0.18` to `0.10` in node template defaults and sample graphs.
+- Updated Workspace audio dubbing runtime form default and inspector placeholder to `0.1`.
+- Added regression coverage to assert invalid original-volume input falls back to `0.100` in FFmpeg mix args.
+- Verification (FAST-AUDIO-058):
+  - `npm run test -- --run src/lib/multilingual-audio/video-dubbing.test.ts src/app/api/audio/video-dubbing/route.test.ts` pass.
+  - `npm run guard:version` pass.
+
+## FAST-WORKSPACE-032 - Add Thumbnail Support to Workspace Publish Social Node
+
+- Workspace `Publish Social` now loads thumbnail assets from `/api/storage/thumbnail-assets` and exposes a visual `Thumbnail Library asset` picker (search + inline image preview) in node runtime config.
+- Workspace flow runtime now forwards `thumbnailAssetId` from `social.publish` node config into `POST /api/social/publish-records`.
+- Social publish create/validation contracts now accept and persist `thumbnailAssetId`:
+  - Added `thumbnailAssetId` to publish input/document types.
+  - Validation enforces Mongo ObjectId format when provided.
+  - Publish record query projection/API serialization now includes `thumbnailAssetId`.
+- YouTube publish-now now applies selected thumbnail after successful video upload by calling `thumbnails.set`.
+- If thumbnail asset is missing/invalid/non-image/empty, publish fails with explicit thumbnail-related error code/detail.
+- Workspace flow setup now warns early when selected thumbnail is no longer available.
+- Verification (FAST-WORKSPACE-032):
+  - `npm run test -- --run src/lib/workspace/workspace-flow-setup.test.ts src/lib/workspace/workspace-graph.test.ts src/features/workspace/workspace-canvas-panel.test.ts` pass (3 files / 69 tests).
+  - `npm run test -- --run src/lib/social/validation.test.ts src/lib/social/youtube-upload.test.ts src/lib/social/facebook-upload.test.ts src/lib/social/tiktok-upload.test.ts src/app/api/social/publish-records/route.test.ts` pass (5 files / 29 tests).
+  - `npm run build` pass (existing ESLint circular-config warning remains).
+  - `npm run guard:version` pass.
+
 ## FAST-VIDEO-008 - Fix Thumbnail Studio Blur and Text Preview Fidelity
 
-- Bumped app version from `0.10.5` to `0.10.6` as a patch release for Thumbnail Studio preview fidelity fixes.
+- Bumped app version from `0.10.6` to `0.10.7` as a patch release for Thumbnail Studio preset and import UX improvements.
 - Fixed blur strength `0` so it maps to `0px` and export skips blur drawing for zero-strength regions.
 - Aligned preview and export blur strength conversion through one shared `getBlurPixelsFromStrength` helper.
 - Removed the dark blur preview overlay that made regions look darker instead of showing the real blur effect.
@@ -14,6 +42,9 @@
 - Quick style preset clicks now always create new text layers instead of mutating the selected layer.
 - New quick style layers now use the preset label as text content instead of generic `NEW TEXT`.
 - Text color and Glow color now use native color picker inputs aligned with Stroke color.
+- Quick style preset labels and quick-text preset labels now render with their configured glow colors so preview labels visually match intended output accents.
+- Deleting a selected thumbnail now requires explicit user confirmation before the delete request is sent.
+- Drag-and-drop import box now also includes an `Upload` button that opens file picker and reuses the same import flow.
 - Reworked the colored text effect into an explicit `Glow behind text` toggle with `Glow color`, `Glow blur`, `Glow spread`, and `Glow drop` controls.
 - Canvas export now renders glow as a colored outer halo stroke behind the main black stroke and fill, closer to the yellow/red reference thumbnail style than a normal offset shadow.
 - Preview glow now uses a separate background text layer with a colored halo stroke so it more closely matches the canvas save output.

@@ -91,12 +91,14 @@ describe("social validation", () => {
       assetId: "507f1f77bcf86cd799439011",
       socialAccountId: "507f1f77bcf86cd799439012",
       publishType: "tiktok_video",
+      thumbnailAssetId: "507f1f77bcf86cd799439013",
       title: "Demo",
       hashtags: ["one", "two"],
       scheduledAt: "2026-04-26T12:00:00.000Z",
     });
 
     expect(result.publishType).toBe("tiktok_video");
+    expect(result.thumbnailAssetId).toBe("507f1f77bcf86cd799439013");
     expect(result.publishMode).toBe("schedule");
     expect(result.scheduledAt?.toISOString()).toBe("2026-04-26T12:00:00.000Z");
   });
@@ -145,6 +147,17 @@ describe("social validation", () => {
         publishType: "tiktok_video",
       }),
     ).toThrow("assetId must be a valid Mongo ObjectId");
+  });
+
+  it("rejects invalid thumbnail asset id when provided", () => {
+    expect(() =>
+      validatePublishRecordCreateInput({
+        assetId: "507f1f77bcf86cd799439011",
+        socialAccountId: "507f1f77bcf86cd799439012",
+        publishType: "youtube_video",
+        thumbnailAssetId: "bad-thumb-id",
+      }),
+    ).toThrow("thumbnailAssetId must be a valid Mongo ObjectId");
   });
 
   it("maps every capability publish type to a platform", () => {

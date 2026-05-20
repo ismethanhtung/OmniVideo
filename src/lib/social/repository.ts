@@ -342,6 +342,9 @@ export async function createPublishRecord({
     socialAccountId: account._id,
     platform,
     publishType: input.publishType,
+    thumbnailAssetId: input.thumbnailAssetId
+      ? new ObjectId(input.thumbnailAssetId)
+      : null,
     facebookPageId: input.facebookPageId,
     publishMode: input.publishMode,
     privacyStatus: input.privacyStatus,
@@ -603,6 +606,7 @@ function buildPublishRecordLookupStages() {
         socialAccountId: 1,
         platform: 1,
         publishType: 1,
+        thumbnailAssetId: 1,
         facebookPageId: 1,
         publishMode: 1,
         privacyStatus: 1,

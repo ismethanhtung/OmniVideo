@@ -90,6 +90,23 @@ describe("workspace graph helpers", () => {
         });
     });
 
+    it("defines optional thumbnail config on Publish Social template", () => {
+        const template = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "social.publish",
+        );
+
+        expect(template).toBeDefined();
+        expect(template?.configFields).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    key: "thumbnailAssetId",
+                    type: "text",
+                    required: false,
+                }),
+            ]),
+        );
+    });
+
     it("plans cleanup after a successful publish path with producer context", () => {
         const assetTemplate = WORKSPACE_NODE_TEMPLATES.find(
             (entry) => entry.nodeType === "source.asset",

@@ -100,6 +100,15 @@ describe("WorkspaceCanvasPanel canvas interactions", () => {
         expect(source).toContain(
             "Nếu để trống Title/Caption/Hashtags, Publish sẽ tự lấy",
         );
+        expect(source).toContain("WorkspaceThumbnailAssetPicker");
+        expect(source).toContain("Thumbnail Library asset");
+        expect(source).toContain("Select existing thumbnail");
+        expect(source).toContain(
+            "/api/storage/thumbnail-assets/${asset._id}/download?disposition=inline",
+        );
+        expect(source).toContain("matchesThumbnailAssetSearch");
+        expect(source).toContain("thumbnailAssetId");
+        expect(source).toContain("/api/storage/thumbnail-assets?limit=100");
         expect(source).toContain("upstreamMetadataNodeId");
         expect(source).toContain("fallbackMetadata");
         expect(source).toContain("<WorkspaceFlowSetupModal");

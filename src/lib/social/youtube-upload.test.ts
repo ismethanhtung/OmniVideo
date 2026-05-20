@@ -48,6 +48,7 @@ function makeRecord(): PublishRecordDocument {
     socialAccountId: new ObjectId("507f1f77bcf86cd799439012"),
     platform: "youtube",
     publishType: "youtube_video",
+    thumbnailAssetId: null,
     facebookPageId: null,
     publishMode: "publish_now",
     privacyStatus: "private",
@@ -191,6 +192,77 @@ describe("youtube upload", () => {
     expect(result.privacyStatus).toBe("public");
     expect(metadata.status.privacyStatus).toBe("public");
     expect(metadata.snippet.description).toContain("#Shorts");
+  });
+
+  it("uploads a configured thumbnail after video upload", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(
+        new Response(null, {
+          status: 200,
+          headers: {
+            location: "https://upload.youtube.test/session-thumb",
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        Response.json({
+          id: "yt-video-thumb-1",
+          snippet: { title: "Demo upload" },
+          status: { privacyStatus: "private" },
+        }),
+      )
+      .mockResolvedValueOnce(Response.json({ kind: "youtube#thumbnailSetResponse" }));
+    vi.stubGlobal("fetch", fetchMock);
+    mockedResolveAssetDownload
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        body: new Blob(["thumb-bytes"], { type: "image/png" }).stream(),
+        headers: new Headers({ "content-type": "image/png" }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        body: new Blob(["video-bytes"], { type: "video/mp4" }).stream(),
+        headers: new Headers({ "content-type": "video/mp4" }),
+      });
+
+    const db = {
+      collection: vi.fn().mockReturnValue({
+        findOne: vi.fn().mockResolvedValue({
+          _id: new ObjectId("507f1f77bcf86cd799439013"),
+          assetType: "image",
+          mimeType: "image/png",
+        }),
+      }),
+    } as never;
+
+    const result = await uploadVideoToYouTube({
+      db,
+      asset: {
+        _id: new ObjectId("507f1f77bcf86cd799439011"),
+        storageProvider: "drive",
+        mimeType: "video/mp4",
+      },
+      account: makeAccount(),
+      record: {
+        ...makeRecord(),
+        thumbnailAssetId: new ObjectId("507f1f77bcf86cd799439013"),
+      },
+    });
+
+    expect(result.platformPostId).toBe("yt-video-thumb-1");
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "https://www.googleapis.com/upload/youtube/v3/thumbnails/set?videoId=yt-video-thumb-1",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          authorization: "Bearer youtube-token",
+          "content-type": "image/png",
+        }),
+      }),
+    );
   });
 
   it("rejects YouTube Shorts upload when the video is horizontal", async () => {

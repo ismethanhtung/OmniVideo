@@ -57,6 +57,7 @@ function makeRecord(
     socialAccountId: new ObjectId("507f1f77bcf86cd799439012"),
     platform: "facebook",
     publishType,
+    thumbnailAssetId: null,
     facebookPageId: "page-1",
     publishMode: "publish_now",
     privacyStatus: "private",

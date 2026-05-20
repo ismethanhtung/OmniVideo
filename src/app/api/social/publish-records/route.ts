@@ -40,6 +40,8 @@ function serializeRecord(record: Record<string, unknown>) {
     assetId: record.assetId?.toString?.() ?? record.assetId,
     socialAccountId:
       record.socialAccountId?.toString?.() ?? record.socialAccountId,
+    thumbnailAssetId:
+      record.thumbnailAssetId?.toString?.() ?? record.thumbnailAssetId ?? null,
   };
 }
 

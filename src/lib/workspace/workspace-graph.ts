@@ -763,7 +763,7 @@ export const WORKSPACE_NODE_TEMPLATES: WorkspaceNodeTemplate[] = [
                 label: "Original audio volume",
                 type: "number",
                 required: true,
-                defaultValue: 0.18,
+                defaultValue: 0.1,
             },
             {
                 key: "voiceVolume",
@@ -959,7 +959,7 @@ export const WORKSPACE_NODE_TEMPLATES: WorkspaceNodeTemplate[] = [
     {
         nodeType: "edit.rotate",
         version: "0.1.0",
-        label: "Rotate Video (Soon)",
+        label: "Rotate Video",
         description: "Xoay video theo góc cấu hình để chuẩn hóa layout.",
         category: "processing",
         status: "planned",
@@ -1027,6 +1027,12 @@ export const WORKSPACE_NODE_TEMPLATES: WorkspaceNodeTemplate[] = [
                 label: "Social account",
                 type: "account",
                 required: true,
+            },
+            {
+                key: "thumbnailAssetId",
+                label: "Thumbnail asset",
+                type: "text",
+                required: false,
             },
             {
                 key: "publishMode",
@@ -2355,8 +2361,7 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
         });
     }
 
-    const publishSteps: Extract<WorkspaceFlowStep, { kind: "publish" }>[] =
-        [];
+    const publishSteps: Extract<WorkspaceFlowStep, { kind: "publish" }>[] = [];
     for (const publishNode of publishNodes) {
         const producer = findUpstreamProducer(graph, publishNode.id, producers);
         if (!producer) {
@@ -2775,7 +2780,7 @@ export function createUploadDubbingToSocialSampleGraph(): WorkspaceGraph {
                     language: "zh",
                     targetLanguage: "vi",
                     model: "cx/gpt-5.3-codex-low",
-                    originalAudioVolume: 0.18,
+                    originalAudioVolume: 0.1,
                     voiceVolume: 1,
                     ttsPreserveTimestampGaps: true,
                     ttsAlignmentMode: "strict",
@@ -2847,7 +2852,7 @@ export function createUploadVietnameseMaskPublishSampleGraph(): WorkspaceGraph {
                     language: "zh",
                     targetLanguage: "vi",
                     model: "cx/gpt-5.3-codex-low",
-                    originalAudioVolume: 0.18,
+                    originalAudioVolume: 0.1,
                     voiceVolume: 1,
                     ttsPreserveTimestampGaps: true,
                     ttsAlignmentMode: "strict",
@@ -2960,7 +2965,7 @@ export function createAssetPreprocessDubbingSampleGraph(): WorkspaceGraph {
                     language: "zh",
                     targetLanguage: "vi",
                     model: "cx/gpt-5.3-codex-low",
-                    originalAudioVolume: 0.18,
+                    originalAudioVolume: 0.1,
                     voiceVolume: 1,
                     ttsNoiseScale: 0.667,
                     ttsNoiseW: 0.8,
@@ -3035,7 +3040,7 @@ export function createAssetTranscriptFullProcessingSampleGraph(): WorkspaceGraph
                     language: "zh",
                     targetLanguage: "vi",
                     model: "cx/gpt-5.3-codex-low",
-                    originalAudioVolume: 0.18,
+                    originalAudioVolume: 0.1,
                     voiceVolume: 1,
                     ttsNoiseScale: 0.667,
                     ttsNoiseW: 0.8,

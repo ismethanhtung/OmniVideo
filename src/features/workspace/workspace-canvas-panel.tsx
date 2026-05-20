@@ -157,6 +157,18 @@ type WorkspaceAsset = {
     createdAt?: string;
 };
 
+type WorkspaceThumbnailAsset = {
+    _id: string;
+    providerAssetId?: string | null;
+    storageProvider?: string;
+    metadata?: {
+        title?: string | null;
+        folder?: string | null;
+        tags?: string[] | null;
+    };
+    createdAt?: string;
+};
+
 type WorkspacePublishType =
     | "facebook_reel"
     | "facebook_video"
@@ -1067,6 +1079,26 @@ function publishTypesForAccount(
     return [DEFAULT_PUBLISH_TYPE_BY_PLATFORM[account.platform]];
 }
 
+function matchesThumbnailAssetSearch(
+    asset: WorkspaceThumbnailAsset,
+    query: string,
+) {
+    const normalizedQuery = query.trim().toLowerCase();
+    if (!normalizedQuery) return true;
+    const haystack = [
+        asset.metadata?.title,
+        asset.metadata?.folder,
+        ...(asset.metadata?.tags ?? []),
+        asset.storageProvider,
+        asset.providerAssetId,
+        asset._id,
+    ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+    return haystack.includes(normalizedQuery);
+}
+
 export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
     const Icon = section.icon;
     const viewportRef = useRef<HTMLDivElement | null>(null);
@@ -1093,6 +1125,9 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
         Record<string, boolean>
     >({});
     const [storageAssets, setStorageAssets] = useState<WorkspaceAsset[]>([]);
+    const [thumbnailAssets, setThumbnailAssets] = useState<
+        WorkspaceThumbnailAsset[]
+    >([]);
     const [accountsError, setAccountsError] = useState<string | null>(null);
     const [facebookPagesByAccount, setFacebookPagesByAccount] = useState<
         Record<string, FacebookPageOption[]>
@@ -1180,13 +1215,22 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                 socialAccounts.map((account) => account._id),
             ),
             storageAssetIds: new Set(storageAssets.map((asset) => asset._id)),
+            thumbnailAssetIds: new Set(
+                thumbnailAssets.map((asset) => asset._id),
+            ),
             storageAssetMaskSetupIds: new Set(
                 storageAssets
                     .filter((asset) => Boolean(asset.metadata?.videoEditSetup))
                     .map((asset) => asset._id),
             ),
         }),
-        [runtimeFilesByNodeId, socialAccounts, storageAccounts, storageAssets],
+        [
+            runtimeFilesByNodeId,
+            socialAccounts,
+            storageAccounts,
+            storageAssets,
+            thumbnailAssets,
+        ],
     );
     const flowSetupIssuesByNodeId = useMemo(
         () =>
@@ -1354,22 +1398,26 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     storageResponse,
                     socialResponse,
                     assetsResponse,
+                    thumbnailAssetsResponse,
                     aiProvidersResponse,
                 ] = await Promise.all([
                     fetch("/api/storage/providers"),
                     fetch("/api/social/accounts"),
                     fetch("/api/storage/assets?limit=100"),
+                    fetch("/api/storage/thumbnail-assets?limit=100"),
                     fetch("/api/ai-providers"),
                 ]);
                 const [
                     storagePayload,
                     socialPayload,
                     assetsPayload,
+                    thumbnailAssetsPayload,
                     aiProvidersPayload,
                 ] = await Promise.all([
                     storageResponse.json(),
                     socialResponse.json(),
                     assetsResponse.json(),
+                    thumbnailAssetsResponse.json(),
                     aiProvidersResponse.json(),
                 ]);
 
@@ -1388,6 +1436,12 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                 if (!assetsPayload.ok) {
                     throw new Error(
                         assetsPayload.error ?? "Cannot load storage assets.",
+                    );
+                }
+                if (!thumbnailAssetsPayload.ok) {
+                    throw new Error(
+                        thumbnailAssetsPayload.error ??
+                            "Cannot load thumbnail assets.",
                     );
                 }
                 if (!aiProvidersPayload.ok) {
@@ -1421,6 +1475,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                 setSocialAccounts(connectedSocialAccounts);
                 setAiProviders(activeAiProviders);
                 setStorageAssets(assetsPayload.data ?? []);
+                setThumbnailAssets(thumbnailAssetsPayload.data ?? []);
                 setAccountsError(null);
             } catch (error) {
                 if (!isActive) return;
@@ -3077,7 +3132,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                             getNumberConfig(
                                 dubbingNode,
                                 "originalAudioVolume",
-                                0.18,
+                                0.1,
                             ),
                         ),
                     );
@@ -3795,6 +3850,10 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         publishNode,
                         "caption",
                     ).trim();
+                    const thumbnailAssetId = getStringConfig(
+                        publishNode,
+                        "thumbnailAssetId",
+                    ).trim();
                     const hashtagsRaw = getStringConfig(
                         publishNode,
                         "hashtags",
@@ -3840,6 +3899,8 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                                 assetId,
                                 socialAccountId: socialAccount._id,
                                 publishType,
+                                thumbnailAssetId:
+                                    thumbnailAssetId || undefined,
                                 facebookPageId: facebookPageId || undefined,
                                 publishNow: true,
                                 privacyStatus,
@@ -4622,6 +4683,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     aiProviders={aiProviders}
                     aiModelsByProviderId={aiModelsByProviderId}
                     storageAssets={storageAssets}
+                    thumbnailAssets={thumbnailAssets}
                     runtimeFile={
                         selectedNode
                             ? (runtimeFilesByNodeId[selectedNode.id] ?? null)
@@ -4666,6 +4728,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     aiProviders={aiProviders}
                     aiModelsByProviderId={aiModelsByProviderId}
                     storageAssets={storageAssets}
+                    thumbnailAssets={thumbnailAssets}
                     runtimeFilesByNodeId={runtimeFilesByNodeId}
                     runtimeArtifactsByNodeId={runtimeArtifactsByNodeId}
                     facebookPagesByAccount={facebookPagesByAccount}
@@ -4699,6 +4762,7 @@ function WorkspaceFlowSetupModal({
     aiProviders,
     aiModelsByProviderId,
     storageAssets,
+    thumbnailAssets,
     runtimeFilesByNodeId,
     runtimeArtifactsByNodeId,
     facebookPagesByAccount,
@@ -4724,6 +4788,7 @@ function WorkspaceFlowSetupModal({
     aiProviders: WorkspaceAiProvider[];
     aiModelsByProviderId: Record<string, WorkspaceAiModel[] | undefined>;
     storageAssets: WorkspaceAsset[];
+    thumbnailAssets: WorkspaceThumbnailAsset[];
     runtimeFilesByNodeId: Record<string, File | undefined>;
     runtimeArtifactsByNodeId: Record<
         string,
@@ -5021,6 +5086,9 @@ function WorkspaceFlowSetupModal({
                                                 aiModelsByProviderId
                                             }
                                             storageAssets={storageAssets}
+                                            thumbnailAssets={
+                                                thumbnailAssets
+                                            }
                                             runtimeFile={
                                                 runtimeFilesByNodeId[node.id] ??
                                                 null
@@ -5688,6 +5756,7 @@ function NodeRuntimeConfig({
     aiProviders,
     aiModelsByProviderId,
     storageAssets,
+    thumbnailAssets,
     runtimeFile,
     runtimeArtifact,
     facebookPagesByAccount,
@@ -5707,6 +5776,7 @@ function NodeRuntimeConfig({
     aiProviders: WorkspaceAiProvider[];
     aiModelsByProviderId: Record<string, WorkspaceAiModel[] | undefined>;
     storageAssets: WorkspaceAsset[];
+    thumbnailAssets: WorkspaceThumbnailAsset[];
     runtimeFile: File | null;
     runtimeArtifact: WorkspaceRuntimeArtifact | null;
     facebookPagesByAccount: Record<string, FacebookPageOption[]>;
@@ -6416,6 +6486,17 @@ function NodeRuntimeConfig({
                         placeholder="#tag1,#tag2 (optional)"
                         onChange={(value) => setConfig({ hashtags: value })}
                     />
+                    <WorkspaceThumbnailAssetPicker
+                        assets={thumbnailAssets}
+                        selectedAssetId={getStringConfig(
+                            node,
+                            "thumbnailAssetId",
+                        )}
+                        disabled={isRunningFlow}
+                        onSelect={(assetId) =>
+                            setConfig({ thumbnailAssetId: assetId })
+                        }
+                    />
                     <p className="text-[10px] leading-4 text-muted">
                         Nếu để trống Title/Caption/Hashtags, Publish sẽ tự lấy
                         từ node Generate VI metadata (khi có output); nếu chưa
@@ -6920,11 +7001,11 @@ function NodeRuntimeConfig({
                                         getNumberConfig(
                                             node,
                                             "originalAudioVolume",
-                                            0.18,
+                                            0.1,
                                         ),
                                     )}
                                     disabled={isRunningFlow}
-                                    placeholder="0.18"
+                                    placeholder="0.1"
                                     onChange={(value) =>
                                         setConfig({
                                             originalAudioVolume: Number(value),
@@ -7127,6 +7208,7 @@ function InspectorPanel({
     aiProviders,
     aiModelsByProviderId,
     storageAssets,
+    thumbnailAssets,
     runtimeFile,
     runtimeArtifact,
     facebookPagesByAccount,
@@ -7155,6 +7237,7 @@ function InspectorPanel({
     aiProviders: WorkspaceAiProvider[];
     aiModelsByProviderId: Record<string, WorkspaceAiModel[] | undefined>;
     storageAssets: WorkspaceAsset[];
+    thumbnailAssets: WorkspaceThumbnailAsset[];
     runtimeFile: File | null;
     runtimeArtifact: WorkspaceRuntimeArtifact | null;
     facebookPagesByAccount: Record<string, FacebookPageOption[]>;
@@ -7298,6 +7381,7 @@ function InspectorPanel({
                         aiProviders={aiProviders}
                         aiModelsByProviderId={aiModelsByProviderId}
                         storageAssets={storageAssets}
+                        thumbnailAssets={thumbnailAssets}
                         runtimeFile={runtimeFile}
                         runtimeArtifact={runtimeArtifact}
                         facebookPagesByAccount={facebookPagesByAccount}
@@ -7641,6 +7725,130 @@ function WorkspaceStorageAssetPicker({
                                             </div>
                                         ) : null}
                                     </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                </div>
+            ) : null}
+        </div>
+    );
+}
+
+function WorkspaceThumbnailAssetPicker({
+    assets,
+    selectedAssetId,
+    disabled,
+    onSelect,
+}: {
+    assets: WorkspaceThumbnailAsset[];
+    selectedAssetId: string;
+    disabled: boolean;
+    onSelect: (assetId: string) => void;
+}) {
+    const [isOpen, setIsOpen] = useState(false);
+    const [searchQuery, setSearchQuery] = useState("");
+    const selectedAsset = assets.find((asset) => asset._id === selectedAssetId);
+    const visibleAssets = assets.filter((asset) =>
+        matchesThumbnailAssetSearch(asset, searchQuery),
+    );
+
+    return (
+        <div>
+            <span className="mb-1 block text-[10px] font-semibold text-muted">
+                Thumbnail Library asset
+            </span>
+            <button
+                type="button"
+                disabled={disabled}
+                onClick={() => setIsOpen((prev) => !prev)}
+                className="flex w-full items-center justify-between border border-main bg-main px-3 py-2 text-left text-[12px] text-main"
+            >
+                <span className="truncate">
+                    {selectedAsset?.metadata?.title?.trim() ||
+                        selectedAsset?._id ||
+                        "Select existing thumbnail"}
+                </span>
+                <span className="ml-2 text-[11px] text-muted">
+                    {isOpen ? "Close" : "Browse"}
+                </span>
+            </button>
+            {isOpen ? (
+                <div className="mt-2 max-h-64 overflow-y-auto border border-main bg-main">
+                    <div className="border-b border-main p-2">
+                        <input
+                            value={searchQuery}
+                            onChange={(event) =>
+                                setSearchQuery(event.target.value)
+                            }
+                            placeholder="Search title, folder, tags..."
+                            className="w-full border border-main bg-main px-2 py-1 text-[11px] text-main outline-none transition-colors focus:border-accent"
+                        />
+                    </div>
+                    {visibleAssets.length === 0 ? (
+                        <p className="px-3 py-4 text-[11px] text-muted">
+                            No matching thumbnail.
+                        </p>
+                    ) : (
+                        <div className="space-y-2 p-2">
+                            {visibleAssets.map((asset) => {
+                                const isSelected =
+                                    selectedAssetId === asset._id;
+                                return (
+                                    <button
+                                        key={asset._id}
+                                        type="button"
+                                        onClick={() => {
+                                            onSelect(asset._id);
+                                            setIsOpen(false);
+                                        }}
+                                        className={cn(
+                                            "w-full border p-2 text-left",
+                                            isSelected
+                                                ? "border-accent bg-secondary/35"
+                                                : "border-main bg-main hover:bg-secondary/20",
+                                        )}
+                                    >
+                                        <div className="flex items-start gap-2">
+                                            <div className="h-14 w-24 shrink-0 overflow-hidden border border-main bg-secondary/20">
+                                                <img
+                                                    src={`/api/storage/thumbnail-assets/${asset._id}/download?disposition=inline`}
+                                                    alt={
+                                                        asset.metadata?.title?.trim() ||
+                                                        "Thumbnail preview"
+                                                    }
+                                                    className="h-full w-full object-cover"
+                                                    loading="lazy"
+                                                />
+                                            </div>
+                                            <div className="min-w-0 flex-1">
+                                                <p className="truncate text-[12px] font-semibold text-main">
+                                                    {asset.metadata?.title?.trim() ||
+                                                        "Untitled thumbnail"}
+                                                </p>
+                                                <p className="mt-1 truncate text-[10px] text-muted">
+                                                    {[
+                                                        asset.metadata?.folder?.trim() ||
+                                                            null,
+                                                        ...(asset.metadata?.tags ??
+                                                            []),
+                                                        asset.storageProvider ||
+                                                            null,
+                                                        asset.createdAt
+                                                            ? new Date(
+                                                                  asset.createdAt,
+                                                              ).toLocaleDateString(
+                                                                  "vi-VN",
+                                                              )
+                                                            : null,
+                                                    ]
+                                                        .filter(Boolean)
+                                                        .join(" · ") ||
+                                                        asset._id}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </button>
                                 );
                             })}
                         </div>

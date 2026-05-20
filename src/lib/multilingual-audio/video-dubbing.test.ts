@@ -61,6 +61,19 @@ describe("video dubbing adapter", () => {
         );
     });
 
+    it("falls back to default original audio volume when value is invalid", () => {
+        const args = buildDubbedVideoFfmpegArgs({
+            videoPath: "/tmp/source.mp4",
+            voicePath: "/tmp/voice.wav",
+            outputPath: "/tmp/out.mp4",
+            originalAudioVolume: Number.NaN,
+            voiceVolume: 1,
+        });
+
+        expect(args).toContain("-filter_complex");
+        expect(args.join(" ")).toContain("[0:a]volume=0.100");
+    });
+
     it("rejects missing source video bytes", async () => {
         await expect(
             runVideoDubbing({

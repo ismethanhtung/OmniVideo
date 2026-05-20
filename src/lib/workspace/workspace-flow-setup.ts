@@ -17,6 +17,7 @@ export type WorkspaceFlowSetupValidationContext = {
     storageAccountIds: ReadonlySet<string>;
     socialAccountIds: ReadonlySet<string>;
     storageAssetIds: ReadonlySet<string>;
+    thumbnailAssetIds: ReadonlySet<string>;
     storageAssetMaskSetupIds: ReadonlySet<string>;
 };
 
@@ -225,6 +226,17 @@ export function getWorkspaceNodeSetupIssues(input: {
             publishType === "facebook_video";
         if (isFacebook && !getStringConfig(node, "facebookPageId").trim()) {
             addIssue(issues, "Choose a Facebook Page.");
+        }
+
+        const thumbnailAssetId = getStringConfig(
+            node,
+            "thumbnailAssetId",
+        ).trim();
+        if (
+            thumbnailAssetId &&
+            !context.thumbnailAssetIds.has(thumbnailAssetId)
+        ) {
+            addIssue(issues, "Choose an available thumbnail.");
         }
     }
 

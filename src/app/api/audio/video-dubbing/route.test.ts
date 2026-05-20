@@ -117,7 +117,7 @@ describe("video dubbing API", () => {
         provider: { name: "piper", mode: "local-cli" },
       },
       mix: {
-        originalAudioVolume: 0.18,
+        originalAudioVolume: 0.1,
         voiceVolume: 1,
         mode: "duck-original",
       },
@@ -217,7 +217,7 @@ describe("video dubbing API", () => {
         provider: { name: "piper", mode: "local-cli" },
       },
       mix: {
-        originalAudioVolume: 0.18,
+        originalAudioVolume: 0.1,
         voiceVolume: 1,
         mode: "duck-original",
       },

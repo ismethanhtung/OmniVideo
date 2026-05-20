@@ -49,6 +49,7 @@ function context(overrides?: Partial<Parameters<typeof getWorkspaceNodeSetupIssu
         storageAccountIds: new Set<string>(),
         socialAccountIds: new Set<string>(),
         storageAssetIds: new Set<string>(),
+        thumbnailAssetIds: new Set<string>(),
         storageAssetMaskSetupIds: new Set<string>(),
         ...overrides,
     };
@@ -211,6 +212,35 @@ describe("workspace flow setup helpers", () => {
                 context: validationContext,
             }),
         ).toEqual(["Choose a Facebook Page."]);
+    });
+
+    it("flags unavailable thumbnail selection in publish node", () => {
+        let graph = createUploadPublishGraph();
+        graph = updateWorkspaceNodeConfig(graph, "storage-upload-1", {
+            storageAccountId: "storage-1",
+        });
+        graph = updateWorkspaceNodeConfig(graph, "social-publish-1", {
+            socialAccountId: "social-1",
+            thumbnailAssetId: "thumb-missing",
+        });
+        const plan = planWorkspaceFlow(graph);
+        const setupNodes = getWorkspaceFlowSetupNodes(graph, plan);
+        const publishNode = setupNodes.find(
+            ({ node }) => node.id === "social-publish-1",
+        )?.node;
+        if (!publishNode) throw new Error("Missing publish node");
+
+        expect(
+            getWorkspaceNodeSetupIssues({
+                node: publishNode,
+                plan,
+                context: context({
+                    runtimeFileNodeIds: new Set(["source-file-1"]),
+                    storageAccountIds: new Set(["storage-1"]),
+                    socialAccountIds: new Set(["social-1"]),
+                }),
+            }),
+        ).toEqual(["Choose an available thumbnail."]);
     });
 
     it("warns when a mask node uses an upstream storage asset without saved video setup", () => {

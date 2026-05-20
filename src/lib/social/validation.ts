@@ -294,6 +294,7 @@ export function validatePublishRecordCreateInput(
   const payload = input as Partial<PublishRecordCreateInput>;
   const assetId = readString(payload.assetId);
   const socialAccountId = readString(payload.socialAccountId);
+  const thumbnailAssetId = readString(payload.thumbnailAssetId);
 
   if (!assetId || !ObjectId.isValid(assetId)) {
     throw new SocialError({
@@ -306,6 +307,13 @@ export function validatePublishRecordCreateInput(
     throw new SocialError({
       errorCode: "VAL_PUBLISH_SOCIAL_ACCOUNT_ID_INVALID",
       message: "socialAccountId must be a valid Mongo ObjectId.",
+    });
+  }
+
+  if (thumbnailAssetId && !ObjectId.isValid(thumbnailAssetId)) {
+    throw new SocialError({
+      errorCode: "VAL_PUBLISH_THUMBNAIL_ASSET_ID_INVALID",
+      message: "thumbnailAssetId must be a valid Mongo ObjectId.",
     });
   }
 
@@ -359,6 +367,7 @@ export function validatePublishRecordCreateInput(
     assetId,
     socialAccountId,
     publishType: payload.publishType,
+    thumbnailAssetId: thumbnailAssetId ?? null,
     facebookPageId: facebookPageId ?? null,
     publishMode: publishNow ? "publish_now" : "schedule",
     privacyStatus: privacyStatus as YouTubePrivacyStatus,

@@ -1,11 +1,12 @@
-import type { Db } from "mongodb";
+import { ObjectId, type Db } from "mongodb";
 
 import { resolveAssetDownload } from "@/lib/storage/asset-download";
 
 import type { PublishRecordDocument, SocialAccountDocument } from "./types";
 
 type AssetDocument = {
-  _id: unknown;
+  _id: ObjectId;
+  assetType?: string;
   storageProvider?: string;
   storagePointer?: Record<string, unknown>;
   publicUrl?: string | null;
@@ -89,6 +90,109 @@ async function resolveYouTubeUploadAccessToken(account: SocialAccountDocument) {
   return accessToken;
 }
 
+async function resolveThumbnailUploadPayload({
+  db,
+  record,
+}: {
+  db: Db;
+  record: PublishRecordDocument;
+}) {
+  if (!record.thumbnailAssetId) {
+    return null;
+  }
+
+  const thumbnailAssetId =
+    record.thumbnailAssetId instanceof ObjectId
+      ? record.thumbnailAssetId
+      : new ObjectId(record.thumbnailAssetId);
+
+  const thumbnailAsset = await db.collection<AssetDocument>("assets").findOne({
+    _id: thumbnailAssetId,
+    assetType: "image",
+  });
+
+  if (!thumbnailAsset) {
+    throw new Error(
+      "VAL_PUBLISH_THUMBNAIL_ASSET_NOT_FOUND: Thumbnail asset was not found.",
+    );
+  }
+
+  const download = await resolveAssetDownload({
+    db,
+    asset: thumbnailAsset,
+    disposition: "inline",
+  });
+  if (!download.ok) {
+    throw new Error(`${download.errorCode}: ${download.error}`);
+  }
+
+  const mimeType = (
+    download.headers.get("content-type") ??
+    thumbnailAsset.mimeType ??
+    "image/png"
+  )
+    .split(";")[0]
+    .trim()
+    .toLowerCase();
+  if (!mimeType.startsWith("image/")) {
+    throw new Error(
+      "VAL_PUBLISH_THUMBNAIL_MIME_TYPE_INVALID: Thumbnail asset must be an image.",
+    );
+  }
+
+  const bytes = new Uint8Array(await new Response(download.body).arrayBuffer());
+  if (bytes.byteLength === 0) {
+    throw new Error(
+      "VAL_PUBLISH_THUMBNAIL_EMPTY: Thumbnail asset is empty and cannot be uploaded.",
+    );
+  }
+  const buffer = bytes.buffer.slice(
+    bytes.byteOffset,
+    bytes.byteOffset + bytes.byteLength,
+  );
+
+  return {
+    bytes: buffer,
+    mimeType,
+  };
+}
+
+async function uploadYouTubeThumbnail({
+  accessToken,
+  videoId,
+  bytes,
+  mimeType,
+}: {
+  accessToken: string;
+  videoId: string;
+  bytes: ArrayBuffer;
+  mimeType: string;
+}) {
+  const response = await fetch(
+    `https://www.googleapis.com/upload/youtube/v3/thumbnails/set?videoId=${encodeURIComponent(
+      videoId,
+    )}`,
+    {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+        "content-type": mimeType,
+        "content-length": String(bytes.byteLength),
+      },
+      body: bytes,
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      await readYouTubeError(
+        response,
+        `YouTube thumbnail upload failed with status ${response.status}.`,
+      ),
+    );
+  }
+}
+
 function assertYouTubeShortEligibility(asset: AssetDocument) {
   const durationMs = typeof asset.durationMs === "number" ? asset.durationMs : null;
   const width =
@@ -139,6 +243,7 @@ export async function uploadVideoToYouTube({
   record: PublishRecordDocument;
 }) {
   const accessToken = await resolveYouTubeUploadAccessToken(account);
+  const thumbnailPayload = await resolveThumbnailUploadPayload({ db, record });
 
   if (record.publishType === "youtube_short") {
     assertYouTubeShortEligibility(asset);
@@ -215,6 +320,15 @@ export async function uploadVideoToYouTube({
       payload?.error?.message ??
         `YouTube upload failed with status ${uploadResponse.status}.`,
     );
+  }
+
+  if (thumbnailPayload) {
+    await uploadYouTubeThumbnail({
+      accessToken,
+      videoId: payload.id,
+      bytes: thumbnailPayload.bytes,
+      mimeType: thumbnailPayload.mimeType,
+    });
   }
 
   return {

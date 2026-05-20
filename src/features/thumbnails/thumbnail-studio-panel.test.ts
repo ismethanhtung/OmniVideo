@@ -29,6 +29,9 @@ describe("Thumbnail Studio UI shell", () => {
 
     it("supports import affordances for drag-drop and URL", () => {
         expect(source).toContain("Drag image into this box to import");
+        expect(source).toContain("uploadFileInputRef");
+        expect(source).toContain("Upload");
+        expect(source).toContain("type=\"file\"");
         expect(source).toContain("Import from URL");
         expect(source).toContain("handleDropUpload");
         expect(source).toContain("handleImportFromUrl");
