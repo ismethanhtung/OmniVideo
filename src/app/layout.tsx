@@ -1,33 +1,26 @@
 import type { Metadata } from "next";
 import {
-  Anton,
-  Bebas_Neue,
+  Agbalumo,
   Bangers,
-  Barlow_Condensed,
-  Beau_Rivage,
-  Be_Vietnam_Pro,
+  Baloo_2,
   Braah_One,
   Figtree,
-  Freeman,
   IBM_Plex_Sans,
   Inter,
   JetBrains_Mono,
   Lobster,
-  Love_Light,
-  Lovers_Quarrel,
   Manrope,
+  Mitr,
   Montserrat,
-  Oswald,
   Outfit,
-  Pacifico,
   Paytone_One,
   Plus_Jakarta_Sans,
+  Prompt,
   Public_Sans,
   Sriracha,
   Sora,
   Space_Grotesk,
   Urbanist,
-  Yeseva_One,
 } from "next/font/google";
 
 import "./globals.css";
@@ -104,26 +97,6 @@ const montserrat = Montserrat({
   display: "swap",
 });
 
-const oswald = Oswald({
-  subsets: ["latin"],
-  variable: "--font-thumb-oswald",
-  display: "swap",
-});
-
-const bebasNeue = Bebas_Neue({
-  weight: "400",
-  subsets: ["latin"],
-  variable: "--font-thumb-bebas-neue",
-  display: "swap",
-});
-
-const anton = Anton({
-  weight: "400",
-  subsets: ["latin"],
-  variable: "--font-thumb-anton",
-  display: "swap",
-});
-
 const bangers = Bangers({
   weight: "400",
   subsets: ["latin", "vietnamese"],
@@ -131,24 +104,10 @@ const bangers = Bangers({
   display: "swap",
 });
 
-const barlowCondensed = Barlow_Condensed({
-  weight: ["700", "800", "900"],
+const baloo2 = Baloo_2({
+  weight: ["700", "800"],
   subsets: ["latin", "vietnamese"],
-  variable: "--font-thumb-barlow-condensed",
-  display: "swap",
-});
-
-const beauRivage = Beau_Rivage({
-  weight: "400",
-  subsets: ["latin", "vietnamese"],
-  variable: "--font-thumb-beau-rivage",
-  display: "swap",
-});
-
-const beVietnamPro = Be_Vietnam_Pro({
-  weight: ["700", "800", "900"],
-  subsets: ["latin", "vietnamese"],
-  variable: "--font-thumb-be-vietnam-pro",
+  variable: "--font-thumb-baloo-2",
   display: "swap",
 });
 
@@ -159,13 +118,6 @@ const braahOne = Braah_One({
   display: "swap",
 });
 
-const freeman = Freeman({
-  weight: "400",
-  subsets: ["latin", "vietnamese"],
-  variable: "--font-thumb-freeman",
-  display: "swap",
-});
-
 const lobster = Lobster({
   weight: "400",
   subsets: ["latin", "vietnamese"],
@@ -173,24 +125,10 @@ const lobster = Lobster({
   display: "swap",
 });
 
-const loveLight = Love_Light({
-  weight: "400",
+const mitr = Mitr({
+  weight: ["600", "700"],
   subsets: ["latin", "vietnamese"],
-  variable: "--font-thumb-love-light",
-  display: "swap",
-});
-
-const loversQuarrel = Lovers_Quarrel({
-  weight: "400",
-  subsets: ["latin", "vietnamese"],
-  variable: "--font-thumb-lovers-quarrel",
-  display: "swap",
-});
-
-const pacifico = Pacifico({
-  weight: "400",
-  subsets: ["latin", "vietnamese"],
-  variable: "--font-thumb-pacifico",
+  variable: "--font-thumb-mitr",
   display: "swap",
 });
 
@@ -201,6 +139,13 @@ const paytoneOne = Paytone_One({
   display: "swap",
 });
 
+const prompt = Prompt({
+  weight: ["700", "800", "900"],
+  subsets: ["latin", "vietnamese"],
+  variable: "--font-thumb-prompt",
+  display: "swap",
+});
+
 const sriracha = Sriracha({
   weight: "400",
   subsets: ["latin", "vietnamese"],
@@ -208,10 +153,10 @@ const sriracha = Sriracha({
   display: "swap",
 });
 
-const yesevaOne = Yeseva_One({
+const agbalumo = Agbalumo({
   weight: "400",
   subsets: ["latin", "vietnamese"],
-  variable: "--font-thumb-yeseva-one",
+  variable: "--font-thumb-agbalumo",
   display: "swap",
 });
 
@@ -227,22 +172,15 @@ const appFontVariableClassName = [
   publicSans.variable,
   figtree.variable,
   montserrat.variable,
-  oswald.variable,
-  bebasNeue.variable,
-  anton.variable,
   bangers.variable,
-  barlowCondensed.variable,
-  beauRivage.variable,
-  beVietnamPro.variable,
+  baloo2.variable,
   braahOne.variable,
-  freeman.variable,
   lobster.variable,
-  loveLight.variable,
-  loversQuarrel.variable,
-  pacifico.variable,
+  mitr.variable,
   paytoneOne.variable,
+  prompt.variable,
   sriracha.variable,
-  yesevaOne.variable,
+  agbalumo.variable,
   jetbrainsMono.variable,
 ].join(" ");
 

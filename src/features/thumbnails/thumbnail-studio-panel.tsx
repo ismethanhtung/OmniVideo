@@ -158,46 +158,16 @@ const THUMBNAIL_TEXT_FONT_OPTIONS: Array<{
         fallbackFamily: '"Montserrat", sans-serif',
     },
     {
-        value: "Oswald",
-        label: "Oswald",
-        cssVariable: "--font-thumb-oswald",
-        fallbackFamily: '"Oswald", sans-serif',
-    },
-    {
-        value: "Bebas Neue",
-        label: "Bebas Neue",
-        cssVariable: "--font-thumb-bebas-neue",
-        fallbackFamily: '"Bebas Neue", sans-serif',
-    },
-    {
-        value: "Anton",
-        label: "Anton",
-        cssVariable: "--font-thumb-anton",
-        fallbackFamily: '"Anton", sans-serif',
-    },
-    {
-        value: "Sora",
-        label: "Sora",
-        cssVariable: "--font-app-sora",
-        fallbackFamily: '"Sora", sans-serif',
-    },
-    {
         value: "Bangers",
         label: "Bangers",
         cssVariable: "--font-thumb-bangers",
         fallbackFamily: '"Bangers", sans-serif',
     },
     {
-        value: "Barlow Condensed",
-        label: "Barlow Condensed",
-        cssVariable: "--font-thumb-barlow-condensed",
-        fallbackFamily: '"Barlow Condensed", sans-serif',
-    },
-    {
-        value: "Be Vietnam Pro",
-        label: "Be Vietnam Pro",
-        cssVariable: "--font-thumb-be-vietnam-pro",
-        fallbackFamily: '"Be Vietnam Pro", sans-serif',
+        value: "Baloo 2",
+        label: "Baloo 2",
+        cssVariable: "--font-thumb-baloo-2",
+        fallbackFamily: '"Baloo 2", sans-serif',
     },
     {
         value: "Braah One",
@@ -206,10 +176,16 @@ const THUMBNAIL_TEXT_FONT_OPTIONS: Array<{
         fallbackFamily: '"Braah One", sans-serif',
     },
     {
-        value: "Freeman",
-        label: "Freeman",
-        cssVariable: "--font-thumb-freeman",
-        fallbackFamily: '"Freeman", sans-serif',
+        value: "Lobster",
+        label: "Lobster",
+        cssVariable: "--font-thumb-lobster",
+        fallbackFamily: '"Lobster", cursive',
+    },
+    {
+        value: "Mitr",
+        label: "Mitr",
+        cssVariable: "--font-thumb-mitr",
+        fallbackFamily: '"Mitr", sans-serif',
     },
     {
         value: "Paytone One",
@@ -218,16 +194,10 @@ const THUMBNAIL_TEXT_FONT_OPTIONS: Array<{
         fallbackFamily: '"Paytone One", sans-serif',
     },
     {
-        value: "Lobster",
-        label: "Lobster",
-        cssVariable: "--font-thumb-lobster",
-        fallbackFamily: '"Lobster", cursive',
-    },
-    {
-        value: "Pacifico",
-        label: "Pacifico",
-        cssVariable: "--font-thumb-pacifico",
-        fallbackFamily: '"Pacifico", cursive',
+        value: "Prompt",
+        label: "Prompt",
+        cssVariable: "--font-thumb-prompt",
+        fallbackFamily: '"Prompt", sans-serif',
     },
     {
         value: "Sriracha",
@@ -236,29 +206,99 @@ const THUMBNAIL_TEXT_FONT_OPTIONS: Array<{
         fallbackFamily: '"Sriracha", cursive',
     },
     {
-        value: "Beau Rivage",
-        label: "Beau Rivage",
-        cssVariable: "--font-thumb-beau-rivage",
-        fallbackFamily: '"Beau Rivage", cursive',
+        value: "Agbalumo",
+        label: "Agbalumo",
+        cssVariable: "--font-thumb-agbalumo",
+        fallbackFamily: '"Agbalumo", cursive',
+    },
+];
+
+const TEXT_STYLE_PRESETS: Array<{
+    label: string;
+    description: string;
+    patch: Partial<TextOverlayDraft>;
+}> = [
+    {
+        label: "Red glow Montserrat",
+        description: "White text, black stroke, red halo.",
+        patch: {
+            fontFamily: "Montserrat",
+            fontWeight: 900,
+            textColor: "#ffffff",
+            strokeColor: "#111827",
+            strokeWidth: 5,
+            shadowEnabled: true,
+            shadowColor: "#ef4444",
+            shadowBlur: 18,
+            shadowSpread: 5,
+            shadowOffsetX: 0,
+            shadowOffsetY: 2,
+        },
     },
     {
-        value: "Love Light",
-        label: "Love Light",
-        cssVariable: "--font-thumb-love-light",
-        fallbackFamily: '"Love Light", cursive',
+        label: "Yellow glow Bangers",
+        description: "Comic title with warm yellow halo.",
+        patch: {
+            fontFamily: "Bangers",
+            fontWeight: 900,
+            textColor: "#ffffff",
+            strokeColor: "#111827",
+            strokeWidth: 5,
+            shadowEnabled: true,
+            shadowColor: "#facc15",
+            shadowBlur: 20,
+            shadowSpread: 6,
+            shadowOffsetX: 0,
+            shadowOffsetY: 2,
+        },
     },
     {
-        value: "Lovers Quarrel",
-        label: "Lovers Quarrel",
-        cssVariable: "--font-thumb-lovers-quarrel",
-        fallbackFamily: '"Lovers Quarrel", cursive',
+        label: "Yellow text black",
+        description: "Yellow fill, heavy black stroke, no glow.",
+        patch: {
+            fontFamily: "Baloo 2",
+            fontWeight: 900,
+            textColor: "#fde047",
+            strokeColor: "#111827",
+            strokeWidth: 5,
+            shadowEnabled: false,
+            shadowColor: "#facc15",
+            shadowBlur: 0,
+            shadowSpread: 0,
+            shadowOffsetX: 0,
+            shadowOffsetY: 0,
+        },
     },
     {
-        value: "Yeseva One",
-        label: "Yeseva One",
-        cssVariable: "--font-thumb-yeseva-one",
-        fallbackFamily: '"Yeseva One", serif',
+        label: "Red edge Barlow",
+        description: "White title with red glow edge.",
+        patch: {
+            fontFamily: "Prompt",
+            fontWeight: 900,
+            textColor: "#ffffff",
+            strokeColor: "#111827",
+            strokeWidth: 5,
+            shadowEnabled: true,
+            shadowColor: "#ef4444",
+            shadowBlur: 12,
+            shadowSpread: 4,
+            shadowOffsetX: 3,
+            shadowOffsetY: 3,
+        },
     },
+];
+
+const QUICK_TEXT_PRESETS: Array<{
+    label: string;
+    text: string;
+    glowColor: string;
+}> = [
+    { label: "FULL VERSION", text: "FULL VERSION", glowColor: "#facc15" },
+    { label: "TEXT TEXT", text: "TEXT TEXT", glowColor: "#ef4444" },
+    { label: "CHAP 1", text: "CHAP 1", glowColor: "#22d3ee" },
+    { label: "CHAP 2", text: "CHAP 2", glowColor: "#8b5cf6" },
+    { label: "NEW EP", text: "NEW EP", glowColor: "#4ade80" },
+    { label: "RECAP", text: "RECAP", glowColor: "#f97316" },
 ];
 
 const EDITOR_FRAME_RATIO = 16 / 9;
@@ -828,10 +868,10 @@ async function renderThumbnailBlob({
             context.shadowBlur = 0;
             context.shadowOffsetX = 0;
             context.shadowOffsetY = 0;
+            context.fillText(line, x, lineY);
             if (strokeWidth > 0) {
                 context.strokeText(line, x, lineY);
             }
-            context.fillText(line, x, lineY);
         });
     }
 
@@ -1387,16 +1427,16 @@ export function ThumbnailStudioPanel({
         });
     };
 
-    const addTextOverlay = () => {
+    const addTextOverlay = (preset?: Partial<TextOverlayDraft>) => {
         const nextTextOverlay: TextOverlayDraft = {
             id: buildId("text"),
-            text: "NEW TEXT",
+            text: preset?.text ?? "NEW TEXT",
             fontFamily: "Montserrat",
             fontSize: 40,
             fontWeight: 800,
             textColor: "#ffffff",
             strokeColor: "#111827",
-            strokeWidth: 4,
+            strokeWidth: 5,
             shadowEnabled: true,
             shadowColor: "#facc15",
             shadowBlur: 18,
@@ -1405,9 +1445,41 @@ export function ThumbnailStudioPanel({
             shadowOffsetY: 2,
             x: 50,
             y: 70,
+            ...preset,
         };
         setTextOverlays((current) => [...current, nextTextOverlay]);
         setActiveTextOverlayId(nextTextOverlay.id);
+    };
+
+    const applyTextStylePreset = (preset: {
+        label: string;
+        patch: Partial<TextOverlayDraft>;
+    }) => {
+        addTextOverlay({
+            text: preset.label,
+            ...preset.patch,
+        });
+    };
+
+    const applyQuickTextPreset = (preset: {
+        text: string;
+        glowColor: string;
+    }) => {
+        addTextOverlay({
+            text: preset.text,
+            fontFamily: "Bangers",
+            fontSize: 70,
+            fontWeight: 900,
+            textColor: "#ffffff",
+            strokeColor: "#111827",
+            strokeWidth: 1,
+            shadowEnabled: true,
+            shadowColor: preset.glowColor,
+            shadowBlur: 20,
+            shadowSpread: 6,
+            shadowOffsetX: 0,
+            shadowOffsetY: 2,
+        });
     };
 
     const removeTextOverlayById = (overlayId: string) => {
@@ -1874,6 +1946,9 @@ export function ThumbnailStudioPanel({
 
     const handleDeleteSelected = async () => {
         if (!selectedThumbnailId) return;
+        if (!window.confirm("Delete selected thumbnail?")) {
+            return;
+        }
         try {
             setImportMessage("Deleting selected thumbnail...");
             const response = await fetch(
@@ -2647,7 +2722,6 @@ export function ThumbnailStudioPanel({
                                             style={{
                                                 left: `${overlay.x}%`,
                                                 top: `${overlay.y}%`,
-                                                color: overlay.textColor,
                                                 fontFamily:
                                                     getThumbnailTextPreviewFontFamily(
                                                         overlay.fontFamily,
@@ -2659,34 +2733,6 @@ export function ThumbnailStudioPanel({
                                                 )}px`,
                                                 fontWeight: overlay.fontWeight,
                                                 lineHeight: 1.2,
-                                                WebkitTextStroke: `${Math.max(
-                                                    0,
-                                                    overlay.strokeWidth *
-                                                        previewTextScale,
-                                                )}px ${overlay.strokeColor}`,
-                                                textShadow: buildTextGlowCss(
-                                                    {
-                                                        shadowEnabled:
-                                                            overlay.shadowEnabled ??
-                                                            false,
-                                                        shadowColor:
-                                                            overlay.shadowColor ??
-                                                            "#facc15",
-                                                        shadowBlur:
-                                                            overlay.shadowBlur ??
-                                                            0,
-                                                        shadowSpread:
-                                                            overlay.shadowSpread ??
-                                                            0,
-                                                        shadowOffsetX:
-                                                            overlay.shadowOffsetX ??
-                                                            0,
-                                                        shadowOffsetY:
-                                                            overlay.shadowOffsetY ??
-                                                            0,
-                                                        scale: previewTextScale,
-                                                    },
-                                                ),
                                             }}
                                             className={cn(
                                                 "absolute -translate-x-1/2 -translate-y-1/2 text-center tracking-wide",
@@ -2785,15 +2831,75 @@ export function ThumbnailStudioPanel({
                                                         });
                                                     }}
                                                     className={cn(
-                                                        "cursor-grab whitespace-pre",
+                                                        "relative cursor-grab whitespace-pre",
                                                         textDragState?.overlayId ===
                                                             overlay.id
                                                             ? "cursor-grabbing"
                                                             : "cursor-grab",
                                                     )}
                                                 >
-                                                    {overlay.text ||
-                                                        "YOUR HEADLINE"}
+                                                    {overlay.shadowEnabled ? (
+                                                        <span
+                                                            aria-hidden="true"
+                                                            className="pointer-events-none absolute inset-0 whitespace-pre"
+                                                            style={{
+                                                                color:
+                                                                    overlay.shadowColor ??
+                                                                    "#facc15",
+                                                                WebkitTextStroke: `${Math.max(
+                                                                    1,
+                                                                    (overlay.strokeWidth +
+                                                                        (overlay.shadowSpread ??
+                                                                            0) *
+                                                                            2) *
+                                                                        previewTextScale,
+                                                                )}px ${
+                                                                    overlay.shadowColor ??
+                                                                    "#facc15"
+                                                                }`,
+                                                                textShadow:
+                                                                    buildTextGlowCss(
+                                                                        {
+                                                                            shadowEnabled:
+                                                                                true,
+                                                                            shadowColor:
+                                                                                overlay.shadowColor ??
+                                                                                "#facc15",
+                                                                            shadowBlur:
+                                                                                overlay.shadowBlur ??
+                                                                                0,
+                                                                            shadowSpread:
+                                                                                overlay.shadowSpread ??
+                                                                                0,
+                                                                            shadowOffsetX:
+                                                                                overlay.shadowOffsetX ??
+                                                                                0,
+                                                                            shadowOffsetY:
+                                                                                overlay.shadowOffsetY ??
+                                                                                0,
+                                                                            scale: previewTextScale,
+                                                                        },
+                                                                    ),
+                                                            }}
+                                                        >
+                                                            {overlay.text ||
+                                                                "YOUR HEADLINE"}
+                                                        </span>
+                                                    ) : null}
+                                                    <span
+                                                        className="relative whitespace-pre"
+                                                        style={{
+                                                            color: overlay.textColor,
+                                                            WebkitTextStroke: `${Math.max(
+                                                                0,
+                                                                overlay.strokeWidth *
+                                                                    previewTextScale,
+                                                            )}px ${overlay.strokeColor}`,
+                                                        }}
+                                                    >
+                                                        {overlay.text ||
+                                                            "YOUR HEADLINE"}
+                                                    </span>
                                                 </div>
                                             )}
                                         </div>
@@ -2930,6 +3036,107 @@ export function ThumbnailStudioPanel({
                                     </label>
                                 </div>
 
+                                <div className="mt-3">
+                                    <div className="mb-1 flex items-center justify-between gap-2">
+                                        <p className="text-[10px] font-semibold text-muted">
+                                            Quick text styles
+                                        </p>
+                                        <p className="text-[9px] text-muted">
+                                            Creates new text layer with style.
+                                        </p>
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <div className="grid grid-cols-3 gap-1.5">
+                                            {TEXT_STYLE_PRESETS.slice(0, 3).map(
+                                                (preset) => (
+                                                    <button
+                                                        key={preset.label}
+                                                        type="button"
+                                                        onClick={() =>
+                                                            applyTextStylePreset(
+                                                                preset,
+                                                            )
+                                                        }
+                                                        className="min-h-11 border border-main bg-main px-2 py-1 text-left hover:bg-secondary/70"
+                                                    >
+                                                        <span
+                                                            className="block text-[10px] font-semibold"
+                                                            style={{
+                                                                color:
+                                                                    preset.patch
+                                                                        .shadowColor ??
+                                                                    preset.patch
+                                                                        .textColor ??
+                                                                    "#ffffff",
+                                                            }}
+                                                        >
+                                                            {preset.label}
+                                                        </span>
+                                                        <span className="block text-[9px] text-muted">
+                                                            {preset.description}
+                                                        </span>
+                                                    </button>
+                                                ),
+                                            )}
+                                        </div>
+                                        <div className="grid grid-cols-3 gap-1.5">
+                                            <button
+                                                key={TEXT_STYLE_PRESETS[3].label}
+                                                type="button"
+                                                onClick={() =>
+                                                    applyTextStylePreset(
+                                                        TEXT_STYLE_PRESETS[3],
+                                                    )
+                                                }
+                                                className="min-h-11 border border-main bg-main px-2 py-1 text-left hover:bg-secondary/70"
+                                            >
+                                                <span
+                                                    className="block text-[10px] font-semibold"
+                                                    style={{
+                                                        color:
+                                                            TEXT_STYLE_PRESETS[3]
+                                                                .patch
+                                                                .shadowColor ??
+                                                            TEXT_STYLE_PRESETS[3]
+                                                                .patch
+                                                                .textColor ??
+                                                            "#ffffff",
+                                                    }}
+                                                >
+                                                    {TEXT_STYLE_PRESETS[3].label}
+                                                </span>
+                                                <span className="block text-[9px] text-muted">
+                                                    {
+                                                        TEXT_STYLE_PRESETS[3]
+                                                            .description
+                                                    }
+                                                </span>
+                                            </button>
+                                            <div className="col-span-2 grid grid-cols-3 gap-1 text-[9px]">
+                                                {QUICK_TEXT_PRESETS.map(
+                                                    (preset) => (
+                                                        <button
+                                                            key={preset.label}
+                                                            type="button"
+                                                            onClick={() =>
+                                                                applyQuickTextPreset(
+                                                                    preset,
+                                                                )
+                                                            }
+                                                            className="min-h-5 border border-main bg-main px-1 py-1 font-semibold text-main hover:bg-secondary/70"
+                                                            style={{
+                                                                color: preset.glowColor,
+                                                            }}
+                                                        >
+                                                            {preset.label}
+                                                        </button>
+                                                    ),
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
                                 <div className="mt-3 grid gap-2 sm:grid-cols-2">
                                     <label className="flex items-center gap-2 border border-main bg-main px-3 py-2">
                                         <input
@@ -3025,7 +3232,7 @@ export function ThumbnailStudioPanel({
                                 </div>
                                 <button
                                     type="button"
-                                    onClick={addTextOverlay}
+                                    onClick={() => addTextOverlay()}
                                     className="w-full border border-accent/40 bg-accent/15 px-2 py-1.5 text-[10px] font-semibold text-accent hover:bg-accent/25"
                                 >
                                     Add text layer
@@ -3270,7 +3477,16 @@ export function ThumbnailStudioPanel({
                                             />
                                         </label>
 
-                                        <label className="flex items-center gap-2 border border-main bg-main px-3 py-2">
+                                        <label className="flex items-center justify-between gap-3 border border-main bg-main px-3 py-2">
+                                            <span>
+                                                <span className="block text-[11px] font-semibold text-main">
+                                                    Glow behind text
+                                                </span>
+                                                <span className="block text-[10px] text-muted">
+                                                    Bật để tạo viền màu nổi sau
+                                                    chữ.
+                                                </span>
+                                            </span>
                                             <input
                                                 type="checkbox"
                                                 checked={
@@ -3285,9 +3501,6 @@ export function ThumbnailStudioPanel({
                                                 }
                                                 className="h-4 w-4 accent-[var(--color-accent)]"
                                             />
-                                            <span className="text-[11px] font-semibold text-main">
-                                                Glow behind text
-                                            </span>
                                         </label>
 
                                         <div className="grid gap-2 sm:grid-cols-2">
