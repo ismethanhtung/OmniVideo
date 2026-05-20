@@ -1,5 +1,17 @@
 # OmniVideo Changelog
 
+## FAST-WORKSPACE-033 - Improve Workspace Metadata Tags and Publish Records Thumbnail UX
+
+- Bumped app version from `0.10.8` to `0.10.9` as a patch release for metadata/publish UX polish.
+- Updated Vietnamese video metadata generation to explicitly prioritize tags when matching content type: `review phim`, `review full`, `truyện ngắn`, `hoạt hình`, `review truyện`, `tóm tắt truyện`, `tóm tắt phim`, and `hoạt hình trung quốc`.
+- Added deterministic preferred-tag inference after provider output so matching movie/story/short-story/animation content gets the relevant tags even if the model omits them.
+- Publish Records table and detail modal now surface generated Title, Hashtags, and Caption instead of keeping them only inside the create form.
+- New Publish Record now loads the Thumbnail Library, supports visual thumbnail selection/search/clear, and sends `thumbnailAssetId` with the publish request.
+- Verification (FAST-WORKSPACE-033):
+  - `npm run test -- --run src/lib/multilingual-audio/video-metadata.test.ts src/features/social/publish-records-panel.test.ts` pass (2 files / 7 tests).
+  - `npm run build` pass (existing ESLint circular-config warning remains).
+  - `npm run guard:version` pass.
+
 ## FAST-AUDIO-058 - Lower Default Original Audio Mix Volume to 0.10
 
 - Bumped app version from `0.10.7` to `0.10.8` as a patch release for dubbing mix balance polish.

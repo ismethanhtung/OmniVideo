@@ -19,4 +19,25 @@ describe("Publish Records View Mode errors", () => {
         expect(source).toContain("Search title, folder, tags...");
         expect(source).toContain("AssetLifecycleBadges");
     });
+
+    it("shows generated metadata fields in records and detail", () => {
+        expect(source).toContain('<th className="px-4 py-2 font-semibold">');
+        expect(source).toContain("Metadata");
+        expect(source).toContain("{record.title || \"-\"}");
+        expect(source).toContain("{record.hashtags.length > 0");
+        expect(source).toContain("{record.caption || \"-\"}");
+        expect(source).toContain('label="Title"');
+        expect(source).toContain('label="Caption"');
+    });
+
+    it("loads and submits thumbnail assets from the publish form", () => {
+        expect(source).toContain("StoredThumbnailAsset");
+        expect(source).toContain("/api/storage/thumbnail-assets?limit=100");
+        expect(source).toContain("thumbnailAssetId:");
+        expect(source).toContain("selectedThumbnail");
+        expect(source).toContain("Search thumbnail title, folder, tags...");
+        expect(source).toContain(
+            "/api/storage/thumbnail-assets/${selectedThumbnail._id}/download?disposition=inline",
+        );
+    });
 });

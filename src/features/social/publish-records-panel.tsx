@@ -1,7 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ExternalLink, Plus, RefreshCw, Trash2 } from "lucide-react";
+import {
+    ExternalLink,
+    Image as ImageIcon,
+    Plus,
+    RefreshCw,
+    Trash2,
+} from "lucide-react";
 
 import type { LeftbarNavItem } from "@/components/layout/types";
 import { AssetLifecycleBadges } from "@/components/ui/asset-lifecycle-badges";
@@ -38,20 +44,35 @@ type StoredVideoAsset = {
     _id: string;
     durationMs?: number | null;
     sizeBytes?: number | null;
-  metadata?: {
-    title?: string | null;
-    description?: string | null;
-    vietnameseTitle?: string | null;
-    vietnameseDescription?: string | null;
-    vietnameseHashtags?: string[] | null;
-    folder?: string | null;
-    tags?: string[] | null;
-    sourceUrl?: string | null;
-    width?: number | null;
-    height?: number | null;
-    originPlatform?: string | null;
-    actualQuality?: string | null;
-  };
+    metadata?: {
+        title?: string | null;
+        description?: string | null;
+        vietnameseTitle?: string | null;
+        vietnameseDescription?: string | null;
+        vietnameseHashtags?: string[] | null;
+        folder?: string | null;
+        tags?: string[] | null;
+        sourceUrl?: string | null;
+        width?: number | null;
+        height?: number | null;
+        originPlatform?: string | null;
+        actualQuality?: string | null;
+    };
+    createdFrom?: {
+        storageProviderLabel?: string | null;
+    };
+    storageProvider: string;
+};
+type StoredThumbnailAsset = {
+    _id: string;
+    mimeType?: string | null;
+    sizeBytes?: number | null;
+    metadata?: {
+        title?: string | null;
+        folder?: string | null;
+        tags?: string[] | null;
+        sourceUrl?: string | null;
+    };
     createdFrom?: {
         storageProviderLabel?: string | null;
     };
@@ -66,6 +87,7 @@ type PublishRecord = {
     _id: string;
     assetId: string;
     socialAccountId: string;
+    thumbnailAssetId?: string | null;
     platform: SocialAccount["platform"];
     publishType: SocialPublishType;
     facebookPageId?: string | null;
@@ -86,6 +108,7 @@ type PublishRecord = {
 
 type FormState = {
     assetId: string;
+    thumbnailAssetId: string;
     publishMode: PublishMode;
     title: string;
     caption: string;
@@ -103,6 +126,7 @@ type Pagination = {
 
 const EMPTY_FORM: FormState = {
     assetId: "",
+    thumbnailAssetId: "",
     publishMode: "publish_now",
     title: "",
     caption: "",
@@ -185,6 +209,23 @@ function splitCsv(value: string) {
         .filter(Boolean);
 }
 
+function matchesThumbnailSearch(asset: StoredThumbnailAsset, query: string) {
+    const normalizedQuery = query.trim().toLowerCase();
+    if (!normalizedQuery) {
+        return true;
+    }
+
+    return [
+        asset._id,
+        asset.metadata?.title,
+        asset.metadata?.folder,
+        asset.metadata?.sourceUrl,
+        ...(asset.metadata?.tags ?? []),
+    ]
+        .filter((entry): entry is string => typeof entry === "string")
+        .some((entry) => entry.toLowerCase().includes(normalizedQuery));
+}
+
 function formatBytes(size?: number | null) {
     if (!size || size <= 0) {
         return "-";
@@ -230,6 +271,9 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
     const [records, setRecords] = useState<PublishRecord[]>([]);
     const [accounts, setAccounts] = useState<SocialAccount[]>([]);
     const [assets, setAssets] = useState<StoredVideoAsset[]>([]);
+    const [thumbnailAssets, setThumbnailAssets] = useState<
+        StoredThumbnailAsset[]
+    >([]);
     const [status, setStatus] = useState<
         "idle" | "loading" | "ready" | "failed"
     >("idle");
@@ -239,7 +283,9 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
     const [submitProgress, setSubmitProgress] = useState(0);
     const [showForm, setShowForm] = useState(false);
     const [showAssetPicker, setShowAssetPicker] = useState(false);
+    const [showThumbnailPicker, setShowThumbnailPicker] = useState(false);
     const [assetSearchQuery, setAssetSearchQuery] = useState("");
+    const [thumbnailSearchQuery, setThumbnailSearchQuery] = useState("");
     const [assetPreview, setAssetPreview] = useState<AssetPreviewState | null>(
         null,
     );
@@ -263,12 +309,26 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
         () => assets.find((asset) => asset._id === form.assetId),
         [assets, form.assetId],
     );
+    const selectedThumbnail = useMemo(
+        () =>
+            thumbnailAssets.find(
+                (asset) => asset._id === form.thumbnailAssetId,
+            ),
+        [form.thumbnailAssetId, thumbnailAssets],
+    );
     const visibleAssets = useMemo(
         () =>
             assets.filter((asset) =>
                 matchesVideoAssetSearch(asset, assetSearchQuery),
             ),
         [assetSearchQuery, assets],
+    );
+    const visibleThumbnailAssets = useMemo(
+        () =>
+            thumbnailAssets.filter((asset) =>
+                matchesThumbnailSearch(asset, thumbnailSearchQuery),
+            ),
+        [thumbnailAssets, thumbnailSearchQuery],
     );
     const hasYouTubeShortDestination = form.destinations.some(
         (destination) => destination.publishType === "youtube_short",
@@ -348,24 +408,29 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
                     params.set("status", statusFilter);
                 }
 
-                const [recordsResponse, accountsResponse, assetsResponse] =
-                    await Promise.all([
-                        fetch(
-                            `/api/social/publish-records?${params.toString()}`,
-                            {
-                                method: "GET",
-                                cache: "no-store",
-                            },
-                        ),
-                        fetch("/api/social/accounts", {
-                            method: "GET",
-                            cache: "no-store",
-                        }),
-                        fetch("/api/storage/assets?limit=100", {
-                            method: "GET",
-                            cache: "no-store",
-                        }),
-                    ]);
+                const [
+                    recordsResponse,
+                    accountsResponse,
+                    assetsResponse,
+                    thumbnailsResponse,
+                ] = await Promise.all([
+                    fetch(`/api/social/publish-records?${params.toString()}`, {
+                        method: "GET",
+                        cache: "no-store",
+                    }),
+                    fetch("/api/social/accounts", {
+                        method: "GET",
+                        cache: "no-store",
+                    }),
+                    fetch("/api/storage/assets?limit=100", {
+                        method: "GET",
+                        cache: "no-store",
+                    }),
+                    fetch("/api/storage/thumbnail-assets?limit=100", {
+                        method: "GET",
+                        cache: "no-store",
+                    }),
+                ]);
 
                 const recordsPayload =
                     (await recordsResponse.json()) as ApiResponse<
@@ -378,6 +443,10 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
                 const assetsPayload =
                     (await assetsResponse.json()) as ApiResponse<
                         StoredVideoAsset[]
+                    >;
+                const thumbnailsPayload =
+                    (await thumbnailsResponse.json()) as ApiResponse<
+                        StoredThumbnailAsset[]
                     >;
 
                 if (!recordsResponse.ok || !recordsPayload.ok) {
@@ -393,6 +462,7 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
                 setPagination(recordsPayload.pagination ?? DEFAULT_PAGINATION);
                 setAccounts(accountsPayload.data ?? []);
                 setAssets(assetsPayload.data ?? []);
+                setThumbnailAssets(thumbnailsPayload.data ?? []);
                 setStatus("ready");
                 setMessage(
                     `Loaded ${(recordsPayload.data ?? []).length} of ${
@@ -571,6 +641,7 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
                                 assetId: form.assetId,
                                 socialAccountId: destination.socialAccountId,
                                 publishType: destination.publishType,
+                                thumbnailAssetId: form.thumbnailAssetId || null,
                                 facebookPageId:
                                     destination.facebookPageId || null,
                                 publishNow: form.publishMode === "publish_now",
@@ -651,6 +722,7 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
             setShowForm(false);
             setForm({ ...EMPTY_FORM, destinations: [createDestinationRow()] });
             setFormMessage("");
+            setShowThumbnailPicker(false);
             await loadAll(1);
             setStatus(failed.length === 0 ? "ready" : "failed");
             setMessage(
@@ -804,6 +876,7 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
                             setFormMessage("");
                             setSubmitProgress(0);
                             setShowAssetPicker(false);
+                            setShowThumbnailPicker(false);
                             setShowForm(true);
                         }}
                         className="inline-flex items-center gap-2 border border-main bg-secondary px-3 py-1.5 text-[12px] font-semibold text-main hover:bg-secondary/75"
@@ -842,6 +915,7 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
                         <tr>
                             <th className="px-4 py-2 font-semibold">Preview</th>
                             <th className="px-4 py-2 font-semibold">Asset</th>
+
                             <th className="px-4 py-2 font-semibold">Account</th>
                             <th className="px-4 py-2 font-semibold">
                                 Platform
@@ -862,7 +936,7 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
                             <tr>
                                 <td
                                     className="px-4 py-6 text-muted"
-                                    colSpan={11}
+                                    colSpan={12}
                                 >
                                     Chưa có publish record nào.
                                 </td>
@@ -907,6 +981,7 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
                                                 record.title ??
                                                 record.assetId}
                                         </td>
+
                                         <td className="px-4 py-3 text-main">
                                             {record.socialAccount?.label ??
                                                 record.socialAccountId}
@@ -1055,10 +1130,23 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
                                 }
                             />
                             <DetailCell
+                                label="Title"
+                                value={selectedRecord.title || "-"}
+                            />
+                            <DetailCell
                                 label="Hashtags"
                                 value={
                                     selectedRecord.hashtags.join(", ") || "-"
                                 }
+                            />
+                            <DetailCell
+                                label="Caption"
+                                value={selectedRecord.caption || "-"}
+                            />
+                            <DetailCell
+                                label="Thumbnail"
+                                value={selectedRecord.thumbnailAssetId || "-"}
+                                mono
                             />
                             <DetailCell
                                 label="Error"
@@ -1142,6 +1230,7 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
                                         setFormMessage("");
                                         setSubmitProgress(0);
                                         setShowAssetPicker(false);
+                                        setShowThumbnailPicker(false);
                                     }
                                 }}
                                 className="border border-main bg-main px-2.5 py-1 text-[11px] font-semibold text-main hover:bg-secondary"
@@ -1198,18 +1287,26 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
                                     <div className="mt-2 text-[10px] text-muted">
                                         <p className="truncate">
                                             {[
-                                                selectedAsset.createdFrom?.storageProviderLabel ??
+                                                selectedAsset.createdFrom
+                                                    ?.storageProviderLabel ??
                                                     selectedAsset.storageProvider,
-                                                formatBytes(selectedAsset.sizeBytes),
-                                                selectedAsset.metadata?.originPlatform,
-                                                selectedAsset.metadata?.actualQuality,
+                                                formatBytes(
+                                                    selectedAsset.sizeBytes,
+                                                ),
+                                                selectedAsset.metadata
+                                                    ?.originPlatform,
+                                                selectedAsset.metadata
+                                                    ?.actualQuality,
                                             ]
                                                 .filter(Boolean)
                                                 .join(" · ")}
                                         </p>
                                         {selectedAsset.metadata?.sourceUrl ? (
                                             <p className="mt-1 truncate">
-                                                {selectedAsset.metadata.sourceUrl}
+                                                {
+                                                    selectedAsset.metadata
+                                                        .sourceUrl
+                                                }
                                             </p>
                                         ) : null}
                                     </div>
@@ -1354,7 +1451,8 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
                                                                             }
                                                                         />
                                                                     </div>
-                                                                    {asset.metadata
+                                                                    {asset
+                                                                        .metadata
                                                                         ?.sourceUrl ? (
                                                                         <p className="mt-1 truncate text-[10px] text-muted">
                                                                             {
@@ -1414,6 +1512,169 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
                                     </div>
                                 ) : null}
                             </label>
+                            <div className="text-[12px] font-medium text-main">
+                                <div className="flex items-center gap-1.5">
+                                    <ImageIcon className="h-3.5 w-3.5 text-muted" />
+                                    Thumbnail
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() =>
+                                        setShowThumbnailPicker(
+                                            (previous) => !previous,
+                                        )
+                                    }
+                                    disabled={isSubmitting}
+                                    className="mt-1 flex w-full items-center justify-between border border-main bg-main px-3 py-2 text-left text-[12px] text-main"
+                                >
+                                    <span className="truncate">
+                                        {selectedThumbnail?.metadata?.title ??
+                                            selectedThumbnail?._id ??
+                                            "Select thumbnail"}
+                                    </span>
+                                    <span className="ml-2 text-[11px] text-muted">
+                                        {showThumbnailPicker
+                                            ? "Close"
+                                            : "Browse"}
+                                    </span>
+                                </button>
+                                {selectedThumbnail ? (
+                                    <div className="mt-2 overflow-hidden border border-main bg-secondary/20">
+                                        <img
+                                            src={`/api/storage/thumbnail-assets/${selectedThumbnail._id}/download?disposition=inline`}
+                                            alt={
+                                                selectedThumbnail.metadata
+                                                    ?.title ??
+                                                "Selected thumbnail"
+                                            }
+                                            className="h-24 w-full object-cover"
+                                        />
+                                        <div className="px-2 py-1.5 text-[10px] text-muted">
+                                            <p className="truncate">
+                                                {[
+                                                    selectedThumbnail.metadata
+                                                        ?.folder,
+                                                    ...(selectedThumbnail
+                                                        .metadata?.tags ?? []),
+                                                    selectedThumbnail
+                                                        .createdFrom
+                                                        ?.storageProviderLabel ??
+                                                        selectedThumbnail.storageProvider,
+                                                    formatBytes(
+                                                        selectedThumbnail.sizeBytes,
+                                                    ),
+                                                ]
+                                                    .filter(Boolean)
+                                                    .join(" · ")}
+                                            </p>
+                                            <button
+                                                type="button"
+                                                onClick={() =>
+                                                    setForm((previous) => ({
+                                                        ...previous,
+                                                        thumbnailAssetId: "",
+                                                    }))
+                                                }
+                                                disabled={isSubmitting}
+                                                className="mt-1 text-[10px] font-semibold text-main hover:underline disabled:cursor-not-allowed disabled:opacity-60"
+                                            >
+                                                Clear thumbnail
+                                            </button>
+                                        </div>
+                                    </div>
+                                ) : null}
+                                {showThumbnailPicker ? (
+                                    <div className="mt-2 max-h-64 overflow-y-auto border border-main bg-main">
+                                        <div className="border-b border-main p-2">
+                                            <input
+                                                value={thumbnailSearchQuery}
+                                                onChange={(event) =>
+                                                    setThumbnailSearchQuery(
+                                                        event.target.value,
+                                                    )
+                                                }
+                                                placeholder="Search thumbnail title, folder, tags..."
+                                                className="w-full border border-main bg-main px-2 py-1 text-[11px] text-main outline-none transition-colors focus:border-accent"
+                                            />
+                                        </div>
+                                        {visibleThumbnailAssets.length === 0 ? (
+                                            <p className="px-3 py-4 text-[11px] text-muted">
+                                                No matching thumbnail.
+                                            </p>
+                                        ) : (
+                                            <div className="grid grid-cols-2 gap-2 p-2">
+                                                {visibleThumbnailAssets.map(
+                                                    (asset) => {
+                                                        const isSelected =
+                                                            form.thumbnailAssetId ===
+                                                            asset._id;
+
+                                                        return (
+                                                            <button
+                                                                key={asset._id}
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    setForm(
+                                                                        (
+                                                                            previous,
+                                                                        ) => ({
+                                                                            ...previous,
+                                                                            thumbnailAssetId:
+                                                                                asset._id,
+                                                                        }),
+                                                                    );
+                                                                    setShowThumbnailPicker(
+                                                                        false,
+                                                                    );
+                                                                }}
+                                                                className={`overflow-hidden border text-left ${
+                                                                    isSelected
+                                                                        ? "border-accent bg-secondary/35"
+                                                                        : "border-main bg-main"
+                                                                }`}
+                                                            >
+                                                                <img
+                                                                    src={`/api/storage/thumbnail-assets/${asset._id}/download?disposition=inline`}
+                                                                    alt={
+                                                                        asset
+                                                                            .metadata
+                                                                            ?.title ??
+                                                                        "Thumbnail"
+                                                                    }
+                                                                    className="h-20 w-full bg-black object-cover"
+                                                                />
+                                                                <span className="block truncate px-2 py-1 text-[11px] font-semibold text-main">
+                                                                    {asset
+                                                                        .metadata
+                                                                        ?.title ??
+                                                                        asset._id}
+                                                                </span>
+                                                                <span className="block truncate px-2 pb-1 text-[10px] text-muted">
+                                                                    {[
+                                                                        asset
+                                                                            .metadata
+                                                                            ?.folder,
+                                                                        ...(asset
+                                                                            .metadata
+                                                                            ?.tags ??
+                                                                            []),
+                                                                    ]
+                                                                        .filter(
+                                                                            Boolean,
+                                                                        )
+                                                                        .join(
+                                                                            " · ",
+                                                                        )}
+                                                                </span>
+                                                            </button>
+                                                        );
+                                                    },
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                ) : null}
+                            </div>
                             <fieldset className="border border-main bg-secondary/20 p-3">
                                 <legend className="px-1 text-[12px] font-medium text-main">
                                     Publish mode
@@ -2001,6 +2262,7 @@ export function PublishRecordsPanel({ section }: PublishRecordsPanelProps) {
                                         destinations: [createDestinationRow()],
                                     });
                                     setFormMessage("");
+                                    setShowThumbnailPicker(false);
                                 }}
                                 disabled={isSubmitting}
                                 className="border border-main bg-main px-3 py-1.5 text-[12px] font-semibold text-main"

@@ -23,6 +23,7 @@
 
 ## Review
 
+- `FAST-WORKSPACE-033` - Improve Workspace metadata tags and Publish Records thumbnail UX.
 - `FAST-VIDEO-008` - Fix Thumbnail Studio blur and text preview fidelity.
 - `FAST-VIDEO-007` - Make Thumbnail Studio production-ready with storage persistence.
 - `FAST-AUDIO-057` - Remove redundant Audio Transcript 2 test page.
