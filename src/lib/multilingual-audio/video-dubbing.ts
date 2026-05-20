@@ -44,10 +44,14 @@ export type VideoDubbingInput = {
     originalAudioVolume?: number;
     voiceVolume?: number;
     videoSpeedFactor?: number;
+    omitVideoBase64?: boolean;
 };
 
 export type VideoDubbingResult = {
-    videoBase64: string;
+    videoBase64?: string;
+    videoBytes?: Buffer;
+    artifactId?: string;
+    artifactExpiresAt?: string;
     mimeType: "video/mp4";
     extension: "mp4";
     fileName: string;
@@ -283,7 +287,9 @@ export async function runVideoDubbing(
     });
 
     return {
-        videoBase64: videoBytes.toString("base64"),
+        ...(input.omitVideoBase64
+            ? { videoBytes }
+            : { videoBase64: videoBytes.toString("base64") }),
         mimeType: "video/mp4",
         extension: "mp4",
         fileName: sanitizeOutputName(input.fileName),

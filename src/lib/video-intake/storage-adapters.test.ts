@@ -82,4 +82,101 @@ describe("storage upload streaming", () => {
     expect(uploadInit.body).toBeInstanceOf(ReadableStream);
     expect(uploadInit.body).not.toBeInstanceOf(Uint8Array);
   });
+
+  it("maps source fetch throws to STG_SOURCE_FETCH_FAILED", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(
+          new Response(null, {
+            status: 200,
+            headers: { location: "https://upload.example.com/session" },
+          }),
+        )
+        .mockRejectedValueOnce(new TypeError("fetch failed")),
+    );
+
+    await expect(
+      uploadResolvedMedia({
+        provider: "drive",
+        media: {
+          originalUrl: "https://example.com/page",
+          directMediaUrl: "https://cdn.example.com/source.mp4",
+          originPlatform: "other",
+          downloadMode: "direct-url",
+          requestedQuality: "best",
+          resolver: "internal-resolver",
+        },
+      }),
+    ).rejects.toMatchObject({
+      errorCode: "STG_SOURCE_FETCH_FAILED",
+      retryable: true,
+    });
+  });
+
+  it("maps Drive session fetch throws to STG_DRIVE_UPLOAD_NETWORK_FAILED", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValueOnce(new TypeError("fetch failed")),
+    );
+
+    await expect(
+      uploadResolvedMedia({
+        provider: "drive",
+        media: {
+          originalUrl: "https://example.com/page",
+          directMediaUrl: "https://cdn.example.com/source.mp4",
+          originPlatform: "other",
+          downloadMode: "direct-url",
+          requestedQuality: "best",
+          resolver: "internal-resolver",
+        },
+      }),
+    ).rejects.toMatchObject({
+      errorCode: "STG_DRIVE_UPLOAD_NETWORK_FAILED",
+      retryable: true,
+    });
+  });
+
+  it("maps Drive resumable PUT throws to STG_DRIVE_RESUMABLE_PUT_FAILED", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(
+          new Response(null, {
+            status: 200,
+            headers: { location: "https://upload.example.com/session" },
+          }),
+        )
+        .mockResolvedValueOnce(
+          new Response(new Uint8Array([1, 2, 3]), {
+            status: 200,
+            headers: {
+              "content-type": "video/mp4",
+              "content-length": "3",
+            },
+          }),
+        )
+        .mockRejectedValueOnce(new TypeError("fetch failed")),
+    );
+
+    await expect(
+      uploadResolvedMedia({
+        provider: "drive",
+        media: {
+          originalUrl: "https://example.com/page",
+          directMediaUrl: "https://cdn.example.com/source.mp4",
+          originPlatform: "other",
+          downloadMode: "direct-url",
+          requestedQuality: "best",
+          resolver: "internal-resolver",
+        },
+      }),
+    ).rejects.toMatchObject({
+      errorCode: "STG_DRIVE_RESUMABLE_PUT_FAILED",
+      retryable: true,
+    });
+  });
 });

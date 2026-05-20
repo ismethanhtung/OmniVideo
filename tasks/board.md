@@ -23,6 +23,8 @@
 
 ## Review
 
+- `FAST-WORKSPACE-034` - Use server-side artifacts for large Workspace media and persist active progress.
+- `FAST-INTAKE-007` - Map fetch failed upload errors to explicit intake codes.
 - `FAST-WORKSPACE-033` - Improve Workspace metadata tags and Publish Records thumbnail UX.
 - `FAST-VIDEO-008` - Fix Thumbnail Studio blur and text preview fidelity.
 - `FAST-VIDEO-007` - Make Thumbnail Studio production-ready with storage persistence.

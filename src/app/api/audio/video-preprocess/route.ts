@@ -3,6 +3,10 @@ import { NextResponse } from "next/server";
 import { applyDemoRateLimit } from "@/lib/access-control/route-guards";
 import { ChineseTranscriptionError } from "@/lib/multilingual-audio/types";
 import { preprocessVideoSpeed } from "@/lib/multilingual-audio/video-preprocess";
+import {
+    buildWorkspaceMediaPayload,
+    getWorkspaceServerArtifact,
+} from "@/lib/workspace/server-artifacts";
 
 export const runtime = "nodejs";
 
@@ -18,6 +22,23 @@ function readNumberFormValue(formData: FormData, key: string) {
     return Number.isFinite(value) ? value : undefined;
 }
 
+function readArtifactVideo(artifactId: string) {
+    const artifact = getWorkspaceServerArtifact(artifactId);
+    if (!artifact || artifact.kind !== "video") {
+        throw new ChineseTranscriptionError(
+            "VAL_DUBBING_VIDEO_REQUIRED",
+            "Workspace video artifact was not found or has expired.",
+            404,
+        );
+    }
+
+    return {
+        fileName: artifact.fileName,
+        mimeType: artifact.mimeType,
+        fileBytes: new Uint8Array(artifact.bytes),
+    };
+}
+
 export async function POST(request: Request) {
     try {
         const startedAt = Date.now();
@@ -27,6 +48,7 @@ export async function POST(request: Request) {
         const formData = await request.formData();
         const file = formData.get("videoFile");
         const assetId = readFormValue(formData, "assetId").trim();
+        const artifactId = readFormValue(formData, "artifactId").trim();
 
         let source:
             | {
@@ -42,6 +64,8 @@ export async function POST(request: Request) {
                 mimeType: file.type || undefined,
                 fileBytes: new Uint8Array(await file.arrayBuffer()),
             };
+        } else if (artifactId) {
+            source = readArtifactVideo(artifactId);
         } else if (assetId) {
             const { getIntakeDb, getVideoAssetById } = await import(
                 "@/lib/video-intake/repository"
@@ -96,15 +120,20 @@ export async function POST(request: Request) {
             speedFactor,
         });
 
+        const mediaPayload = buildWorkspaceMediaPayload({
+            bytes: output.fileBytes,
+            fileName: output.fileName,
+            mimeType: "video/mp4",
+            kind: "video",
+            base64Field: "videoBase64",
+        });
+
         return NextResponse.json({
             ok: true,
             data: {
-                fileName: output.fileName,
-                mimeType: "video/mp4",
                 speedFactor: output.speedFactor,
-                byteLength: output.fileBytes.byteLength,
                 generationDurationMs: Date.now() - startedAt,
-                videoBase64: output.fileBytes.toString("base64"),
+                ...mediaPayload,
             },
         });
     } catch (error) {

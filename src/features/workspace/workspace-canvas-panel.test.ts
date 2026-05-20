@@ -119,6 +119,8 @@ describe("WorkspaceCanvasPanel canvas interactions", () => {
         expect(source).toContain("WORKSPACE_RUNTIME_RESUME_STORAGE_KEY");
         expect(source).toContain("parseRuntimeResumeSnapshot");
         expect(source).toContain("buildWorkspaceGraphSignature");
+        expect(source).toContain("buildRuntimeArtifactResumeSnapshot");
+        expect(source).toContain("runtimeArtifactsByNodeId");
         expect(source).toContain("hasStoredArtifactCheckpoint");
         expect(source).toContain("shouldUsePublishOnlyResume");
         expect(source).toContain(
@@ -130,15 +132,23 @@ describe("WorkspaceCanvasPanel canvas interactions", () => {
         expect(source).toMatch(
             /findUpstreamSourceAssetNode\(\s*graph,\s*sourceNode\.id,\s*\)/,
         );
-        expect(source).toMatch(
-            /probeVideoDimensionsFromFile\(\s*source\.file,\s*\)/,
-        );
+        expect(source).toContain("probeVideoDimensionsFromFile(source.file)");
+        expect(source).toContain("{ width: 1920, height: 1080 }");
         expect(source).toContain("subtitlePlayResX");
         expect(source).toContain("subtitlePlayResY");
         expect(source).toContain("Patch storage asset metadata");
         expect(source).toContain("vietnameseTitle");
         expect(source).toContain("vietnameseDescription");
         expect(source).toContain("vietnameseHashtags");
+    });
+
+    it("keeps large runtime video artifacts server-side by artifact id", () => {
+        expect(source).toContain("artifactId?: string;");
+        expect(source).toContain("artifactExpiresAt?: string;");
+        expect(source).toContain('formData.set("artifactId", upstreamArtifact.artifactId)');
+        expect(source).toContain('uploadForm.set("artifactId", artifact.artifactId)');
+        expect(source).toContain('formData.set("responseMode", "artifact")');
+        expect(source).toContain("Server-side video artifact used.");
     });
 
     it("marks upstream raw assets once a processed output is stored", () => {

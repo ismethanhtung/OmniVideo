@@ -190,6 +190,8 @@ type NodeRunState = {
 };
 
 type WorkspaceRuntimeArtifact = {
+    artifactId?: string;
+    artifactExpiresAt?: string;
     fileName: string;
     mimeType: string;
     base64?: string;
@@ -248,6 +250,7 @@ type WorkspaceRuntimeResumeSnapshot = {
     version: 1;
     graphSignature: string;
     nodeRunStatus: Record<string, NodeRunState>;
+    runtimeArtifactsByNodeId?: Record<string, WorkspaceRuntimeArtifact | undefined>;
     runtimeAssetIdsByNodeId: Record<string, string | undefined>;
     runtimeVietnameseMetadataByNodeId: Record<
         string,
@@ -509,6 +512,30 @@ function parseRuntimeResumeSnapshot(
     }
 }
 
+function buildRuntimeArtifactResumeSnapshot(
+    artifacts: Record<string, WorkspaceRuntimeArtifact | undefined>,
+) {
+    return Object.fromEntries(
+        Object.entries(artifacts)
+            .filter((entry): entry is [string, WorkspaceRuntimeArtifact] =>
+                Boolean(entry[1]?.artifactId || entry[1]?.base64),
+            )
+            .map(([nodeId, artifact]) => [
+                nodeId,
+                {
+                    artifactId: artifact.artifactId,
+                    artifactExpiresAt: artifact.artifactExpiresAt,
+                    fileName: artifact.fileName,
+                    mimeType: artifact.mimeType,
+                    base64: artifact.base64,
+                    byteLength: artifact.byteLength,
+                    kind: artifact.kind,
+                    detail: artifact.detail,
+                },
+            ]),
+    );
+}
+
 function artifactDataUrl(artifact: WorkspaceRuntimeArtifact) {
     if (artifact.objectUrl) return artifact.objectUrl;
     if (!artifact.base64) return "";
@@ -529,7 +556,7 @@ function base64ToFile(artifact: WorkspaceRuntimeArtifact) {
     if (artifact.file) return artifact.file;
     if (!artifact.base64) {
         throw new Error(
-            `Runtime artifact '${artifact.fileName}' không có file/base64 để upload.`,
+            `Runtime artifact '${artifact.fileName}' không có file/base64 để upload trực tiếp từ browser.`,
         );
     }
     const binary = atob(artifact.base64);
@@ -1343,6 +1370,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                 ...snapshot.nodeRunStatus,
             };
             setNodeRunStatus(mergedStatus);
+            setRuntimeArtifactsByNodeId(snapshot.runtimeArtifactsByNodeId ?? {});
             setRuntimeAssetIdsByNodeId(snapshot.runtimeAssetIdsByNodeId ?? {});
             setRuntimeVietnameseMetadataByNodeId(
                 snapshot.runtimeVietnameseMetadataByNodeId ?? {},
@@ -1370,6 +1398,8 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
             version: 1,
             graphSignature: buildWorkspaceGraphSignature(graph),
             nodeRunStatus,
+            runtimeArtifactsByNodeId:
+                buildRuntimeArtifactResumeSnapshot(runtimeArtifactsByNodeId),
             runtimeAssetIdsByNodeId,
             runtimeVietnameseMetadataByNodeId,
             runError,
@@ -1385,6 +1415,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
         nodeRunStatus,
         runError,
         runResult,
+        runtimeArtifactsByNodeId,
         runtimeAssetIdsByNodeId,
         runtimeVietnameseMetadataByNodeId,
     ]);
@@ -2184,6 +2215,16 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     `${consumerLabel} thiếu video artifact upstream từ '${sourceNode.label}'.`,
                 );
             }
+            if (upstreamArtifact.artifactId) {
+                return {
+                    artifactId: upstreamArtifact.artifactId,
+                    fileName: upstreamArtifact.fileName,
+                    byteLength: upstreamArtifact.byteLength,
+                    mimeType: upstreamArtifact.mimeType,
+                    sourceStatus: "Server-side video artifact used.",
+                    objectUrl: upstreamArtifact.objectUrl ?? "",
+                };
+            }
             const file =
                 upstreamArtifact.file ?? base64ToFile(upstreamArtifact);
             return {
@@ -2254,10 +2295,16 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     `${consumerLabel} thiếu video artifact upstream từ '${sourceNode.label}'.`,
                 );
             }
-            formData.set("videoFile", base64ToFile(upstreamArtifact));
+            if (upstreamArtifact.artifactId) {
+                formData.set("artifactId", upstreamArtifact.artifactId);
+            } else {
+                formData.set("videoFile", base64ToFile(upstreamArtifact));
+            }
             return {
                 detail: upstreamArtifact.fileName,
-                sourceStatus: "Video artifact used.",
+                sourceStatus: upstreamArtifact.artifactId
+                    ? "Server-side video artifact used."
+                    : "Video artifact used.",
             };
         };
 
@@ -2676,9 +2723,11 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         data: {
                             fileName: string;
                             mimeType: string;
-                            videoBase64: string;
+                            videoBase64?: string;
                             byteLength: number;
                             speedFactor: number;
+                            artifactId?: string;
+                            artifactExpiresAt?: string;
                         };
                     }>({
                         url: "/api/audio/video-preprocess",
@@ -2686,6 +2735,9 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         init: { method: "POST", body: formData },
                     });
                     const artifact: WorkspaceRuntimeArtifact = {
+                        artifactId: preprocessPayload.data.artifactId,
+                        artifactExpiresAt:
+                            preprocessPayload.data.artifactExpiresAt,
                         fileName: preprocessPayload.data.fileName,
                         mimeType: preprocessPayload.data.mimeType,
                         base64: preprocessPayload.data.videoBase64,
@@ -3236,6 +3288,9 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     });
 
                     const artifact: WorkspaceRuntimeArtifact = {
+                        artifactId: dubbingPayload.data.artifactId,
+                        artifactExpiresAt:
+                            dubbingPayload.data.artifactExpiresAt,
                         fileName: dubbingPayload.data.fileName,
                         mimeType: dubbingPayload.data.mimeType,
                         base64: dubbingPayload.data.videoBase64,
@@ -3310,6 +3365,8 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                             fileName: string;
                             byteLength: number;
                             transform: { axis: "horizontal"; filter: "hflip" };
+                            artifactId?: string;
+                            artifactExpiresAt?: string;
                         };
                     }>({
                         url: "/api/video-processing/mirror",
@@ -3318,6 +3375,9 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     });
 
                     const artifact: WorkspaceRuntimeArtifact = {
+                        artifactId: mirrorPayload.data.artifactId,
+                        artifactExpiresAt:
+                            mirrorPayload.data.artifactExpiresAt,
                         fileName: mirrorPayload.data.fileName,
                         mimeType: mirrorPayload.data.mimeType,
                         base64: mirrorPayload.data.videoBase64,
@@ -3370,7 +3430,15 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         sourceNode,
                         consumerLabel: `Mask Logo/Subtitles '${editNode.label}'`,
                     });
-                    formData.set("videoFile", source.file);
+                    if ("artifactId" in source && source.artifactId) {
+                        formData.set("artifactId", source.artifactId);
+                    } else if ("file" in source && source.file) {
+                        formData.set("videoFile", source.file);
+                    } else {
+                        throw new Error(
+                            `Mask Logo/Subtitles '${editNode.label}' không có video file hoặc artifactId.`,
+                        );
+                    }
 
                     const upstreamSourceAssetNode = findUpstreamSourceAssetNode(
                         graph,
@@ -3480,9 +3548,10 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         "translatedSegmentsJson",
                         JSON.stringify(translation.translatedSegments),
                     );
-                    const sourceDimensions = await probeVideoDimensionsFromFile(
-                        source.file,
-                    );
+                    const sourceDimensions =
+                        "file" in source && source.file
+                            ? await probeVideoDimensionsFromFile(source.file)
+                            : { width: 1920, height: 1080 };
                     formData.set(
                         "subtitlePlayResX",
                         String(sourceDimensions.width),
@@ -3491,7 +3560,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         "subtitlePlayResY",
                         String(sourceDimensions.height),
                     );
-                    formData.set("responseMode", "binary");
+                    formData.set("responseMode", "artifact");
 
                     setNodeStatus(
                         editNode.id,
@@ -3504,18 +3573,35 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         description:
                             "Blurring regions and burning Vietnamese subtitles...",
                     });
-                    const editFile = await fetchWorkspaceFile({
+                    const editPayload = await fetchWorkspaceJson<{
+                        ok: true;
+                        data: {
+                            videoBase64?: string;
+                            artifactId?: string;
+                            artifactExpiresAt?: string;
+                            mimeType: "video/mp4";
+                            fileName: string;
+                            byteLength: number;
+                            transform: {
+                                mirror: boolean;
+                                partialBlur: boolean;
+                                subtitleOverlay: boolean;
+                                segmentCount: number;
+                            };
+                        };
+                    }>({
                         url: "/api/video-processing/edit",
                         actionLabel: "Video edit",
                         init: { method: "POST", body: formData },
                     });
 
                     const artifact: WorkspaceRuntimeArtifact = {
-                        fileName: editFile.fileName,
-                        mimeType: editFile.mimeType,
-                        file: editFile.file,
-                        objectUrl: editFile.objectUrl,
-                        byteLength: editFile.byteLength,
+                        artifactId: editPayload.data.artifactId,
+                        artifactExpiresAt: editPayload.data.artifactExpiresAt,
+                        fileName: editPayload.data.fileName,
+                        mimeType: editPayload.data.mimeType,
+                        base64: editPayload.data.videoBase64,
+                        byteLength: editPayload.data.byteLength,
                         kind: "video",
                         detail: `Blur + subtitles (${translation.translatedSegments.length} segment(s))`,
                     };
@@ -3537,10 +3623,10 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     setNodeStatus(
                         editNode.id,
                         "success",
-                        `${formatBytes(editFile.byteLength)} MP4.`,
+                        `${formatBytes(editPayload.data.byteLength)} MP4.`,
                     );
                     summary.push(
-                        `Edited video ready: ${formatBytes(editFile.byteLength)}.`,
+                        `Edited video ready: ${formatBytes(editPayload.data.byteLength)}.`,
                     );
                     advanceProgress(`Video edit ${editNode.label} complete.`);
                 } else if (step.kind === "store-artifact") {
@@ -3589,7 +3675,11 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         description: `Saving generated video to ${storageAccount.label}...`,
                     });
                     const uploadForm = new FormData();
-                    uploadForm.set("videoFile", base64ToFile(artifact));
+                    if (artifact.artifactId) {
+                        uploadForm.set("artifactId", artifact.artifactId);
+                    } else {
+                        uploadForm.set("videoFile", base64ToFile(artifact));
+                    }
                     uploadForm.set(
                         "storageProvider",
                         storageAccount.providerType === "telegram"

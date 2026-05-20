@@ -11,6 +11,10 @@ import {
   type VoiceGenerationSettings,
 } from "@/lib/multilingual-audio/types";
 import { getIntakeDb, getVideoAssetById } from "@/lib/video-intake/repository";
+import {
+  buildWorkspaceMediaPayload,
+  getWorkspaceServerArtifact,
+} from "@/lib/workspace/server-artifacts";
 
 export const runtime = "nodejs";
 
@@ -71,6 +75,23 @@ async function readStorageAssetVideo(assetId: string) {
   };
 }
 
+function readWorkspaceArtifactVideo(artifactId: string) {
+  const artifact = getWorkspaceServerArtifact(artifactId);
+  if (!artifact || artifact.kind !== "video") {
+    throw new ChineseTranscriptionError(
+      "VAL_DUBBING_VIDEO_REQUIRED",
+      "Workspace video artifact was not found or has expired.",
+      404,
+    );
+  }
+
+  return {
+    fileName: artifact.fileName,
+    mimeType: artifact.mimeType,
+    fileBytes: new Uint8Array(artifact.bytes),
+  };
+}
+
 export async function POST(request: Request) {
   try {
     const rateLimited = applyDemoRateLimit(request, "video-dubbing");
@@ -79,6 +100,7 @@ export async function POST(request: Request) {
     const formData = await request.formData();
     const file = formData.get("videoFile");
     const assetId = readFormValue(formData, "assetId").trim();
+    const artifactId = readFormValue(formData, "artifactId").trim();
     const providerId = readFormValue(formData, "providerId").trim();
     const providerAccessDenied = requireOwnerForProviderAccount(
       request,
@@ -99,6 +121,8 @@ export async function POST(request: Request) {
         mimeType: file.type || undefined,
         fileBytes: new Uint8Array(await file.arrayBuffer()),
       };
+    } else if (artifactId) {
+      source = readWorkspaceArtifactVideo(artifactId);
     } else if (assetId) {
       source = await readStorageAssetVideo(assetId);
     }
@@ -161,6 +185,7 @@ export async function POST(request: Request) {
       originalAudioVolume: readOptionalNumber(formData, "originalAudioVolume"),
       voiceVolume: readOptionalNumber(formData, "voiceVolume"),
       videoSpeedFactor: readOptionalNumber(formData, "videoSpeedFactor"),
+      omitVideoBase64: true,
     });
 
     const totalTokensUsed =
@@ -195,7 +220,24 @@ export async function POST(request: Request) {
       }
     }
 
-    return NextResponse.json({ ok: true, data: result });
+    const mediaPayload = buildWorkspaceMediaPayload({
+      bytes: result.videoBytes ?? Buffer.from(result.videoBase64 ?? "", "base64"),
+      fileName: result.fileName,
+      mimeType: result.mimeType,
+      kind: "video",
+      base64Field: "videoBase64",
+    });
+
+    return NextResponse.json({
+      ok: true,
+      data: {
+        ...result,
+        ...mediaPayload,
+        videoBase64:
+          "videoBase64" in mediaPayload ? mediaPayload.videoBase64 : undefined,
+        videoBytes: undefined,
+      },
+    });
   } catch (error) {
     if (error instanceof ChineseTranscriptionError) {
       return NextResponse.json(

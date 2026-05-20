@@ -1,5 +1,17 @@
 # OmniVideo Changelog
 
+## FAST-WORKSPACE-034 / FAST-INTAKE-007 - Large Workspace Artifacts and Intake Fetch Error Mapping
+
+- Bumped app version from `0.10.9` to `0.10.10` as a patch release for heavy Workspace runtime and intake diagnostics.
+- Added a server-side Workspace artifact registry for large generated media; video preprocess, dubbing, mirror, and edit APIs now return `artifactId` instead of `videoBase64` when outputs exceed the inline threshold.
+- Workspace downstream media nodes now pass `artifactId` through FormData, and Store Generated Artifact can upload from the server-side artifact without browser base64 decode/re-upload.
+- Active Background Progress tasks and lightweight Workspace artifact checkpoints now persist across reload-style hydration instead of only preserving finished tasks.
+- Intake upload network throws are now mapped to explicit codes: `STG_SOURCE_FETCH_FAILED`, `STG_DRIVE_UPLOAD_NETWORK_FAILED`, and `STG_DRIVE_RESUMABLE_PUT_FAILED`.
+- Verification (FAST-WORKSPACE-034 / FAST-INTAKE-007):
+  - `npm run test -- --run src/lib/workspace/server-artifacts.test.ts src/lib/ui/progress-center.test.ts src/lib/video-intake/storage-adapters.test.ts src/features/workspace/workspace-canvas-panel.test.ts src/app/api/audio/video-dubbing/route.test.ts` pass (5 files / 36 tests).
+  - `npm run build` pass (existing ESLint circular-config warning remains).
+  - `npm run guard:version` pass.
+
 ## FAST-WORKSPACE-033 - Improve Workspace Metadata Tags and Publish Records Thumbnail UX
 
 - Bumped app version from `0.10.8` to `0.10.9` as a patch release for metadata/publish UX polish.

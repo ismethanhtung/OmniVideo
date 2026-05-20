@@ -68,12 +68,6 @@ function getBrowserStorage() {
   }
 }
 
-function isFinishedTask(
-  task: ProgressTask,
-): task is ProgressTask & { status: "success" | "failed" } {
-  return task.status === "success" || task.status === "failed";
-}
-
 function isProgressMode(value: unknown): value is ProgressMode {
   return value === "determinate" || value === "indeterminate";
 }
@@ -117,7 +111,16 @@ function isPersistedProgressTaskStep(value: unknown): value is ProgressTaskStep 
   );
 }
 
-function isPersistedFinishedProgressTask(value: unknown): value is ProgressTask {
+function isProgressTaskStatus(value: unknown): value is ProgressTaskStatus {
+  return (
+    value === "queued" ||
+    value === "running" ||
+    value === "success" ||
+    value === "failed"
+  );
+}
+
+function isPersistedProgressTask(value: unknown): value is ProgressTask {
   if (!value || typeof value !== "object") {
     return false;
   }
@@ -128,14 +131,14 @@ function isPersistedFinishedProgressTask(value: unknown): value is ProgressTask 
     typeof task.title === "string" &&
     (task.description === undefined || typeof task.description === "string") &&
     isProgressScope(task.scope) &&
-    (task.status === "success" || task.status === "failed") &&
+    isProgressTaskStatus(task.status) &&
     typeof task.progress === "number" &&
     isProgressMode(task.progressMode) &&
     Array.isArray(task.steps) &&
     task.steps.every(isPersistedProgressTaskStep) &&
     typeof task.startedAt === "number" &&
     typeof task.updatedAt === "number" &&
-    typeof task.finishedAt === "number" &&
+    (task.finishedAt === undefined || typeof task.finishedAt === "number") &&
     (task.error === undefined || typeof task.error === "string")
   );
 }
@@ -163,7 +166,7 @@ function ensureHydrated() {
     }
 
     for (const task of parsed) {
-      if (isPersistedFinishedProgressTask(task)) {
+      if (isPersistedProgressTask(task)) {
         tasks.set(task.id, task);
       }
     }
@@ -172,23 +175,23 @@ function ensureHydrated() {
   }
 }
 
-function persistFinishedTasks() {
+function persistProgressTasks() {
   const storage = getBrowserStorage();
   if (!storage) {
     return;
   }
 
-  const finishedTasks = Array.from(tasks.values()).filter(isFinishedTask);
+  const progressTasks = Array.from(tasks.values());
 
   try {
-    if (finishedTasks.length === 0) {
+    if (progressTasks.length === 0) {
       storage.removeItem(PROGRESS_TASKS_STORAGE_KEY);
       return;
     }
 
     storage.setItem(
       PROGRESS_TASKS_STORAGE_KEY,
-      JSON.stringify(finishedTasks),
+      JSON.stringify(progressTasks),
     );
   } catch {
     // Browser storage is best-effort; progress tracking should keep working.
@@ -205,7 +208,7 @@ function clampProgress(value: number) {
 
 function emit() {
   snapshotCache = null;
-  persistFinishedTasks();
+  persistProgressTasks();
   for (const listener of listeners) {
     listener();
   }

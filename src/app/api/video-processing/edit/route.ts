@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createWriteStream } from "node:fs";
-import { mkdir, rm } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
@@ -16,6 +16,10 @@ import {
     type VideoEditTimelineSeconds,
 } from "@/lib/video-processing/video-edit-pipeline";
 import type { TranscriptTranslationSegment } from "@/lib/multilingual-audio/types";
+import {
+    buildWorkspaceMediaPayload,
+    getWorkspaceServerArtifact,
+} from "@/lib/workspace/server-artifacts";
 
 export const runtime = "nodejs";
 
@@ -145,6 +149,19 @@ async function writeUploadedFile(file: File, outputPath: string) {
     );
 }
 
+function readWorkspaceArtifactVideo(artifactId: string) {
+    const artifact = getWorkspaceServerArtifact(artifactId);
+    if (!artifact || artifact.kind !== "video") {
+        throw new VideoEditError(
+            "VAL_VIDEO_EDIT_VIDEO_REQUIRED",
+            "Workspace video artifact was not found or has expired.",
+            404,
+        );
+    }
+
+    return artifact;
+}
+
 function buildBinaryHeaders(
     result: Awaited<ReturnType<typeof runVideoEditPipelineFromPath>>,
 ) {
@@ -170,14 +187,30 @@ export async function POST(request: Request) {
 
         const formData = await request.formData();
         const file = formData.get("videoFile");
+        const artifactId = readFormValue(formData, "artifactId").trim();
 
-        if (!(file instanceof File)) {
+        if (!(file instanceof File) && !artifactId) {
             throw new VideoEditError(
                 "VAL_VIDEO_EDIT_VIDEO_REQUIRED",
-                "videoFile is required.",
+                "videoFile or artifactId is required.",
                 400,
             );
         }
+
+        const artifact =
+            file instanceof File ? null : readWorkspaceArtifactVideo(artifactId);
+        const source =
+            file instanceof File
+                ? {
+                      fileName: file.name || "source.mp4",
+                      mimeType: file.type || undefined,
+                      fileSizeBytes: file.size,
+                  }
+                : {
+                      fileName: artifact!.fileName,
+                      mimeType: artifact!.mimeType,
+                      fileSizeBytes: artifact!.byteLength,
+                  };
 
         const blurEnabled = readBoolean(formData, "blurEnabled");
         const subtitlesEnabled = readBoolean(
@@ -196,9 +229,7 @@ export async function POST(request: Request) {
         };
         const parsedBlurRegions = readBlurRegions(formData);
         const input = {
-            fileName: file.name || "source.mp4",
-            mimeType: file.type || undefined,
-            fileSizeBytes: file.size,
+            ...source,
             mirror: readBoolean(formData, "mirrorEnabled"),
             blur: blurEnabled
                 ? {
@@ -279,7 +310,8 @@ export async function POST(request: Request) {
                 : undefined,
         };
 
-        if (readFormValue(formData, "responseMode") === "binary") {
+        const responseMode = readFormValue(formData, "responseMode");
+        if (responseMode === "binary" || responseMode === "artifact") {
             uploadedWorkDir = path.join(
                 tmpdir(),
                 `omnivideo-edit-upload-${randomUUID()}`,
@@ -287,14 +319,36 @@ export async function POST(request: Request) {
             await mkdir(uploadedWorkDir, { recursive: true });
             const uploadedPath = path.join(
                 uploadedWorkDir,
-                file.name || "source.mp4",
+                source.fileName || "source.mp4",
             );
-            await writeUploadedFile(file, uploadedPath);
+            if (file instanceof File) {
+                await writeUploadedFile(file, uploadedPath);
+            } else {
+                await writeFile(uploadedPath, artifact!.bytes);
+            }
 
             const result = await runVideoEditPipelineFromPath({
                 ...input,
                 inputPath: uploadedPath,
             });
+
+            if (responseMode === "artifact") {
+                return NextResponse.json({
+                    ok: true,
+                    data: {
+                        generationDurationMs: result.generationDurationMs,
+                        extension: result.extension,
+                        transform: result.transform,
+                        ...buildWorkspaceMediaPayload({
+                            bytes: result.videoBytes,
+                            fileName: result.fileName,
+                            mimeType: result.mimeType,
+                            kind: "video",
+                            base64Field: "videoBase64",
+                        }),
+                    },
+                });
+            }
 
             return new Response(new Uint8Array(result.videoBytes), {
                 status: 200,
@@ -304,7 +358,10 @@ export async function POST(request: Request) {
 
         const result = await runVideoEditPipeline({
             ...input,
-            fileBytes: new Uint8Array(await file.arrayBuffer()),
+            fileBytes:
+                file instanceof File
+                    ? new Uint8Array(await file.arrayBuffer())
+                    : new Uint8Array(artifact!.bytes),
         });
 
         return NextResponse.json({ ok: true, data: result });

@@ -4,6 +4,7 @@ import { requireWriteAccess } from "@/lib/access-control/route-guards";
 import { getIntakeDb, listIntakeJobRuns } from "@/lib/video-intake/repository";
 import { runLocalFileIntakePipeline } from "@/lib/video-intake/local-runner";
 import type { LocalIntakeInput } from "@/lib/video-intake/types";
+import { getWorkspaceServerArtifact } from "@/lib/workspace/server-artifacts";
 
 export const runtime = "nodejs";
 
@@ -96,19 +97,46 @@ export async function POST(request: Request) {
 
     const formData = await request.formData();
     const file = formData.get("videoFile");
+    const artifactId = readFormValue(formData, "artifactId").trim();
 
-    if (!(file instanceof File)) {
+    if (!(file instanceof File) && !artifactId) {
       return NextResponse.json(
         {
           ok: false,
           errorCode: "VAL_LOCAL_FILE_REQUIRED",
-          error: "videoFile is required.",
+          error: "videoFile or artifactId is required.",
         },
         { status: 400 },
       );
     }
 
-    const fileBytes = new Uint8Array(await file.arrayBuffer());
+    const artifact =
+      file instanceof File ? null : getWorkspaceServerArtifact(artifactId);
+    if (artifactId && (!artifact || artifact.kind !== "video")) {
+      return NextResponse.json(
+        {
+          ok: false,
+          errorCode: "VAL_WORKSPACE_ARTIFACT_NOT_FOUND",
+          error: "Workspace video artifact was not found or has expired.",
+        },
+        { status: 404 },
+      );
+    }
+
+    const sourceFile =
+      file instanceof File
+        ? {
+            fileName: file.name || "upload.mp4",
+            mimeType: file.type || undefined,
+            fileSizeBytes: file.size,
+            fileBytes: new Uint8Array(await file.arrayBuffer()),
+          }
+        : {
+            fileName: artifact!.fileName,
+            mimeType: artifact!.mimeType,
+            fileSizeBytes: artifact!.byteLength,
+            fileBytes: new Uint8Array(artifact!.bytes),
+          };
     const tagsRaw = readFormValue(formData, "tags");
     const folder = readFormValue(formData, "folder");
     const payload: LocalIntakeInput = {
@@ -126,10 +154,10 @@ export async function POST(request: Request) {
       languageHint: readFormValue(formData, "languageHint") || undefined,
       contentIntent: readFormValue(formData, "contentIntent") || "other",
       ownershipStatus: readFormValue(formData, "ownershipStatus") || "unknown",
-      fileName: file.name || "upload.mp4",
-      mimeType: file.type || undefined,
-      fileSizeBytes: file.size,
-      fileBytes,
+      fileName: sourceFile.fileName,
+      mimeType: sourceFile.mimeType,
+      fileSizeBytes: sourceFile.fileSizeBytes,
+      fileBytes: sourceFile.fileBytes,
     };
 
     const result = await runLocalFileIntakePipeline(payload);

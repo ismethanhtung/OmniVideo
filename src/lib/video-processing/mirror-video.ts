@@ -23,7 +23,9 @@ export type MirrorVideoInput = {
 };
 
 export type MirrorVideoResult = {
-    videoBase64: string;
+    videoBase64?: string;
+    artifactId?: string;
+    artifactExpiresAt?: string;
     mimeType: "video/mp4";
     extension: "mp4";
     fileName: string;

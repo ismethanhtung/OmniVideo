@@ -150,6 +150,45 @@ describe("progress center", () => {
     expect(storage.getItem("omnivideo-progress-tasks")).toBeNull();
   });
 
+  it("persists active tasks across reload-style rehydration", () => {
+    const storage = createLocalStorageMock();
+    vi.stubGlobal("window", { localStorage: storage });
+
+    const taskId = startProgressTask({
+      id: "workspace-heavy-flow",
+      title: "Workspace flow",
+      scope: "system",
+      progressMode: "indeterminate",
+      steps: [{ id: "dub", title: "Dub video" }],
+    });
+    startProgressStep({
+      taskId,
+      stepId: "dub",
+      description: "Generating voice...",
+    });
+
+    expect(storage.getItem("omnivideo-progress-tasks")).toContain(
+      "workspace-heavy-flow",
+    );
+
+    resetProgressTasksForTest({ preserveStorage: true });
+
+    expect(getProgressTasksSnapshot()).toMatchObject([
+      {
+        id: "workspace-heavy-flow",
+        status: "running",
+        steps: [
+          {
+            id: "dub",
+            status: "running",
+            description: "Generating voice...",
+          },
+        ],
+      },
+    ]);
+    expect(getActiveProgressTaskCount()).toBe(1);
+  });
+
   it("removes one dismissed finished task from persisted history", () => {
     const storage = createLocalStorageMock();
     vi.stubGlobal("window", { localStorage: storage });

@@ -61,6 +61,31 @@ type TempMediaFile = {
   cleanup: () => Promise<void>;
 };
 
+async function fetchWithIntakeNetworkError(
+  input: Parameters<typeof fetch>,
+  error: {
+    errorCode:
+      | "STG_SOURCE_FETCH_FAILED"
+      | "STG_DRIVE_UPLOAD_NETWORK_FAILED"
+      | "STG_DRIVE_RESUMABLE_PUT_FAILED";
+    message: string;
+    category: IntakeError["category"];
+  },
+) {
+  try {
+    return await fetch(...input);
+  } catch (cause) {
+    const detail =
+      cause instanceof Error && cause.message ? cause.message : "fetch failed";
+    throw new IntakeError({
+      errorCode: error.errorCode,
+      message: `${error.message}: ${detail}`,
+      category: error.category,
+      retryable: true,
+    });
+  }
+}
+
 function buildSourceFetchHeaders(
   mediaUrl: string,
   requestHeaders?: Record<string, string>,
@@ -100,19 +125,39 @@ async function fetchSourceMedia(
   requestHeaders?: Record<string, string>,
 ) {
   const headers = buildSourceFetchHeaders(mediaUrl, requestHeaders);
-  const firstTry = await fetch(mediaUrl, {
-    cache: "no-store",
-    headers,
-  });
+  const firstTry = await fetchWithIntakeNetworkError(
+    [
+      mediaUrl,
+      {
+        cache: "no-store",
+        headers,
+      },
+    ],
+    {
+      errorCode: "STG_SOURCE_FETCH_FAILED",
+      message: "Could not fetch source media stream",
+      category: "dependency",
+    },
+  );
 
   if (firstTry.status !== 401 && firstTry.status !== 403) {
     return firstTry;
   }
 
-  return fetch(mediaUrl, {
-    cache: "no-store",
-    headers,
-  });
+  return fetchWithIntakeNetworkError(
+    [
+      mediaUrl,
+      {
+        cache: "no-store",
+        headers,
+      },
+    ],
+    {
+      errorCode: "STG_SOURCE_FETCH_FAILED",
+      message: "Could not fetch source media stream",
+      category: "dependency",
+    },
+  );
 }
 
 async function fetchSourceMediaToTempFile(
@@ -497,17 +542,24 @@ async function uploadToDrive(
     ...(folderId ? { parents: [folderId] } : {}),
   };
 
-  const sessionResponse = await fetch(
-    "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id,name,mimeType,webViewLink,size&supportsAllDrives=true",
-    {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${accessToken}`,
-        "content-type": "application/json; charset=UTF-8",
-        "x-upload-content-type":
-          materializedFile?.mimeType ?? media.mimeType ?? "video/mp4",
+  const sessionResponse = await fetchWithIntakeNetworkError(
+    [
+      "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id,name,mimeType,webViewLink,size&supportsAllDrives=true",
+      {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${accessToken}`,
+          "content-type": "application/json; charset=UTF-8",
+          "x-upload-content-type":
+            materializedFile?.mimeType ?? media.mimeType ?? "video/mp4",
+        },
+        body: JSON.stringify(metadata),
       },
-      body: JSON.stringify(metadata),
+    ],
+    {
+      errorCode: "STG_DRIVE_UPLOAD_NETWORK_FAILED",
+      message: "Could not create Google Drive resumable upload session",
+      category: "provider",
     },
   );
 
@@ -544,7 +596,14 @@ async function uploadToDrive(
         body: createReadStream(materializedFile.filePath) as unknown as BodyInit,
         duplex: "half",
       };
-      uploadResponse = await fetch(uploadUrl, uploadRequest);
+      uploadResponse = await fetchWithIntakeNetworkError(
+        [uploadUrl, uploadRequest],
+        {
+          errorCode: "STG_DRIVE_RESUMABLE_PUT_FAILED",
+          message: "Google Drive resumable upload request failed",
+          category: "provider",
+        },
+      );
     } else {
       if (!media.directMediaUrl) {
         throw new IntakeError({
@@ -586,7 +645,14 @@ async function uploadToDrive(
         duplex: "half",
       };
 
-      uploadResponse = await fetch(uploadUrl, uploadRequest);
+      uploadResponse = await fetchWithIntakeNetworkError(
+        [uploadUrl, uploadRequest],
+        {
+          errorCode: "STG_DRIVE_RESUMABLE_PUT_FAILED",
+          message: "Google Drive resumable upload request failed",
+          category: "provider",
+        },
+      );
     }
   } finally {
     await materializedFile?.cleanup();
@@ -642,16 +708,23 @@ async function uploadToDriveByBytes({
     ...(folderId ? { parents: [folderId] } : {}),
   };
 
-  const sessionResponse = await fetch(
-    "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id,name,mimeType,webViewLink,size&supportsAllDrives=true",
-    {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${accessToken}`,
-        "content-type": "application/json; charset=UTF-8",
-        "x-upload-content-type": file.mimeType ?? "video/mp4",
+  const sessionResponse = await fetchWithIntakeNetworkError(
+    [
+      "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id,name,mimeType,webViewLink,size&supportsAllDrives=true",
+      {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${accessToken}`,
+          "content-type": "application/json; charset=UTF-8",
+          "x-upload-content-type": file.mimeType ?? "video/mp4",
+        },
+        body: JSON.stringify(metadata),
       },
-      body: JSON.stringify(metadata),
+    ],
+    {
+      errorCode: "STG_DRIVE_UPLOAD_NETWORK_FAILED",
+      message: "Could not create Google Drive resumable upload session",
+      category: "provider",
     },
   );
 
@@ -670,14 +743,24 @@ async function uploadToDriveByBytes({
     });
   }
 
-  const uploadResponse = await fetch(uploadUrl, {
-    method: "PUT",
-    headers: {
-      "content-type": file.mimeType ?? "video/mp4",
-      "content-length": String(file.bytes.byteLength),
+  const uploadResponse = await fetchWithIntakeNetworkError(
+    [
+      uploadUrl,
+      {
+        method: "PUT",
+        headers: {
+          "content-type": file.mimeType ?? "video/mp4",
+          "content-length": String(file.bytes.byteLength),
+        },
+        body: Uint8Array.from(file.bytes),
+      },
+    ],
+    {
+      errorCode: "STG_DRIVE_RESUMABLE_PUT_FAILED",
+      message: "Google Drive resumable upload request failed",
+      category: "provider",
     },
-    body: Uint8Array.from(file.bytes),
-  });
+  );
 
   if (!uploadResponse.ok) {
     const message = await readGoogleDriveErrorMessage(
