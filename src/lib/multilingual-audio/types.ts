@@ -53,7 +53,7 @@ export const PIPER_TTS_ALIGNMENT_SETTINGS = {
     timelineMinSpeedFactor: 1.3,
     timelineMaxSpeedFactor: 1.75,
     highTimelineSpeedFactor: 1.35,
-    balancedMaxPauseSeconds: 0.3,
+    balancedMaxPauseSeconds: 0.1,
     balancedMaxSpeedFactor: 1.75,
     balancedLongPauseSeconds: 0.7,
     balancedDriftWarningSeconds: 0.35,

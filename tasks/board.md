@@ -23,6 +23,10 @@
 
 ## Review
 
+- `FAST-VIDEO-012` - Match Video Tools Lab asset preview behavior with Audio Transcript picker.
+- `FAST-VIDEO-011` - Restore asset preview and allow lifecycle tags to wrap in Video Tools Lab picker.
+- `FAST-VIDEO-010` - Fix Video Tools Lab asset-picker lifecycle badge wrapping.
+- `FAST-AUDIO-059` - Reduce balanced voice inter-segment max pause to 0.10s.
 - `FAST-VIDEO-009` - Title-based Workspace output naming and Bilibili auth-integrated intake.
 - `FAST-WORKSPACE-035` - Preserve subtitle PlayRes for server-side artifact edit path.
 - `FAST-WORKSPACE-034` - Use server-side artifacts for large Workspace media and persist active progress.

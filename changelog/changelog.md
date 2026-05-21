@@ -1,5 +1,46 @@
 # OmniVideo Changelog
 
+## FAST-VIDEO-012 - Match Video Tools Lab Preview Behavior with Audio Transcript
+
+- Bumped app version from `0.10.16` to `0.10.17` as a patch release for picker UX consistency.
+- Replaced Video Tools Lab asset-row thumbnail preview with the same interaction used in Audio Transcript picker:
+  - per-row `Preview/Hide` action button,
+  - expandable inline `<video controls>` panel for the active row.
+- Kept wrapped lifecycle tags and `Saved setup` badge behavior from prior fix.
+- Verification (FAST-VIDEO-012):
+  - `npm run test -- --run src/features/video-processing/video-tools-lab-panel.test.ts` pass (1 file / 4 tests).
+  - `npm run guard:version` pass.
+
+## FAST-VIDEO-011 - Restore Asset Preview and Tag Wrapping in Video Tools Lab Picker
+
+- Bumped app version from `0.10.15` to `0.10.16` as a patch release for Video Tools Lab picker UX.
+- Added optional `wrap` mode to shared `AssetLifecycleBadges` so lifecycle chips can break to new lines when containers are narrow.
+- Updated Video Tools Lab `Select asset` row layout to:
+  - show a per-item preview video box again (`preload="none"`), and
+  - render lifecycle chips in a wrapped row with `Saved setup` badge alongside.
+- Verification (FAST-VIDEO-011):
+  - `npm run test -- --run src/features/video-processing/video-tools-lab-panel.test.ts src/lib/storage/asset-lifecycle-tags.test.ts` pass (2 files / 5 tests).
+  - `npm run guard:version` pass.
+
+## FAST-VIDEO-010 - Fix Video Tools Lab Asset-Picker Lifecycle Badge Wrapping
+
+- Bumped app version from `0.10.14` to `0.10.15` as a patch release for Video Tools Lab picker CSS stability.
+- Fixed asset picker row layout in Video Tools Lab so the metadata text uses flexible truncation (`min-w-0` + `flex-1`) instead of squeezing lifecycle chips.
+- Updated the shared `AssetLifecycleBadges` component to keep lifecycle chips single-line (`whitespace-nowrap`) and non-shrinking in dense list rows.
+- Kept `Saved setup` chip single-line in the same right-side badge group for consistent alignment.
+- Verification (FAST-VIDEO-010):
+  - `npm run test -- --run src/features/video-processing/video-tools-lab-panel.test.ts src/lib/storage/asset-lifecycle-tags.test.ts` pass (2 files / 5 tests).
+  - `npm run guard:version` pass.
+
+## FAST-AUDIO-059 - Reduce Balanced Voice Inter-Segment Max Pause to 0.10s
+
+- Bumped app version from `0.10.13` to `0.10.14` as a patch release for voice pacing tuning.
+- Reduced balanced timeline pause cap from `0.3s` to `0.1s` via `PIPER_TTS_ALIGNMENT_SETTINGS.balancedMaxPauseSeconds`.
+- Updated balanced Piper alignment regression expectation to reflect the tighter pause cap (`pauseBeforeSeconds: 0.1` and earlier scheduled start).
+- Verification (FAST-AUDIO-059):
+  - `npm run test -- --run src/lib/multilingual-audio/piper-tts.test.ts` pass (1 file / 20 tests).
+  - `npm run guard:version` pass.
+
 ## FAST-VIDEO-009 - Title-Based Workspace Output Naming and Bilibili Auth-Integrated Intake
 
 - Bumped app version from `0.10.12` to `0.10.13` as a patch release for naming and intake quality controls.

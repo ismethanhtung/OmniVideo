@@ -109,6 +109,11 @@ type VideoEditSetup = NonNullable<
     NonNullable<StoredVideoAsset["metadata"]>["videoEditSetup"]
 >;
 
+type AssetPreviewState = {
+    assetId: string;
+    src: string;
+};
+
 function formatBytes(bytes: number) {
     if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
     if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
@@ -374,6 +379,9 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
     const [result, setResult] = useState<
         Extract<VideoEditApiPayload, { ok: true }>["data"] | null
     >(null);
+    const [assetPreview, setAssetPreview] = useState<AssetPreviewState | null>(
+        null,
+    );
     const previewFrameRef = useRef<HTMLDivElement | null>(null);
     const subtitleBoxRef = useRef<HTMLDivElement | null>(null);
     const sourceVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -1082,74 +1090,132 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                                                 const isSelected =
                                                     selectedAssetId ===
                                                     asset._id;
+                                                const isPreviewing =
+                                                    assetPreview?.assetId ===
+                                                    asset._id;
                                                 const hasSetup =
                                                     hasSavedVideoEditSetup(
                                                         asset,
                                                     );
                                                 return (
-                                                    <button
+                                                    <div
                                                         key={asset._id}
-                                                        type="button"
-                                                        onClick={() => {
-                                                            setSelectedAssetId(
-                                                                asset._id,
-                                                            );
-                                                            setVideoFile(null);
-                                                            setResult(null);
-                                                            setError(null);
-                                                            setShowAssetPicker(
-                                                                false,
-                                                            );
-                                                            applyVideoEditSetup(
-                                                                asset.metadata
-                                                                    ?.videoEditSetup ??
-                                                                    null,
-                                                            );
-                                                        }}
                                                         className={`w-full border p-2 text-left ${isSelected ? "border-accent bg-secondary/35" : "border-main bg-main hover:bg-secondary/20"}`}
                                                     >
-                                                        <p className="truncate text-[12px] font-semibold text-main">
-                                                            {asset.metadata
-                                                                ?.title ??
-                                                                asset._id}
-                                                        </p>
-                                                        <div className="mt-1 flex items-center justify-between gap-2">
-                                                            <p className="truncate text-[10px] text-muted">
-                                                                {[
-                                                                    getAssetFolderName(
-                                                                        asset,
-                                                                    ),
-                                                                    ...(asset
+                                                        <div className="flex items-start justify-between gap-2">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    setSelectedAssetId(
+                                                                        asset._id,
+                                                                    );
+                                                                    setVideoFile(
+                                                                        null,
+                                                                    );
+                                                                    setResult(
+                                                                        null,
+                                                                    );
+                                                                    setError(
+                                                                        null,
+                                                                    );
+                                                                    setShowAssetPicker(
+                                                                        false,
+                                                                    );
+                                                                    setAssetPreview(
+                                                                        null,
+                                                                    );
+                                                                    applyVideoEditSetup(
+                                                                        asset
+                                                                            .metadata
+                                                                            ?.videoEditSetup ??
+                                                                            null,
+                                                                    );
+                                                                }}
+                                                                className="min-w-0 flex-1 text-left hover:opacity-90"
+                                                            >
+                                                                <p className="truncate text-[12px] font-semibold text-main">
+                                                                    {asset
                                                                         .metadata
-                                                                        ?.tags ??
-                                                                        []),
-                                                                    asset.storageProvider,
-                                                                    formatBytes(
-                                                                        asset.sizeBytes ??
-                                                                            0,
-                                                                    ),
-                                                                ]
-                                                                    .filter(
-                                                                        Boolean,
-                                                                    )
-                                                                    .join(
-                                                                        " · ",
-                                                                    )}
-                                                            </p>
-                                                            <AssetLifecycleBadges
-                                                                tags={
-                                                                    asset
-                                                                        .metadata
-                                                                        ?.tags
-                                                                }
-                                                            />
-                                                            {hasSetup ? (
-                                                                <span className="shrink-0 border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-700">
-                                                                    Saved setup
-                                                                </span>
-                                                            ) : null}
+                                                                        ?.title ??
+                                                                        asset._id}
+                                                                </p>
+                                                                <p className="mt-1 truncate text-[10px] text-muted">
+                                                                    {[
+                                                                        getAssetFolderName(
+                                                                            asset,
+                                                                        ),
+                                                                        ...(asset
+                                                                            .metadata
+                                                                            ?.tags ??
+                                                                            []),
+                                                                        asset.storageProvider,
+                                                                        formatBytes(
+                                                                            asset.sizeBytes ??
+                                                                                0,
+                                                                        ),
+                                                                    ]
+                                                                        .filter(
+                                                                            Boolean,
+                                                                        )
+                                                                        .join(
+                                                                            " · ",
+                                                                        )}
+                                                                </p>
+                                                                <div className="mt-1 flex flex-wrap items-center gap-1">
+                                                                    <AssetLifecycleBadges
+                                                                        tags={
+                                                                            asset
+                                                                                .metadata
+                                                                                ?.tags
+                                                                        }
+                                                                        wrap
+                                                                    />
+                                                                    {hasSetup ? (
+                                                                        <span className="border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-700">
+                                                                            Saved setup
+                                                                        </span>
+                                                                    ) : null}
+                                                                </div>
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    if (
+                                                                        isPreviewing
+                                                                    ) {
+                                                                        setAssetPreview(
+                                                                            null,
+                                                                        );
+                                                                        return;
+                                                                    }
+                                                                    setAssetPreview(
+                                                                        {
+                                                                            assetId:
+                                                                                asset._id,
+                                                                            src: `/api/storage/assets/${asset._id}/download?disposition=inline`,
+                                                                        },
+                                                                    );
+                                                                }}
+                                                                className="border border-main bg-main px-2 py-1 text-[10px] font-semibold text-main hover:bg-secondary"
+                                                            >
+                                                                {isPreviewing
+                                                                    ? "Hide"
+                                                                    : "Preview"}
+                                                            </button>
                                                         </div>
-                                                    </button>
+                                                        {isPreviewing ? (
+                                                            <div className="mt-2 border border-main bg-black">
+                                                                <video
+                                                                    src={
+                                                                        assetPreview.src
+                                                                    }
+                                                                    controls
+                                                                    preload="metadata"
+                                                                    className="block max-h-48 w-full bg-black"
+                                                                />
+                                                            </div>
+                                                        ) : null}
+                                                    </div>
                                                 );
                                             })}
                                         </div>
