@@ -1,5 +1,9 @@
-import { extractSpeechReadyAudio } from "./audio-extraction";
+import {
+    extractSpeechReadyAudio,
+    extractSpeechSegmentAudio,
+} from "./audio-extraction";
 import { transcribeWithGroq } from "./groq-transcription";
+import type { NormalizedGroqTranscription } from "./groq-transcription";
 import {
     readGroqApiKey,
     validateGroqAudioPayloadSize,
@@ -11,8 +15,14 @@ import type {
 } from "./types";
 import {
     ChineseTranscriptionError,
+    type AudioTranscriptSegment,
+    type AudioTranscriptWord,
     type AudioTranscriptionStep,
 } from "./types";
+
+const MAX_CHINESE_SEGMENT_CHARS = 40;
+const MAX_SEGMENT_RETRY_ATTEMPTS = 5;
+const HAN_CHARACTER_PATTERN = /\p{Script=Han}/gu;
 
 function formatBytes(bytes: number) {
     if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
@@ -30,6 +40,156 @@ function failWithSteps(error: unknown, steps: AudioTranscriptionStep[]): never {
         );
     }
     throw error;
+}
+
+function countHanCharacters(text: string) {
+    return Array.from(text.matchAll(HAN_CHARACTER_PATTERN)).length;
+}
+
+function isOverlongChineseSegment(segment: AudioTranscriptSegment) {
+    return countHanCharacters(segment.text) > MAX_CHINESE_SEGMENT_CHARS;
+}
+
+function offsetSegments(
+    segments: AudioTranscriptSegment[],
+    offsetSeconds: number,
+) {
+    return segments.map((segment) => ({
+        ...segment,
+        start: segment.start + offsetSeconds,
+        end: segment.end + offsetSeconds,
+    }));
+}
+
+function offsetWords(words: AudioTranscriptWord[], offsetSeconds: number) {
+    return words.map((word) => ({
+        ...word,
+        start: word.start + offsetSeconds,
+        end: word.end + offsetSeconds,
+    }));
+}
+
+function renumberSegments(segments: AudioTranscriptSegment[]) {
+    return segments.map((segment, index) => ({
+        ...segment,
+        id: index,
+    }));
+}
+
+async function retryOverlongChineseSegments(input: {
+    transcript: NormalizedGroqTranscription;
+    apiKey: string;
+    audioBytes: Uint8Array;
+    language: string;
+    prompt?: string;
+    includeWordTimestamps?: boolean;
+}) {
+    const suspiciousSegments = input.transcript.segments.filter(
+        isOverlongChineseSegment,
+    );
+    if (suspiciousSegments.length === 0) {
+        return {
+            transcript: input.transcript,
+            suspiciousSegmentCount: 0,
+            retryRequestCount: 0,
+        };
+    }
+
+    const replacements = new Map<
+        number,
+        {
+            segments: AudioTranscriptSegment[];
+            words: AudioTranscriptWord[];
+            requestId?: string;
+        }
+    >();
+    let retryRequestCount = 0;
+
+    for (const segment of suspiciousSegments) {
+        const clip = await extractSpeechSegmentAudio({
+            audioBytes: input.audioBytes,
+            startSeconds: segment.start,
+            endSeconds: segment.end,
+        });
+        let lastText = segment.text;
+
+        for (let attempt = 1; attempt <= MAX_SEGMENT_RETRY_ATTEMPTS; attempt += 1) {
+            retryRequestCount += 1;
+            const retryTranscript = await transcribeWithGroq({
+                apiKey: input.apiKey,
+                audioBytes: clip.audioBytes,
+                language: input.language,
+                prompt: input.prompt,
+                audioDurationSeconds: clip.durationSeconds,
+                timestampGranularities: input.includeWordTimestamps
+                    ? ["segment", "word"]
+                    : ["segment"],
+            });
+            lastText = retryTranscript.text || lastText;
+
+            if (
+                retryTranscript.segments.length > 0 &&
+                retryTranscript.segments.every(
+                    (candidate) => !isOverlongChineseSegment(candidate),
+                )
+            ) {
+                replacements.set(segment.id, {
+                    segments: offsetSegments(
+                        retryTranscript.segments,
+                        segment.start,
+                    ),
+                    words: offsetWords(retryTranscript.words, segment.start),
+                    requestId: retryTranscript.requestId,
+                });
+                break;
+            }
+        }
+
+        if (!replacements.has(segment.id)) {
+            throw new ChineseTranscriptionError(
+                "PRV_GROQ_SEGMENT_RETRY_EXHAUSTED",
+                `Groq segment retry exhausted for segment ${segment.id} (${segment.start.toFixed(3)}s-${segment.end.toFixed(3)}s). Last text has ${countHanCharacters(lastText)} Chinese character(s).`,
+                502,
+            );
+        }
+    }
+
+    const replacementWords = Array.from(replacements.values()).flatMap(
+        (replacement) => replacement.words,
+    );
+    const segments = renumberSegments(
+        input.transcript.segments.flatMap((segment) => {
+            const replacement = replacements.get(segment.id);
+            return replacement ? replacement.segments : [segment];
+        }),
+    );
+    const replacedIds = new Set(replacements.keys());
+    const words = [
+        ...input.transcript.words.filter(
+            (word) =>
+                !input.transcript.segments.some(
+                    (segment) =>
+                        replacedIds.has(segment.id) &&
+                        word.start >= segment.start &&
+                        word.end <= segment.end,
+                ),
+        ),
+        ...replacementWords,
+    ].sort((left, right) => left.start - right.start || left.end - right.end);
+
+    return {
+        transcript: {
+            ...input.transcript,
+            text: segments.map((segment) => segment.text).join(""),
+            requestId:
+                Array.from(replacements.values()).at(-1)?.requestId ??
+                input.transcript.requestId,
+            segments,
+            words,
+        },
+        suspiciousSegmentCount: suspiciousSegments.length,
+        retryRequestCount,
+    };
 }
 
 export async function runChineseVideoTranscription(
@@ -161,6 +321,15 @@ export async function runChineseVideoTranscription(
                 ? ["segment", "word"]
                 : ["segment"],
         });
+        const retryResult = await retryOverlongChineseSegments({
+            transcript,
+            apiKey,
+            audioBytes,
+            language,
+            prompt: input.prompt,
+            includeWordTimestamps: input.includeWordTimestamps,
+        });
+        transcript = retryResult.transcript;
         steps.push({
             id: "groq-transcribe",
             label: "Groq transcription",
@@ -171,6 +340,9 @@ export async function runChineseVideoTranscription(
                 language: transcript.language,
                 segments: transcript.segments.length,
                 words: transcript.words.length,
+                suspiciousSegmentsRetried:
+                    retryResult.suspiciousSegmentCount,
+                segmentRetryRequests: retryResult.retryRequestCount,
                 ...(audioDurationSeconds
                     ? { audioDurationSeconds }
                     : {}),

@@ -23,6 +23,7 @@
 
 ## Review
 
+- `FAST-AUDIO-060` - Segment-level retry for overlong Chinese transcription segments.
 - `FAST-VIDEO-012` - Match Video Tools Lab asset preview behavior with Audio Transcript picker.
 - `FAST-VIDEO-011` - Restore asset preview and allow lifecycle tags to wrap in Video Tools Lab picker.
 - `FAST-VIDEO-010` - Fix Video Tools Lab asset-picker lifecycle badge wrapping.

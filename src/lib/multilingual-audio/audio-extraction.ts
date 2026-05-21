@@ -43,6 +43,40 @@ export function buildSpeechReadyFfmpegArgs(
     ];
 }
 
+export function buildSpeechSegmentClipFfmpegArgs(
+    inputPath: string,
+    outputPath: string,
+    options: {
+        startSeconds: number;
+        endSeconds: number;
+    },
+) {
+    return [
+        "-y",
+        "-ss",
+        formatFfmpegSeconds(options.startSeconds),
+        "-to",
+        formatFfmpegSeconds(options.endSeconds),
+        "-i",
+        inputPath,
+        "-vn",
+        "-ac",
+        "1",
+        "-ar",
+        "16000",
+        "-c:a",
+        "libmp3lame",
+        "-b:a",
+        "64k",
+        outputPath,
+    ];
+}
+
+function formatFfmpegSeconds(value: number) {
+    const normalized = Number.isFinite(value) && value > 0 ? value : 0;
+    return normalized.toFixed(3).replace(/\.?0+$/u, "");
+}
+
 function buildAtempoFilters(speedFactor: number) {
     if (!Number.isFinite(speedFactor) || Math.abs(speedFactor - 1) < 0.0001) {
         return [] as string[];
@@ -182,6 +216,61 @@ export async function extractSpeechReadyAudio(input: {
             error instanceof Error
                 ? `Audio extraction failed: ${error.message}`
                 : "Audio extraction failed.",
+            500,
+        );
+    } finally {
+        await rm(workDir, { force: true, recursive: true });
+    }
+}
+
+export async function extractSpeechSegmentAudio(input: {
+    audioBytes: Uint8Array;
+    startSeconds: number;
+    endSeconds: number;
+}) {
+    const startSeconds =
+        Number.isFinite(input.startSeconds) && input.startSeconds > 0
+            ? input.startSeconds
+            : 0;
+    const endSeconds =
+        Number.isFinite(input.endSeconds) && input.endSeconds > startSeconds
+            ? input.endSeconds
+            : startSeconds;
+
+    if (endSeconds <= startSeconds) {
+        throw new ChineseTranscriptionError(
+            "SYS_AUDIO_EXTRACTION_FAILED",
+            "Audio segment extraction failed: segment end must be greater than start.",
+            500,
+        );
+    }
+
+    const workDir = path.join(
+        tmpdir(),
+        `omnivideo-audio-segment-${randomUUID()}`,
+    );
+    const inputPath = path.join(workDir, "source.mp3");
+    const outputPath = path.join(workDir, "segment.mp3");
+
+    try {
+        await mkdir(workDir, { recursive: true });
+        await writeFile(inputPath, input.audioBytes);
+        await runFfmpeg(
+            buildSpeechSegmentClipFfmpegArgs(inputPath, outputPath, {
+                startSeconds,
+                endSeconds,
+            }),
+        );
+        return {
+            audioBytes: await readFile(outputPath),
+            durationSeconds: await probeAudioDurationSeconds(outputPath),
+        };
+    } catch (error) {
+        throw new ChineseTranscriptionError(
+            "SYS_AUDIO_EXTRACTION_FAILED",
+            error instanceof Error
+                ? `Audio segment extraction failed: ${error.message}`
+                : "Audio segment extraction failed.",
             500,
         );
     } finally {

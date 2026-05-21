@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildSpeechSegmentClipFfmpegArgs,
   buildSpeechReadyFfmpegArgs,
   getFfmpegCandidates,
   parseFfmpegDurationSeconds,
@@ -54,6 +55,33 @@ describe("audio extraction command", () => {
     ]);
   });
 
+  it("builds ffmpeg args for segment-level retry clips", () => {
+    expect(
+      buildSpeechSegmentClipFfmpegArgs("/tmp/speech.mp3", "/tmp/segment.mp3", {
+        startSeconds: 365.164,
+        endSeconds: 378.086,
+      }),
+    ).toEqual([
+      "-y",
+      "-ss",
+      "365.164",
+      "-to",
+      "378.086",
+      "-i",
+      "/tmp/speech.mp3",
+      "-vn",
+      "-ac",
+      "1",
+      "-ar",
+      "16000",
+      "-c:a",
+      "libmp3lame",
+      "-b:a",
+      "64k",
+      "/tmp/segment.mp3",
+    ]);
+  });
+
   it("prefers existing ffmpeg-static path", () => {
     expect(
       resolveFfmpegPath({
@@ -65,7 +93,9 @@ describe("audio extraction command", () => {
   });
 
   it("falls back to cwd ffmpeg-static when imported static path is stale", () => {
-    const cwdCandidate = getFfmpegCandidates("/ROOT/node_modules/ffmpeg-static/ffmpeg")[1];
+    const cwdCandidate = getFfmpegCandidates(
+      "/ROOT/node_modules/ffmpeg-static/ffmpeg",
+    )[1];
 
     expect(
       resolveFfmpegPath({

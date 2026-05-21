@@ -1,5 +1,15 @@
 # OmniVideo Changelog
 
+## FAST-AUDIO-060 - Segment-Level Retry for Overlong Chinese Transcription Segments
+
+- Bumped app version from `0.10.20` to `0.10.21` as a patch release for transcription reliability.
+- Added deterministic detection for transcript segments with more than 40 Han/Chinese characters.
+- Added segment-level retry: the pipeline now cuts only the suspicious extracted-audio range and calls Groq again up to 5 times instead of reprocessing the whole video.
+- Successful retries replace the suspicious segment with shorter segment(s), offsetting timestamps back onto the original transcript timeline.
+- If a segment remains overlong after 5 retries, transcription fails with `PRV_GROQ_SEGMENT_RETRY_EXHAUSTED` and includes the segment id/time range in the error message.
+- Verification (FAST-AUDIO-060):
+  - `npm run test -- --run src/lib/multilingual-audio/chinese-transcription.test.ts src/lib/multilingual-audio/audio-extraction.test.ts` pass (2 files / 11 tests).
+
 ## FAST-VIDEO-012 - Match Video Tools Lab Preview Behavior with Audio Transcript
 
 - Bumped app version from `0.10.16` to `0.10.17` as a patch release for picker UX consistency.

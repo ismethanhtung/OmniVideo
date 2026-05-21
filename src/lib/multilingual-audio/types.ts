@@ -71,7 +71,11 @@ export type ChineseTranscriptionRequest = {
 };
 
 export type AudioTranscriptionStep = {
-    id: "validate" | "extract-audio" | "check-upload-size" | "groq-transcribe";
+    id:
+        | "validate"
+        | "extract-audio"
+        | "check-upload-size"
+        | "groq-transcribe";
     label: string;
     status: "success" | "failed" | "skipped";
     detail: string;
@@ -243,6 +247,7 @@ export type ChineseTranscriptionErrorCode =
     | "CFG_GROQ_API_KEY_MISSING"
     | "SYS_AUDIO_EXTRACTION_FAILED"
     | "PRV_GROQ_TRANSCRIPTION_FAILED"
+    | "PRV_GROQ_SEGMENT_RETRY_EXHAUSTED"
     | "VAL_TRANSLATION_SEGMENTS_REQUIRED"
     | "PRV_GROQ_TRANSLATION_FAILED"
     | "VAL_TTS_SEGMENTS_REQUIRED"
