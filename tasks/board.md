@@ -23,8 +23,11 @@
 
 ## Review
 
+- `FAST-VIDEO-009` - Title-based Workspace output naming and Bilibili auth-integrated intake.
+- `FAST-WORKSPACE-035` - Preserve subtitle PlayRes for server-side artifact edit path.
 - `FAST-WORKSPACE-034` - Use server-side artifacts for large Workspace media and persist active progress.
 - `FAST-INTAKE-007` - Map fetch failed upload errors to explicit intake codes.
+- `FAST-OPS-007` - Enrich Dubbing Progress with segment timeline details.
 - `FAST-WORKSPACE-033` - Improve Workspace metadata tags and Publish Records thumbnail UX.
 - `FAST-VIDEO-008` - Fix Thumbnail Studio blur and text preview fidelity.
 - `FAST-VIDEO-007` - Make Thumbnail Studio production-ready with storage persistence.

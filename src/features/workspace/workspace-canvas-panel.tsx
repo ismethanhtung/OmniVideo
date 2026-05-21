@@ -278,6 +278,64 @@ function formatBytes(bytes: number) {
     return `${bytes} B`;
 }
 
+function formatDurationMs(durationMs: number) {
+    const safeMs = Number.isFinite(durationMs) ? Math.max(0, durationMs) : 0;
+    const totalSeconds = Math.round(safeMs / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function formatTimelineTimestamp(seconds: number) {
+    const safeSeconds = Number.isFinite(seconds) ? Math.max(0, seconds) : 0;
+    const minutes = Math.floor(safeSeconds / 60);
+    const remaining = safeSeconds - minutes * 60;
+    return `${String(minutes).padStart(2, "0")}:${remaining
+        .toFixed(2)
+        .padStart(5, "0")}`;
+}
+
+function summarizeTextForProgress(value: string, limit = 88) {
+    const compact = value.replace(/\s+/gu, " ").trim();
+    if (!compact) return "(no text)";
+    if (compact.length <= limit) return compact;
+    return `${compact.slice(0, limit - 1).trimEnd()}...`;
+}
+
+function buildDubbingProgressStepDescription(input: {
+    nodeLabel: string;
+    result: VideoDubbingResult;
+}) {
+    const summary = `Dubbing ${input.nodeLabel} complete.`;
+    const segments = input.result.translation.translatedSegments;
+    const voiceAlignment = input.result.voice.alignment;
+    const metadataLines = [
+        "Metadata:",
+        `File: ${input.result.fileName}`,
+        `Size: ${formatBytes(input.result.byteLength)}`,
+        `MIME: ${input.result.mimeType}`,
+        `Runtime: ${formatDurationMs(input.result.generationDurationMs)}`,
+        `Transcript: ${input.result.transcript.segments.length} segment(s) · ${input.result.transcript.words.length} word(s)`,
+        `Translation: ${segments.length} segment(s) · ${input.result.translation.provider.name} · ${input.result.translation.model}`,
+        `Voice: ${input.result.voice.segmentCount} segment(s) · ${formatBytes(input.result.voice.byteLength)} · ${voiceAlignment.mode} alignment`,
+        `Mix: original ${input.result.mix.originalAudioVolume.toFixed(2)} · voice ${input.result.mix.voiceVolume.toFixed(2)}`,
+    ];
+
+    if (segments.length === 0) return [summary, ...metadataLines].join("\n");
+
+    const header = `Segments (${segments.length} total):`;
+    const timelineLines = segments.map((segment) => {
+        const segmentText = summarizeTextForProgress(
+            segment.translatedText || segment.sourceText || "",
+        );
+        return `[${formatTimelineTimestamp(segment.start)} -> ${formatTimelineTimestamp(segment.end)}] ${segmentText}`;
+    });
+
+    return [summary, ...metadataLines, header, ...timelineLines]
+        .filter((line) => line.length > 0)
+        .join("\n");
+}
+
 function clampNumber(value: number, min: number, max: number) {
     if (!Number.isFinite(value)) return min;
     return Math.min(max, Math.max(min, value));
@@ -338,6 +396,10 @@ function findUpstreamMetadataNode(graph: WorkspaceGraph, targetNodeId: string) {
     return findUpstreamNodeByTemplateType(graph, targetNodeId, [
         "text.generate-vi-metadata",
     ]);
+}
+
+function stripFileExtension(fileName: string) {
+    return fileName.replace(/\.[^.]+$/u, "").trim();
 }
 
 function findMaskUpstreamVideoNode(graph: WorkspaceGraph, maskNodeId: string) {
@@ -538,7 +600,7 @@ function buildRuntimeArtifactResumeSnapshot(
 
 function artifactDataUrl(artifact: WorkspaceRuntimeArtifact) {
     if (artifact.objectUrl) return artifact.objectUrl;
-    if (!artifact.base64) return "";
+    if (!artifact.base64) return null;
     return `data:${artifact.mimeType};base64,${artifact.base64}`;
 }
 
@@ -1857,6 +1919,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
         const advanceProgress = (
             description: string,
             status: "success" | "failed" | "skipped" = "success",
+            stepDescription?: string,
         ) => {
             updateProgressTask(progressTaskId, {
                 description,
@@ -1864,7 +1927,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
             if (currentProgressStep) {
                 finishWorkspaceProgressStep(currentProgressStep, {
                     status,
-                    description,
+                    description: stepDescription ?? description,
                 });
             }
         };
@@ -3327,7 +3390,14 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                             `Auto-forced strict alignment for ${dubbingNode.label} because source came from preprocess ${preprocessSpeedFactor.toFixed(2)}x.`,
                         );
                     }
-                    advanceProgress(`Dubbing ${dubbingNode.label} complete.`);
+                    advanceProgress(
+                        `Dubbing ${dubbingNode.label} complete.`,
+                        "success",
+                        buildDubbingProgressStepDescription({
+                            nodeLabel: dubbingNode.label,
+                            result: dubbingPayload.data,
+                        }),
+                    );
                 } else if (step.kind === "mirror-video") {
                     const sourceNode = findNode(step.sourceNodeId);
                     const mirrorNode = findNode(step.mirrorNodeId);
@@ -3704,6 +3774,30 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                                 (asset) => asset._id === upstreamAssetId,
                             ) ?? {},
                         ) || "workspace";
+                    const upstreamMetadataNodeId =
+                        findUpstreamMetadataNode(graph, storageNode.id)?.id ??
+                        findUpstreamMetadataNode(graph, artifactNode.id)?.id;
+                    const generatedMetadata =
+                        (upstreamMetadataNodeId
+                            ? vietnameseMetadataByNodeId[upstreamMetadataNodeId]
+                            : undefined) ??
+                        Object.values(vietnameseMetadataByNodeId)[0];
+                    const upstreamSourceAssetTitle = storageAssets
+                        .find((asset) => asset._id === upstreamAssetId)
+                        ?.metadata?.title?.trim();
+                    const upstreamSourceNodeTitle = getStringConfig(
+                        findUpstreamNodeByTemplateType(graph, artifactNode.id, [
+                            "source.file",
+                            "source.url",
+                        ]) ?? undefined,
+                        "title",
+                    ).trim();
+                    const outputTitle =
+                        generatedMetadata?.title?.trim() ||
+                        upstreamSourceNodeTitle ||
+                        upstreamSourceAssetTitle ||
+                        stripFileExtension(artifact.fileName) ||
+                        artifact.fileName;
                     uploadForm.set("folder", artifactFolder);
                     uploadForm.set(
                         "tags",
@@ -3712,7 +3806,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                             lifecycle: "processed",
                         }).join(","),
                     );
-                    uploadForm.set("title", artifact.fileName);
+                    uploadForm.set("title", outputTitle);
                     uploadForm.set("contentIntent", "other");
                     uploadForm.set("ownershipStatus", "unknown");
 
@@ -3791,14 +3885,6 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         }
                     }
 
-                    const upstreamMetadataNodeId =
-                        findUpstreamMetadataNode(graph, storageNode.id)?.id ??
-                        findUpstreamMetadataNode(graph, artifactNode.id)?.id;
-                    const generatedMetadata =
-                        (upstreamMetadataNodeId
-                            ? vietnameseMetadataByNodeId[upstreamMetadataNodeId]
-                            : undefined) ??
-                        Object.values(vietnameseMetadataByNodeId)[0];
                     if (generatedMetadata) {
                         try {
                             await fetchWorkspaceJson<{
@@ -5838,6 +5924,47 @@ function RuntimeNumberInput({
     );
 }
 
+function RuntimeArtifactPanel({
+    artifact,
+}: {
+    artifact: WorkspaceRuntimeArtifact;
+}) {
+    const artifactUrl = artifactDataUrl(artifact);
+
+    return (
+        <div className="space-y-2 border border-emerald-500/30 bg-emerald-500/10 p-3">
+            <p className="text-[11px] font-semibold text-emerald-700">
+                {artifact.detail} · {formatBytes(artifact.byteLength)}
+            </p>
+            {artifactUrl ? (
+                <>
+                    {artifact.kind === "audio" ? (
+                        <audio controls src={artifactUrl} className="w-full" />
+                    ) : (
+                        <video
+                            controls
+                            src={artifactUrl}
+                            className="max-h-56 w-full bg-black"
+                        />
+                    )}
+                    <a
+                        href={artifactUrl}
+                        download={artifact.fileName}
+                        className="inline-flex border border-main bg-main px-2 py-1 text-[10px] font-semibold text-main hover:bg-secondary"
+                    >
+                        Download {artifact.fileName}
+                    </a>
+                </>
+            ) : (
+                <p className="border border-main bg-main px-2 py-1.5 text-[10px] leading-4 text-muted">
+                    Server-side artifact ready. Preview/download appears after
+                    the artifact is persisted or returned inline.
+                </p>
+            )}
+        </div>
+    );
+}
+
 function NodeRuntimeConfig({
     node,
     graph,
@@ -6282,24 +6409,7 @@ function NodeRuntimeConfig({
                         />
                     </div>
                     {runtimeArtifact ? (
-                        <div className="space-y-2 border border-emerald-500/30 bg-emerald-500/10 p-3">
-                            <p className="text-[11px] font-semibold text-emerald-700">
-                                {runtimeArtifact.detail} ·{" "}
-                                {formatBytes(runtimeArtifact.byteLength)}
-                            </p>
-                            <video
-                                controls
-                                src={artifactDataUrl(runtimeArtifact)}
-                                className="max-h-56 w-full bg-black"
-                            />
-                            <a
-                                href={artifactDataUrl(runtimeArtifact)}
-                                download={runtimeArtifact.fileName}
-                                className="inline-flex border border-main bg-main px-2 py-1 text-[10px] font-semibold text-main hover:bg-secondary"
-                            >
-                                Download {runtimeArtifact.fileName}
-                            </a>
-                        </div>
+                        <RuntimeArtifactPanel artifact={runtimeArtifact} />
                     ) : (
                         <div className="flex items-start gap-2 border border-main bg-main px-3 py-2">
                             <Captions className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted" />
@@ -7242,32 +7352,7 @@ function NodeRuntimeConfig({
                         />
                     </label>
                     {runtimeArtifact ? (
-                        <div className="space-y-2 border border-emerald-500/30 bg-emerald-500/10 p-3">
-                            <p className="text-[11px] font-semibold text-emerald-700">
-                                {runtimeArtifact.detail} ·{" "}
-                                {formatBytes(runtimeArtifact.byteLength)}
-                            </p>
-                            {runtimeArtifact.kind === "audio" ? (
-                                <audio
-                                    controls
-                                    src={artifactDataUrl(runtimeArtifact)}
-                                    className="w-full"
-                                />
-                            ) : (
-                                <video
-                                    controls
-                                    src={artifactDataUrl(runtimeArtifact)}
-                                    className="max-h-56 w-full bg-black"
-                                />
-                            )}
-                            <a
-                                href={artifactDataUrl(runtimeArtifact)}
-                                download={runtimeArtifact.fileName}
-                                className="inline-flex border border-main bg-main px-2 py-1 text-[10px] font-semibold text-main hover:bg-secondary"
-                            >
-                                Download {runtimeArtifact.fileName}
-                            </a>
-                        </div>
+                        <RuntimeArtifactPanel artifact={runtimeArtifact} />
                     ) : (
                         <div className="flex items-start gap-2 border border-main bg-main px-3 py-2">
                             <Volume2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted" />

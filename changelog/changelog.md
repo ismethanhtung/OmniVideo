@@ -1,5 +1,41 @@
 # OmniVideo Changelog
 
+## FAST-VIDEO-009 - Title-Based Workspace Output Naming and Bilibili Auth-Integrated Intake
+
+- Bumped app version from `0.10.12` to `0.10.13` as a patch release for naming and intake quality controls.
+- Workspace `Store Generated Artifact` now sets asset `title` by business priority instead of technical transform filename chain:
+  - generated VI metadata title -> source node title -> source asset title -> file stem fallback.
+- Added optional resolver auth fields to intake pipeline and APIs:
+  - `resolverCookieHeader` (raw Cookie/Header text)
+  - `resolverCookiesFromBrowser` (`chrome`/`chromium`/`edge`/`firefox`/`safari`)
+- Video Intake UI now includes resolver auth controls and browser-local remember support to avoid repeated manual entry.
+- Internal resolver now allows cookie fallback profiles for Bilibili in addition to TikTok/Douyin, enabling authenticated higher-quality extraction attempts when valid cookies are provided.
+- Verification (FAST-VIDEO-009):
+  - `npm run test -- --run src/lib/video-intake/validation.test.ts src/lib/video-intake/media-resolver.test.ts src/app/api/video-intake/formats/route.test.ts src/app/api/video-intake/resolve-file/route.test.ts src/features/workspace/workspace-canvas-panel.test.ts` pass.
+  - `npm run guard:version` pass.
+
+## FAST-WORKSPACE-035 - Preserve Subtitle PlayRes for Server-Side Artifact Edit Path
+
+- Bumped app version from `0.10.11` to `0.10.12` as a patch release for Workspace subtitle rendering correctness.
+- Fixed Workspace edit route subtitle PlayRes drift for server-side artifact flow by probing source video dimensions from the temp input path before ASS generation.
+- Kept heavy media optimization intact: the fix still uses `artifactId` path and does not force browser-side full video decode for dimension detection.
+- Added an edit route regression test to verify probed dimensions override stale fallback PlayRes values in `responseMode=artifact`.
+- Verification (FAST-WORKSPACE-035):
+  - `npm run test -- --run src/app/api/video-processing/edit/route.test.ts src/features/workspace/workspace-canvas-panel.test.ts` pass.
+  - `npm run guard:version` pass.
+
+## FAST-OPS-007 - Enrich Dubbing Progress with Segment Timeline Details
+
+- Bumped app version from `0.10.10` to `0.10.11` as a patch release for progress observability UX.
+- Kept task-level Workspace Dub progress copy concise while adding richer step-level completion details.
+- Added Dub progress metadata for file name, size, MIME, runtime, transcript/translation/voice counts, provider/model, and audio mix.
+- Moved Dub segment timeline details out of the `Dub · ...` flow row into a dedicated right/bottom detail panel with a `Show all` / `Hide` control for long segment lists.
+- Prevented Workspace runtime artifact previews from rendering media/link elements with empty `src`/`href` when an artifact is server-side only.
+- Verification (FAST-OPS-007):
+  - `npm run test -- --run src/components/layout/topbar.test.ts src/features/workspace/workspace-canvas-panel.test.ts` pass (2 files / 21 tests).
+  - `npm run build` pass with the existing ESLint circular-config warning.
+  - `npm run guard:version` pass after version bump + changelog update.
+
 ## FAST-WORKSPACE-034 / FAST-INTAKE-007 - Large Workspace Artifacts and Intake Fetch Error Mapping
 
 - Bumped app version from `0.10.9` to `0.10.10` as a patch release for heavy Workspace runtime and intake diagnostics.

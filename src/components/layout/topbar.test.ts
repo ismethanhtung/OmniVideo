@@ -9,6 +9,14 @@ describe("Topbar background progress modal", () => {
     it("renders step-aware progress details with live durations", () => {
         expect(source).toContain("Flow steps");
         expect(source).toContain("formatStepSummary");
+        expect(source).toContain("parseStepDescription");
+        expect(source).toContain("PROGRESS_TIMELINE_COLLAPSED_LIMIT");
+        expect(source).toContain("timelineHeader");
+        expect(source).toContain("timelineLines");
+        expect(source).toContain("Show all");
+        expect(source).toContain("ProgressRichStepPanel");
+        expect(source).toContain("Dubbing details");
+        expect(source).toContain("metadataLines");
         expect(source).toContain("ProgressStepRow");
         expect(source).toContain("step.progressMode === \"determinate\"");
         expect(source).toContain("setInterval(() =>");

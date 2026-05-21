@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { spawn } from "node:child_process";
 import { createWriteStream } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -8,6 +9,7 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 
 import { applyDemoRateLimit } from "@/lib/access-control/route-guards";
+import { resolveFfmpegPath } from "@/lib/multilingual-audio/audio-extraction";
 import {
     VideoEditError,
     runVideoEditPipeline,
@@ -22,6 +24,21 @@ import {
 } from "@/lib/workspace/server-artifacts";
 
 export const runtime = "nodejs";
+
+type VideoDimensions = {
+    width: number;
+    height: number;
+};
+
+let probeVideoDimensionsFromPathForTest:
+    | ((inputPath: string) => Promise<VideoDimensions | null>)
+    | null = null;
+
+export function setProbeVideoDimensionsFromPathForTest(
+    probeFn: ((inputPath: string) => Promise<VideoDimensions | null>) | null,
+) {
+    probeVideoDimensionsFromPathForTest = probeFn;
+}
 
 function readFormValue(formData: FormData, key: string) {
     const value = formData.get(key);
@@ -179,6 +196,49 @@ function buildBinaryHeaders(
     };
 }
 
+function parseVideoDimensionsFromFfmpegLog(stderr: string) {
+    const match = /Video:\s.*?(\d{2,5})x(\d{2,5})(?:[,\s]|$)/u.exec(stderr);
+    if (!match) return null;
+    const width = Number(match[1]);
+    const height = Number(match[2]);
+    if (!Number.isFinite(width) || !Number.isFinite(height)) {
+        return null;
+    }
+    if (width <= 0 || height <= 0) {
+        return null;
+    }
+    return { width, height };
+}
+
+async function probeVideoDimensionsFromPath(inputPath: string) {
+    if (probeVideoDimensionsFromPathForTest) {
+        return await probeVideoDimensionsFromPathForTest(inputPath);
+    }
+
+    return await new Promise<VideoDimensions | null>((resolve) => {
+        let ffmpegPath = "";
+        try {
+            ffmpegPath = resolveFfmpegPath();
+        } catch {
+            resolve(null);
+            return;
+        }
+
+        const child = spawn(ffmpegPath, ["-hide_banner", "-i", inputPath], {
+            stdio: ["ignore", "ignore", "pipe"],
+        });
+        let stderr = "";
+
+        child.stderr.on("data", (chunk: Buffer) => {
+            stderr += chunk.toString("utf8");
+        });
+        child.on("error", () => resolve(null));
+        child.on("close", () => {
+            resolve(parseVideoDimensionsFromFfmpegLog(stderr));
+        });
+    });
+}
+
 export async function POST(request: Request) {
     let uploadedWorkDir = "";
     try {
@@ -327,8 +387,26 @@ export async function POST(request: Request) {
                 await writeFile(uploadedPath, artifact!.bytes);
             }
 
+            const subtitleDimensions =
+                input.subtitles?.enabled === true
+                    ? await probeVideoDimensionsFromPath(uploadedPath)
+                    : null;
+            const normalizedInput = subtitleDimensions
+                ? {
+                      ...input,
+                      subtitles: {
+                          ...input.subtitles,
+                          style: {
+                              ...(input.subtitles?.style ?? {}),
+                              playResX: subtitleDimensions.width,
+                              playResY: subtitleDimensions.height,
+                          },
+                      },
+                  }
+                : input;
+
             const result = await runVideoEditPipelineFromPath({
-                ...input,
+                ...normalizedInput,
                 inputPath: uploadedPath,
             });
 

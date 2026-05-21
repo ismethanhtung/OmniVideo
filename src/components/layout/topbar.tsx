@@ -51,6 +51,8 @@ type TopbarProps = {
     onToggleTheme: () => void;
 };
 
+const PROGRESS_TIMELINE_COLLAPSED_LIMIT = 6;
+
 export function Topbar({
     activeSection,
     onRefreshView,
@@ -811,7 +813,7 @@ function ProgressModal({
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-4 md:p-6">
-            <section className="flex max-h-[90vh] w-full max-w-4xl flex-col border border-main bg-main shadow-xl">
+            <section className="flex max-h-[90vh] w-full max-w-6xl flex-col border border-main bg-main shadow-xl">
                 <header className="flex items-start justify-between gap-3 border-b border-main bg-secondary/35 px-4 py-3">
                     <div>
                         <p className="text-[14px] font-semibold text-main">
@@ -945,29 +947,7 @@ function ProgressModal({
                                             {task.error}
                                         </p>
                                     ) : null}
-                                    {task.steps.length > 0 ? (
-                                        <div className="mt-3 border border-main bg-secondary/15">
-                                            <div className="flex items-center justify-between gap-2 border-b border-main px-3 py-2">
-                                                <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">
-                                                    Flow steps
-                                                </p>
-                                                <p className="text-[10px] text-muted">
-                                                    {formatStepSummary(
-                                                        task.steps,
-                                                    )}
-                                                </p>
-                                            </div>
-                                            <div className="divide-y divide-soft">
-                                                {task.steps.map((step) => (
-                                                    <ProgressStepRow
-                                                        key={step.id}
-                                                        step={step}
-                                                        now={now}
-                                                    />
-                                                ))}
-                                            </div>
-                                        </div>
-                                    ) : null}
+                                    <ProgressTaskDetails task={task} now={now} />
                                 </article>
                             ))}
                         </div>
@@ -1041,6 +1021,223 @@ function formatStepSummary(steps: ProgressTaskStep[]) {
     return pieces.join(" · ");
 }
 
+function parseStepDescription(description: string | null | undefined) {
+    const fallback = "Waiting to start.";
+    if (!description) {
+        return {
+            summary: fallback,
+            extra: null as string | null,
+            metadataLines: [] as string[],
+            timelineHeader: null as string | null,
+            timelineLines: [] as string[],
+            tail: null as string | null,
+        };
+    }
+
+    const lines = description
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0);
+    if (lines.length === 0) {
+        return {
+            summary: fallback,
+            extra: null,
+            metadataLines: [],
+            timelineHeader: null,
+            timelineLines: [],
+            tail: null,
+        };
+    }
+
+    const summary = lines[0];
+    const timelineHeaderIndex = lines.findIndex(
+        (line, index) => index > 0 && /^Segments\s*\(/iu.test(line),
+    );
+    const metadataHeaderIndex = lines.findIndex(
+        (line, index) => index > 0 && /^Metadata:$/iu.test(line),
+    );
+    if (timelineHeaderIndex === -1) {
+        return {
+            summary,
+            extra:
+                metadataHeaderIndex === -1
+                    ? lines.slice(1).join(" ")
+                    : lines.slice(1, metadataHeaderIndex).join(" "),
+            metadataLines:
+                metadataHeaderIndex === -1
+                    ? []
+                    : lines.slice(metadataHeaderIndex + 1),
+            timelineHeader: null,
+            timelineLines: [],
+            tail: null,
+        };
+    }
+
+    const timelineHeader = lines[timelineHeaderIndex];
+    const metadataLines =
+        metadataHeaderIndex !== -1 && metadataHeaderIndex < timelineHeaderIndex
+            ? lines.slice(metadataHeaderIndex + 1, timelineHeaderIndex)
+            : [];
+    const timelineLines: string[] = [];
+    const tailLines: string[] = [];
+    for (const line of lines.slice(timelineHeaderIndex + 1)) {
+        if (/^\[[^\]]+\]\s+/u.test(line)) {
+            timelineLines.push(line);
+            continue;
+        }
+        tailLines.push(line);
+    }
+
+    return {
+        summary,
+        extra:
+            metadataHeaderIndex === -1
+                ? lines.slice(1, timelineHeaderIndex).join(" ")
+                : lines.slice(1, metadataHeaderIndex).join(" "),
+        metadataLines,
+        timelineHeader,
+        timelineLines,
+        tail: tailLines.join(" "),
+    };
+}
+
+function ProgressTaskDetails({
+    task,
+    now,
+}: {
+    task: ProgressTask;
+    now: number;
+}) {
+    if (task.steps.length === 0) {
+        return null;
+    }
+
+    const richStep = task.steps
+        .map((step) => ({
+            step,
+            detail: parseStepDescription(step.description),
+        }))
+        .find(
+            ({ detail }) =>
+                detail.metadataLines.length > 0 ||
+                detail.timelineLines.length > 0,
+        );
+
+    return (
+        <div
+            className={`mt-3 grid gap-3 ${
+                richStep ? "xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.9fr)]" : ""
+            }`}
+        >
+            <div className="border border-main bg-secondary/15">
+                <div className="flex items-center justify-between gap-2 border-b border-main px-3 py-2">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">
+                        Flow steps
+                    </p>
+                    <p className="text-[10px] text-muted">
+                        {formatStepSummary(task.steps)}
+                    </p>
+                </div>
+                <div className="divide-y divide-soft">
+                    {task.steps.map((step) => (
+                        <ProgressStepRow key={step.id} step={step} now={now} />
+                    ))}
+                </div>
+            </div>
+            {richStep ? (
+                <ProgressRichStepPanel
+                    step={richStep.step}
+                    detail={richStep.detail}
+                />
+            ) : null}
+        </div>
+    );
+}
+
+function ProgressRichStepPanel({
+    step,
+    detail,
+}: {
+    step: ProgressTaskStep;
+    detail: ReturnType<typeof parseStepDescription>;
+}) {
+    const [showFullTimeline, setShowFullTimeline] = useState(false);
+    const hasCollapsibleTimeline =
+        detail.timelineLines.length > PROGRESS_TIMELINE_COLLAPSED_LIMIT;
+    const visibleTimelineLines =
+        hasCollapsibleTimeline && !showFullTimeline
+            ? detail.timelineLines.slice(0, PROGRESS_TIMELINE_COLLAPSED_LIMIT)
+            : detail.timelineLines;
+
+    return (
+        <aside className="border border-main bg-main">
+            <div className="border-b border-main bg-secondary/25 px-3 py-2">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">
+                    Dubbing details
+                </p>
+                <p className="mt-0.5 truncate text-[11px] font-semibold text-main">
+                    {step.title}
+                </p>
+            </div>
+            <div className="space-y-3 p-3">
+                {detail.metadataLines.length > 0 ? (
+                    <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+                        {detail.metadataLines.map((line, index) => {
+                            const [label, ...valueParts] = line.split(":");
+                            const value = valueParts.join(":").trim();
+                            return (
+                                <div
+                                    key={`${step.id}-metadata-${index}`}
+                                    className="border border-main bg-secondary/15 px-2 py-1.5"
+                                >
+                                    <p className="text-[9px] font-semibold uppercase tracking-[0.08em] text-muted">
+                                        {value ? label : "Detail"}
+                                    </p>
+                                    <p className="mt-0.5 break-words text-[10px] leading-4 text-main">
+                                        {value || line}
+                                    </p>
+                                </div>
+                            );
+                        })}
+                    </div>
+                ) : null}
+                {detail.timelineHeader && detail.timelineLines.length > 0 ? (
+                    <div className="border border-main bg-secondary/20 px-2 py-1.5">
+                        <div className="flex items-center justify-between gap-2">
+                            <p className="text-[9px] font-semibold uppercase tracking-[0.08em] text-muted">
+                                {detail.timelineHeader}
+                            </p>
+                            {hasCollapsibleTimeline ? (
+                                <button
+                                    type="button"
+                                    onClick={() =>
+                                        setShowFullTimeline((current) => !current)
+                                    }
+                                    className="border border-main bg-main px-1.5 py-0.5 text-[9px] font-semibold text-main hover:bg-secondary"
+                                >
+                                    {showFullTimeline
+                                        ? "Hide"
+                                        : `Show all ${detail.timelineLines.length}`}
+                                </button>
+                            ) : null}
+                        </div>
+                        <div className="mt-1 max-h-80 space-y-1 overflow-y-auto pr-1">
+                            {visibleTimelineLines.map((line, index) => (
+                                <p
+                                    key={`${step.id}-timeline-${index}`}
+                                    className="rounded border border-main bg-main px-1.5 py-0.5 font-mono text-[9px] leading-4 text-main"
+                                >
+                                    {line}
+                                </p>
+                            ))}
+                        </div>
+                    </div>
+                ) : null}
+            </div>
+        </aside>
+    );
+}
+
 function TaskProgressBar({ task }: { task: ProgressTask }) {
     const isFinished = task.status === "success" || task.status === "failed";
     return (
@@ -1076,6 +1273,8 @@ function ProgressStepRow({
     step: ProgressTaskStep;
     now: number;
 }) {
+    const parsedDescription = parseStepDescription(step.description);
+
     return (
         <div className="px-3 py-2.5">
             <div className="flex items-start justify-between gap-3">
@@ -1086,8 +1285,13 @@ function ProgressStepRow({
                             {step.title}
                         </p>
                         <p className="mt-0.5 text-[10px] leading-4 text-muted">
-                            {step.description ?? "Waiting to start."}
+                            {parsedDescription.summary}
                         </p>
+                        {parsedDescription.extra ? (
+                            <p className="mt-1 text-[10px] leading-4 text-muted">
+                                {parsedDescription.extra}
+                            </p>
+                        ) : null}
                     </div>
                 </div>
                 <div className="shrink-0 text-right text-[10px] text-muted">

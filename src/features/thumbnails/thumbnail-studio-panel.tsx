@@ -2046,7 +2046,6 @@ export function ThumbnailStudioPanel({
                 <aside className="flex min-h-0 min-w-0 flex-col gap-3">
                     <div className="border border-main bg-secondary/20 p-4">
                         <div className="flex items-center gap-2">
-                            <DownloadCloud className="h-4 w-4 text-muted" />
                             <p className="text-[12px] font-semibold text-main">
                                 Import Thumbnails
                             </p>
@@ -2881,8 +2880,7 @@ export function ThumbnailStudioPanel({
                                                                 textShadow:
                                                                     buildTextGlowCss(
                                                                         {
-                                                                            shadowEnabled:
-                                                                                true,
+                                                                            shadowEnabled: true,
                                                                             shadowColor:
                                                                                 overlay.shadowColor ??
                                                                                 "#facc15",
@@ -3102,7 +3100,9 @@ export function ThumbnailStudioPanel({
                                         </div>
                                         <div className="grid grid-cols-3 gap-1.5">
                                             <button
-                                                key={TEXT_STYLE_PRESETS[3].label}
+                                                key={
+                                                    TEXT_STYLE_PRESETS[3].label
+                                                }
                                                 type="button"
                                                 onClick={() =>
                                                     applyTextStylePreset(
@@ -3124,7 +3124,10 @@ export function ThumbnailStudioPanel({
                                                             "#ffffff",
                                                     }}
                                                 >
-                                                    {TEXT_STYLE_PRESETS[3].label}
+                                                    {
+                                                        TEXT_STYLE_PRESETS[3]
+                                                            .label
+                                                    }
                                                 </span>
                                                 <span className="block text-[9px] text-muted">
                                                     {
@@ -3246,7 +3249,6 @@ export function ThumbnailStudioPanel({
                         <div className="min-w-0 space-y-3">
                             <div className="space-y-2 border border-main bg-secondary/20 p-3">
                                 <div className="flex items-center gap-2">
-                                    <Type className="h-4 w-4 text-muted" />
                                     <p className="text-[12px] font-semibold text-main">
                                         Text Overlay
                                     </p>
@@ -3667,7 +3669,6 @@ export function ThumbnailStudioPanel({
 
                             <div className="space-y-2 border border-main bg-secondary/20 p-3">
                                 <div className="flex items-center gap-2">
-                                    <Scissors className="h-4 w-4 text-muted" />
                                     <p className="text-[12px] font-semibold text-main">
                                         Crop
                                     </p>
@@ -3699,7 +3700,6 @@ export function ThumbnailStudioPanel({
 
                             <div className="space-y-2 border border-main bg-secondary/20 p-3">
                                 <div className="flex items-center gap-2">
-                                    <Droplets className="h-4 w-4 text-muted" />
                                     <p className="text-[12px] font-semibold text-main">
                                         Blur
                                     </p>

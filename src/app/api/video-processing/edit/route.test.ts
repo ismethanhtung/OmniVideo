@@ -5,7 +5,7 @@ import {
     runVideoEditPipelineFromPath,
 } from "@/lib/video-processing/video-edit-pipeline";
 
-import { POST } from "./route";
+import { POST, setProbeVideoDimensionsFromPathForTest } from "./route";
 
 vi.mock(
     "@/lib/video-processing/video-edit-pipeline",
@@ -39,6 +39,7 @@ describe("video edit API", () => {
     beforeEach(() => {
         mockedRunVideoEditPipeline.mockReset();
         mockedRunVideoEditPipelineFromPath.mockReset();
+        setProbeVideoDimensionsFromPathForTest(null);
     });
 
     it("rejects missing video file", async () => {
@@ -205,6 +206,68 @@ describe("video edit API", () => {
                 fileSizeBytes: 3,
                 inputPath: expect.stringContaining("source.mp4"),
                 blur: expect.objectContaining({ enabled: true }),
+            }),
+        );
+    });
+
+    it("overrides subtitle play resolution from probed source dimensions for artifact mode", async () => {
+        mockedRunVideoEditPipelineFromPath.mockResolvedValueOnce({
+            videoBytes: Buffer.from("edited"),
+            mimeType: "video/mp4",
+            extension: "mp4",
+            fileName: "source-edit.mp4",
+            byteLength: 6,
+            generationDurationMs: 12,
+            transform: {
+                mirror: false,
+                partialBlur: true,
+                subtitleOverlay: true,
+                segmentCount: 1,
+            },
+        });
+        setProbeVideoDimensionsFromPathForTest(
+            vi.fn(async () => ({ width: 1080, height: 1920 })),
+        );
+        const formData = createFormData({
+            responseMode: "artifact",
+            blurEnabled: "true",
+            subtitleOverlayEnabled: "true",
+            subtitlePlayResX: "1920",
+            subtitlePlayResY: "1080",
+            translatedSegmentsJson: JSON.stringify([
+                {
+                    id: 1,
+                    start: 0,
+                    end: 2,
+                    sourceText: "source",
+                    translatedText: "Xin chao",
+                },
+            ]),
+        });
+        formData.set(
+            "videoFile",
+            new File([new Uint8Array([1, 2, 3])], "source.mp4", {
+                type: "video/mp4",
+            }),
+        );
+
+        const response = await POST(
+            new Request("http://localhost/api/video-processing/edit", {
+                method: "POST",
+                body: formData,
+            }),
+        );
+
+        expect(response.status).toBe(200);
+        expect(mockedRunVideoEditPipelineFromPath).toHaveBeenCalledWith(
+            expect.objectContaining({
+                subtitles: expect.objectContaining({
+                    style: expect.objectContaining({
+                        playResX: 1080,
+                        playResY: 1920,
+                    }),
+                }),
+                inputPath: expect.stringContaining("source.mp4"),
             }),
         );
     });

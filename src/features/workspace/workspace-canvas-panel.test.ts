@@ -140,6 +140,8 @@ describe("WorkspaceCanvasPanel canvas interactions", () => {
         expect(source).toContain("vietnameseTitle");
         expect(source).toContain("vietnameseDescription");
         expect(source).toContain("vietnameseHashtags");
+        expect(source).toContain("const outputTitle =");
+        expect(source).toContain("uploadForm.set(\"title\", outputTitle)");
     });
 
     it("keeps large runtime video artifacts server-side by artifact id", () => {
@@ -161,11 +163,25 @@ describe("WorkspaceCanvasPanel canvas interactions", () => {
         expect(source).toContain('progressMode: "indeterminate"');
         expect(source).toContain("startProgressStep");
         expect(source).toContain("finishProgressStep");
+        expect(source).toContain("buildDubbingProgressStepDescription");
+        expect(source).toContain("Metadata:");
+        expect(source).toContain("Size:");
+        expect(source).toContain("Translation:");
+        expect(source).toContain("Mix:");
+        expect(source).toContain("Segments (");
+        expect(source).not.toContain("more segment(s) not shown");
         expect(source).toContain("readWorkspaceResponseBlob");
         expect(source).toContain("Downloading asset source");
         expect(source).not.toContain(
             "Math.round((stepIndex / totalSteps) * 95)",
         );
+    });
+
+    it("does not render empty media src values for server-side runtime artifacts", () => {
+        expect(source).toContain("function RuntimeArtifactPanel");
+        expect(source).toContain("if (!artifact.base64) return null;");
+        expect(source).toContain("Server-side artifact ready.");
+        expect(source).toContain("{artifactUrl ? (");
     });
 
     it("surfaces non-blocking mask setup warnings in Flow Setup", () => {
