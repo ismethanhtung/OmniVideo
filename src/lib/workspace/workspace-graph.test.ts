@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+    createAssetVipProcessingSampleGraph,
     WORKSPACE_NODE_TEMPLATES,
     addWorkspaceNode,
     connectWorkspaceNodes,
@@ -1363,6 +1364,33 @@ describe("workspace graph helpers", () => {
             {
                 kind: "store-artifact",
                 artifactNodeId: "edit-mask-region-1",
+                storageNodeId: "storage-upload-1",
+                producerNodeId: "storage-upload-1",
+            },
+        ]);
+    });
+
+    it("plans seeded asset VIP processing flow with 3 nodes", () => {
+        const graph = createAssetVipProcessingSampleGraph();
+
+        expect(validateWorkspaceGraph(graph)).toEqual({ ok: true, errors: [] });
+        const plan = planWorkspaceFlow(graph);
+
+        expect(plan.ok).toBe(true);
+        expect(plan.steps).toEqual([
+            {
+                kind: "use-existing-asset",
+                nodeId: "source-asset-1",
+                producerNodeId: "source-asset-1",
+            },
+            {
+                kind: "vip-process-video",
+                sourceNodeId: "source-asset-1",
+                vipNodeId: "video-vip-processing-1",
+            },
+            {
+                kind: "store-artifact",
+                artifactNodeId: "video-vip-processing-1",
                 storageNodeId: "storage-upload-1",
                 producerNodeId: "storage-upload-1",
             },

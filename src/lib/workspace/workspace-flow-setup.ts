@@ -47,6 +47,8 @@ function getStepNodeIds(step: WorkspaceFlowStep): string[] {
             return [step.sourceNodeId, step.preprocessNodeId];
         case "dub-video":
             return [step.sourceNodeId, step.dubbingNodeId];
+        case "vip-process-video":
+            return [step.sourceNodeId, step.vipNodeId];
         case "mirror-video":
             return [step.sourceNodeId, step.mirrorNodeId];
         case "edit-video":

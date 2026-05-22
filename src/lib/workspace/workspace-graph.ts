@@ -156,6 +156,11 @@ export type WorkspaceFlowStep =
           dubbingNodeId: string;
       }
     | {
+          kind: "vip-process-video";
+          sourceNodeId: string;
+          vipNodeId: string;
+      }
+    | {
           kind: "mirror-video";
           sourceNodeId: string;
           mirrorNodeId: string;
@@ -835,6 +840,214 @@ export const WORKSPACE_NODE_TEMPLATES: WorkspaceNodeTemplate[] = [
         observabilityHooks: ["onStart", "onSuccess", "onError"],
         traceabilityNotes:
             "Dubbed output must record transcript/translation/TTS model settings, mix volumes, source asset/file, and output asset id when persisted.",
+    },
+    {
+        nodeType: "video.vip-processing",
+        version: "1.0.0",
+        label: "VIP Processing",
+        description:
+            "Composite pipeline: preprocess + dubbing + mirror + blur/subtitles + VI metadata in one dedicated runtime path.",
+        category: "processing",
+        status: "available",
+        inputPorts: [{ id: "asset", label: "Source video", dataType: "asset" }],
+        outputPorts: [
+            { id: "asset", label: "Processed video artifact", dataType: "asset" },
+            {
+                id: "metadata",
+                label: "Vietnamese metadata",
+                dataType: "metadata",
+            },
+        ],
+        configFields: [
+            {
+                key: "language",
+                label: "Language hint",
+                type: "select",
+                required: true,
+                defaultValue: "zh",
+            },
+            {
+                key: "targetLanguage",
+                label: "Target language",
+                type: "select",
+                required: true,
+                defaultValue: "vi",
+            },
+            {
+                key: "translationProviderId",
+                label: "AI Provider",
+                type: "account",
+                required: false,
+                defaultValue: "",
+            },
+            {
+                key: "model",
+                label: "Translation model",
+                type: "select",
+                required: true,
+                defaultValue: "cx/gpt-5.3-codex-low",
+            },
+            {
+                key: "metadataProviderId",
+                label: "Metadata AI Provider",
+                type: "account",
+                required: false,
+                defaultValue: "",
+            },
+            {
+                key: "metadataModel",
+                label: "Metadata model",
+                type: "select",
+                required: true,
+                defaultValue: "cx/gpt-5.3-codex-low",
+            },
+            {
+                key: "speedFactor",
+                label: "Video speed",
+                type: "number",
+                required: false,
+                defaultValue: 0.7,
+            },
+            {
+                key: "originalAudioVolume",
+                label: "Original audio volume",
+                type: "number",
+                required: true,
+                defaultValue: 0.1,
+            },
+            {
+                key: "voiceVolume",
+                label: "Voice volume",
+                type: "number",
+                required: true,
+                defaultValue: 1,
+            },
+            {
+                key: "ttsBinaryPath",
+                label: "Piper executable",
+                type: "text",
+                required: true,
+                defaultValue: "piper",
+            },
+            {
+                key: "ttsModelPath",
+                label: "ONNX model",
+                type: "text",
+                required: false,
+                defaultValue: "",
+            },
+            {
+                key: "ttsConfigPath",
+                label: "Config JSON",
+                type: "text",
+                required: false,
+                defaultValue: "",
+            },
+            {
+                key: "ttsNoiseScale",
+                label: "Noise scale",
+                type: "number",
+                required: false,
+                defaultValue: 0.667,
+            },
+            {
+                key: "ttsNoiseW",
+                label: "Noise W",
+                type: "number",
+                required: false,
+                defaultValue: 0.8,
+            },
+            {
+                key: "ttsSentenceSilence",
+                label: "Sentence silence",
+                type: "number",
+                required: false,
+                defaultValue: 0.2,
+            },
+            {
+                key: "ttsPreserveTimestampGaps",
+                label: "Balanced timing",
+                type: "boolean",
+                required: false,
+                defaultValue: true,
+            },
+            {
+                key: "ttsAlignmentMode",
+                label: "Alignment mode",
+                type: "select",
+                required: false,
+                defaultValue: "strict",
+            },
+            {
+                key: "mirrorEnabled",
+                label: "Mirror horizontal",
+                type: "boolean",
+                required: false,
+                defaultValue: true,
+            },
+            {
+                key: "blurRegionsJson",
+                label: "Blur regions JSON",
+                type: "text",
+                required: false,
+                defaultValue: "",
+            },
+            {
+                key: "regionX",
+                label: "Region X %",
+                type: "number",
+                required: true,
+                defaultValue: 0,
+            },
+            {
+                key: "regionY",
+                label: "Region Y %",
+                type: "number",
+                required: true,
+                defaultValue: 84,
+            },
+            {
+                key: "regionWidth",
+                label: "Region width %",
+                type: "number",
+                required: true,
+                defaultValue: 100,
+            },
+            {
+                key: "regionHeight",
+                label: "Region height %",
+                type: "number",
+                required: true,
+                defaultValue: 16,
+            },
+            {
+                key: "timelineStart",
+                label: "Timeline start seconds",
+                type: "number",
+                required: true,
+                defaultValue: 0,
+            },
+            {
+                key: "timelineEnd",
+                label: "Timeline end seconds",
+                type: "number",
+                required: true,
+                defaultValue: 36000,
+            },
+            {
+                key: "blurStrength",
+                label: "Blur strength",
+                type: "number",
+                required: true,
+                defaultValue: 50,
+            },
+        ],
+        timeoutMs: 1800000,
+        retryPolicy: { maxAttempts: 1, backoff: "none" },
+        idempotencyStrategy: "input-hash",
+        observabilityHooks: ["onStart", "onSuccess", "onError"],
+        traceabilityNotes:
+            "VIP node records transcript/translation/TTS settings, composite edit options, metadata generation, and final asset lineage in one runtime step.",
     },
     {
         nodeType: "text.translate-transcript",
@@ -1534,6 +1747,9 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
     const dubbingNodes = graph.nodes.filter(
         (node) => node.templateNodeType === "audio.video-dubbing",
     );
+    const vipNodes = graph.nodes.filter(
+        (node) => node.templateNodeType === "video.vip-processing",
+    );
     const editNodes = graph.nodes.filter(
         (node) => node.templateNodeType === "edit.mask-region",
     );
@@ -1615,6 +1831,16 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
                     node !== undefined &&
                     node.templateNodeType === "edit.mask-region",
             );
+        const downstreamVip = graph.edges
+            .filter((edge) => edge.fromNodeId === fileNode.id)
+            .map((edge) =>
+                graph.nodes.find((node) => node.id === edge.toNodeId),
+            )
+            .filter(
+                (node): node is WorkspaceNodeInstance =>
+                    node !== undefined &&
+                    node.templateNodeType === "video.vip-processing",
+            );
 
         if (
             downstreamStorage.length === 0 &&
@@ -1622,10 +1848,11 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
             downstreamPreprocess.length === 0 &&
             downstreamDubbing.length === 0 &&
             downstreamMirror.length === 0 &&
-            downstreamEdit.length === 0
+            downstreamEdit.length === 0 &&
+            downstreamVip.length === 0
         ) {
             errors.push(
-                `Upload Video '${fileNode.label}' (${fileNode.id}) cần nối tới Save to Storage, Video Preprocess, Audio Transcript, Video Dubbing, Mirror Video hoặc Mask Logo/Subtitles downstream.`,
+                `Upload Video '${fileNode.label}' (${fileNode.id}) cần nối tới Save to Storage, Video Preprocess, Audio Transcript, Video Dubbing, VIP Processing, Mirror Video hoặc Mask Logo/Subtitles downstream.`,
             );
             continue;
         }
@@ -1710,16 +1937,27 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
                     node !== undefined &&
                     node.templateNodeType === "edit.mask-region",
             );
+        const downstreamVip = graph.edges
+            .filter((edge) => edge.fromNodeId === urlNode.id)
+            .map((edge) =>
+                graph.nodes.find((node) => node.id === edge.toNodeId),
+            )
+            .filter(
+                (node): node is WorkspaceNodeInstance =>
+                    node !== undefined &&
+                    node.templateNodeType === "video.vip-processing",
+            );
         if (
             downstreamStorage.length === 0 &&
             downstreamTranscription.length === 0 &&
             downstreamPreprocess.length === 0 &&
             downstreamDubbing.length === 0 &&
             downstreamMirror.length === 0 &&
-            downstreamEdit.length === 0
+            downstreamEdit.length === 0 &&
+            downstreamVip.length === 0
         ) {
             errors.push(
-                `URL Video '${urlNode.label}' (${urlNode.id}) cần nối tới Save to Storage, Video Preprocess, Audio Transcript, Video Dubbing, Mirror Video hoặc Mask Logo/Subtitles downstream.`,
+                `URL Video '${urlNode.label}' (${urlNode.id}) cần nối tới Save to Storage, Video Preprocess, Audio Transcript, Video Dubbing, VIP Processing, Mirror Video hoặc Mask Logo/Subtitles downstream.`,
             );
             continue;
         }
@@ -1807,6 +2045,39 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
         }
         consumedStorageByArtifact.set(storageNode.id, dubbingNode.id);
         artifactToStorage.set(dubbingNode.id, storageNode.id);
+    }
+
+    for (const vipNode of vipNodes) {
+        const downstreamStorage = graph.edges
+            .filter((edge) => edge.fromNodeId === vipNode.id)
+            .map((edge) =>
+                graph.nodes.find((node) => node.id === edge.toNodeId),
+            )
+            .filter(
+                (node): node is WorkspaceNodeInstance =>
+                    node !== undefined &&
+                    node.templateNodeType === "storage.upload",
+            );
+
+        if (downstreamStorage.length === 0) continue;
+        if (downstreamStorage.length > 1) {
+            errors.push(
+                `VIP Processing '${vipNode.label}' (${vipNode.id}) đang nối tới nhiều Save to Storage; backend hiện chỉ hỗ trợ 1.`,
+            );
+            continue;
+        }
+        const storageNode = downstreamStorage[0];
+        if (
+            consumedStorageByFile.has(storageNode.id) ||
+            consumedStorageByArtifact.has(storageNode.id)
+        ) {
+            errors.push(
+                `Save to Storage '${storageNode.label}' (${storageNode.id}) đang nhận từ nhiều producer; chưa hỗ trợ fan-in.`,
+            );
+            continue;
+        }
+        consumedStorageByArtifact.set(storageNode.id, vipNode.id);
+        artifactToStorage.set(vipNode.id, storageNode.id);
     }
 
     for (const mirrorNode of mirrorNodes) {
@@ -2130,6 +2401,51 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
         artifactProducers.add(dubbingNode.id);
     }
 
+    const vipSteps: WorkspaceFlowStep[] = [];
+    for (const vipNode of vipNodes) {
+        const upstreamSources = graph.edges
+            .filter((edge) => edge.toNodeId === vipNode.id)
+            .map((edge) =>
+                graph.nodes.find((node) => node.id === edge.fromNodeId),
+            )
+            .filter(
+                (node): node is WorkspaceNodeInstance =>
+                    node !== undefined &&
+                    (node.templateNodeType === "source.file" ||
+                        node.templateNodeType === "source.url" ||
+                        node.templateNodeType === "source.asset" ||
+                        node.templateNodeType === "video.preprocess"),
+            );
+
+        if (upstreamSources.length === 0) {
+            errors.push(
+                `VIP Processing '${vipNode.label}' (${vipNode.id}) cần upstream Upload Video, URL Video, Storage Asset hoặc Video Preprocess.`,
+            );
+            continue;
+        }
+        if (upstreamSources.length > 1) {
+            errors.push(
+                `VIP Processing '${vipNode.label}' (${vipNode.id}) đang nhận nhiều source; chưa hỗ trợ fan-in.`,
+            );
+            continue;
+        }
+        if (
+            upstreamSources[0].templateNodeType === "video.preprocess" &&
+            !artifactProducers.has(upstreamSources[0].id)
+        ) {
+            errors.push(
+                `VIP Processing '${vipNode.label}' (${vipNode.id}) cần Video Preprocess upstream chạy được.`,
+            );
+            continue;
+        }
+        vipSteps.push({
+            kind: "vip-process-video",
+            sourceNodeId: upstreamSources[0].id,
+            vipNodeId: vipNode.id,
+        });
+        artifactProducers.add(vipNode.id);
+    }
+
     const metadataSteps: WorkspaceFlowStep[] = [];
     for (const metadataNode of metadataNodes) {
         const upstreamTranslations = graph.edges
@@ -2431,6 +2747,7 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
         voiceSteps.length === 0 &&
         metadataSteps.length === 0 &&
         dubbingSteps.length === 0 &&
+        vipSteps.length === 0 &&
         mirrorSteps.length === 0 &&
         editSteps.length === 0 &&
         artifactStorageSteps.length === 0 &&
@@ -2452,6 +2769,7 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
             ...translationSteps,
             ...voiceSteps,
             ...dubbingSteps,
+            ...vipSteps,
             ...metadataSteps,
             ...mirrorSteps,
             ...editSteps,
@@ -3145,6 +3463,78 @@ export function createAssetTranscriptFullProcessingSampleGraph(): WorkspaceGraph
                 id: "edit-mask-region-1:video->storage-upload-1:asset",
                 fromNodeId: "edit-mask-region-1",
                 fromPortId: "video",
+                toNodeId: "storage-upload-1",
+                toPortId: "asset",
+            },
+        ],
+    };
+}
+
+export function createAssetVipProcessingSampleGraph(): WorkspaceGraph {
+    const now = new Date().toISOString();
+    return {
+        version: 1,
+        draftId: "asset-vip-processing-sample",
+        title: "Asset -> VIP Processing -> Storage",
+        updatedAt: now,
+        selectedNodeId: "source-asset-1",
+        nodes: [
+            {
+                id: "source-asset-1",
+                templateNodeType: "source.asset",
+                label: "Storage source asset",
+                position: { x: 120, y: 220 },
+                config: {},
+            },
+            {
+                id: "video-vip-processing-1",
+                templateNodeType: "video.vip-processing",
+                label: "VIP full processing",
+                position: { x: 520, y: 220 },
+                config: {
+                    language: "zh",
+                    targetLanguage: "vi",
+                    model: "cx/gpt-5.3-codex-low",
+                    metadataModel: "cx/gpt-5.3-codex-low",
+                    speedFactor: 0.7,
+                    originalAudioVolume: 0.1,
+                    voiceVolume: 1,
+                    ttsNoiseScale: 0.667,
+                    ttsNoiseW: 0.8,
+                    ttsSentenceSilence: 0.2,
+                    ttsPreserveTimestampGaps: true,
+                    ttsAlignmentMode: "strict",
+                    mirrorEnabled: true,
+                    blurRegionsJson: "",
+                    regionX: 0,
+                    regionY: 84,
+                    regionWidth: 100,
+                    regionHeight: 16,
+                    timelineStart: 0,
+                    timelineEnd: 36000,
+                    blurStrength: 50,
+                },
+            },
+            {
+                id: "storage-upload-1",
+                templateNodeType: "storage.upload",
+                label: "Save final video",
+                position: { x: 940, y: 220 },
+                config: {},
+            },
+        ],
+        edges: [
+            {
+                id: "source-asset-1:asset->video-vip-processing-1:asset",
+                fromNodeId: "source-asset-1",
+                fromPortId: "asset",
+                toNodeId: "video-vip-processing-1",
+                toPortId: "asset",
+            },
+            {
+                id: "video-vip-processing-1:asset->storage-upload-1:asset",
+                fromNodeId: "video-vip-processing-1",
+                fromPortId: "asset",
                 toNodeId: "storage-upload-1",
                 toPortId: "asset",
             },

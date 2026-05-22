@@ -49,4 +49,20 @@ describe("workspace seed templates", () => {
             ]),
         );
     });
+
+    it("registers 3-node asset VIP processing seed", () => {
+        const seed = WORKSPACE_SEED_TEMPLATES.find(
+            (entry) => entry.id === "asset-vip-processing",
+        );
+
+        expect(seed).toBeDefined();
+        expect(seed?.label).toBe("Seed Asset VIP Processing");
+        expect(seed?.buildGraph().nodes.map((node) => node.templateNodeType)).toEqual(
+            expect.arrayContaining([
+                "source.asset",
+                "video.vip-processing",
+                "storage.upload",
+            ]),
+        );
+    });
 });

@@ -42,6 +42,7 @@ export type DemoFeature =
   | "piper-tts"
   | "video-dubbing"
   | "video-metadata"
+  | "video-vip-processing"
   | "video-mirror"
   | "video-edit";
 

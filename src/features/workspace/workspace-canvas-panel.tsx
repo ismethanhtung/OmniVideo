@@ -85,6 +85,7 @@ import {
     type VoiceGenerationResult,
 } from "@/lib/multilingual-audio/types";
 import type { VideoDubbingResult } from "@/lib/multilingual-audio/video-dubbing";
+import type { VideoVipProcessingResult } from "@/lib/multilingual-audio/video-vip-processing";
 import { buildWordAwareVoiceSegments } from "@/lib/multilingual-audio/voice-segment-timing";
 
 type WorkspaceCanvasPanelProps = {
@@ -259,6 +260,7 @@ type WorkspaceRuntimeResumeSnapshot = {
     runError: string | null;
     runResult: string | null;
 };
+const MAX_RESUME_TEXT_LENGTH = 4000;
 
 function cn(...classes: Array<string | false | null | undefined>) {
     return classes.filter(Boolean).join(" ");
@@ -323,6 +325,39 @@ function buildDubbingProgressStepDescription(input: {
 
     if (segments.length === 0) return [summary, ...metadataLines].join("\n");
 
+    const header = `Segments (${segments.length} total):`;
+    const timelineLines = segments.map((segment) => {
+        const segmentText = summarizeTextForProgress(
+            segment.translatedText || segment.sourceText || "",
+        );
+        return `[${formatTimelineTimestamp(segment.start)} -> ${formatTimelineTimestamp(segment.end)}] ${segmentText}`;
+    });
+
+    return [summary, ...metadataLines, header, ...timelineLines]
+        .filter((line) => line.length > 0)
+        .join("\n");
+}
+
+function buildVipProgressStepDescription(input: {
+    nodeLabel: string;
+    result: VideoVipProcessingResult;
+}) {
+    const summary = `VIP processing ${input.nodeLabel} complete.`;
+    const segments = input.result.translation.translatedSegments;
+    const stage = input.result.stages;
+    const metadataLines = [
+        "Metadata:",
+        `File: ${input.result.fileName}`,
+        `Size: ${formatBytes(input.result.byteLength)}`,
+        `MIME: ${input.result.mimeType}`,
+        `Runtime: ${formatDurationMs(input.result.generationDurationMs)}`,
+        `Transcript: ${input.result.transcript.segments.length} segment(s) · ${input.result.transcript.words.length} word(s)`,
+        `Translation: ${segments.length} segment(s) · ${input.result.translation.provider.name} · ${input.result.translation.model}`,
+        `Voice: ${input.result.voice.segmentCount} segment(s) · ${formatBytes(input.result.voice.byteLength)} · ${input.result.voice.alignment.mode} alignment`,
+        `Stages: preprocess ${formatDurationMs(stage.preprocessDurationMs)} · transcript ${formatDurationMs(stage.transcriptionDurationMs)} · translate ${formatDurationMs(stage.translationDurationMs)} · voice ${formatDurationMs(stage.voiceDurationMs)} · render (speed+mix+mirror+blur+sub) ${formatDurationMs(stage.finalRenderDurationMs)} · metadata ${formatDurationMs(stage.metadataDurationMs)}`,
+    ];
+
+    if (segments.length === 0) return [summary, ...metadataLines].join("\n");
     const header = `Segments (${segments.length} total):`;
     const timelineLines = segments.map((segment) => {
         const segmentText = summarizeTextForProgress(
@@ -574,13 +609,36 @@ function parseRuntimeResumeSnapshot(
     }
 }
 
+function trimResumeText(value: string | null | undefined) {
+    if (!value) return null;
+    const normalized = value.trim();
+    if (!normalized) return null;
+    return normalized.length <= MAX_RESUME_TEXT_LENGTH
+        ? normalized
+        : `${normalized.slice(0, MAX_RESUME_TEXT_LENGTH)}...`;
+}
+
+function buildNodeRunStatusResumeSnapshot(
+    nodeRunStatus: Record<string, NodeRunState>,
+) {
+    return Object.fromEntries(
+        Object.entries(nodeRunStatus).map(([nodeId, status]) => [
+            nodeId,
+            {
+                status: status.status,
+                detail: trimResumeText(status.detail) ?? "",
+            },
+        ]),
+    );
+}
+
 function buildRuntimeArtifactResumeSnapshot(
     artifacts: Record<string, WorkspaceRuntimeArtifact | undefined>,
 ) {
     return Object.fromEntries(
         Object.entries(artifacts)
             .filter((entry): entry is [string, WorkspaceRuntimeArtifact] =>
-                Boolean(entry[1]?.artifactId || entry[1]?.base64),
+                Boolean(entry[1]?.artifactId),
             )
             .map(([nodeId, artifact]) => [
                 nodeId,
@@ -589,10 +647,9 @@ function buildRuntimeArtifactResumeSnapshot(
                     artifactExpiresAt: artifact.artifactExpiresAt,
                     fileName: artifact.fileName,
                     mimeType: artifact.mimeType,
-                    base64: artifact.base64,
                     byteLength: artifact.byteLength,
                     kind: artifact.kind,
-                    detail: artifact.detail,
+                    detail: trimResumeText(artifact.detail) ?? "",
                 },
             ]),
     );
@@ -1382,6 +1439,13 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     runtimeTranslationsByNodeId[step.dubbingNodeId],
                 );
             }
+            if (step.kind === "vip-process-video") {
+                return Boolean(
+                    runtimeArtifactsByNodeId[step.vipNodeId] &&
+                        runtimeTranslationsByNodeId[step.vipNodeId] &&
+                        runtimeVietnameseMetadataByNodeId[step.vipNodeId],
+                );
+            }
             if (step.kind === "mirror-video") {
                 return Boolean(runtimeArtifactsByNodeId[step.mirrorNodeId]);
             }
@@ -1400,6 +1464,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
         flowPlan,
         runtimeArtifactsByNodeId,
         runtimeAssetIdsByNodeId,
+        runtimeVietnameseMetadataByNodeId,
         runtimeTranscriptsByNodeId,
         runtimeTranslationsByNodeId,
     ]);
@@ -1456,21 +1521,29 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
 
     useEffect(() => {
         if (!hasHydratedDraft) return;
-        const snapshot: WorkspaceRuntimeResumeSnapshot = {
-            version: 1,
-            graphSignature: buildWorkspaceGraphSignature(graph),
-            nodeRunStatus,
-            runtimeArtifactsByNodeId:
-                buildRuntimeArtifactResumeSnapshot(runtimeArtifactsByNodeId),
-            runtimeAssetIdsByNodeId,
-            runtimeVietnameseMetadataByNodeId,
-            runError,
-            runResult,
-        };
-        window.localStorage.setItem(
-            WORKSPACE_RUNTIME_RESUME_STORAGE_KEY,
-            JSON.stringify(snapshot),
-        );
+        try {
+            const snapshot: WorkspaceRuntimeResumeSnapshot = {
+                version: 1,
+                graphSignature: buildWorkspaceGraphSignature(graph),
+                nodeRunStatus: buildNodeRunStatusResumeSnapshot(nodeRunStatus),
+                runtimeArtifactsByNodeId:
+                    buildRuntimeArtifactResumeSnapshot(runtimeArtifactsByNodeId),
+                runtimeAssetIdsByNodeId,
+                runtimeVietnameseMetadataByNodeId,
+                runError: trimResumeText(runError),
+                runResult: trimResumeText(runResult),
+            };
+            window.localStorage.setItem(
+                WORKSPACE_RUNTIME_RESUME_STORAGE_KEY,
+                JSON.stringify(snapshot),
+            );
+        } catch (error) {
+            if (error instanceof DOMException && error.name === "QuotaExceededError") {
+                window.localStorage.removeItem(
+                    WORKSPACE_RUNTIME_RESUME_STORAGE_KEY,
+                );
+            }
+        }
     }, [
         graph,
         hasHydratedDraft,
@@ -2026,6 +2099,13 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     ? "Dubbed video và translation đã có từ lần chạy trước."
                     : null;
             }
+            if (step.kind === "vip-process-video") {
+                return artifactByProducer[step.vipNodeId] &&
+                    translationByProducer[step.vipNodeId] &&
+                    vietnameseMetadataByNodeId[step.vipNodeId]
+                    ? "VIP artifact, translation và metadata đã có từ lần chạy trước."
+                    : null;
+            }
             if (step.kind === "mirror-video") {
                 return artifactByProducer[step.mirrorNodeId]
                     ? "Mirror artifact đã có từ lần chạy trước."
@@ -2072,6 +2152,9 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
             } else if (step.kind === "dub-video") {
                 setNodeStatus(step.sourceNodeId, "success", detail);
                 setNodeStatus(step.dubbingNodeId, "success", detail);
+            } else if (step.kind === "vip-process-video") {
+                setNodeStatus(step.sourceNodeId, "success", detail);
+                setNodeStatus(step.vipNodeId, "success", detail);
             } else if (step.kind === "mirror-video") {
                 setNodeStatus(step.sourceNodeId, "success", detail);
                 setNodeStatus(step.mirrorNodeId, "success", detail);
@@ -2097,6 +2180,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
             if (step.kind === "generate-vi-metadata")
                 return step.metadataNodeId;
             if (step.kind === "dub-video") return step.dubbingNodeId;
+            if (step.kind === "vip-process-video") return step.vipNodeId;
             if (step.kind === "mirror-video") return step.mirrorNodeId;
             if (step.kind === "edit-video") return step.editNodeId;
             if (step.kind === "store-artifact") return step.storageNodeId;
@@ -3398,6 +3482,318 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                             result: dubbingPayload.data,
                         }),
                     );
+                } else if (step.kind === "vip-process-video") {
+                    const sourceNode = findNode(step.sourceNodeId);
+                    const vipNode = findNode(step.vipNodeId);
+                    if (!sourceNode || !vipNode) {
+                        throw new Error("Missing VIP processing nodes.");
+                    }
+
+                    const formData = new FormData();
+                    const source = await appendWorkspaceVideoInput({
+                        formData,
+                        sourceNode,
+                        consumerLabel: `VIP Processing '${vipNode.label}'`,
+                    });
+                    const translationProviderId = getStringConfig(
+                        vipNode,
+                        "translationProviderId",
+                    ).trim();
+                    const effectiveTranslationProviderId =
+                        translationProviderId ||
+                        resolveDefaultAiProviderId(aiProviders);
+                    if (effectiveTranslationProviderId) {
+                        formData.set(
+                            "providerId",
+                            effectiveTranslationProviderId,
+                        );
+                    }
+                    const metadataProviderId = getStringConfig(
+                        vipNode,
+                        "metadataProviderId",
+                    ).trim();
+                    if (metadataProviderId) {
+                        formData.set("metadataProviderId", metadataProviderId);
+                    }
+
+                    formData.set(
+                        "language",
+                        getStringConfig(vipNode, "language", "zh"),
+                    );
+                    formData.set(
+                        "targetLanguage",
+                        getStringConfig(vipNode, "targetLanguage", "vi"),
+                    );
+                    formData.set(
+                        "model",
+                        getStringConfig(
+                            vipNode,
+                            "model",
+                            DEFAULT_TRANSLATION_MODEL,
+                        ),
+                    );
+                    formData.set(
+                        "metadataModel",
+                        getStringConfig(
+                            vipNode,
+                            "metadataModel",
+                            DEFAULT_TRANSLATION_MODEL,
+                        ),
+                    );
+                    formData.set(
+                        "videoSpeedFactor",
+                        String(getNumberConfig(vipNode, "speedFactor", 0.7)),
+                    );
+                    formData.set(
+                        "originalAudioVolume",
+                        String(
+                            getNumberConfig(vipNode, "originalAudioVolume", 0.1),
+                        ),
+                    );
+                    formData.set(
+                        "voiceVolume",
+                        String(getNumberConfig(vipNode, "voiceVolume", 1)),
+                    );
+                    formData.set(
+                        "ttsBinaryPath",
+                        getStringConfig(vipNode, "ttsBinaryPath", "piper"),
+                    );
+                    formData.set(
+                        "ttsModelPath",
+                        getStringConfig(vipNode, "ttsModelPath"),
+                    );
+                    formData.set(
+                        "ttsConfigPath",
+                        getStringConfig(vipNode, "ttsConfigPath"),
+                    );
+                    formData.set(
+                        "ttsNoiseScale",
+                        String(
+                            getNumberConfig(
+                                vipNode,
+                                "ttsNoiseScale",
+                                DEFAULT_PIPER_TTS_SETTINGS.noiseScale,
+                            ),
+                        ),
+                    );
+                    formData.set(
+                        "ttsNoiseW",
+                        String(
+                            getNumberConfig(
+                                vipNode,
+                                "ttsNoiseW",
+                                DEFAULT_PIPER_TTS_SETTINGS.noiseW,
+                            ),
+                        ),
+                    );
+                    formData.set(
+                        "ttsSentenceSilence",
+                        String(
+                            getNumberConfig(
+                                vipNode,
+                                "ttsSentenceSilence",
+                                DEFAULT_PIPER_TTS_SETTINGS.sentenceSilence,
+                            ),
+                        ),
+                    );
+                    formData.set(
+                        "ttsAlignmentMode",
+                        getStringConfig(vipNode, "ttsAlignmentMode", "strict"),
+                    );
+                    formData.set(
+                        "ttsPreserveTimestampGaps",
+                        String(
+                            getBooleanConfig(
+                                vipNode,
+                                "ttsPreserveTimestampGaps",
+                                true,
+                            ),
+                        ),
+                    );
+                    formData.set(
+                        "mirrorEnabled",
+                        String(getBooleanConfig(vipNode, "mirrorEnabled", true)),
+                    );
+                    const upstreamSourceAssetNode =
+                        sourceNode.templateNodeType === "source.asset"
+                            ? sourceNode
+                            : findUpstreamSourceAssetNode(
+                                  graph,
+                                  sourceNode.id,
+                              );
+                    const sourceAssetSetupRaw = upstreamSourceAssetNode
+                        ? (storageAssets.find(
+                              (item) =>
+                                  item._id ===
+                                  getStringConfig(
+                                      upstreamSourceAssetNode,
+                                      "assetId",
+                                  ),
+                          )?.metadata?.videoEditSetup ?? null)
+                        : null;
+                    const sourceMirrorParity = upstreamSourceAssetNode
+                        ? findMirrorParityToAncestorNode(
+                              graph,
+                              sourceNode.id,
+                              upstreamSourceAssetNode.id,
+                          )
+                        : null;
+                    const sourceAssetSetup = buildEffectiveMaskSetup(
+                        vipNode,
+                        sourceAssetSetupRaw,
+                        {
+                            mirrorSetupRegions:
+                                (sourceMirrorParity ?? 0) % 2 === 1,
+                        },
+                    );
+                    const maskConfig = resolveMaskRegionConfig(
+                        vipNode,
+                        sourceAssetSetup,
+                    );
+                    const rawVipBlurRegionsJson = getStringConfig(
+                        vipNode,
+                        "blurRegionsJson",
+                    ).trim();
+                    const usesSourceAssetSetup =
+                        sourceNode.templateNodeType === "source.asset";
+                    formData.set(
+                        "useSourceAssetVideoEditSetup",
+                        String(usesSourceAssetSetup),
+                    );
+                    if (rawVipBlurRegionsJson) {
+                        formData.set("blurRegionsJson", rawVipBlurRegionsJson);
+                    }
+                    formData.set("regionX", String(maskConfig.regionX));
+                    formData.set("regionY", String(maskConfig.regionY));
+                    formData.set("regionWidth", String(maskConfig.regionWidth));
+                    formData.set("regionHeight", String(maskConfig.regionHeight));
+                    formData.set("timelineStart", String(maskConfig.timelineStart));
+                    formData.set("timelineEnd", String(maskConfig.timelineEnd));
+                    formData.set("blurStrength", String(maskConfig.blurStrength));
+                    formData.set(
+                        "subtitleFontFamily",
+                        maskConfig.subtitleFontFamily,
+                    );
+                    formData.set(
+                        "subtitleFontSize",
+                        String(maskConfig.subtitleFontSize),
+                    );
+                    formData.set(
+                        "subtitleMarginBottom",
+                        String(maskConfig.subtitleMarginBottom),
+                    );
+                    formData.set(
+                        "subtitleMarginLeft",
+                        String(maskConfig.subtitleMarginLeft),
+                    );
+                    formData.set(
+                        "subtitleMarginRight",
+                        String(maskConfig.subtitleMarginRight),
+                    );
+                    formData.set(
+                        "subtitleAlignment",
+                        String(maskConfig.subtitleAlignment),
+                    );
+                    formData.set(
+                        "subtitleBackgroundEnabled",
+                        String(maskConfig.subtitleBackgroundEnabled),
+                    );
+                    formData.set(
+                        "subtitleBackgroundColor",
+                        maskConfig.subtitleBackgroundColor,
+                    );
+                    formData.set(
+                        "subtitleBackgroundOpacity",
+                        String(maskConfig.subtitleBackgroundOpacity),
+                    );
+
+                    setNodeStatus(
+                        vipNode.id,
+                        "running",
+                        "Running VIP pipeline: transcript -> translate -> voice -> final render -> metadata...",
+                    );
+                    const vipStageLogs: string[] = [];
+                    const appendVipStageLog = (line: string) => {
+                        vipStageLogs.push(line);
+                        updateProgressStepDetail(step, {
+                            progressMode: "indeterminate",
+                            progress: 0,
+                            description: vipStageLogs.join("\\n"),
+                        });
+                    };
+                    appendVipStageLog(
+                        "Running transcript -> translate -> voice -> final render -> metadata...",
+                    );
+                    const vipPayload = await fetchWorkspaceJson<{
+                        ok: true;
+                        data: VideoVipProcessingResult & {
+                            artifactId?: string;
+                            artifactExpiresAt?: string;
+                        };
+                    }>({
+                        url: "/api/audio/video-vip-processing",
+                        actionLabel: "VIP processing",
+                        init: { method: "POST", body: formData },
+                    });
+
+                    const artifact: WorkspaceRuntimeArtifact = {
+                        artifactId: vipPayload.data.artifactId,
+                        artifactExpiresAt: vipPayload.data.artifactExpiresAt,
+                        fileName: vipPayload.data.fileName,
+                        mimeType: vipPayload.data.mimeType,
+                        base64: vipPayload.data.videoBase64,
+                        byteLength: vipPayload.data.byteLength,
+                        kind: "video",
+                        detail: `${vipPayload.data.translation.translatedSegments.length} segment(s) VIP processed`,
+                    };
+                    artifactByProducer[step.vipNodeId] = artifact;
+                    translationByProducer[step.vipNodeId] =
+                        vipPayload.data.translation;
+                    vietnameseMetadataByNodeId[step.vipNodeId] =
+                        vipPayload.data.metadata;
+                    setRuntimeTranslationsByNodeId((current) => ({
+                        ...current,
+                        [step.vipNodeId]: vipPayload.data.translation,
+                    }));
+                    setRuntimeVietnameseMetadataByNodeId((current) => ({
+                        ...current,
+                        [step.vipNodeId]: vipPayload.data.metadata,
+                    }));
+                    setRuntimeArtifactsByNodeId((current) => ({
+                        ...current,
+                        [vipNode.id]: artifact,
+                    }));
+                    setNodeStatus(
+                        sourceNode.id,
+                        "success",
+                        source.sourceStatus,
+                    );
+                    setNodeStatus(
+                        vipNode.id,
+                        "success",
+                        `${formatBytes(vipPayload.data.byteLength)} MP4.`,
+                    );
+                    appendVipStageLog("Completed transcript stage.");
+                    appendVipStageLog("Completed translation stage.");
+                    appendVipStageLog("Completed voice generation stage.");
+                    appendVipStageLog(
+                        "Completed final render stage (speed + mirror + blur + subtitles + audio mix).",
+                    );
+                    appendVipStageLog("Completed metadata generation stage.");
+                    summary.push(
+                        `VIP video ready: ${formatBytes(vipPayload.data.byteLength)}.`,
+                    );
+                    summary.push(
+                        `VIP metadata ready: ${vipPayload.data.metadata.hashtags.length} hashtag(s).`,
+                    );
+                    advanceProgress(
+                        `VIP processing ${vipNode.label} complete.`,
+                        "success",
+                        buildVipProgressStepDescription({
+                            nodeLabel: vipNode.label,
+                            result: vipPayload.data,
+                        }),
+                    );
                 } else if (step.kind === "mirror-video") {
                     const sourceNode = findNode(step.sourceNodeId);
                     const mirrorNode = findNode(step.mirrorNodeId);
@@ -4247,6 +4643,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     step.kind === "generate-vi-metadata" ||
                     step.kind === "generate-voice" ||
                     step.kind === "dub-video" ||
+                    step.kind === "vip-process-video" ||
                     step.kind === "mirror-video" ||
                     step.kind === "edit-video" ||
                     step.kind === "store-artifact" ||
@@ -5736,6 +6133,15 @@ function describeStep(
             subtitle: "Transcribe, translate, generate voice, and mux MP4",
         };
     }
+    if (step.kind === "vip-process-video") {
+        return {
+            key: `vip-${step.vipNodeId}`,
+            statusKey: step.vipNodeId,
+            label: `VIP · ${findLabel(step.sourceNodeId)} → ${findLabel(step.vipNodeId)}`,
+            subtitle:
+                "Preprocess, dub, mirror, blur/subtitles, and generate metadata",
+        };
+    }
     if (step.kind === "mirror-video") {
         return {
             key: `mirror-${step.mirrorNodeId}`,
@@ -7063,6 +7469,580 @@ function NodeRuntimeConfig({
                         Node lá: chạy để sinh title + description + hashtags
                         tiếng Việt cho publish fallback.
                     </p>
+                </div>
+            </InspectorSection>
+        );
+    }
+
+    if (node.templateNodeType === "video.vip-processing") {
+        const selectedTranslationProviderId = getStringConfig(
+            node,
+            "translationProviderId",
+        );
+        const translationModels = selectedTranslationProviderId
+            ? (aiModelsByProviderId[selectedTranslationProviderId] ?? [])
+            : [];
+        const isLoadingTranslationModels = selectedTranslationProviderId
+            ? Boolean(loadingAiModelProviderIds[selectedTranslationProviderId])
+            : false;
+        const selectedMetadataProviderId = getStringConfig(
+            node,
+            "metadataProviderId",
+        );
+        const metadataModels = selectedMetadataProviderId
+            ? (aiModelsByProviderId[selectedMetadataProviderId] ?? [])
+            : [];
+        const isLoadingMetadataModels = selectedMetadataProviderId
+            ? Boolean(loadingAiModelProviderIds[selectedMetadataProviderId])
+            : false;
+        const upstreamSourceAssetNode = findUpstreamSourceAssetNode(graph, node.id);
+        const upstreamSourceAsset = upstreamSourceAssetNode
+            ? storageAssets.find(
+                  (asset) =>
+                      asset._id ===
+                      getStringConfig(upstreamSourceAssetNode, "assetId"),
+              )
+            : undefined;
+        const sourceAssetSetupRaw =
+            upstreamSourceAsset?.metadata?.videoEditSetup ?? null;
+        const sourceMirrorParity = upstreamSourceAssetNode
+            ? findMirrorParityToAncestorNode(
+                  graph,
+                  node.id,
+                  upstreamSourceAssetNode.id,
+              )
+            : null;
+        const shouldMirrorSetupRegions = (sourceMirrorParity ?? 0) % 2 === 1;
+        const sourceAssetSetup = buildEffectiveMaskSetup(
+            node,
+            sourceAssetSetupRaw,
+            { mirrorSetupRegions: shouldMirrorSetupRegions },
+        );
+        const maskConfig = resolveMaskRegionConfig(node, sourceAssetSetup);
+        const setupAssetLabel =
+            upstreamSourceAsset?.metadata?.title ??
+            upstreamSourceAsset?.providerAssetId ??
+            upstreamSourceAsset?._id ??
+            "";
+
+        return (
+            <InspectorSection title="Runtime Config">
+                <div className="space-y-2 border border-main bg-secondary/20 p-2">
+                    {sourceAssetSetup ? (
+                        <div className="border border-emerald-500/30 bg-emerald-500/10 px-3 py-2">
+                            <p className="text-[10px] font-semibold text-emerald-700">
+                                Using saved video setup from Storage Asset:{" "}
+                                {setupAssetLabel}
+                            </p>
+                            <p className="mt-1 text-[10px] leading-4 text-emerald-700/90">
+                                Node values keep user overrides first; untouched
+                                default fields fallback to this saved setup.
+                            </p>
+                            {shouldMirrorSetupRegions ? (
+                                <p className="mt-1 text-[10px] leading-4 text-emerald-700/90">
+                                    Upstream video path has Mirror transform, so
+                                    fallback blur regions from this setup are
+                                    auto mirrored horizontally to match runtime
+                                    video.
+                                </p>
+                            ) : null}
+                        </div>
+                    ) : null}
+                    <RuntimeSelect
+                        label="Language hint"
+                        value={getStringConfig(node, "language", "zh")}
+                        disabled={isRunningFlow}
+                        onChange={(value) => setConfig({ language: value })}
+                    >
+                        <option value="zh">Mandarin (zh)</option>
+                        <option value="en">English (en)</option>
+                        <option value="vi">Vietnamese (vi)</option>
+                    </RuntimeSelect>
+                    <RuntimeSelect
+                        label="AI Provider (translation)"
+                        value={selectedTranslationProviderId}
+                        disabled={isRunningFlow}
+                        onChange={async (value) => {
+                            setConfig({
+                                translationProviderId: value,
+                                model: value ? "" : DEFAULT_TRANSLATION_MODEL,
+                            });
+                            if (value) {
+                                const models =
+                                    await onEnsureAiProviderModels(value);
+                                if (models[0]) {
+                                    const preferredModelId =
+                                        models.find(
+                                            (model) =>
+                                                model.id ===
+                                                DEFAULT_TRANSLATION_MODEL,
+                                        )?.id ?? models[0].id;
+                                    setConfig({
+                                        translationProviderId: value,
+                                        model: preferredModelId,
+                                    });
+                                }
+                            }
+                        }}
+                    >
+                        <option value="">
+                            {DEFAULT_OPENAI_COMPATIBLE_PROVIDER_LABEL} (
+                            {DEFAULT_OPENAI_COMPATIBLE_PROVIDER_TYPE})
+                        </option>
+                        {aiProviders.map((provider) => (
+                            <option key={provider._id} value={provider._id}>
+                                {provider.label} ({provider.providerType})
+                            </option>
+                        ))}
+                    </RuntimeSelect>
+                    {selectedTranslationProviderId &&
+                    translationModels.length > 0 ? (
+                        <RuntimeSelect
+                            label={`Translation model${isLoadingTranslationModels ? " (loading...)" : ""}`}
+                            value={getStringConfig(node, "model")}
+                            disabled={isRunningFlow || isLoadingTranslationModels}
+                            onChange={(value) => setConfig({ model: value })}
+                        >
+                            {translationModels.map((model) => (
+                                <option key={model.id} value={model.id}>
+                                    {model.name}
+                                </option>
+                            ))}
+                        </RuntimeSelect>
+                    ) : (
+                        <RuntimeTextInput
+                            label={`Translation model${isLoadingTranslationModels ? " (loading...)" : ""}`}
+                            value={getStringConfig(
+                                node,
+                                "model",
+                                DEFAULT_TRANSLATION_MODEL,
+                            )}
+                            disabled={isRunningFlow}
+                            placeholder="cx/gpt-5.3-codex-low"
+                            onChange={(value) => setConfig({ model: value })}
+                        />
+                    )}
+                    <RuntimeSelect
+                        label="Target language"
+                        value={getStringConfig(node, "targetLanguage", "vi")}
+                        disabled={isRunningFlow}
+                        onChange={(value) => setConfig({ targetLanguage: value })}
+                    >
+                        <option value="vi">Vietnamese (vi)</option>
+                        <option value="en">English (en)</option>
+                    </RuntimeSelect>
+
+                    <RuntimeSelect
+                        label="AI Provider (metadata)"
+                        value={selectedMetadataProviderId}
+                        disabled={isRunningFlow}
+                        onChange={async (value) => {
+                            setConfig({
+                                metadataProviderId: value,
+                                metadataModel: value
+                                    ? ""
+                                    : DEFAULT_TRANSLATION_MODEL,
+                            });
+                            if (value) {
+                                const models =
+                                    await onEnsureAiProviderModels(value);
+                                if (models[0]) {
+                                    const preferredModelId =
+                                        models.find(
+                                            (model) =>
+                                                model.id ===
+                                                DEFAULT_TRANSLATION_MODEL,
+                                        )?.id ?? models[0].id;
+                                    setConfig({
+                                        metadataProviderId: value,
+                                        metadataModel: preferredModelId,
+                                    });
+                                }
+                            }
+                        }}
+                    >
+                        <option value="">
+                            {DEFAULT_OPENAI_COMPATIBLE_PROVIDER_LABEL} (
+                            {DEFAULT_OPENAI_COMPATIBLE_PROVIDER_TYPE})
+                        </option>
+                        {aiProviders.map((provider) => (
+                            <option key={provider._id} value={provider._id}>
+                                {provider.label} ({provider.providerType})
+                            </option>
+                        ))}
+                    </RuntimeSelect>
+                    {selectedMetadataProviderId && metadataModels.length > 0 ? (
+                        <RuntimeSelect
+                            label={`Metadata model${isLoadingMetadataModels ? " (loading...)" : ""}`}
+                            value={getStringConfig(node, "metadataModel")}
+                            disabled={isRunningFlow || isLoadingMetadataModels}
+                            onChange={(value) =>
+                                setConfig({ metadataModel: value })
+                            }
+                        >
+                            {metadataModels.map((model) => (
+                                <option key={model.id} value={model.id}>
+                                    {model.name}
+                                </option>
+                            ))}
+                        </RuntimeSelect>
+                    ) : (
+                        <RuntimeTextInput
+                            label={`Metadata model${isLoadingMetadataModels ? " (loading...)" : ""}`}
+                            value={getStringConfig(
+                                node,
+                                "metadataModel",
+                                DEFAULT_TRANSLATION_MODEL,
+                            )}
+                            disabled={isRunningFlow}
+                            placeholder="cx/gpt-5.3-codex-low"
+                            onChange={(value) =>
+                                setConfig({ metadataModel: value })
+                            }
+                        />
+                    )}
+
+                    <div className="grid gap-2 sm:grid-cols-3">
+                        <RuntimeTextInput
+                            label="Speed factor"
+                            value={String(getNumberConfig(node, "speedFactor", 0.7))}
+                            disabled={isRunningFlow}
+                            placeholder="0.7"
+                            onChange={(value) =>
+                                setConfig({ speedFactor: Number(value) })
+                            }
+                        />
+                        <RuntimeTextInput
+                            label="Original volume"
+                            value={String(
+                                getNumberConfig(node, "originalAudioVolume", 0.1),
+                            )}
+                            disabled={isRunningFlow}
+                            placeholder="0.1"
+                            onChange={(value) =>
+                                setConfig({ originalAudioVolume: Number(value) })
+                            }
+                        />
+                        <RuntimeTextInput
+                            label="Voice volume"
+                            value={String(getNumberConfig(node, "voiceVolume", 1))}
+                            disabled={isRunningFlow}
+                            placeholder="1"
+                            onChange={(value) =>
+                                setConfig({ voiceVolume: Number(value) })
+                            }
+                        />
+                    </div>
+
+                    <RuntimeTextInput
+                        label="Piper executable"
+                        value={getStringConfig(node, "ttsBinaryPath", "piper")}
+                        disabled={isRunningFlow}
+                        placeholder="piper"
+                        onChange={(value) => setConfig({ ttsBinaryPath: value })}
+                    />
+                    <RuntimeTextInput
+                        label="ONNX model"
+                        value={getStringConfig(node, "ttsModelPath")}
+                        disabled={isRunningFlow}
+                        placeholder="auto: piper/model.onnx"
+                        onChange={(value) => setConfig({ ttsModelPath: value })}
+                    />
+                    <RuntimeTextInput
+                        label="Config JSON"
+                        value={getStringConfig(node, "ttsConfigPath")}
+                        disabled={isRunningFlow}
+                        placeholder="auto: piper/model.onnx.json"
+                        onChange={(value) => setConfig({ ttsConfigPath: value })}
+                    />
+                    <div className="grid gap-2 sm:grid-cols-3">
+                        <RuntimeTextInput
+                            label="Noise scale"
+                            value={String(
+                                getNumberConfig(
+                                    node,
+                                    "ttsNoiseScale",
+                                    DEFAULT_PIPER_TTS_SETTINGS.noiseScale,
+                                ),
+                            )}
+                            disabled={isRunningFlow}
+                            placeholder="0.667"
+                            onChange={(value) =>
+                                setConfig({ ttsNoiseScale: Number(value) })
+                            }
+                        />
+                        <RuntimeTextInput
+                            label="Noise W"
+                            value={String(
+                                getNumberConfig(
+                                    node,
+                                    "ttsNoiseW",
+                                    DEFAULT_PIPER_TTS_SETTINGS.noiseW,
+                                ),
+                            )}
+                            disabled={isRunningFlow}
+                            placeholder="0.8"
+                            onChange={(value) =>
+                                setConfig({ ttsNoiseW: Number(value) })
+                            }
+                        />
+                        <RuntimeTextInput
+                            label="Sentence silence"
+                            value={String(
+                                getNumberConfig(
+                                    node,
+                                    "ttsSentenceSilence",
+                                    DEFAULT_PIPER_TTS_SETTINGS.sentenceSilence,
+                                ),
+                            )}
+                            disabled={isRunningFlow}
+                            placeholder="0.2"
+                            onChange={(value) =>
+                                setConfig({ ttsSentenceSilence: Number(value) })
+                            }
+                        />
+                    </div>
+                    <RuntimeSelect
+                        label="Alignment mode"
+                        value={getStringConfig(node, "ttsAlignmentMode", "strict")}
+                        disabled={isRunningFlow}
+                        onChange={(value) => setConfig({ ttsAlignmentMode: value })}
+                    >
+                        <option value="strict">strict</option>
+                        <option value="balanced">balanced</option>
+                    </RuntimeSelect>
+                    <label className="flex items-center justify-between gap-3 border border-main bg-main px-3 py-2">
+                        <span className="block text-[11px] font-semibold text-main">
+                            Balanced timing
+                        </span>
+                        <input
+                            type="checkbox"
+                            checked={getBooleanConfig(
+                                node,
+                                "ttsPreserveTimestampGaps",
+                                true,
+                            )}
+                            disabled={isRunningFlow}
+                            onChange={(event) =>
+                                setConfig({
+                                    ttsPreserveTimestampGaps:
+                                        event.currentTarget.checked,
+                                })
+                            }
+                            className="h-4 w-4 accent-[var(--color-accent)]"
+                        />
+                    </label>
+                    <label className="flex items-center justify-between gap-3 border border-main bg-main px-3 py-2">
+                        <span className="block text-[11px] font-semibold text-main">
+                            Mirror output video
+                        </span>
+                        <input
+                            type="checkbox"
+                            checked={getBooleanConfig(node, "mirrorEnabled", true)}
+                            disabled={isRunningFlow}
+                            onChange={(event) =>
+                                setConfig({
+                                    mirrorEnabled: event.currentTarget.checked,
+                                })
+                            }
+                            className="h-4 w-4 accent-[var(--color-accent)]"
+                        />
+                    </label>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                        <label className="block sm:col-span-2">
+                            <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-muted">
+                                Blur regions JSON (multi-region)
+                            </span>
+                            <textarea
+                                value={maskConfig.blurRegionsJson}
+                                disabled={isRunningFlow}
+                                onChange={(event) =>
+                                    setConfig({
+                                        blurRegionsJson: event.currentTarget.value,
+                                    })
+                                }
+                                placeholder='[{"x":0,"y":84,"width":100,"height":16,"start":0,"end":36000,"strength":30}]'
+                                className="min-h-16 w-full border border-main bg-main px-2 py-1.5 font-mono text-[10px] leading-4 text-main placeholder:text-muted/60"
+                            />
+                        </label>
+                        <RuntimeTextInput
+                            label="Region X %"
+                            value={String(maskConfig.regionX)}
+                            disabled={isRunningFlow}
+                            placeholder="0"
+                            onChange={(value) =>
+                                setConfig({ regionX: Number(value) })
+                            }
+                        />
+                        <RuntimeTextInput
+                            label="Region Y %"
+                            value={String(maskConfig.regionY)}
+                            disabled={isRunningFlow}
+                            placeholder="84"
+                            onChange={(value) =>
+                                setConfig({ regionY: Number(value) })
+                            }
+                        />
+                        <RuntimeTextInput
+                            label="Region width %"
+                            value={String(maskConfig.regionWidth)}
+                            disabled={isRunningFlow}
+                            placeholder="100"
+                            onChange={(value) =>
+                                setConfig({ regionWidth: Number(value) })
+                            }
+                        />
+                        <RuntimeTextInput
+                            label="Region height %"
+                            value={String(maskConfig.regionHeight)}
+                            disabled={isRunningFlow}
+                            placeholder="16"
+                            onChange={(value) =>
+                                setConfig({ regionHeight: Number(value) })
+                            }
+                        />
+                        <RuntimeTextInput
+                            label="Start seconds"
+                            value={String(maskConfig.timelineStart)}
+                            disabled={isRunningFlow}
+                            placeholder="0"
+                            onChange={(value) =>
+                                setConfig({ timelineStart: Number(value) })
+                            }
+                        />
+                        <RuntimeTextInput
+                            label="End seconds"
+                            value={String(maskConfig.timelineEnd)}
+                            disabled={isRunningFlow}
+                            placeholder="36000"
+                            onChange={(value) =>
+                                setConfig({ timelineEnd: Number(value) })
+                            }
+                        />
+                        <RuntimeTextInput
+                            label="Blur strength"
+                            value={String(maskConfig.blurStrength)}
+                            disabled={isRunningFlow}
+                            placeholder="50"
+                            onChange={(value) =>
+                                setConfig({ blurStrength: Number(value) })
+                            }
+                        />
+                        <RuntimeTextInput
+                            label="Subtitle font"
+                            value={maskConfig.subtitleFontFamily}
+                            disabled={isRunningFlow}
+                            placeholder="Arial"
+                            onChange={(value) =>
+                                setConfig({ subtitleFontFamily: value })
+                            }
+                        />
+                        <RuntimeTextInput
+                            label="Subtitle size"
+                            value={String(maskConfig.subtitleFontSize)}
+                            disabled={isRunningFlow}
+                            placeholder="55"
+                            onChange={(value) =>
+                                setConfig({ subtitleFontSize: Number(value) })
+                            }
+                        />
+                        <RuntimeTextInput
+                            label="Subtitle Y margin"
+                            value={String(maskConfig.subtitleMarginBottom)}
+                            disabled={isRunningFlow}
+                            placeholder="150"
+                            onChange={(value) =>
+                                setConfig({ subtitleMarginBottom: Number(value) })
+                            }
+                        />
+                        <RuntimeTextInput
+                            label="Subtitle left margin"
+                            value={String(maskConfig.subtitleMarginLeft)}
+                            disabled={isRunningFlow}
+                            placeholder="60"
+                            onChange={(value) =>
+                                setConfig({ subtitleMarginLeft: Number(value) })
+                            }
+                        />
+                        <RuntimeTextInput
+                            label="Subtitle right margin"
+                            value={String(maskConfig.subtitleMarginRight)}
+                            disabled={isRunningFlow}
+                            placeholder="60"
+                            onChange={(value) =>
+                                setConfig({ subtitleMarginRight: Number(value) })
+                            }
+                        />
+                        <RuntimeTextInput
+                            label="Subtitle alignment (1..9)"
+                            value={String(maskConfig.subtitleAlignment)}
+                            disabled={isRunningFlow}
+                            placeholder="2"
+                            onChange={(value) =>
+                                setConfig({ subtitleAlignment: Number(value) })
+                            }
+                        />
+                        <RuntimeSelect
+                            label="Subtitle background color"
+                            value={normalizeSubtitleBackgroundColor(
+                                maskConfig.subtitleBackgroundColor,
+                            )}
+                            disabled={isRunningFlow}
+                            onChange={(value) =>
+                                setConfig({ subtitleBackgroundColor: value })
+                            }
+                        >
+                            {SUBTITLE_BACKGROUND_COLOR_OPTIONS.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                    {option.label}
+                                </option>
+                            ))}
+                        </RuntimeSelect>
+                        <RuntimeTextInput
+                            label="Subtitle background opacity %"
+                            value={String(maskConfig.subtitleBackgroundOpacity)}
+                            disabled={isRunningFlow}
+                            placeholder="65"
+                            onChange={(value) =>
+                                setConfig({
+                                    subtitleBackgroundOpacity: Number(value),
+                                })
+                            }
+                        />
+                        <label className="flex items-center justify-between gap-3 border border-main bg-main px-3 py-2 sm:col-span-2">
+                            <span className="block text-[11px] font-semibold text-main">
+                                Subtitle background enabled
+                            </span>
+                            <input
+                                type="checkbox"
+                                checked={getBooleanConfig(
+                                    node,
+                                    "subtitleBackgroundEnabled",
+                                    maskConfig.subtitleBackgroundEnabled,
+                                )}
+                                disabled={isRunningFlow}
+                                onChange={(event) =>
+                                    setConfig({
+                                        subtitleBackgroundEnabled:
+                                            event.currentTarget.checked,
+                                    })
+                                }
+                                className="h-4 w-4 accent-[var(--color-accent)]"
+                            />
+                        </label>
+                    </div>
+                    {runtimeArtifact ? (
+                        <RuntimeArtifactPanel artifact={runtimeArtifact} />
+                    ) : (
+                        <div className="flex items-start gap-2 border border-main bg-main px-3 py-2">
+                            <Volume2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted" />
+                            <p className="text-[10px] leading-4 text-muted">
+                                VIP node chạy pipeline tổng hợp trong một step:
+                                preprocess, dubbing, mirror + blur/subtitles,
+                                và generate VI metadata.
+                            </p>
+                        </div>
+                    )}
                 </div>
             </InspectorSection>
         );

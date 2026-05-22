@@ -1,5 +1,19 @@
 # OmniVideo Changelog
 
+## FAST-WORKSPACE-036 - Add Isolated VIP Composite Workspace Node
+
+- Added a dedicated `video.vip-processing` Workspace node that runs a separate composite runtime path without changing existing node behaviors.
+- Added a new 3-node seed: `Storage Asset -> VIP Processing -> Save to Storage`.
+- Added planner/runtime support for new step kind `vip-process-video`, including storage artifact handoff.
+- Added new API endpoint `/api/audio/video-vip-processing` to run combined pipeline stages (preprocess, dubbing, final render with mirror+blur+subtitle, and VI metadata generation).
+- Enhanced Background Progress detail for VIP step with stage durations and segment timeline summary.
+- Fixed VIP subtitle placement for direct Storage Asset flows by resolving saved `videoEditSetup` from the source asset itself and by falling back to saved subtitle style values in the VIP API when request fields are untouched defaults.
+- Verification (FAST-WORKSPACE-036):
+  - `npm run test -- --run src/lib/workspace/workspace-graph.test.ts src/lib/workspace/workspace-seeds.test.ts src/app/api/audio/video-vip-processing/route.test.ts` pass (3 files / 52 tests).
+  - `npm run test -- --run src/features/workspace/workspace-canvas-panel.test.ts` pass (1 file / 19 tests).
+  - `npm test -- src/app/api/audio/video-vip-processing/route.test.ts src/features/workspace/workspace-canvas-panel.test.ts` pass (2 files / 22 tests).
+  - `npm run guard:version` pass.
+
 ## FAST-AUDIO-060 - Segment-Level Retry for Overlong Chinese Transcription Segments
 
 - Bumped app version from `0.10.20` to `0.10.21` as a patch release for transcription reliability.
