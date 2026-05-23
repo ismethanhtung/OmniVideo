@@ -216,6 +216,15 @@ describe("WorkspaceCanvasPanel canvas interactions", () => {
         expect(source).toContain('init: { method: "DELETE" }');
     });
 
+    it("supports local download output node with browser and folder-picker modes", () => {
+        expect(source).toContain('node.templateNodeType === "output.download-local"');
+        expect(source).toContain("Browser Downloads folder");
+        expect(source).toContain("Choose folder on every run");
+        expect(source).toContain('step.kind === "download-local"');
+        expect(source).toContain('url: `/api/storage/assets/${assetId}/download`');
+        expect(source).toContain("showSaveFilePicker");
+    });
+
     it("renders dragged link previews as Bézier curves", () => {
         expect(source).toContain("buildWorkspaceLinkPath");
         expect(source).toContain("const dragPath =");

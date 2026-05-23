@@ -231,18 +231,6 @@ function formatBytes(size?: number | null) {
     return `${value.toFixed(precision)} ${units[unitIndex]}`;
 }
 
-function decodeDownloadFileName(value: string | null, fallback: string) {
-    if (!value) {
-        return fallback;
-    }
-
-    try {
-        return decodeURIComponent(value);
-    } catch {
-        return value;
-    }
-}
-
 function formatDuration(durationMs?: number | null) {
     if (!durationMs || durationMs <= 0) {
         return "-";
@@ -343,6 +331,7 @@ export function VideoIntakePanel({ section }: VideoIntakePanelProps) {
         message: "Ready.",
     });
     const [isDownloading, setIsDownloading] = useState(false);
+    const [downloadUrlHint, setDownloadUrlHint] = useState<string | null>(null);
 
     useEffect(() => {
         fetch("/api/storage/folders", {
@@ -638,6 +627,7 @@ export function VideoIntakePanel({ section }: VideoIntakePanelProps) {
         }
 
         setIsDownloading(true);
+        setDownloadUrlHint(null);
         setState({
             status: "idle",
             message: "Preparing download...",
@@ -650,65 +640,41 @@ export function VideoIntakePanel({ section }: VideoIntakePanelProps) {
         });
 
         try {
-            const response = await fetch("/api/video-intake/resolve-file", {
-                method: "POST",
-                headers: {
-                    "content-type": "application/json",
-                },
-                body: JSON.stringify({
-                    sourceUrl: trimmedUrl,
-                    title: title.trim() || undefined,
-                    qualityPreference,
-                    formatSelector: formatSelector.trim() || undefined,
-                }),
+            const params = new URLSearchParams({
+                sourceUrl: trimmedUrl,
+                qualityPreference,
             });
-
-            if (!response.ok) {
-                const payload = (await response.json().catch(() => null)) as {
-                    error?: string;
-                    errorCode?: string;
-                } | null;
-                setState({
-                    status: "failed",
-                    message: payload?.error ?? "Download failed.",
-                    errorCode: payload?.errorCode,
-                });
-                finishProgressTask({
-                    id: progressTaskId,
-                    status: "failed",
-                    description: payload?.error ?? "Download failed.",
-                    error: payload?.errorCode,
-                });
-                return;
+            if (title.trim()) {
+                params.set("title", title.trim());
             }
+            if (formatSelector.trim()) {
+                params.set("formatSelector", formatSelector.trim());
+            }
+            const downloadUrl = `/api/video-intake/resolve-file?${params.toString()}`;
+            setDownloadUrlHint(downloadUrl);
 
             updateProgressTask(progressTaskId, {
-                description: "Starting browser download...",
+                description: "Sending download to browser...",
                 progress: 90,
             });
-            const blob = await response.blob();
-            const fileName = decodeDownloadFileName(
-                response.headers.get("x-omnivideo-file-name"),
-                "omnivideo-video.mp4",
-            );
-            const objectUrl = URL.createObjectURL(blob);
-            const link = document.createElement("a");
-            link.href = objectUrl;
-            link.download = fileName;
-            document.body.appendChild(link);
-            link.click();
-            link.remove();
-            window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+            const iframe = document.createElement("iframe");
+            iframe.style.display = "none";
+            iframe.src = downloadUrl;
+            document.body.appendChild(iframe);
+            window.setTimeout(() => {
+                iframe.remove();
+            }, 60_000);
 
             setState({
                 status: "success",
-                message: "Download started.",
+                message:
+                    "Download request sent. If browser did not start, use 'Open direct download link' below.",
                 result: undefined,
             });
             finishProgressTask({
                 id: progressTaskId,
                 status: "success",
-                description: "Download started.",
+                description: "Download request sent to browser.",
             });
         } catch (error) {
             setState({
@@ -1312,6 +1278,18 @@ export function VideoIntakePanel({ section }: VideoIntakePanelProps) {
                         >
                             {state.message}
                         </p>
+                        {downloadUrlHint ? (
+                            <p className="text-[11px] text-main">
+                                <a
+                                    href={downloadUrlHint}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="underline underline-offset-2"
+                                >
+                                    Open direct download link
+                                </a>
+                            </p>
+                        ) : null}
                         {isResolverFailure ? (
                             <p className="border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-5 text-amber-800">
                                 Public page URLs use the built-in resolver first

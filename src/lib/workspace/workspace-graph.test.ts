@@ -108,6 +108,24 @@ describe("workspace graph helpers", () => {
         );
     });
 
+    it("defines Download Local output template with download mode", () => {
+        const template = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "output.download-local",
+        );
+
+        expect(template).toBeDefined();
+        expect(template?.category).toBe("output");
+        expect(template?.configFields).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    key: "downloadMode",
+                    type: "select",
+                    defaultValue: "downloads",
+                }),
+            ]),
+        );
+    });
+
     it("plans cleanup after a successful publish path with producer context", () => {
         const assetTemplate = WORKSPACE_NODE_TEMPLATES.find(
             (entry) => entry.nodeType === "source.asset",
@@ -141,6 +159,32 @@ describe("workspace graph helpers", () => {
             cleanupNodeId: "cleanup-delete-assets-1",
             producerNodeId: "source-asset-1",
             publishNodeId: "social-publish-1",
+        });
+    });
+
+    it("plans local download from storage asset producer", () => {
+        const assetTemplate = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "source.asset",
+        )!;
+        const downloadTemplate = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "output.download-local",
+        )!;
+        let graph = createEmptyWorkspaceGraph("Download local");
+        graph = addWorkspaceNode(graph, assetTemplate, { x: 0, y: 0 });
+        graph = addWorkspaceNode(graph, downloadTemplate, { x: 220, y: 0 });
+        graph = connectWorkspaceNodes(
+            graph,
+            "source-asset-1",
+            "output-download-local-1",
+        );
+
+        const plan = planWorkspaceFlow(graph);
+
+        expect(plan.ok).toBe(true);
+        expect(plan.steps).toContainEqual({
+            kind: "download-local",
+            downloadNodeId: "output-download-local-1",
+            producerNodeId: "source-asset-1",
         });
     });
 

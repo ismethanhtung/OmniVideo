@@ -13,6 +13,7 @@ export type AppSectionId =
   | "chineseTranscription"
   | "piperTtsSandbox"
   | "videoToolsLab"
+  | "videoSplitter"
   | "thumbnailStudio"
   | "storageProviders"
   | "storageLibrary"

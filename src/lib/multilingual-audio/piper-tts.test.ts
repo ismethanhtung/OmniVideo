@@ -58,6 +58,32 @@ function createMockSpawn(output = "wav-bytes", exitCode = 0) {
   });
 }
 
+function createPcmWavBuffer(durationSeconds: number) {
+  const sampleRate = 22050;
+  const channels = 1;
+  const bitsPerSample = 16;
+  const bytesPerSample = bitsPerSample / 8;
+  const sampleCount = Math.max(1, Math.round(durationSeconds * sampleRate));
+  const dataSize = sampleCount * channels * bytesPerSample;
+  const buffer = Buffer.alloc(44 + dataSize);
+
+  buffer.write("RIFF", 0, "ascii");
+  buffer.writeUInt32LE(36 + dataSize, 4);
+  buffer.write("WAVE", 8, "ascii");
+  buffer.write("fmt ", 12, "ascii");
+  buffer.writeUInt32LE(16, 16);
+  buffer.writeUInt16LE(1, 20);
+  buffer.writeUInt16LE(channels, 22);
+  buffer.writeUInt32LE(sampleRate, 24);
+  buffer.writeUInt32LE(sampleRate * channels * bytesPerSample, 28);
+  buffer.writeUInt16LE(channels * bytesPerSample, 32);
+  buffer.writeUInt16LE(bitsPerSample, 34);
+  buffer.write("data", 36, "ascii");
+  buffer.writeUInt32LE(dataSize, 40);
+
+  return buffer;
+}
+
 function createFailingModelSpawn() {
   return vi.fn(() => {
     const child = new EventEmitter() as EventEmitter & {
@@ -565,6 +591,69 @@ describe("Piper TTS adapter", () => {
       },
     });
 
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("reads generated WAV durations directly instead of spawning ffmpeg probes", async () => {
+    const spawnMock = createMockSpawn();
+    const ffmpegCalls: string[][] = [];
+    setPiperSpawnForTest(spawnMock as never);
+    setPiperFileExistsForTest(() => true);
+    setPiperReadFileForTest(async () => createPcmWavBuffer(0.5));
+    setPiperFfmpegRunnerForTest(async (args) => {
+      ffmpegCalls.push(args);
+      return { stderr: "" };
+    });
+
+    await generateVoiceFromSegments({
+      segments: [
+        { id: 0, start: 0, end: 0.75, text: "Xin chào" },
+        { id: 1, start: 1, end: 1.5, text: "Tạm biệt" },
+      ],
+      settings: {
+        binaryPath: "piper",
+        modelPath: "/models/voice.onnx",
+        preserveTimestampGaps: true,
+      },
+    });
+
+    expect(ffmpegCalls.some((args) => args.includes("-hide_banner"))).toBe(false);
+    expect(ffmpegCalls.some((args) => args.includes("-af"))).toBe(true);
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("runs independent balanced alignment transforms concurrently", async () => {
+    const spawnMock = createMockSpawn();
+    let activeTransforms = 0;
+    let maxActiveTransforms = 0;
+    setPiperSpawnForTest(spawnMock as never);
+    setPiperFileExistsForTest(() => true);
+    setPiperReadFileForTest(async () => createPcmWavBuffer(2));
+    setPiperFfmpegRunnerForTest(async (args) => {
+      if (args.includes("-af")) {
+        activeTransforms += 1;
+        maxActiveTransforms = Math.max(maxActiveTransforms, activeTransforms);
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        activeTransforms -= 1;
+      }
+      return { stderr: "" };
+    });
+
+    await generateVoiceFromSegments({
+      segments: [
+        { id: 0, start: 0, end: 1, text: "Một" },
+        { id: 1, start: 1, end: 2, text: "Hai" },
+        { id: 2, start: 2, end: 3, text: "Ba" },
+        { id: 3, start: 3, end: 4, text: "Bốn" },
+      ],
+      settings: {
+        binaryPath: "piper",
+        modelPath: "/models/voice.onnx",
+        preserveTimestampGaps: true,
+      },
+    });
+
+    expect(maxActiveTransforms).toBeGreaterThan(1);
     expect(spawnMock).toHaveBeenCalledTimes(1);
   });
 });

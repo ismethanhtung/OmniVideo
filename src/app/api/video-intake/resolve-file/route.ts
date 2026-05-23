@@ -37,6 +37,11 @@ function inferExtension(contentType: string | null, fallback?: string) {
     return "mp4";
 }
 
+function buildContentDisposition(fileName: string) {
+    const sanitized = fileName.replace(/["\\]/g, "_");
+    return `attachment; filename="${sanitized}"; filename*=UTF-8''${encodeURIComponent(fileName)}`;
+}
+
 function readBody(payload: unknown) {
     if (!payload || typeof payload !== "object") {
         throw new Error("Request body must be an object.");
@@ -76,6 +81,21 @@ function readBody(payload: unknown) {
     };
 }
 
+function readQuery(request: Request) {
+    const url = new URL(request.url);
+    const qualityPreference = url.searchParams.get("qualityPreference") ?? "best";
+    const formatSelector = url.searchParams.get("formatSelector") ?? "";
+    const sourceUrl = url.searchParams.get("sourceUrl") ?? "";
+    const title = url.searchParams.get("title") ?? "";
+
+    return readBody({
+        sourceUrl,
+        title,
+        qualityPreference,
+        formatSelector,
+    });
+}
+
 function streamFileWithCleanup(filePath: string, cleanup: () => Promise<void>) {
     const nodeStream = createReadStream(filePath);
     nodeStream.on("close", () => {
@@ -104,107 +124,133 @@ function isBilibiliHtml5Media(media: {
     );
 }
 
-export async function POST(request: Request) {
-    try {
-        const accessDenied = requireWriteAccess(request);
-        if (accessDenied) return accessDenied;
+async function handleResolveDownloadRequest(
+    request: Request,
+    inputBody: ReturnType<typeof readBody>,
+) {
+    const accessDenied = requireWriteAccess(request);
+    if (accessDenied) return accessDenied;
 
-        const rawBody = (await request.json()) as unknown;
-        const body = readBody(rawBody);
-        const canonicalUrl = normalizeUrl(body.sourceUrl);
-        const input: ValidatedIntakeInput = {
-            sourceUrl: body.sourceUrl,
-            canonicalUrl,
-            originPlatform: detectOriginPlatform(canonicalUrl),
-            storageProvider: "drive",
-            folder: "workspace",
-            tags: ["workspace", "url"],
-            qualityPreference: body.qualityPreference,
-            formatSelector: body.formatSelector || undefined,
-            title: body.title || undefined,
-        };
-        const media = await resolveMediaUrl(input);
+    const canonicalUrl = normalizeUrl(inputBody.sourceUrl);
+    const input: ValidatedIntakeInput = {
+        sourceUrl: inputBody.sourceUrl,
+        canonicalUrl,
+        originPlatform: detectOriginPlatform(canonicalUrl),
+        storageProvider: "drive",
+        folder: "workspace",
+        tags: ["workspace", "url"],
+        qualityPreference: inputBody.qualityPreference,
+        formatSelector: inputBody.formatSelector || undefined,
+        title: inputBody.title || undefined,
+    };
+    const media = await resolveMediaUrl(input);
 
-        if (media.downloadMode === "yt-dlp-file" || isBilibiliHtml5Media(media)) {
-            const file = await downloadResolvedMediaToTempFile({
-                originalUrl: media.originalUrl,
-                requestedQuality: media.requestedQuality ?? "best",
-                formatSelector: media.formatSelector,
-            });
-            const contentType = file.mimeType ?? media.mimeType ?? "video/mp4";
-            const extension = inferExtension(contentType, media.ext);
-            const fileStem = sanitizeFileName(
-                body.title || file.title || media.title || "workspace-url-video",
-            );
-
-            return new NextResponse(
-                streamFileWithCleanup(file.filePath, file.cleanup),
-                {
-                    status: 200,
-                    headers: {
-                        "content-type": contentType,
-                        "cache-control": "no-store",
-                        "x-omnivideo-file-name": encodeURIComponent(
-                            `${fileStem}.${extension}`,
-                        ),
-                        "x-omnivideo-byte-length": String(file.sizeBytes ?? 0),
-                    },
-                },
-            );
-        }
-
-        if (!media.directMediaUrl) {
-            throw new Error("Resolver did not return a direct media URL.");
-        }
-
-        const upstreamResponse = await fetch(media.directMediaUrl, {
-            cache: "no-store",
-            headers: media.requestHeaders,
+    if (media.downloadMode === "yt-dlp-file" || isBilibiliHtml5Media(media)) {
+        const file = await downloadResolvedMediaToTempFile({
+            originalUrl: media.originalUrl,
+            requestedQuality: media.requestedQuality ?? "best",
+            formatSelector: media.formatSelector,
         });
-
-        if (!upstreamResponse.ok) {
-            throw new Error(
-                `Resolved media download failed with status ${upstreamResponse.status}.`,
-            );
-        }
-
-        const contentType =
-            upstreamResponse.headers.get("content-type") ??
-            media.mimeType ??
-            "video/mp4";
+        const contentType = file.mimeType ?? media.mimeType ?? "video/mp4";
         const extension = inferExtension(contentType, media.ext);
         const fileStem = sanitizeFileName(
-            body.title || media.title || "workspace-url-video",
+            inputBody.title || file.title || media.title || "workspace-url-video",
         );
 
-        const responseHeaders: Record<string, string> = {
-            "content-type": contentType,
-            "cache-control": "no-store",
-            "x-omnivideo-file-name": encodeURIComponent(
-                `${fileStem}.${extension}`,
-            ),
-        };
-        const contentLength = upstreamResponse.headers.get("content-length");
-        if (contentLength) {
-            responseHeaders["content-length"] = contentLength;
-            responseHeaders["x-omnivideo-byte-length"] = contentLength;
-        }
-
-        return new NextResponse(upstreamResponse.body, {
-            status: 200,
-            headers: responseHeaders,
-        });
-    } catch (error) {
-        return NextResponse.json(
+        return new NextResponse(
+            streamFileWithCleanup(file.filePath, file.cleanup),
             {
-                ok: false,
-                errorCode: "SYS_WORKSPACE_URL_RESOLVE_FAILED",
-                error:
-                    error instanceof Error
-                        ? error.message
-                        : "Workspace URL resolve failed.",
+                status: 200,
+                headers: {
+                    "content-type": contentType,
+                    "cache-control": "no-store",
+                    "content-disposition": buildContentDisposition(
+                        `${fileStem}.${extension}`,
+                    ),
+                    "x-omnivideo-file-name": encodeURIComponent(
+                        `${fileStem}.${extension}`,
+                    ),
+                    "x-omnivideo-byte-length": String(file.sizeBytes ?? 0),
+                },
             },
-            { status: 400 },
         );
+    }
+
+    if (!media.directMediaUrl) {
+        throw new Error("Resolver did not return a direct media URL.");
+    }
+
+    const upstreamResponse = await fetch(media.directMediaUrl, {
+        cache: "no-store",
+        headers: media.requestHeaders,
+    });
+
+    if (!upstreamResponse.ok) {
+        throw new Error(
+            `Resolved media download failed with status ${upstreamResponse.status}.`,
+        );
+    }
+
+    const contentType =
+        upstreamResponse.headers.get("content-type") ??
+        media.mimeType ??
+        "video/mp4";
+    const extension = inferExtension(contentType, media.ext);
+    const fileStem = sanitizeFileName(
+        inputBody.title || media.title || "workspace-url-video",
+    );
+
+    const responseHeaders: Record<string, string> = {
+        "content-type": contentType,
+        "cache-control": "no-store",
+        "content-disposition": buildContentDisposition(
+            `${fileStem}.${extension}`,
+        ),
+        "x-omnivideo-file-name": encodeURIComponent(
+            `${fileStem}.${extension}`,
+        ),
+    };
+    const contentLength = upstreamResponse.headers.get("content-length");
+    if (contentLength) {
+        responseHeaders["content-length"] = contentLength;
+        responseHeaders["x-omnivideo-byte-length"] = contentLength;
+    }
+
+    return new NextResponse(upstreamResponse.body, {
+        status: 200,
+        headers: responseHeaders,
+    });
+}
+
+function toErrorResponse(error: unknown) {
+    return NextResponse.json(
+        {
+            ok: false,
+            errorCode: "SYS_WORKSPACE_URL_RESOLVE_FAILED",
+            error:
+                error instanceof Error
+                    ? error.message
+                    : "Workspace URL resolve failed.",
+        },
+        { status: 400 },
+    );
+}
+
+export async function GET(request: Request) {
+    try {
+        const body = readQuery(request);
+        return await handleResolveDownloadRequest(request, body);
+    } catch (error) {
+        return toErrorResponse(error);
+    }
+}
+
+export async function POST(request: Request) {
+    try {
+        const rawBody = (await request.json()) as unknown;
+        const body = readBody(rawBody);
+        return await handleResolveDownloadRequest(request, body);
+    } catch (error) {
+        return toErrorResponse(error);
     }
 }

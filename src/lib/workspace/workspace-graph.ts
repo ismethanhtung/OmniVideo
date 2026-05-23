@@ -182,6 +182,11 @@ export type WorkspaceFlowStep =
           cleanupNodeId: string;
           producerNodeId?: string;
           publishNodeId?: string;
+      }
+    | {
+          kind: "download-local";
+          downloadNodeId: string;
+          producerNodeId: string;
       };
 
 export type WorkspaceFlowPlan = {
@@ -1263,6 +1268,32 @@ export const WORKSPACE_NODE_TEMPLATES: WorkspaceNodeTemplate[] = [
             "Publish node must preserve account id, platform, target page/channel, publish record id, and platform response.",
     },
     {
+        nodeType: "output.download-local",
+        version: "1.0.0",
+        label: "Download Local",
+        description:
+            "Tải output về máy local qua trình duyệt (mặc định Downloads hoặc chọn nơi lưu).",
+        category: "output",
+        status: "available",
+        inputPorts: [{ id: "asset", label: "Asset", dataType: "asset" }],
+        outputPorts: [],
+        configFields: [
+            {
+                key: "downloadMode",
+                label: "Download mode",
+                type: "select",
+                required: true,
+                defaultValue: "downloads",
+            },
+        ],
+        timeoutMs: 300000,
+        retryPolicy: { maxAttempts: 1, backoff: "none" },
+        idempotencyStrategy: "asset-checksum",
+        observabilityHooks: ["onStart", "onSuccess", "onError"],
+        traceabilityNotes:
+            "Local download output should preserve upstream asset/artifact lineage and chosen save mode.",
+    },
+    {
         nodeType: "cleanup.delete-assets",
         version: "1.0.0",
         label: "Cleanup Assets",
@@ -1758,6 +1789,9 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
     );
     const publishNodes = graph.nodes.filter(
         (node) => node.templateNodeType === "social.publish",
+    );
+    const downloadNodes = graph.nodes.filter(
+        (node) => node.templateNodeType === "output.download-local",
     );
     const cleanupNodes = graph.nodes.filter(
         (node) => node.templateNodeType === "cleanup.delete-assets",
@@ -2693,6 +2727,29 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
         });
     }
 
+    const downloadSteps: Extract<
+        WorkspaceFlowStep,
+        { kind: "download-local" }
+    >[] = [];
+    for (const downloadNode of downloadNodes) {
+        const producer = findUpstreamProducer(
+            graph,
+            downloadNode.id,
+            producers,
+        );
+        if (!producer) {
+            errors.push(
+                `Download Local '${downloadNode.label}' (${downloadNode.id}) cần upstream Storage Asset hoặc Save to Storage.`,
+            );
+            continue;
+        }
+        downloadSteps.push({
+            kind: "download-local",
+            downloadNodeId: downloadNode.id,
+            producerNodeId: producer,
+        });
+    }
+
     const cleanupSteps: WorkspaceFlowStep[] = [];
     for (const cleanupNode of cleanupNodes) {
         const directUpstreamPublishNodes = graph.edges
@@ -2752,6 +2809,7 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
         editSteps.length === 0 &&
         artifactStorageSteps.length === 0 &&
         publishSteps.length === 0 &&
+        downloadSteps.length === 0 &&
         cleanupSteps.length === 0 &&
         errors.length === 0
     ) {
@@ -2775,6 +2833,7 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
             ...editSteps,
             ...artifactStorageSteps,
             ...publishSteps,
+            ...downloadSteps,
             ...cleanupSteps,
         ],
         errors,

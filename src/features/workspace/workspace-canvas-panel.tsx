@@ -864,6 +864,61 @@ async function readWorkspaceResponseBlob(
     });
 }
 
+async function saveWorkspaceFileToLocal(input: {
+    file: File;
+    mode: "downloads" | "choose-folder";
+}) {
+    if (
+        input.mode === "choose-folder" &&
+        typeof window !== "undefined" &&
+        "showSaveFilePicker" in window
+    ) {
+        const pickerWindow = window as Window & {
+            showSaveFilePicker?: (options?: {
+                suggestedName?: string;
+                types?: Array<{
+                    description?: string;
+                    accept?: Record<string, string[]>;
+                }>;
+            }) => Promise<{
+                createWritable: () => Promise<{
+                    write: (data: Blob | BufferSource | string) => Promise<void>;
+                    close: () => Promise<void>;
+                }>;
+            }>;
+        };
+        const handle = await pickerWindow.showSaveFilePicker?.({
+            suggestedName: input.file.name,
+            types: [
+                {
+                    description: "Video file",
+                    accept: {
+                        [input.file.type || "video/mp4"]: [
+                            `.${input.file.name.split(".").pop() || "mp4"}`,
+                        ],
+                    },
+                },
+            ],
+        });
+        if (!handle) {
+            throw new Error("Cannot open folder picker.");
+        }
+        const writable = await handle.createWritable();
+        await writable.write(input.file);
+        await writable.close();
+        return;
+    }
+
+    const objectUrl = URL.createObjectURL(input.file);
+    const link = document.createElement("a");
+    link.href = objectUrl;
+    link.download = input.file.name;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+}
+
 function statusClass(status: WorkspaceNodeTemplate["status"]) {
     if (status === "available") {
         return "border-emerald-500/30 bg-emerald-500/10 text-emerald-700";
@@ -1454,6 +1509,9 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
             }
             if (step.kind === "store-artifact") {
                 return Boolean(runtimeAssetIdsByNodeId[step.producerNodeId]);
+            }
+            if (step.kind === "download-local") {
+                return false;
             }
             if (step.kind === "cleanup-assets") {
                 return false;
@@ -2121,6 +2179,9 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     ? "Storage asset đã có từ lần chạy trước."
                     : null;
             }
+            if (step.kind === "download-local") {
+                return null;
+            }
             if (step.kind === "cleanup-assets") {
                 return null;
             }
@@ -2164,6 +2225,8 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                 setNodeStatus(step.editNodeId, "success", detail);
             } else if (step.kind === "store-artifact") {
                 setNodeStatus(step.storageNodeId, "success", detail);
+            } else if (step.kind === "download-local") {
+                setNodeStatus(step.downloadNodeId, "success", detail);
             }
         };
 
@@ -2184,6 +2247,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
             if (step.kind === "mirror-video") return step.mirrorNodeId;
             if (step.kind === "edit-video") return step.editNodeId;
             if (step.kind === "store-artifact") return step.storageNodeId;
+            if (step.kind === "download-local") return step.downloadNodeId;
             if (step.kind === "publish") return step.publishNodeId;
             if (step.kind === "cleanup-assets") return step.cleanupNodeId;
             return null;
@@ -4358,6 +4422,62 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     );
                     summary.push(`Stored generated asset ${newAssetId}.`);
                     advanceProgress(`Stored generated asset ${newAssetId}.`);
+                } else if (step.kind === "download-local") {
+                    const downloadNode = findNode(step.downloadNodeId);
+                    if (!downloadNode) {
+                        throw new Error("Missing download node.");
+                    }
+                    const assetId = assetByProducer[step.producerNodeId];
+                    if (!assetId) {
+                        setNodeStatus(
+                            downloadNode.id,
+                            "skipped",
+                            "Producer step chưa cung cấp asset.",
+                        );
+                        throw new Error(
+                            `Download Local '${downloadNode.label}' thiếu upstream asset.`,
+                        );
+                    }
+
+                    const downloadModeRaw = getStringConfig(
+                        downloadNode,
+                        "downloadMode",
+                        "downloads",
+                    );
+                    const downloadMode =
+                        downloadModeRaw === "choose-folder"
+                            ? "choose-folder"
+                            : "downloads";
+
+                    setNodeStatus(
+                        downloadNode.id,
+                        "running",
+                        "Downloading asset source...",
+                    );
+                    updateProgressStepDetail(step, {
+                        progressMode: "indeterminate",
+                        progress: 0,
+                        description: "Downloading asset source...",
+                    });
+
+                    const downloaded = await fetchWorkspaceFile({
+                        url: `/api/storage/assets/${assetId}/download`,
+                        actionLabel: "Download local",
+                    });
+                    await saveWorkspaceFileToLocal({
+                        file: downloaded.file,
+                        mode: downloadMode,
+                    });
+
+                    setNodeStatus(
+                        downloadNode.id,
+                        "success",
+                        `${downloaded.fileName} (${formatBytes(downloaded.byteLength)}).`,
+                    );
+                    summary.push(`Downloaded ${downloaded.fileName}.`);
+                    advanceProgress(
+                        `Downloaded ${downloaded.fileName} to local machine.`,
+                    );
                 } else if (step.kind === "publish") {
                     const publishNode = findNode(step.publishNodeId);
                     if (!publishNode) continue;
@@ -4663,6 +4783,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     step.kind === "mirror-video" ||
                     step.kind === "edit-video" ||
                     step.kind === "store-artifact" ||
+                    step.kind === "download-local" ||
                     step.kind === "cleanup-assets"
                 ) {
                     abortRemaining = true;
@@ -6190,6 +6311,14 @@ function describeStep(
             subtitle: `Publish from ${findLabel(step.producerNodeId)}`,
         };
     }
+    if (step.kind === "download-local") {
+        return {
+            key: `download-local-${step.downloadNodeId}`,
+            statusKey: step.downloadNodeId,
+            label: `Download · ${findLabel(step.downloadNodeId)}`,
+            subtitle: `Download from ${findLabel(step.producerNodeId)}`,
+        };
+    }
     if (step.kind === "cleanup-assets") {
         return {
             key: `cleanup-${step.cleanupNodeId}`,
@@ -6885,6 +7014,26 @@ function NodeRuntimeConfig({
                                 {account.label} ({account.providerType})
                             </option>
                         ))}
+                    </RuntimeSelect>
+                </div>
+            </InspectorSection>
+        );
+    }
+
+    if (node.templateNodeType === "output.download-local") {
+        return (
+            <InspectorSection title="Runtime Config">
+                <div className="space-y-2 border border-main bg-secondary/20 p-2">
+                    <RuntimeSelect
+                        label="Save mode"
+                        value={getStringConfig(node, "downloadMode", "downloads")}
+                        disabled={isRunningFlow}
+                        onChange={(value) => setConfig({ downloadMode: value })}
+                    >
+                        <option value="downloads">Browser Downloads folder</option>
+                        <option value="choose-folder">
+                            Choose folder on every run
+                        </option>
                     </RuntimeSelect>
                 </div>
             </InspectorSection>

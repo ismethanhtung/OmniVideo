@@ -13,6 +13,7 @@ import {
     Send,
     BookOpen,
     Clapperboard,
+    Scissors,
     Image,
     ListVideo,
     Mic2,
@@ -110,6 +111,7 @@ export const LEFTBAR_NAV: LeftbarNavGroup[] = [
                 description:
                     "Test upload, preview và mirror video bằng ffmpeg trước khi đưa vào pipeline.",
             },
+
             {
                 id: "thumbnailStudio",
                 icon: Image,
@@ -188,6 +190,13 @@ export const LEFTBAR_NAV: LeftbarNavGroup[] = [
                     "Test local Piper voice model ONNX bằng CPU, không cần GPU.",
             },
             {
+                id: "videoSplitter",
+                icon: Scissors,
+                label: "Video Splitter",
+                description:
+                    "Cắt video dài thành các phần 30p/1h hoặc trích đoạn đầu 15p/30p và tải về local.",
+            },
+            {
                 id: "inspirationVault",
                 icon: Lightbulb,
                 label: "Inspiration Vault",
@@ -236,6 +245,7 @@ const SECTION_SLUG_BY_ID: Record<AppSectionId, string> = {
     chineseTranscription: "audio-transcript",
     piperTtsSandbox: "piper-tts-sandbox",
     videoToolsLab: "video-tools-lab",
+    videoSplitter: "video-splitter",
     thumbnailStudio: "thumbnail-studio",
     storageProviders: "storage-providers",
     storageLibrary: "storage-library",
@@ -261,6 +271,7 @@ const LEGACY_SECTION_BY_CAMEL: Record<string, AppSectionId> = {
     chineseTranscription: "chineseTranscription",
     piperTtsSandbox: "piperTtsSandbox",
     videoToolsLab: "videoToolsLab",
+    videoSplitter: "videoSplitter",
     thumbnailStudio: "thumbnailStudio",
     storageProviders: "storageProviders",
     storageLibrary: "storageLibrary",

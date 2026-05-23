@@ -6,7 +6,7 @@ import path from "node:path";
 import { downloadResolvedMediaToTempFile } from "@/lib/video-intake/internal-resolver";
 import { resolveMediaUrl } from "@/lib/video-intake/media-resolver";
 
-import { POST } from "./route";
+import { GET, POST } from "./route";
 
 vi.mock("@/lib/video-intake/media-resolver", () => ({
     resolveMediaUrl: vi.fn(),
@@ -81,7 +81,51 @@ describe("workspace URL resolve file API", () => {
 
         expect(response.status).toBe(200);
         expect(response.headers.get("content-type")).toBe("video/mp4");
+        expect(response.headers.get("content-disposition")).toContain(
+            "attachment;",
+        );
         expect(response.headers.get("x-omnivideo-file-name")).toContain("Demo-clip.mp4");
+        expect(Number(response.headers.get("x-omnivideo-byte-length"))).toBe(3);
+    });
+
+    it("supports GET query mode for browser-native download streaming", async () => {
+        mockedResolveMediaUrl.mockResolvedValueOnce({
+            originalUrl: "https://www.youtube.com/watch?v=demo",
+            directMediaUrl: "https://cdn.example.com/demo.mp4",
+            originPlatform: "youtube",
+            title: "Demo clip",
+            ext: "mp4",
+            requestHeaders: { Referer: "https://www.youtube.com/watch?v=demo" },
+            resolver: "internal-resolver",
+        });
+        vi.stubGlobal(
+            "fetch",
+            vi.fn().mockResolvedValue(
+                new Response(new Uint8Array([1, 2, 3]), {
+                    status: 200,
+                    headers: {
+                        "content-type": "video/mp4",
+                        "content-length": "3",
+                    },
+                }),
+            ),
+        );
+
+        const response = await GET(
+            new Request(
+                "http://localhost/api/video-intake/resolve-file?sourceUrl=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3Ddemo&qualityPreference=best&title=Demo%20clip",
+                { method: "GET" },
+            ),
+        );
+
+        expect(response.status).toBe(200);
+        expect(response.headers.get("content-type")).toBe("video/mp4");
+        expect(response.headers.get("content-disposition")).toContain(
+            "attachment;",
+        );
+        expect(response.headers.get("x-omnivideo-file-name")).toContain(
+            "Demo-clip.mp4",
+        );
         expect(Number(response.headers.get("x-omnivideo-byte-length"))).toBe(3);
     });
 
@@ -124,6 +168,9 @@ describe("workspace URL resolve file API", () => {
         const bytes = new Uint8Array(await response.arrayBuffer());
 
         expect(response.status).toBe(200);
+        expect(response.headers.get("content-disposition")).toContain(
+            "attachment;",
+        );
         expect(response.headers.get("x-omnivideo-file-name")).toContain(
             "Bilibili-clip.mp4",
         );
@@ -182,6 +229,9 @@ describe("workspace URL resolve file API", () => {
         const bytes = new Uint8Array(await response.arrayBuffer());
 
         expect(response.status).toBe(200);
+        expect(response.headers.get("content-disposition")).toContain(
+            "attachment;",
+        );
         expect(response.headers.get("x-omnivideo-file-name")).toContain(
             "HTML5-clip.mp4",
         );

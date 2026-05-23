@@ -34,10 +34,12 @@ describe("Video Intake history retry action", () => {
   });
 
   it("adds manual download action beside intake submit", () => {
-    expect(source).toContain('fetch("/api/video-intake/resolve-file"');
+    expect(source).toContain("new URLSearchParams");
+    expect(source).toContain("const downloadUrl = `/api/video-intake/resolve-file?");
+    expect(source).toContain('const iframe = document.createElement("iframe")');
+    expect(source).toContain("Open direct download link");
     expect(source).toContain("void downloadResolvedVideo()");
-    expect(source).toContain("Download started.");
-    expect(source).toContain("x-omnivideo-file-name");
+    expect(source).toContain("Download request sent.");
     expect(source).toContain('{isDownloading ? "Downloading..." : "Download"}');
   });
 });

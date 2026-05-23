@@ -1,5 +1,73 @@
 # OmniVideo Changelog
 
+## FAST-VIDEO-013 - Add Video Splitter Page for Local Download Workflow
+
+- Bumped app version from `0.10.31` to `0.10.32` as a patch release for local video processing workflow.
+- Added new `Video Splitter` page in Video Pipeline navigation, aligned with existing panel style.
+- Added server-side split API:
+  - `POST /api/video-processing/split` for ffmpeg split execution,
+  - `GET /api/video-processing/split/download/:downloadId` for direct attachment download.
+- Added local split runtime with two modes:
+  - interval split (`30m` or `60m`),
+  - head clip (`15m` or `30m`).
+- Split outputs are packaged as `.zip` and downloaded directly to local browser downloads (without Drive upload).
+- Verification (FAST-VIDEO-013):
+  - `npm run test -- --run src/features/video-processing/video-splitter-panel.test.ts src/components/layout/navigation.test.ts src/components/layout/content-router.test.ts` pass.
+  - `npm run guard:version` pass.
+
+## FAST-INTAKE-014 - Add Visible Download Fallback Signal in Video Intake
+
+- Bumped app version from `0.10.30` to `0.10.31` as a patch release for Video Intake download UX clarity.
+- Switched Video Intake manual download trigger to hidden iframe request so the page stays stable while browser handles file response.
+- Added explicit Run Status fallback affordance: `Open direct download link`.
+- Updated success copy to clarify that only the request was sent to browser, not that file transfer already completed.
+- Verification (FAST-INTAKE-014):
+  - `npm run test -- --run src/features/video-intake/video-intake-panel.test.ts` pass.
+  - `npm run guard:version` pass.
+
+## FAST-INTAKE-012 - Force Video Intake Download as Attachment Instead of Browser Preview
+
+- Bumped app version from `0.10.29` to `0.10.30` as a patch release for download UX correctness.
+- Added `Content-Disposition: attachment` headers to all `/api/video-intake/resolve-file` download responses (materialized and direct stream paths).
+- Added explicit client-side anchor `download` hint for Video Intake manual download.
+- Verification (FAST-INTAKE-012):
+  - `npm run test -- --run src/app/api/video-intake/resolve-file/route.test.ts src/features/video-intake/video-intake-panel.test.ts` pass.
+  - `npm run guard:version` pass.
+
+## FAST-INTAKE-011 - Stream Browser-Native Video Intake Download for Large Files
+
+- Bumped app version from `0.10.28` to `0.10.29` as a patch release for Video Intake download reliability.
+- Added `GET /api/video-intake/resolve-file` query-mode support and refactored route to share one resolve/stream handler for GET + POST.
+- Switched Video Intake manual `Download` action from client-side `fetch(...).blob()` buffering to browser-native streaming download URL.
+- Kept server-side Bilibili HTML5 materialization path unchanged, but removed large blob buffering pressure on the client side for `bilibili-html5-*` and other large media.
+- Verification (FAST-INTAKE-011):
+  - `npm run test -- --run src/app/api/video-intake/resolve-file/route.test.ts src/features/video-intake/video-intake-panel.test.ts` pass.
+  - `npm run guard:version` pass.
+
+## FAST-WORKSPACE-039 - Add Local Download Output Node for Workspace
+
+- Bumped app version from `0.10.27` to `0.10.28` as a patch release for Workspace output flexibility.
+- Added a new output node `Download Local` to Workspace node catalog.
+- Added planner/runtime support for step kind `download-local` so Workspace can download upstream storage assets directly to the local machine.
+- Added node runtime save mode options:
+  - `Browser Downloads folder` (default browser-managed download),
+  - `Choose folder on every run` (uses picker when supported, with browser-download fallback).
+- Verification (FAST-WORKSPACE-039):
+  - `npm run test -- --run src/lib/workspace/workspace-graph.test.ts src/lib/workspace/workspace-flow-setup.test.ts src/features/workspace/workspace-canvas-panel.test.ts` pass (3 files / 75 tests).
+  - `npm run guard:version` pass.
+
+## FAST-AUDIO-061 - Optimize Piper VIP Voice Generation Without Quality Loss
+
+- Bumped app version from `0.10.26` to `0.10.27` as a patch release for VIP Piper TTS performance.
+- Kept Piper model/settings/text quality unchanged while reducing large segment-count overhead in timeline alignment.
+- Added direct WAV duration parsing for generated Piper segment files, avoiding one ffmpeg probe process per segment when WAV metadata is available.
+- Parallelized independent ffmpeg alignment transforms with conservative bounded concurrency (`PIPER_ALIGNMENT_FFMPEG_CONCURRENCY`, default max 4).
+- Kept balanced/strict timing semantics, tempo filters, and final concat/mix behavior unchanged.
+- Verification (FAST-AUDIO-061):
+  - `npm run test -- --run src/lib/multilingual-audio/piper-tts.test.ts src/lib/multilingual-audio/video-vip-processing.test.ts src/app/api/audio/video-vip-processing/route.test.ts` pass (3 files / 30 tests).
+  - `npm run build` compiles current changes, then stops on unrelated pre-existing `src/app/api/video-processing/edit/route.ts:408` subtitle typing.
+  - `npm run guard:version` pass.
+
 ## FAST-WORKSPACE-038 - Add Stage Checkpoints for VIP Processing Resume
 
 - Bumped app version from `0.10.25` to `0.10.26` as a patch release for Workspace VIP resume behavior.

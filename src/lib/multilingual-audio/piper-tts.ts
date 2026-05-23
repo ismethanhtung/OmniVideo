@@ -47,6 +47,10 @@ const REQUIRED_PIPER_DYLIBS = [
 const BATCH_TIMEOUT_BASE_MS = 60000;
 const BATCH_TIMEOUT_PER_TEXT_MS = 5000;
 const BATCH_TIMEOUT_MAX_MS = 15 * 60 * 1000;
+const ALIGNMENT_FFMPEG_CONCURRENCY = Math.max(
+  1,
+  Math.min(4, Number(process.env.PIPER_ALIGNMENT_FFMPEG_CONCURRENCY) || 4),
+);
 
 type PiperSpawn = typeof spawn;
 
@@ -626,6 +630,9 @@ function parseFfmpegDuration(stderr: string) {
 }
 
 async function probeAudioDuration(filePath: string) {
+  const wavDuration = await readWavDurationSeconds(filePath);
+  if (wavDuration !== null) return wavDuration;
+
   const { stderr } = await runFfmpeg([
     "-hide_banner",
     "-i",
@@ -635,6 +642,67 @@ async function probeAudioDuration(filePath: string) {
     "-",
   ]);
   return parseFfmpegDuration(stderr);
+}
+
+function parseWavDurationSeconds(buffer: Buffer) {
+  if (buffer.byteLength < 44) return null;
+  if (buffer.toString("ascii", 0, 4) !== "RIFF") return null;
+  if (buffer.toString("ascii", 8, 12) !== "WAVE") return null;
+
+  let offset = 12;
+  let byteRate: number | null = null;
+  let dataSize: number | null = null;
+
+  while (offset + 8 <= buffer.byteLength) {
+    const chunkId = buffer.toString("ascii", offset, offset + 4);
+    const chunkSize = buffer.readUInt32LE(offset + 4);
+    const chunkDataOffset = offset + 8;
+
+    if (chunkId === "fmt " && chunkSize >= 16 && chunkDataOffset + 12 <= buffer.byteLength) {
+      byteRate = buffer.readUInt32LE(chunkDataOffset + 8);
+    } else if (chunkId === "data") {
+      dataSize = chunkSize;
+      break;
+    }
+
+    offset = chunkDataOffset + chunkSize + (chunkSize % 2);
+  }
+
+  if (!byteRate || !dataSize || byteRate <= 0) return null;
+  return dataSize / byteRate;
+}
+
+async function readWavDurationSeconds(filePath: string) {
+  try {
+    const buffer = piperReadFileForTest
+      ? await piperReadFileForTest(filePath)
+      : await readFile(filePath);
+    return parseWavDurationSeconds(buffer);
+  } catch {
+    return null;
+  }
+}
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  mapper: (item: T, index: number) => Promise<R>,
+) {
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+  const workerCount = Math.min(Math.max(1, concurrency), items.length);
+
+  await Promise.all(
+    Array.from({ length: workerCount }, async () => {
+      while (nextIndex < items.length) {
+        const index = nextIndex;
+        nextIndex += 1;
+        results[index] = await mapper(items[index], index);
+      }
+    }),
+  );
+
+  return results;
 }
 
 export function buildAtempoFilterChain(speedFactor: number) {
@@ -1083,48 +1151,60 @@ async function alignPiperFilesToTimeline(input: {
   workDir: string;
   outputPath: string;
 }) {
-  const timelinePaths: string[] = [];
-  const timelineStarts: number[] = [];
-  const chunks: TimelineAlignmentChunk[] = [];
+  type AlignedTimelineItem = {
+    path: string;
+    start: number;
+    chunk: TimelineAlignmentChunk;
+  };
+  const alignedItems = (
+    await mapWithConcurrency(
+      input.files,
+      ALIGNMENT_FFMPEG_CONCURRENCY,
+      async (item, index) => {
+        const duration = segmentDuration(item.segment);
+        if (duration <= 0) return null;
 
-  for (const [index, item] of input.files.entries()) {
-    const duration = segmentDuration(item.segment);
-    if (duration <= 0) continue;
-
-    const rawDuration = await probeAudioDuration(item.filePath);
-    const chunk = buildTimelineAlignmentChunk({
-      segment: item.segment,
-      rawDurationSeconds: rawDuration,
-      nextSegmentStart: input.files[index + 1]?.segment.start,
-    });
-    chunks.push({
-      ...chunk,
-      scheduledStartSeconds: item.segment.start,
-      scheduledEndSeconds: item.segment.start + chunk.targetDurationSeconds,
-      pauseBeforeSeconds: item.segment.start,
-      driftSeconds: 0,
-    });
-    const alignedPath = path.join(
-      input.workDir,
-      `aligned-${item.segment.id}.wav`,
-    );
-    await runFfmpeg([
-      "-y",
-      "-i",
-      item.filePath,
-      "-af",
-      `${chunk.tempoFilter},apad,atrim=0:${chunk.targetDurationSeconds.toFixed(3)},asetpts=PTS-STARTPTS`,
-      "-ac",
-      "1",
-      "-ar",
-      "22050",
-      "-c:a",
-      "pcm_s16le",
-      alignedPath,
-    ]);
-    timelinePaths.push(alignedPath);
-    timelineStarts.push(item.segment.start);
-  }
+        const rawDuration = await probeAudioDuration(item.filePath);
+        const chunk = buildTimelineAlignmentChunk({
+          segment: item.segment,
+          rawDurationSeconds: rawDuration,
+          nextSegmentStart: input.files[index + 1]?.segment.start,
+        });
+        const alignedPath = path.join(
+          input.workDir,
+          `aligned-${item.segment.id}.wav`,
+        );
+        await runFfmpeg([
+          "-y",
+          "-i",
+          item.filePath,
+          "-af",
+          `${chunk.tempoFilter},apad,atrim=0:${chunk.targetDurationSeconds.toFixed(3)},asetpts=PTS-STARTPTS`,
+          "-ac",
+          "1",
+          "-ar",
+          "22050",
+          "-c:a",
+          "pcm_s16le",
+          alignedPath,
+        ]);
+        return {
+          path: alignedPath,
+          start: item.segment.start,
+          chunk: {
+            ...chunk,
+            scheduledStartSeconds: item.segment.start,
+            scheduledEndSeconds: item.segment.start + chunk.targetDurationSeconds,
+            pauseBeforeSeconds: item.segment.start,
+            driftSeconds: 0,
+          },
+        };
+      },
+    )
+  ).filter((item): item is AlignedTimelineItem => Boolean(item));
+  const timelinePaths = alignedItems.map((item) => item.path);
+  const timelineStarts = alignedItems.map((item) => item.start);
+  const chunks = alignedItems.map((item) => item.chunk);
 
   if (timelinePaths.length === 0) {
     await concatWavFiles({
@@ -1158,13 +1238,22 @@ async function alignPiperFilesToBalancedTimeline(input: {
 }) {
   const concatPaths: string[] = [];
   const chunks: TimelineAlignmentChunk[] = [];
+  const ffmpegOperations: Array<{
+    filePath: string;
+    args: string[];
+  }> = [];
   let cursor = 0;
+  const rawDurations = await mapWithConcurrency(
+    input.files,
+    ALIGNMENT_FFMPEG_CONCURRENCY,
+    async (item) => probeAudioDuration(item.filePath),
+  );
 
-  for (const item of input.files) {
+  for (const [index, item] of input.files.entries()) {
     const slotDurationSeconds = segmentDuration(item.segment);
     if (slotDurationSeconds <= 0) continue;
 
-    const rawDurationSeconds = await probeAudioDuration(item.filePath);
+    const rawDurationSeconds = rawDurations[index];
     const naturalGapSeconds = Math.max(0, item.segment.start - cursor);
     const pauseBeforeSeconds =
       naturalGapSeconds > 0
@@ -1176,18 +1265,21 @@ async function alignPiperFilesToBalancedTimeline(input: {
         input.workDir,
         `balanced-silence-${item.segment.id}.wav`,
       );
-      await runFfmpeg([
-        "-y",
-        "-f",
-        "lavfi",
-        "-i",
-        "anullsrc=r=22050:cl=mono",
-        "-t",
-        pauseBeforeSeconds.toFixed(3),
-        "-c:a",
-        "pcm_s16le",
-        silencePath,
-      ]);
+      ffmpegOperations.push({
+        filePath: silencePath,
+        args: [
+          "-y",
+          "-f",
+          "lavfi",
+          "-i",
+          "anullsrc=r=22050:cl=mono",
+          "-t",
+          pauseBeforeSeconds.toFixed(3),
+          "-c:a",
+          "pcm_s16le",
+          silencePath,
+        ],
+      });
       concatPaths.push(silencePath);
       cursor += pauseBeforeSeconds;
     }
@@ -1224,20 +1316,23 @@ async function alignPiperFilesToBalancedTimeline(input: {
       input.workDir,
       `balanced-${item.segment.id}.wav`,
     );
-    await runFfmpeg([
-      "-y",
-      "-i",
-      item.filePath,
-      "-af",
-      `${tempoFilter},atrim=0:${targetDurationSeconds.toFixed(3)},asetpts=PTS-STARTPTS`,
-      "-ac",
-      "1",
-      "-ar",
-      "22050",
-      "-c:a",
-      "pcm_s16le",
-      alignedPath,
-    ]);
+    ffmpegOperations.push({
+      filePath: alignedPath,
+      args: [
+        "-y",
+        "-i",
+        item.filePath,
+        "-af",
+        `${tempoFilter},atrim=0:${targetDurationSeconds.toFixed(3)},asetpts=PTS-STARTPTS`,
+        "-ac",
+        "1",
+        "-ar",
+        "22050",
+        "-c:a",
+        "pcm_s16le",
+        alignedPath,
+      ],
+    });
     concatPaths.push(alignedPath);
     chunks.push({
       segmentId: item.segment.id,
@@ -1266,6 +1361,15 @@ async function alignPiperFilesToBalancedTimeline(input: {
     });
     return { chunks: [], warnings: [] };
   }
+
+  await mapWithConcurrency(
+    ffmpegOperations,
+    ALIGNMENT_FFMPEG_CONCURRENCY,
+    async (operation) => {
+      await runFfmpeg(operation.args);
+      return operation.filePath;
+    },
+  );
 
   await concatWavFiles({
     workDir: input.workDir,

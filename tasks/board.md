@@ -23,7 +23,13 @@
 
 ## Review
 
+- `FAST-VIDEO-013` - Add Video Splitter page for local ffmpeg split and direct zip download.
+- `FAST-INTAKE-014` - Add visible fallback signal and direct link for Video Intake downloads.
+- `FAST-INTAKE-012` - Force Video Intake download as attachment instead of browser inline preview.
+- `FAST-INTAKE-011` - Switch Video Intake download to browser-native streaming for large-file reliability (incl. bilibili-html5).
+- `FAST-WORKSPACE-039` - Add local-download output node for Workspace with browser Downloads default and optional folder picker mode.
 - `FAST-INTAKE-009` - Add manual Download action to Video Intake.
+- `FAST-AUDIO-061` - Optimize Piper VIP Voice Generation Without Quality Loss.
 - `FAST-WORKSPACE-038` - Add Stage Checkpoints for VIP Processing Resume.
 - `FAST-WORKSPACE-037` - Fix VIP Processing Provider Lookup and Error Mapping.
 - `FAST-INTAKE-010` - Stabilize Bilibili HTML5 Intake Downloads.
