@@ -118,6 +118,10 @@ def parse_bilibili_html5_selector(format_selector):
     return quality if quality in BILIBILI_HTML5_QUALITY_HEIGHTS else None
 
 
+def is_bilibili_html5_selector(format_selector):
+    return parse_bilibili_html5_selector(format_selector) is not None
+
+
 def build_bilibili_html5_quality_candidates(quality_preference):
     if quality_preference in {"best", "1080p"}:
         return [80]
@@ -878,12 +882,68 @@ def find_downloaded_file(output_dir):
     return max(candidates, key=lambda item: item.stat().st_size)
 
 
+def download_bilibili_html5_to_file(url, quality_preference, format_selector, output_dir):
+    forced_quality = parse_bilibili_html5_selector(format_selector)
+    if forced_quality is None:
+        raise RuntimeError("Invalid Bilibili HTML5 format selector.")
+
+    payload = resolve_bilibili_html5_payload(
+        normalize_url_for_extractor(url),
+        quality_preference,
+        forced_quality=forced_quality,
+    )
+    if not payload or not payload.get("directMediaUrl"):
+        raise RuntimeError("Could not resolve Bilibili HTML5 media URL.")
+
+    options = build_base_options("other", quality_preference, skip_download=False)
+    options.update(
+        {
+            "http_headers": payload.get("requestHeaders") or {},
+            "merge_output_format": "mp4",
+            "outtmpl": os.path.join(output_dir, "%(title).200B-%(id)s.%(ext)s"),
+            "windowsfilenames": True,
+            "continuedl": True,
+            "retries": 10,
+            "fragment_retries": 10,
+        }
+    )
+
+    with YoutubeDL(options) as ydl:
+        info = ydl.extract_info(payload["directMediaUrl"], download=True)
+
+    file_path = find_downloaded_file(output_dir)
+    mime_type = mimetypes.guess_type(str(file_path))[0] or payload.get("mimeType")
+
+    return {
+        "filePath": str(file_path),
+        "filename": file_path.name,
+        "mimeType": mime_type or "video/mp4",
+        "sizeBytes": file_path.stat().st_size,
+        "title": payload.get("title") or info.get("title"),
+        "durationMs": payload.get("durationMs"),
+        "formatId": payload.get("formatId"),
+        "formatSelector": payload.get("formatSelector"),
+        "resolverProfile": payload.get("resolverProfile"),
+        "hasAudio": payload.get("hasAudio"),
+        "hasVideo": payload.get("hasVideo"),
+    }
+
+
 def download_to_file(url, quality_preference, format_selector, output_dir):
     cookie_file = os.environ.get("VIDEO_RESOLVER_COOKIES_FILE")
     cookie_browser = os.environ.get("VIDEO_RESOLVER_COOKIES_FROM_BROWSER")
     normalized_url = normalize_url_for_extractor(url)
     platform = detect_extractor_platform(normalized_url)
     selector = format_selector or build_merged_format_for_quality(quality_preference)
+
+    if platform == "bilibili" and is_bilibili_html5_selector(selector):
+        return download_bilibili_html5_to_file(
+            normalized_url,
+            quality_preference,
+            selector,
+            output_dir,
+        )
+
     base_options = build_base_options(platform, quality_preference, skip_download=False)
     base_options.update(
         {

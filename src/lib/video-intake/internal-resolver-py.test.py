@@ -1,7 +1,9 @@
 import importlib.util
 import pathlib
 import sys
+import tempfile
 import unittest
+from unittest import mock
 
 
 def _load_module():
@@ -266,6 +268,62 @@ sec-ch-ua
             resolver.build_bilibili_html5_quality_candidates("720p"),
             [],
         )
+
+    def test_download_to_file_accepts_bilibili_html5_selector(self):
+        class FakeYoutubeDL:
+            def __init__(self, options):
+                self.options = options
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def extract_info(self, url, download=False):
+                self.__class__.called_with = {
+                    "url": url,
+                    "download": download,
+                    "headers": self.options.get("http_headers"),
+                }
+                output_path = pathlib.Path(self.options["outtmpl"]).parent / "html5.mp4"
+                output_path.write_bytes(b"123")
+                return {"title": "HTML5 Direct"}
+
+        payload = {
+            "directMediaUrl": "https://cdn.example.com/html5.mp4",
+            "requestHeaders": {"Referer": "https://www.bilibili.com/video/BV1demo/"},
+            "mimeType": "video/mp4",
+            "title": "Bilibili HTML5",
+            "durationMs": 5000,
+            "formatId": "bilibili-html5-64",
+            "formatSelector": "bilibili-html5-64",
+            "resolverProfile": "bilibili-html5:no-cookie",
+            "hasAudio": True,
+            "hasVideo": True,
+        }
+
+        with tempfile.TemporaryDirectory() as output_dir:
+            with mock.patch.object(
+                resolver,
+                "resolve_bilibili_html5_payload",
+                return_value=payload,
+            ) as resolve_mock:
+                with mock.patch.object(resolver, "YoutubeDL", FakeYoutubeDL):
+                    result = resolver.download_to_file(
+                        "https://www.bilibili.com/video/BV1demo/",
+                        "best",
+                        "bilibili-html5-64",
+                        output_dir,
+                    )
+
+        resolve_mock.assert_called_once()
+        self.assertEqual(result["formatSelector"], "bilibili-html5-64")
+        self.assertEqual(result["formatId"], "bilibili-html5-64")
+        self.assertEqual(result["sizeBytes"], 3)
+        self.assertEqual(FakeYoutubeDL.called_with["url"], payload["directMediaUrl"])
+        self.assertTrue(FakeYoutubeDL.called_with["download"])
+        self.assertEqual(FakeYoutubeDL.called_with["headers"], payload["requestHeaders"])
 
 
 if __name__ == "__main__":

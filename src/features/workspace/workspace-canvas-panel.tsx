@@ -3495,6 +3495,17 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         sourceNode,
                         consumerLabel: `VIP Processing '${vipNode.label}'`,
                     });
+                    formData.set(
+                        "vipResumeKey",
+                        [
+                            "workspace-vip",
+                            vipNode.id,
+                            sourceNode.id,
+                            String(formData.get("assetId") ?? ""),
+                            String(formData.get("artifactId") ?? ""),
+                            source.detail,
+                        ].join(":"),
+                    );
                     const translationProviderId = getStringConfig(
                         vipNode,
                         "translationProviderId",
@@ -3735,6 +3746,11 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         actionLabel: "VIP processing",
                         init: { method: "POST", body: formData },
                     });
+                    if (vipPayload.data.checkpoint?.reusedStages.length) {
+                        appendVipStageLog(
+                            `Resumed VIP checkpoint: ${vipPayload.data.checkpoint.reusedStages.join(", ")}.`,
+                        );
+                    }
 
                     const artifact: WorkspaceRuntimeArtifact = {
                         artifactId: vipPayload.data.artifactId,

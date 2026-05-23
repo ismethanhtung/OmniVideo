@@ -120,6 +120,8 @@ describe("WorkspaceCanvasPanel canvas interactions", () => {
         expect(source).toContain("parseRuntimeResumeSnapshot");
         expect(source).toContain("buildWorkspaceGraphSignature");
         expect(source).toContain("buildRuntimeArtifactResumeSnapshot");
+        expect(source).toContain('"vipResumeKey"');
+        expect(source).toContain('"workspace-vip"');
         expect(source).toContain("runtimeArtifactsByNodeId");
         expect(source).toContain("hasStoredArtifactCheckpoint");
         expect(source).toContain("shouldUsePublishOnlyResume");

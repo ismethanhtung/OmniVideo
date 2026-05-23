@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { RefreshCw, Trash2 } from "lucide-react";
+import { Download, RefreshCw, Trash2 } from "lucide-react";
 
 import type { LeftbarNavItem } from "@/components/layout/types";
 import { StatusText } from "@/components/ui/status-text";
@@ -231,6 +231,18 @@ function formatBytes(size?: number | null) {
     return `${value.toFixed(precision)} ${units[unitIndex]}`;
 }
 
+function decodeDownloadFileName(value: string | null, fallback: string) {
+    if (!value) {
+        return fallback;
+    }
+
+    try {
+        return decodeURIComponent(value);
+    } catch {
+        return value;
+    }
+}
+
 function formatDuration(durationMs?: number | null) {
     if (!durationMs || durationMs <= 0) {
         return "-";
@@ -330,6 +342,7 @@ export function VideoIntakePanel({ section }: VideoIntakePanelProps) {
         status: "idle",
         message: "Ready.",
     });
+    const [isDownloading, setIsDownloading] = useState(false);
 
     useEffect(() => {
         fetch("/api/storage/folders", {
@@ -610,6 +623,107 @@ export function VideoIntakePanel({ section }: VideoIntakePanelProps) {
                 description: "Video intake failed.",
                 error: error instanceof Error ? error.message : "Unknown error",
             });
+        }
+    };
+
+    const downloadResolvedVideo = async () => {
+        const trimmedUrl = sourceUrl.trim();
+        if (!trimmedUrl) {
+            setState({
+                status: "failed",
+                message: "Enter a video URL before downloading.",
+                errorCode: "VAL_SOURCE_URL_REQUIRED",
+            });
+            return;
+        }
+
+        setIsDownloading(true);
+        setState({
+            status: "idle",
+            message: "Preparing download...",
+        });
+        const progressTaskId = startProgressTask({
+            title: "Video intake download",
+            description: "Resolving selected media...",
+            scope: "download",
+            progress: 20,
+        });
+
+        try {
+            const response = await fetch("/api/video-intake/resolve-file", {
+                method: "POST",
+                headers: {
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({
+                    sourceUrl: trimmedUrl,
+                    title: title.trim() || undefined,
+                    qualityPreference,
+                    formatSelector: formatSelector.trim() || undefined,
+                }),
+            });
+
+            if (!response.ok) {
+                const payload = (await response.json().catch(() => null)) as {
+                    error?: string;
+                    errorCode?: string;
+                } | null;
+                setState({
+                    status: "failed",
+                    message: payload?.error ?? "Download failed.",
+                    errorCode: payload?.errorCode,
+                });
+                finishProgressTask({
+                    id: progressTaskId,
+                    status: "failed",
+                    description: payload?.error ?? "Download failed.",
+                    error: payload?.errorCode,
+                });
+                return;
+            }
+
+            updateProgressTask(progressTaskId, {
+                description: "Starting browser download...",
+                progress: 90,
+            });
+            const blob = await response.blob();
+            const fileName = decodeDownloadFileName(
+                response.headers.get("x-omnivideo-file-name"),
+                "omnivideo-video.mp4",
+            );
+            const objectUrl = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.href = objectUrl;
+            link.download = fileName;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+
+            setState({
+                status: "success",
+                message: "Download started.",
+                result: undefined,
+            });
+            finishProgressTask({
+                id: progressTaskId,
+                status: "success",
+                description: "Download started.",
+            });
+        } catch (error) {
+            setState({
+                status: "failed",
+                message:
+                    error instanceof Error ? error.message : "Download failed.",
+            });
+            finishProgressTask({
+                id: progressTaskId,
+                status: "failed",
+                description: "Download failed.",
+                error: error instanceof Error ? error.message : "Unknown error",
+            });
+        } finally {
+            setIsDownloading(false);
         }
     };
 
@@ -1142,19 +1256,35 @@ export function VideoIntakePanel({ section }: VideoIntakePanelProps) {
                             ) : null}
                         </div>
 
-                        <button
-                            type="submit"
-                            disabled={
-                                state.status === "running" ||
-                                !selectedAccount ||
-                                !folder.trim()
-                            }
-                            className="border border-main bg-secondary px-3 py-2 text-[12px] font-semibold text-main transition-colors hover:bg-secondary/75 disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                            {state.status === "running"
-                                ? "Running..."
-                                : "Run Intake Pipeline"}
-                        </button>
+                        <div className="flex flex-wrap items-center gap-2">
+                            <button
+                                type="submit"
+                                disabled={
+                                    state.status === "running" ||
+                                    isDownloading ||
+                                    !selectedAccount ||
+                                    !folder.trim()
+                                }
+                                className="border border-main bg-secondary px-3 py-2 text-[12px] font-semibold text-main transition-colors hover:bg-secondary/75 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                                {state.status === "running"
+                                    ? "Running..."
+                                    : "Run Intake Pipeline"}
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => void downloadResolvedVideo()}
+                                disabled={
+                                    isDownloading ||
+                                    state.status === "running" ||
+                                    !sourceUrl.trim()
+                                }
+                                className="inline-flex items-center gap-2 border border-main bg-main px-3 py-2 text-[12px] font-semibold text-main transition-colors hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                                <Download className="h-4 w-4" aria-hidden />
+                                {isDownloading ? "Downloading..." : "Download"}
+                            </button>
+                        </div>
                     </div>
                 </form>
 

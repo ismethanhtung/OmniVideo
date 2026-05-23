@@ -1,5 +1,60 @@
 # OmniVideo Changelog
 
+## FAST-WORKSPACE-038 - Add Stage Checkpoints for VIP Processing Resume
+
+- Bumped app version from `0.10.25` to `0.10.26` as a patch release for Workspace VIP resume behavior.
+- Added local server-side VIP stage checkpoints keyed by Workspace `vipResumeKey` and an input fingerprint.
+- VIP processing now saves completed transcript, translation, voice, rendered video, and metadata stages, then reuses compatible checkpoints on retry.
+- Workspace now sends a stable `vipResumeKey` for VIP node requests and surfaces reused checkpoint stages in the VIP progress log.
+- Checkpoints are invalidated when source/config fingerprint changes, avoiding reuse after settings edits.
+- Verification (FAST-WORKSPACE-038):
+  - `npm run test -- --run src/lib/multilingual-audio/video-vip-processing.test.ts src/app/api/audio/video-vip-processing/route.test.ts src/features/workspace/workspace-canvas-panel.test.ts` pass (3 files / 27 tests).
+  - `npm run build` compiles current changes, then stops on unrelated pre-existing `src/app/api/video-processing/edit/route.ts:408` subtitle typing.
+  - `npm run guard:version` pass.
+
+## FAST-WORKSPACE-037 - Fix VIP Processing Provider Lookup and Error Mapping
+
+- Bumped app version from `0.10.24` to `0.10.25` as a patch release for Workspace VIP processing reliability.
+- Fixed `/api/audio/video-vip-processing` metadata provider lookup by passing `providerId: metadataProviderId` to `getAiProviderById`.
+- Added structured `STG_ASSET_DOWNLOAD_FAILED` mapping for storage asset download/fetch failures before VIP processing starts.
+- Fixed VIP subtitle style typing so the route no longer blocks build on the VIP route after the provider lookup fix.
+- Verification (FAST-WORKSPACE-037):
+  - `npm run test -- --run src/app/api/audio/video-vip-processing/route.test.ts` pass (1 file / 5 tests).
+  - `npm run build` no longer fails on `src/app/api/audio/video-vip-processing/route.ts`; it now stops on unrelated pre-existing `src/app/api/video-processing/edit/route.ts:408` subtitle typing.
+  - `npm run guard:version` pass.
+
+## FAST-INTAKE-010 - Stabilize Bilibili HTML5 Intake Downloads
+
+- Bumped app version from `0.10.23` to `0.10.24` as a patch release for Bilibili HTML5 intake reliability.
+- Fixed selected `bilibili-html5-*` Download and Drive upload paths by materializing the HTML5 media through yt-dlp temp-file download before browser response or Google Drive resumable upload.
+- Added internal resolver support for `download ... bilibili-html5-*`, so the HTML5 direct URL is downloaded with yt-dlp retry/resume behavior instead of raw app-level direct piping.
+- Mapped interrupted direct source materialization failures to `STG_SOURCE_STREAM_FAILED` instead of allowing raw `terminated` errors to become unknown intake failures.
+- Verification (FAST-INTAKE-010):
+  - `npm run test -- --run src/lib/video-intake/storage-adapters.test.ts src/app/api/video-intake/resolve-file/route.test.ts` pass (2 files / 11 tests).
+  - `PYTHONPATH=.vendor/python python3 src/lib/video-intake/internal-resolver-py.test.py` pass (18 tests).
+  - Live smoke: `internal-resolver.py download` with the reported `BV1A1RUBEEC8` URL and `bilibili-html5-64` produced a `69,392,247` byte MP4 with audio/video metadata.
+  - `npm run guard:version` pass.
+  - `npm run build` still fails on unrelated pre-existing `src/app/api/audio/video-vip-processing/route.ts:361` type error (`metadataProviderId` passed where `providerId` is expected).
+
+## FAST-INTAKE-009 - Add Manual Download Action to Video Intake
+
+- Bumped app version from `0.10.22` to `0.10.23` as a patch release for Video Intake workaround UX.
+- Added a `Download` action beside `Run Intake Pipeline` on Video Intake.
+- The action downloads the current URL/quality/format selector through `/api/video-intake/resolve-file`, using the server-provided `x-omnivideo-file-name` header when available.
+- Download does not require a selected storage account or folder, so it remains available when Drive upload is failing.
+- Verification (FAST-INTAKE-009):
+  - `npm run test -- --run src/features/video-intake/video-intake-panel.test.ts` pass (1 file / 5 tests).
+
+## FAST-INTAKE-008 - Materialize Bilibili HTML5 Drive Uploads
+
+- Bumped app version from `0.10.21` to `0.10.22` as a patch release for Bilibili HTML5 intake reliability.
+- Fixed Drive intake for selected `bilibili-html5-*` formats by materializing the progressive Bilibili source to a temp file before the Google Drive resumable PUT.
+- Kept generic direct URL Drive uploads on remote-stream mode, and kept existing `yt-dlp-file` uploads on file-stream mode.
+- Verification (FAST-INTAKE-008):
+  - `npm run test -- --run src/lib/video-intake/storage-adapters.test.ts` pass (1 file / 7 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` currently fails on unrelated `src/app/api/audio/video-vip-processing/route.ts:361` type error (`metadataProviderId` passed where `providerId` is expected).
+
 ## FAST-WORKSPACE-036 - Add Isolated VIP Composite Workspace Node
 
 - Added a dedicated `video.vip-processing` Workspace node that runs a separate composite runtime path without changing existing node behaviors.

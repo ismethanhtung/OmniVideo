@@ -87,6 +87,23 @@ function streamFileWithCleanup(filePath: string, cleanup: () => Promise<void>) {
     return Readable.toWeb(nodeStream) as ReadableStream<Uint8Array>;
 }
 
+function isBilibiliHtml5Media(media: {
+    originPlatform?: string;
+    formatSelector?: string;
+    formatId?: string;
+    resolverProfile?: string;
+}) {
+    if (media.originPlatform !== "bilibili") {
+        return false;
+    }
+
+    const selector = media.formatSelector ?? media.formatId ?? "";
+    return Boolean(
+        selector.startsWith("bilibili-html5-") ||
+            media.resolverProfile?.startsWith("bilibili-html5"),
+    );
+}
+
 export async function POST(request: Request) {
     try {
         const accessDenied = requireWriteAccess(request);
@@ -108,7 +125,7 @@ export async function POST(request: Request) {
         };
         const media = await resolveMediaUrl(input);
 
-        if (media.downloadMode === "yt-dlp-file") {
+        if (media.downloadMode === "yt-dlp-file" || isBilibiliHtml5Media(media)) {
             const file = await downloadResolvedMediaToTempFile({
                 originalUrl: media.originalUrl,
                 requestedQuality: media.requestedQuality ?? "best",

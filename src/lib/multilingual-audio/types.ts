@@ -258,6 +258,7 @@ export type ChineseTranscriptionErrorCode =
     | "CFG_PIPER_TTS_RUNTIME_MISSING"
     | "PRV_PIPER_TTS_FAILED"
     | "VAL_DUBBING_VIDEO_REQUIRED"
+    | "STG_ASSET_DOWNLOAD_FAILED"
     | "SYS_DUBBING_MUX_FAILED";
 
 export class ChineseTranscriptionError extends Error {

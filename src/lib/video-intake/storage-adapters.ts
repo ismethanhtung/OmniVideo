@@ -208,12 +208,21 @@ async function fetchSourceMediaToTempFile(
     };
   } catch (error) {
     await rm(tmpDir, { recursive: true, force: true });
-    throw error;
+    const detail =
+      error instanceof Error && error.message
+        ? error.message
+        : "source stream terminated";
+    throw new IntakeError({
+      errorCode: "STG_SOURCE_STREAM_FAILED",
+      message: `Source media stream failed while materializing file: ${detail}`,
+      category: "dependency",
+      retryable: true,
+    });
   }
 }
 
 async function materializeMediaFile(media: ResolvedMedia): Promise<TempMediaFile> {
-  if (media.downloadMode === "yt-dlp-file") {
+  if (media.downloadMode === "yt-dlp-file" || isBilibiliHtml5Media(media)) {
     return downloadResolvedMediaToTempFile({
       originalUrl: media.originalUrl,
       requestedQuality: (media.requestedQuality ?? "best") as IntakeQualityPreference,
@@ -222,6 +231,22 @@ async function materializeMediaFile(media: ResolvedMedia): Promise<TempMediaFile
   }
 
   return fetchSourceMediaToTempFile(media);
+}
+
+function isBilibiliHtml5Media(media: ResolvedMedia) {
+  if (media.originPlatform !== "bilibili") {
+    return false;
+  }
+
+  const selector = media.formatSelector ?? media.formatId ?? "";
+  return Boolean(
+    selector.startsWith("bilibili-html5-") ||
+      media.resolverProfile?.startsWith("bilibili-html5"),
+  );
+}
+
+function shouldMaterializeDriveUpload(media: ResolvedMedia) {
+  return media.downloadMode === "yt-dlp-file" || isBilibiliHtml5Media(media);
 }
 
 function normalizeTelegramError(payload: TelegramResponse, fallbackMessage: string) {
@@ -533,58 +558,57 @@ async function uploadToDrive(
   const accessToken = await resolveDriveUploadAccessToken(account);
   const folderId =
     account?.secrets?.folderId?.trim() ?? GOOGLE_DRIVE_FOLDER_ID?.trim();
-  const materializedFile =
-    media.downloadMode === "yt-dlp-file" ? await materializeMediaFile(media) : null;
+  let materializedFile: TempMediaFile | null = null;
 
-  const filename = `${Date.now()}-omnivideo-intake.mp4`;
-  const metadata = {
-    name: filename,
-    ...(folderId ? { parents: [folderId] } : {}),
-  };
+  try {
+    materializedFile = shouldMaterializeDriveUpload(media)
+      ? await materializeMediaFile(media)
+      : null;
 
-  const sessionResponse = await fetchWithIntakeNetworkError(
-    [
-      "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id,name,mimeType,webViewLink,size&supportsAllDrives=true",
-      {
-        method: "POST",
-        headers: {
-          authorization: `Bearer ${accessToken}`,
-          "content-type": "application/json; charset=UTF-8",
-          "x-upload-content-type":
-            materializedFile?.mimeType ?? media.mimeType ?? "video/mp4",
+    const filename = `${Date.now()}-omnivideo-intake.mp4`;
+    const metadata = {
+      name: filename,
+      ...(folderId ? { parents: [folderId] } : {}),
+    };
+
+    const sessionResponse = await fetchWithIntakeNetworkError(
+      [
+        "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id,name,mimeType,webViewLink,size&supportsAllDrives=true",
+        {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${accessToken}`,
+            "content-type": "application/json; charset=UTF-8",
+            "x-upload-content-type":
+              materializedFile?.mimeType ?? media.mimeType ?? "video/mp4",
+          },
+          body: JSON.stringify(metadata),
         },
-        body: JSON.stringify(metadata),
+      ],
+      {
+        errorCode: "STG_DRIVE_UPLOAD_NETWORK_FAILED",
+        message: "Could not create Google Drive resumable upload session",
+        category: "provider",
       },
-    ],
-    {
-      errorCode: "STG_DRIVE_UPLOAD_NETWORK_FAILED",
-      message: "Could not create Google Drive resumable upload session",
-      category: "provider",
-    },
-  );
-
-  const uploadUrl = sessionResponse.headers.get("location");
-
-  if (!sessionResponse.ok || !uploadUrl) {
-    const message = await readGoogleDriveErrorMessage(
-      sessionResponse,
-      `Google Drive resumable session failed with status ${sessionResponse.status}.`,
     );
-    try {
+
+    const uploadUrl = sessionResponse.headers.get("location");
+
+    if (!sessionResponse.ok || !uploadUrl) {
+      const message = await readGoogleDriveErrorMessage(
+        sessionResponse,
+        `Google Drive resumable session failed with status ${sessionResponse.status}.`,
+      );
       throw new IntakeError({
         errorCode: "STG_DRIVE_SESSION_FAILED",
         message: withGoogleDrivePermissionHint(message),
         category: "provider",
         retryable: sessionResponse.status >= 500,
       });
-    } finally {
-      await materializedFile?.cleanup();
     }
-  }
 
-  let uploadResponse: Response;
+    let uploadResponse: Response;
 
-  try {
     if (materializedFile) {
       const headers = new Headers({
         "content-type": materializedFile.mimeType ?? media.mimeType ?? "video/mp4",
@@ -654,42 +678,42 @@ async function uploadToDrive(
         },
       );
     }
+
+    if (!uploadResponse.ok) {
+      const message = await readGoogleDriveErrorMessage(
+        uploadResponse,
+        `Google Drive upload failed with status ${uploadResponse.status}.`,
+      );
+      throw new IntakeError({
+        errorCode: "STG_DRIVE_UPLOAD_FAILED",
+        message: withGoogleDrivePermissionHint(message),
+        category: "provider",
+        retryable: uploadResponse.status >= 500,
+      });
+    }
+
+    const payload = (await uploadResponse.json()) as DriveFileResponse;
+
+    return {
+      storageProvider: "drive",
+      storageProviderAccountId: account?.accountId,
+      storageProviderLabel: account?.label,
+      providerAssetId: payload.id,
+      publicUrl: payload.webViewLink,
+      mimeType: payload.mimeType ?? materializedFile?.mimeType ?? media.mimeType,
+      sizeBytes: payload.size
+        ? Number(payload.size)
+        : (materializedFile?.sizeBytes ?? media.sizeBytes),
+      storagePointer: {
+        fileId: payload.id,
+        name: payload.name,
+        webViewLink: payload.webViewLink,
+        uploadMode: materializedFile ? "yt-dlp-file-stream" : "remote-stream",
+      },
+    };
   } finally {
     await materializedFile?.cleanup();
   }
-
-  if (!uploadResponse.ok) {
-    const message = await readGoogleDriveErrorMessage(
-      uploadResponse,
-      `Google Drive upload failed with status ${uploadResponse.status}.`,
-    );
-    throw new IntakeError({
-      errorCode: "STG_DRIVE_UPLOAD_FAILED",
-      message: withGoogleDrivePermissionHint(message),
-      category: "provider",
-      retryable: uploadResponse.status >= 500,
-    });
-  }
-
-  const payload = (await uploadResponse.json()) as DriveFileResponse;
-
-  return {
-    storageProvider: "drive",
-    storageProviderAccountId: account?.accountId,
-    storageProviderLabel: account?.label,
-    providerAssetId: payload.id,
-    publicUrl: payload.webViewLink,
-    mimeType: payload.mimeType ?? materializedFile?.mimeType ?? media.mimeType,
-    sizeBytes: payload.size
-      ? Number(payload.size)
-      : (materializedFile?.sizeBytes ?? media.sizeBytes),
-    storagePointer: {
-      fileId: payload.id,
-      name: payload.name,
-      webViewLink: payload.webViewLink,
-      uploadMode: materializedFile ? "yt-dlp-file-stream" : "remote-stream",
-    },
-  };
 }
 
 async function uploadToDriveByBytes({

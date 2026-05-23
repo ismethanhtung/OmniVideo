@@ -23,6 +23,11 @@
 
 ## Review
 
+- `FAST-INTAKE-009` - Add manual Download action to Video Intake.
+- `FAST-WORKSPACE-038` - Add Stage Checkpoints for VIP Processing Resume.
+- `FAST-WORKSPACE-037` - Fix VIP Processing Provider Lookup and Error Mapping.
+- `FAST-INTAKE-010` - Stabilize Bilibili HTML5 Intake Downloads.
+- `FAST-INTAKE-008` - Materialize Bilibili HTML5 Drive uploads.
 - `FAST-WORKSPACE-036` - Add isolated VIP composite Workspace node with 3-node seed.
 - `FAST-AUDIO-060` - Segment-level retry for overlong Chinese transcription segments.
 - `FAST-VIDEO-012` - Match Video Tools Lab asset preview behavior with Audio Transcript picker.

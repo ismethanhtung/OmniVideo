@@ -32,4 +32,12 @@ describe("Video Intake history retry action", () => {
     expect(source).toContain('? "font-semibold text-rose-700"');
     expect(source).toContain('className="font-mono text-[11px] text-rose-700"');
   });
+
+  it("adds manual download action beside intake submit", () => {
+    expect(source).toContain('fetch("/api/video-intake/resolve-file"');
+    expect(source).toContain("void downloadResolvedVideo()");
+    expect(source).toContain("Download started.");
+    expect(source).toContain("x-omnivideo-file-name");
+    expect(source).toContain('{isDownloading ? "Downloading..." : "Download"}');
+  });
 });

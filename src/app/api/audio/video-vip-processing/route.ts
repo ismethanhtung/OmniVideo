@@ -238,11 +238,22 @@ async function readStorageAssetVideo(assetId: string) {
         );
     }
 
-    const download = await resolveAssetDownload({
-        db,
-        asset,
-        disposition: "attachment",
-    });
+    let download: Awaited<ReturnType<typeof resolveAssetDownload>>;
+    try {
+        download = await resolveAssetDownload({
+            db,
+            asset,
+            disposition: "attachment",
+        });
+    } catch (error) {
+        throw new ChineseTranscriptionError(
+            "STG_ASSET_DOWNLOAD_FAILED",
+            error instanceof Error
+                ? `Storage asset download failed: ${error.message}`
+                : "Storage asset download failed.",
+            502,
+        );
+    }
 
     if (!download.ok) {
         throw new ChineseTranscriptionError(
@@ -252,7 +263,19 @@ async function readStorageAssetVideo(assetId: string) {
         );
     }
 
-    const arrayBuffer = await new Response(download.body).arrayBuffer();
+    let arrayBuffer: ArrayBuffer;
+    try {
+        arrayBuffer = await new Response(download.body).arrayBuffer();
+    } catch (error) {
+        throw new ChineseTranscriptionError(
+            "STG_ASSET_DOWNLOAD_FAILED",
+            error instanceof Error
+                ? `Storage asset stream failed: ${error.message}`
+                : "Storage asset stream failed.",
+            502,
+        );
+    }
+
     return {
         fileName: `${asset.metadata?.title ?? assetId}.mp4`,
         mimeType: download.headers.get("content-type") ?? asset.mimeType ?? "video/mp4",
@@ -294,6 +317,7 @@ export async function POST(request: Request) {
         const artifactId = readFormValue(formData, "artifactId").trim();
         const providerId = readFormValue(formData, "providerId").trim();
         const metadataProviderId = readFormValue(formData, "metadataProviderId").trim();
+        const vipResumeKey = readFormValue(formData, "vipResumeKey").trim();
         const useSourceAssetVideoEditSetup =
             readOptionalBoolean(formData, "useSourceAssetVideoEditSetup") ===
             true;
@@ -358,7 +382,10 @@ export async function POST(request: Request) {
                 "@/lib/ai-providers/repository"
             );
             const db = await getAiProvidersDb();
-            const provider = await getAiProviderById({ db, metadataProviderId });
+            const provider = await getAiProviderById({
+                db,
+                providerId: metadataProviderId,
+            });
             metadataApiKey = provider.apiKey;
             metadataBaseUrl = provider.baseUrl;
             metadataProviderName = provider.label;
@@ -399,6 +426,7 @@ export async function POST(request: Request) {
             metadataApiKey,
             metadataBaseUrl,
             metadataProviderName,
+            checkpointKey: vipResumeKey || undefined,
             ttsSettings,
             originalAudioVolume: readOptionalNumber(formData, "originalAudioVolume"),
             voiceVolume: readOptionalNumber(formData, "voiceVolume"),
