@@ -1,5 +1,19 @@
 # OmniVideo Changelog
 
+## FAST-VIDEO-015 - Add Split-by-Parts Mode and Refine Video Splitter UX
+
+- Bumped app version from `0.10.32` to `0.10.34` as a patch release for Video Splitter usability.
+- Added a new splitter mode `Chia theo so phan`, letting users input a part count (e.g., cut in 2, 3, N parts).
+- Backend now probes source duration from ffmpeg metadata and computes equal segment interval for split-by-parts mode.
+- Kept and polished existing modes: interval split now offers `30/45/60 phut`, and head-clip mode remains `15/30 phut`.
+- Updated splitter panel wording and controls for a more consistent in-product operational style.
+- Output naming now consistently uses original basename:
+  - archive: `<original>.zip`
+  - clips: `<original>-part-001.mp4`, `<original>-part-002.mp4`, ...
+- Verification (FAST-VIDEO-015):
+  - `npm run test -- --run src/features/video-processing/video-splitter-panel.test.ts src/lib/video-processing/video-split.test.ts src/components/layout/navigation.test.ts src/components/layout/content-router.test.ts` pass.
+  - `npm run guard:version` pass.
+
 ## FAST-VIDEO-013 - Add Video Splitter Page for Local Download Workflow
 
 - Bumped app version from `0.10.31` to `0.10.32` as a patch release for local video processing workflow.

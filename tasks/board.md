@@ -23,6 +23,7 @@
 
 ## Review
 
+- `FAST-VIDEO-015` - Add split-by-parts mode (input number of parts) and refine Video Splitter UX.
 - `FAST-VIDEO-013` - Add Video Splitter page for local ffmpeg split and direct zip download.
 - `FAST-INTAKE-014` - Add visible fallback signal and direct link for Video Intake downloads.
 - `FAST-INTAKE-012` - Force Video Intake download as attachment instead of browser inline preview.

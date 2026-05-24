@@ -2,11 +2,7 @@ import { NextResponse } from "next/server";
 
 import { applyDemoRateLimit } from "@/lib/access-control/route-guards";
 import { putSplitDownloadEntry } from "@/lib/video-processing/split-download-store";
-import {
-    VideoSplitError,
-    type VideoSplitMode,
-    runVideoSplit,
-} from "@/lib/video-processing/video-split";
+import { VideoSplitError, runVideoSplit } from "@/lib/video-processing/video-split";
 
 export const runtime = "nodejs";
 
@@ -31,9 +27,10 @@ export async function POST(request: Request) {
         }
 
         const modeRaw = readStringField(formData, "mode");
-        const mode: VideoSplitMode = modeRaw === "head" ? "head" : "interval";
+        const mode = modeRaw === "head" ? "head" : modeRaw === "parts" ? "parts" : "interval";
         const intervalMinutes = Number(readStringField(formData, "intervalMinutes"));
         const headMinutes = Number(readStringField(formData, "headMinutes"));
+        const splitParts = Number(readStringField(formData, "splitParts"));
 
         const output = await runVideoSplit({
             fileName: file.name || "source.mp4",
@@ -43,6 +40,7 @@ export async function POST(request: Request) {
                 ? intervalMinutes
                 : undefined,
             headMinutes: Number.isFinite(headMinutes) ? headMinutes : undefined,
+            splitParts: Number.isFinite(splitParts) ? splitParts : undefined,
         });
 
         const download = await putSplitDownloadEntry({

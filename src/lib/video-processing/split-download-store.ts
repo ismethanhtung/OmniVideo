@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { access } from "node:fs/promises";
 import { rm } from "node:fs/promises";
 
 type SplitDownloadEntry = {
@@ -58,3 +59,15 @@ export async function takeSplitDownloadEntry(id: string) {
     return entry;
 }
 
+export async function getSplitDownloadEntry(id: string) {
+    await cleanupExpired();
+    const entry = getStore().get(id) ?? null;
+    if (!entry) return null;
+    try {
+        await access(entry.filePath);
+        return entry;
+    } catch {
+        getStore().delete(id);
+        return null;
+    }
+}

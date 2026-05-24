@@ -1,16 +1,22 @@
 import { createReadStream } from "node:fs";
-import { rm } from "node:fs/promises";
+import { access } from "node:fs/promises";
 import { Readable } from "node:stream";
 
 import { NextResponse } from "next/server";
 
-import { takeSplitDownloadEntry } from "@/lib/video-processing/split-download-store";
+import { getSplitDownloadEntry } from "@/lib/video-processing/split-download-store";
 
 export const runtime = "nodejs";
 
 function buildContentDisposition(fileName: string) {
-    const sanitized = fileName.replace(/["\\]/g, "_");
-    return `attachment; filename="${sanitized}"; filename*=UTF-8''${encodeURIComponent(fileName)}`;
+    const asciiFallback =
+        fileName
+            .normalize("NFKD")
+            .replace(/[^\x20-\x7E]/g, "")
+            .replace(/["\\]/g, "_")
+            .replace(/\s+/g, " ")
+            .trim() || "video-split.zip";
+    return `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encodeURIComponent(fileName)}`;
 }
 
 export async function GET(
@@ -18,7 +24,7 @@ export async function GET(
     context: { params: Promise<{ downloadId: string }> },
 ) {
     const { downloadId } = await context.params;
-    const entry = await takeSplitDownloadEntry(downloadId);
+    const entry = await getSplitDownloadEntry(downloadId);
     if (!entry) {
         return NextResponse.json(
             {
@@ -30,13 +36,20 @@ export async function GET(
         );
     }
 
+    try {
+        await access(entry.filePath);
+    } catch {
+        return NextResponse.json(
+            {
+                ok: false,
+                errorCode: "VAL_SPLIT_DOWNLOAD_NOT_FOUND",
+                error: "Split download is not available or has expired.",
+            },
+            { status: 404 },
+        );
+    }
+
     const nodeStream = createReadStream(entry.filePath);
-    nodeStream.on("close", () => {
-        void rm(entry.filePath, { force: true });
-    });
-    nodeStream.on("error", () => {
-        void rm(entry.filePath, { force: true });
-    });
 
     return new NextResponse(Readable.toWeb(nodeStream) as ReadableStream, {
         status: 200,
@@ -47,4 +60,3 @@ export async function GET(
         },
     });
 }
-

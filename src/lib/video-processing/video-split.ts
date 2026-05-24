@@ -15,6 +15,8 @@ export class VideoSplitError extends Error {
             | "VAL_SPLIT_MODE_INVALID"
             | "VAL_INTERVAL_MINUTES_INVALID"
             | "VAL_HEAD_MINUTES_INVALID"
+            | "VAL_SPLIT_PARTS_INVALID"
+            | "SYS_VIDEO_DURATION_PROBE_FAILED"
             | "SYS_VIDEO_SPLIT_FAILED",
         message: string,
         public readonly status = 400,
@@ -28,9 +30,10 @@ function sanitizeBaseName(fileName: string) {
     const raw = fileName.replace(/\.[^.]+$/u, "");
     return (
         raw
-            .replace(/[^a-zA-Z0-9._-]+/g, "-")
-            .replace(/^-+|-+$/g, "")
-            .slice(0, 80) || "split-video"
+            .replace(/[\\/:*?"<>|]+/g, "-")
+            .replace(/\s+/g, " ")
+            .trim()
+            .slice(0, 120) || "video"
     );
 }
 
@@ -101,12 +104,52 @@ function buildHeadClipArgs(input: {
     ];
 }
 
+function parseDurationFromFfmpegMetadata(stderr: string) {
+    const match = stderr.match(/Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/i);
+    if (!match) return null;
+    const hours = Number(match[1]);
+    const minutes = Number(match[2]);
+    const seconds = Number(match[3]);
+    if (
+        !Number.isFinite(hours) ||
+        !Number.isFinite(minutes) ||
+        !Number.isFinite(seconds)
+    ) {
+        return null;
+    }
+    return hours * 3600 + minutes * 60 + seconds;
+}
+
+async function probeDurationSeconds(ffmpegPath: string, inputPath: string) {
+    const stderr = await new Promise<string>((resolve, reject) => {
+        const child = spawn(ffmpegPath, ["-i", inputPath], {
+            stdio: ["ignore", "ignore", "pipe"],
+        });
+        let acc = "";
+        child.stderr?.on("data", (chunk) => {
+            acc += chunk.toString("utf8");
+        });
+        child.on("error", reject);
+        child.on("close", () => resolve(acc));
+    });
+    const seconds = parseDurationFromFfmpegMetadata(stderr);
+    if (!seconds || !Number.isFinite(seconds) || seconds <= 0) {
+        throw new VideoSplitError(
+            "SYS_VIDEO_DURATION_PROBE_FAILED",
+            "Could not determine video duration for split-by-parts mode.",
+            500,
+        );
+    }
+    return seconds;
+}
+
 export async function runVideoSplit(input: {
     fileName: string;
     fileBytes: Uint8Array;
-    mode: VideoSplitMode;
+    mode: VideoSplitMode | "parts";
     intervalMinutes?: number;
     headMinutes?: number;
+    splitParts?: number;
 }) {
     if (!input.fileBytes || input.fileBytes.byteLength === 0) {
         throw new VideoSplitError(
@@ -115,10 +158,14 @@ export async function runVideoSplit(input: {
             400,
         );
     }
-    if (input.mode !== "interval" && input.mode !== "head") {
+    if (
+        input.mode !== "interval" &&
+        input.mode !== "head" &&
+        input.mode !== "parts"
+    ) {
         throw new VideoSplitError(
             "VAL_SPLIT_MODE_INVALID",
-            "mode must be 'interval' or 'head'.",
+            "mode must be 'interval', 'parts', or 'head'.",
             400,
         );
     }
@@ -127,20 +174,47 @@ export async function runVideoSplit(input: {
     const workDir = path.join(tmpdir(), `omnivideo-split-${randomUUID()}`);
     const inputPath = path.join(workDir, "source.mp4");
     const outputDir = path.join(workDir, "outputs");
-    const archivePath = path.join(workDir, `${baseName}-split.zip`);
+    const archivePath = path.join(workDir, `${baseName}.zip`);
     try {
         await mkdir(outputDir, { recursive: true });
         await writeFile(inputPath, input.fileBytes);
 
         const ffmpegPath = resolveFfmpegPath();
-        if (input.mode === "interval") {
+        if (input.mode === "interval" || input.mode === "parts") {
             const intervalMinutes = Number(input.intervalMinutes ?? 30);
-            if (!Number.isFinite(intervalMinutes) || intervalMinutes <= 0) {
-                throw new VideoSplitError(
-                    "VAL_INTERVAL_MINUTES_INVALID",
-                    "intervalMinutes must be > 0.",
-                    400,
+            let intervalSeconds: number;
+
+            if (input.mode === "parts") {
+                const splitParts = Number(input.splitParts ?? 2);
+                if (
+                    !Number.isFinite(splitParts) ||
+                    !Number.isInteger(splitParts) ||
+                    splitParts < 2 ||
+                    splitParts > 60
+                ) {
+                    throw new VideoSplitError(
+                        "VAL_SPLIT_PARTS_INVALID",
+                        "splitParts must be an integer between 2 and 60.",
+                        400,
+                    );
+                }
+                const durationSeconds = await probeDurationSeconds(
+                    ffmpegPath,
+                    inputPath,
                 );
+                intervalSeconds = Math.max(
+                    1,
+                    Math.floor(durationSeconds / splitParts),
+                );
+            } else {
+                if (!Number.isFinite(intervalMinutes) || intervalMinutes <= 0) {
+                    throw new VideoSplitError(
+                        "VAL_INTERVAL_MINUTES_INVALID",
+                        "intervalMinutes must be > 0.",
+                        400,
+                    );
+                }
+                intervalSeconds = Math.round(intervalMinutes * 60);
             }
             const outputPattern = path.join(outputDir, `${baseName}-part-%03d.mp4`);
             await runProcess(
@@ -148,7 +222,7 @@ export async function runVideoSplit(input: {
                 buildIntervalSplitArgs({
                     inputPath,
                     outputPattern,
-                    intervalSeconds: Math.round(intervalMinutes * 60),
+                    intervalSeconds,
                 }),
             );
         } else {
@@ -162,7 +236,7 @@ export async function runVideoSplit(input: {
             }
             const outputPath = path.join(
                 outputDir,
-                `${baseName}-head-${Math.round(headMinutes)}m.mp4`,
+                `${baseName}-part-001.mp4`,
             );
             await runProcess(
                 ffmpegPath,
@@ -191,7 +265,7 @@ export async function runVideoSplit(input: {
 
         return {
             archivePath,
-            archiveName: `${baseName}-split.zip`,
+            archiveName: `${baseName}.zip`,
             mode: input.mode,
             outputCount: entries.length,
             cleanup: async () => {
