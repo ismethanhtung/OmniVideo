@@ -5,7 +5,10 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ChineseTranscriptionError } from "./types";
-import { runVideoVipProcessing } from "./video-vip-processing";
+import {
+    buildVipFinalRenderArgs,
+    runVideoVipProcessing,
+} from "./video-vip-processing";
 
 const checkpointDirs: string[] = [];
 
@@ -90,6 +93,42 @@ function createStageRunners(overrides?: {
     };
 }
 
+describe("VIP final render filter order", () => {
+    it("applies blur before mirror and subtitles after mirror", () => {
+        const args = buildVipFinalRenderArgs({
+            videoPath: "/tmp/source.mp4",
+            voicePath: "/tmp/voice.wav",
+            subtitleAssPath: "/tmp/subtitles.ass",
+            outputPath: "/tmp/output.mp4",
+            speedFactor: 0.8,
+            mirrorEnabled: true,
+            blurRegions: [
+                {
+                    region: { x: 10, y: 20, width: 30, height: 12 },
+                    timeline: { start: 1, end: 3 },
+                    strength: 50,
+                },
+            ],
+            originalAudioVolume: 0.1,
+            voiceVolume: 1,
+        });
+        const filter = args[args.indexOf("-filter_complex") + 1] ?? "";
+
+        expect(filter.indexOf("setpts=1.25*PTS[basev]")).toBeLessThan(
+            filter.indexOf("boxblur"),
+        );
+        expect(filter.indexOf("boxblur")).toBeLessThan(
+            filter.indexOf("hflip[mirroredv]"),
+        );
+        expect(filter.indexOf("hflip[mirroredv]")).toBeLessThan(
+            filter.indexOf("ass='/tmp/subtitles.ass'[vout]"),
+        );
+        expect(filter).toContain(
+            "overlay=x=main_w*0.100000:y=main_h*0.200000",
+        );
+    });
+});
+
 describe("VIP processing stage checkpoints", () => {
     afterEach(async () => {
         await Promise.all(
@@ -125,6 +164,11 @@ describe("VIP processing stage checkpoints", () => {
         ).rejects.toMatchObject({ code: "SYS_DUBBING_MUX_FAILED" });
 
         expect(firstRunners.transcribe).toHaveBeenCalledTimes(1);
+        expect(firstRunners.transcribe).toHaveBeenCalledWith(
+            expect.objectContaining({
+                overlongSegmentRetryMode: "best-effort",
+            }),
+        );
         expect(firstRunners.translate).toHaveBeenCalledTimes(1);
         expect(firstRunners.generateVoice).toHaveBeenCalledTimes(1);
 

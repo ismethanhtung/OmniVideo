@@ -166,9 +166,23 @@ describe("WorkspaceCanvasPanel canvas interactions", () => {
         expect(source).toContain("startProgressStep");
         expect(source).toContain("finishProgressStep");
         expect(source).toContain("buildDubbingProgressStepDescription");
+        expect(source).toContain("WorkspaceApiError");
+        expect(source).toContain("buildWorkspaceApiFailureDetailLines");
+        expect(source).toContain("VIP stage details:");
+        expect(source).toContain("metrics:");
+        expect(source).toContain("HTTP 413: request body too large");
+        expect(source).toContain(
+            "Server-side VIP is running. Live sub-stage status is not streamed in current mode.",
+        );
+        expect(source).toContain('vipStageLogs.join("\\n")');
+        expect(source).toContain("progressStepDetailByKey");
         expect(source).toContain("Metadata:");
         expect(source).toContain("Size:");
         expect(source).toContain("Translation:");
+        expect(source).toContain("Stage log:");
+        expect(source).toContain("Completed transcript stage");
+        expect(source).toContain("Voice chunks:");
+        expect(source).toContain("Voice chunk ${chunk.index}");
         expect(source).toContain("Mix:");
         expect(source).toContain("Segments (");
         expect(source).not.toContain("more segment(s) not shown");
@@ -223,6 +237,12 @@ describe("WorkspaceCanvasPanel canvas interactions", () => {
         expect(source).toContain('step.kind === "download-local"');
         expect(source).toContain('url: `/api/storage/assets/${assetId}/download`');
         expect(source).toContain("showSaveFilePicker");
+    });
+
+    it("attaches locally saved Video Tools Lab setup during upload", () => {
+        expect(source).toContain("loadLocalVideoEditSetup");
+        expect(source).toContain("videoEditSetupJson");
+        expect(source).toContain("Video Tools Lab setup found");
     });
 
     it("renders dragged link previews as Bézier curves", () => {

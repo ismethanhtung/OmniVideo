@@ -185,16 +185,16 @@ export const LEFTBAR_NAV: LeftbarNavGroup[] = [
             {
                 id: "piperTtsSandbox",
                 icon: RadioTower,
-                label: "Piper TTS Sandbox",
+                label: "Feature Sandbox",
                 description:
-                    "Test local Piper voice model ONNX bằng CPU, không cần GPU.",
+                    "Test nhanh các tính năng audio/video runtime (transcript retry, Piper TTS, segment inspection).",
             },
             {
                 id: "videoSplitter",
                 icon: Scissors,
-                label: "Video Splitter",
+                label: "Video Split & Merge",
                 description:
-                    "Cắt video dài thành các phần 30p/1h hoặc trích đoạn đầu 15p/30p và tải về local.",
+                    "Cắt video dài theo block/số phần hoặc ghép nhiều video local thành một file MP4.",
             },
             {
                 id: "inspirationVault",

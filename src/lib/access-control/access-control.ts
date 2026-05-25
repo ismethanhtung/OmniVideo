@@ -36,6 +36,7 @@ export type AppAccessState = {
 };
 
 export type DemoFeature =
+  | "video-tools"
   | "audio-transcription"
   | "transcript-translation"
   | "voice-generation"

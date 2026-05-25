@@ -1,5 +1,117 @@
 # OmniVideo Changelog
 
+## FAST-VIDEO-016 - Add Multi-file Video Merge Mode to Video Splitter Page
+
+- Bumped app version from `0.10.43` to `0.10.44` as a patch release for local video tools.
+- Added new local merge runtime using ffmpeg concat demuxer with stream copy (`-c copy`) to keep CPU/RAM usage low.
+- Added `/api/video-processing/merge` API route accepting multiple `videoFiles` and returning direct download URL for merged MP4 artifact.
+- Upgraded Video Splitter panel into split + merge utility:
+  - operation switch (`Split video` / `Merge multiple videos`),
+  - multi-file selection for merge (2+ files),
+  - `Merge + Download MP4` action.
+- Updated navigation label to `Video Split & Merge` with revised capability description.
+- Verification (FAST-VIDEO-016):
+  - `npm run test -- --run src/features/video-processing/video-splitter-panel.test.ts src/lib/video-processing/video-merge.test.ts src/app/api/video-processing/merge/route.test.ts src/components/layout/navigation.test.ts` pass (4 files / 14 tests).
+  - `npm run guard:version` pass.
+
+## FAST-AUDIO-066 - Chunk Groq Transcription Uploads and Fix VIP Multiline Progress Detail
+
+- Bumped app version from `0.10.41` to `0.10.43` as a patch release for VIP transcription reliability.
+- Added Groq transcription chunking for large extracted audio payloads (direct upload target `24 MB`) while preserving 16k mono speech extraction settings.
+- Added overlap-aware chunk merge that offsets timestamps back to global timeline and keeps boundary-safe windows to reduce chunk edge duplication.
+- Preserved overlong Chinese segment retry flow, now running on merged multi-chunk transcript.
+- Improved transcription step telemetry with `chunkingEnabled`, `directUploadTargetBytes`, and `chunkCount`.
+- Fixed Workspace VIP running detail rendering to use real line breaks instead of literal `\\n`.
+- Replaced misleading static `[queued] ...` pseudo-stage lines with explicit copy that live sub-stage telemetry is not streamed yet in current mode.
+- Mapped metadata-provider network failures (`fetch failed`) to `PRV_GROQ_TRANSLATION_FAILED` instead of leaking generic `SYS_DUBBING_MUX_FAILED`.
+- Added adaptive Piper batching by timeline span target (~10 minutes/chunk), so one-hour jobs trend toward about 6 voice chunks instead of oversized chunk groups.
+- Verification (FAST-AUDIO-066):
+  - `npm run test -- --run src/lib/multilingual-audio/chinese-transcription.test.ts src/features/workspace/workspace-canvas-panel.test.ts` pass (2 files / 28 tests).
+  - `npm run test -- --run src/features/workspace/workspace-canvas-panel.test.ts src/lib/multilingual-audio/video-metadata.test.ts src/lib/multilingual-audio/piper-tts.test.ts` pass (3 files / 51 tests).
+  - `npm run guard:version` pass.
+
+## FAST-WORKSPACE-041 - Surface Full VIP Failure Stage Details in Workspace
+
+- Bumped app version from `0.10.40` to `0.10.41` as a patch release for VIP failure observability.
+- Added structured API error propagation for Workspace JSON calls, preserving response payload when an API returns `ok: false`.
+- Updated VIP runtime step handling to append detailed failure stage logs from `/api/audio/video-vip-processing` payload (`errorCode`, `error`, `steps`, and compact `metrics`) before failing the flow step.
+- Prevented the global step-failure catch from overwriting VIP detailed stage logs with a single-line error message.
+- Added queued sub-stage lines during VIP running state so the step detail shows transcript/translation/voice/render/metadata states while waiting.
+- Added explicit 413 hint line in VIP detail (`request body too large`) with likely cause guidance (upload/body limit or provider cap such as Groq Whisper 25MB audio).
+- This allows immediate diagnosis of cases like `Request Entity Too Large`, including whether failure happened at `check-upload-size`, `groq-transcribe`, or other internal stages.
+- Verification (FAST-WORKSPACE-041):
+  - `npm run test -- --run src/features/workspace/workspace-canvas-panel.test.ts` pass (1 file / 21 tests).
+  - `npm run test -- --run src/features/workspace/workspace-canvas-panel.test.ts src/lib/multilingual-audio/video-vip-processing.test.ts src/app/api/audio/video-vip-processing/route.test.ts` pass (3 files / 30 tests).
+  - `npm run guard:version` pass.
+
+## FAST-WORKSPACE-040 - Fix VIP Blur Before Mirror Order
+
+- Bumped app version from `0.10.38` to `0.10.39` as a patch release for VIP render correctness.
+- Fixed VIP final render filter order so blur/mask is applied on source coordinates before output mirror.
+- Kept subtitle overlay after mirror so subtitles render on the final frame.
+- Preserved audio speed/mix behavior.
+- Added regression coverage for VIP ffmpeg filter order: `setpts -> boxblur -> hflip -> ass`.
+- Verification (FAST-WORKSPACE-040):
+  - `npm run test -- --run src/lib/multilingual-audio/video-vip-processing.test.ts` pass (1 file / 3 tests).
+  - `npm run test -- --run src/lib/multilingual-audio/video-vip-processing.test.ts src/app/api/audio/video-vip-processing/route.test.ts` pass (2 files / 9 tests).
+  - `npm run build` compiled successfully, then failed on unrelated pre-existing `src/app/api/storage/assets/save-video-setup/route.ts:133` type mismatch (`StorageProviderType` includes `"other"`, but `uploadLocalMedia` expects `StorageProvider`).
+  - `npm run guard:version` pass.
+
+## FAST-AUDIO-065 - Chunk Strict Voice Timeline Mix and Surface VIP Stage Details
+
+- Bumped app version from `0.10.37` to `0.10.38` as a patch release for VIP strict voice performance and observability.
+- Chunked strict timeline audio mixing into 200-segment groups before the final absolute timeline mix, avoiding one giant `amix` over 1000+ aligned segment files.
+- Preserved absolute timestamps, borrowed-gap behavior, timeline diagnostics, and final voice target duration.
+- Added voice processing chunk metadata to the voice alignment result for VIP detail display.
+- Updated Workspace VIP completion details to show a `Stage log`, stage durations, `Voice chunks`, and per-chunk time ranges.
+- Added regression coverage for 450-segment strict mix chunking (`200/200/50`) and Workspace voice chunk detail copy.
+- Verification (FAST-AUDIO-065):
+  - `npm run test -- --run src/lib/multilingual-audio/piper-tts.test.ts` pass (1 file / 25 tests).
+  - `npm run test -- --run src/features/workspace/workspace-canvas-panel.test.ts src/lib/multilingual-audio/piper-tts.test.ts src/lib/multilingual-audio/video-vip-processing.test.ts` pass (3 files / 48 tests).
+  - `npm run build` compiled successfully, then failed on unrelated pre-existing `src/app/api/storage/assets/save-video-setup/route.ts:133` type mismatch (`StorageProviderType` includes `"other"`, but `uploadLocalMedia` expects `StorageProvider`).
+  - `npm run guard:version` pass.
+
+## FAST-AUDIO-064 - Chunk Piper Voice Synthesis at 200 Segments
+
+- Bumped app version from `0.10.36` to `0.10.37` as a patch release for VIP Piper TTS stability.
+- Chunked Piper batch synthesis into 200-segment groups by default, so large voice jobs run as smaller Piper batches before existing alignment/merge steps.
+- Preserved transcript/translation flow, Piper model/settings/text normalization, and strict/balanced/natural timeline semantics.
+- Preserved segment output order when punctuation-only silence segments are mixed with spoken segments.
+- Added regression coverage for 450-segment chunking (`200/200/50`) and mixed silence/spoken segment ordering.
+- Verification (FAST-AUDIO-064):
+  - `npm run test -- --run src/lib/multilingual-audio/piper-tts.test.ts` pass (1 file / 24 tests).
+  - `npm run test -- --run src/lib/multilingual-audio/piper-tts.test.ts src/lib/multilingual-audio/video-vip-processing.test.ts` pass (2 files / 26 tests).
+  - `npm run build` compiled successfully, then failed on unrelated pre-existing `src/app/api/storage/assets/save-video-setup/route.ts:133` type mismatch (`StorageProviderType` includes `"other"`, but `uploadLocalMedia` expects `StorageProvider`).
+  - `npm run guard:version` pass.
+
+## FAST-AUDIO-063 - Add Retry Hard-Constraint Transcript Test in Feature Sandbox
+
+- Bumped app version from `0.10.35` to `0.10.36` as a patch release for transcript retry diagnostics.
+- Added `retryPromptHardConstraint` option in Chinese transcription request path.
+- When retrying overlong Chinese segments, the runtime can now append a hard-constraint instruction to prompt Whisper to split into shorter timestamped segments.
+- Extended `/api/audio/chinese-transcription` to accept `retryPromptHardConstraint` form field.
+- Updated `Piper TTS Sandbox` navigation entry to `Feature Sandbox`.
+- Expanded Feature Sandbox with transcript retry test tools:
+  - upload video/audio or choose Storage Asset,
+  - toggle hard-constraint retry prompt,
+  - run transcription and inspect resulting segments + step trace.
+- Added regression coverage to ensure retry calls include hard-constraint prompt when enabled.
+- Verification (FAST-AUDIO-063):
+  - `npm run test -- --run src/lib/multilingual-audio/chinese-transcription.test.ts src/components/layout/navigation.test.ts` pass (2 files / 13 tests).
+  - `npm run guard:version` pass.
+
+## FAST-AUDIO-062 - Keep VIP Processing Running When Segment Retry Is Exhausted
+
+- Bumped app version from `0.10.34` to `0.10.35` as a patch release for VIP transcription resilience.
+- Added transcription retry mode `strict | best-effort` for overlong Han segment retries.
+- Kept existing strict behavior unchanged: retry exhaustion still throws `PRV_GROQ_SEGMENT_RETRY_EXHAUSTED`.
+- Added best-effort behavior: if a segment still remains overlong after 5 retries, keep the original segment and continue processing.
+- Updated VIP processing to call transcription with `overlongSegmentRetryMode: "best-effort"` so one bad segment no longer aborts the whole VIP pipeline.
+- Added regression tests for strict failure path and best-effort continuation path.
+- Verification (FAST-AUDIO-062):
+  - `npm run test -- --run src/lib/multilingual-audio/chinese-transcription.test.ts src/lib/multilingual-audio/video-vip-processing.test.ts` pass (2 files / 7 tests).
+  - `npm run guard:version` pass.
+
 ## FAST-VIDEO-015 - Add Split-by-Parts Mode and Refine Video Splitter UX
 
 - Bumped app version from `0.10.32` to `0.10.34` as a patch release for Video Splitter usability.

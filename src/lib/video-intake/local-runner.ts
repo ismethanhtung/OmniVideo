@@ -16,6 +16,7 @@ import {
   failJobRun,
   failStepRun,
   getIntakeDb,
+  updateVideoAssetMetadataById,
 } from "./repository";
 import { uploadLocalMedia } from "./storage-adapters";
 import {
@@ -195,6 +196,16 @@ export async function runLocalFileIntakePipeline(
           pipelineId: "mvp-local-intake-to-storage",
         }),
     });
+
+    if (input.videoEditSetup) {
+      await updateVideoAssetMetadataById({
+        db,
+        assetId: assetId.toHexString(),
+        patch: {
+          videoEditSetup: input.videoEditSetup,
+        },
+      });
+    }
 
     await completeJobRun({
       db,

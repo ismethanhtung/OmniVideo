@@ -291,7 +291,7 @@ function normalizeBlurRegions(
     });
 }
 
-function buildVipFinalRenderArgs(input: {
+export function buildVipFinalRenderArgs(input: {
     videoPath: string;
     voicePath: string;
     subtitleAssPath: string;
@@ -308,9 +308,6 @@ function buildVipFinalRenderArgs(input: {
         videoFilters.push(
             `setpts=${(1 / clampedSpeed).toFixed(6).replace(/\.?0+$/u, "")}*PTS`,
         );
-    }
-    if (input.mirrorEnabled) {
-        videoFilters.push("hflip");
     }
 
     const blurChains: string[] = [];
@@ -347,11 +344,13 @@ function buildVipFinalRenderArgs(input: {
 
     const videoChain = videoFilters.length > 0 ? videoFilters.join(",") : "null";
     const lastBlurLabel = blurRegions.length > 0 ? `v${blurRegions.length - 1}` : "basev";
+    const finalVideoLabel = input.mirrorEnabled ? "mirroredv" : lastBlurLabel;
 
     const filterParts = [
         `[0:v]${videoChain}[basev]`,
         ...blurChains,
-        `[${lastBlurLabel}]ass='${escapedSubtitlePath}'[vout]`,
+        ...(input.mirrorEnabled ? [`[${lastBlurLabel}]hflip[mirroredv]`] : []),
+        `[${finalVideoLabel}]ass='${escapedSubtitlePath}'[vout]`,
         audioBase,
         `[1:a]volume=${input.voiceVolume.toFixed(3)}[voice]`,
         `[orig][voice]amix=inputs=2:duration=longest:dropout_transition=0[aout]`,
@@ -583,6 +582,7 @@ export async function runVideoVipProcessing(
             fileBytes: input.fileBytes,
             language: input.language,
             includeWordTimestamps: true,
+            overlongSegmentRetryMode: "best-effort",
             videoSpeedFactor: clampedSpeed,
         }));
     const transcriptionDurationMs =

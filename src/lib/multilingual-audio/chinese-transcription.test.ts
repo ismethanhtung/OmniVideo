@@ -65,12 +65,63 @@ describe("runChineseVideoTranscription", () => {
       audioDurationSeconds: 229,
       videoSpeedFactor: 0.6,
     });
+    expect(result.steps[2].metrics).toMatchObject({
+      chunkingEnabled: false,
+      directUploadTargetBytes: 24 * 1024 * 1024,
+    });
     expect(extractSpeechReadyAudio).toHaveBeenCalledWith(
       expect.objectContaining({ speedFactor: 0.6 }),
     );
     expect(transcribeWithGroq).toHaveBeenCalledWith(
       expect.objectContaining({ audioDurationSeconds: 229 }),
     );
+  });
+
+  it("chunks Groq transcription when extracted audio exceeds direct upload target", async () => {
+    vi.stubEnv("GROQ_API_KEY", "test-key");
+    vi.mocked(extractSpeechReadyAudio).mockResolvedValue({
+      audioBytes: new Uint8Array(30 * 1024 * 1024),
+      durationSeconds: 120,
+    });
+    vi.mocked(extractSpeechSegmentAudio).mockResolvedValue({
+      audioBytes: new Uint8Array([4, 5, 6]),
+      durationSeconds: 98,
+    });
+    vi.mocked(transcribeWithGroq)
+      .mockResolvedValueOnce({
+        text: "xin chao 1",
+        language: "vi",
+        requestId: "req_chunk_1",
+        segments: [{ id: 0, start: 1.5, end: 4.2, text: "xin chao 1" }],
+        words: [{ word: "xin", start: 1.5, end: 1.8 }],
+      })
+      .mockResolvedValueOnce({
+        text: "xin chao 2",
+        language: "vi",
+        requestId: "req_chunk_2",
+        segments: [{ id: 0, start: 1.5, end: 4.2, text: "xin chao 2" }],
+        words: [{ word: "chao", start: 1.9, end: 2.4 }],
+      });
+
+    const result = await runChineseVideoTranscription({
+      fileName: "source.mp4",
+      mimeType: "video/mp4",
+      fileSizeBytes: 320 * 1024 * 1024,
+      fileBytes: new Uint8Array([1, 2, 3]),
+      language: "vi",
+      includeWordTimestamps: true,
+    });
+
+    expect(extractSpeechSegmentAudio).toHaveBeenCalledTimes(2);
+    expect(transcribeWithGroq).toHaveBeenCalledTimes(2);
+    expect(result.steps[2].metrics).toMatchObject({
+      chunkingEnabled: true,
+      directUploadTargetBytes: 24 * 1024 * 1024,
+    });
+    expect(result.steps[3].metrics).toMatchObject({
+      chunkCount: 2,
+    });
+    expect(result.segments.length).toBeGreaterThanOrEqual(2);
   });
 
   it("attaches step trace when Groq rejects the extracted audio", async () => {
@@ -239,5 +290,95 @@ describe("runChineseVideoTranscription", () => {
       ]),
     });
     expect(transcribeWithGroq).toHaveBeenCalledTimes(6);
+  });
+
+  it("keeps original segment in best-effort mode when retries are exhausted", async () => {
+    vi.stubEnv("GROQ_API_KEY", "test-key");
+    const longText =
+      "你此时的嘴角比AK还要难压没问题以后学姐的头发就交给学弟我来守护吧苏清雪强忍的的效应哈哈";
+    vi.mocked(extractSpeechReadyAudio).mockResolvedValue({
+      audioBytes: new Uint8Array([1, 2, 3, 4]),
+      durationSeconds: 400,
+    });
+    vi.mocked(extractSpeechSegmentAudio).mockResolvedValue({
+      audioBytes: new Uint8Array([9, 9]),
+      durationSeconds: 12.922,
+    });
+    vi.mocked(transcribeWithGroq).mockResolvedValue({
+      text: longText,
+      language: "zh",
+      requestId: "req_long",
+      segments: [{ id: 1, start: 365.164, end: 378.086, text: longText }],
+      words: [],
+    });
+
+    const result = await runChineseVideoTranscription({
+      fileName: "source.mp4",
+      mimeType: "video/mp4",
+      fileSizeBytes: 240 * 1024 * 1024,
+      fileBytes: new Uint8Array([1, 2, 3]),
+      overlongSegmentRetryMode: "best-effort",
+    });
+
+    expect(result.segments).toEqual([
+      { id: 0, start: 365.164, end: 378.086, text: longText },
+    ]);
+    expect(result.steps.at(-1)?.status).toBe("success");
+    expect(result.steps.at(-1)?.metrics).toMatchObject({
+      suspiciousSegmentsRetried: 1,
+      segmentRetryRequests: 5,
+      exhaustedSegmentRetries: 1,
+      overlongSegmentRetryMode: "best-effort",
+    });
+    expect(transcribeWithGroq).toHaveBeenCalledTimes(6);
+  });
+
+  it("appends hard-constraint prompt on segment retry when enabled", async () => {
+    vi.stubEnv("GROQ_API_KEY", "test-key");
+    const longText =
+      "你此时的嘴角比AK还要难压没问题以后学姐的头发就交给学弟我来守护吧苏清雪强忍的的效应哈哈";
+    vi.mocked(extractSpeechReadyAudio).mockResolvedValue({
+      audioBytes: new Uint8Array([1, 2, 3, 4]),
+      durationSeconds: 120,
+    });
+    vi.mocked(extractSpeechSegmentAudio).mockResolvedValue({
+      audioBytes: new Uint8Array([9, 9]),
+      durationSeconds: 8,
+    });
+    vi.mocked(transcribeWithGroq)
+      .mockResolvedValueOnce({
+        text: longText,
+        language: "zh",
+        requestId: "req_initial",
+        segments: [{ id: 0, start: 10, end: 18, text: longText }],
+        words: [],
+      })
+      .mockResolvedValueOnce({
+        text: "短句一短句二",
+        language: "zh",
+        requestId: "req_retry",
+        segments: [
+          { id: 0, start: 0, end: 4, text: "短句一" },
+          { id: 1, start: 4, end: 8, text: "短句二" },
+        ],
+        words: [],
+      });
+
+    await runChineseVideoTranscription({
+      fileName: "source.mp4",
+      mimeType: "video/mp4",
+      fileSizeBytes: 1024,
+      fileBytes: new Uint8Array([1, 2, 3]),
+      prompt: "Keep proper names unchanged.",
+      retryPromptHardConstraint: true,
+    });
+
+    expect(transcribeWithGroq).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(transcribeWithGroq).mock.calls[1]?.[0].prompt).toContain(
+      "Output short segments only.",
+    );
+    expect(vi.mocked(transcribeWithGroq).mock.calls[1]?.[0].prompt).toContain(
+      "Keep proper names unchanged.",
+    );
   });
 });

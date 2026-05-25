@@ -656,4 +656,170 @@ describe("Piper TTS adapter", () => {
     expect(maxActiveTransforms).toBeGreaterThan(1);
     expect(spawnMock).toHaveBeenCalledTimes(1);
   });
+
+  it("chunks large Piper batch synthesis into 200-segment groups", async () => {
+    const spawnMock = createMockSpawn();
+    setPiperSpawnForTest(spawnMock as never);
+    setPiperFileExistsForTest(() => true);
+    setPiperReadFileForTest(async () => createPcmWavBuffer(0.2));
+    setPiperFfmpegRunnerForTest(async () => ({ stderr: "" }));
+
+    await generateVoiceFromSegments({
+      segments: Array.from({ length: 450 }, (_, index) => ({
+        id: index,
+        start: index,
+        end: index + 0.5,
+        text: `Câu ${index}`,
+      })),
+      settings: {
+        binaryPath: "piper",
+        modelPath: "/models/voice.onnx",
+        preserveTimestampGaps: false,
+      },
+    });
+
+    expect(spawnMock).toHaveBeenCalledTimes(3);
+    expect(
+      spawnMock.mock.calls.map(([, args]) => {
+        const outputDirIndex = args.indexOf("--output_dir");
+        return args[outputDirIndex + 1];
+      }),
+    ).toEqual([
+      expect.stringContaining("piper-batch-output-0"),
+      expect.stringContaining("piper-batch-output-1"),
+      expect.stringContaining("piper-batch-output-2"),
+    ]);
+  });
+
+  it("adapts Piper batch chunk size to about six chunks for one-hour timelines", async () => {
+    const spawnMock = createMockSpawn();
+    setPiperSpawnForTest(spawnMock as never);
+    setPiperFileExistsForTest(() => true);
+    setPiperReadFileForTest(async () => createPcmWavBuffer(0.2));
+    setPiperFfmpegRunnerForTest(async () => ({ stderr: "" }));
+
+    await generateVoiceFromSegments({
+      segments: Array.from({ length: 1200 }, (_, index) => {
+        const start = index * 3;
+        return {
+          id: index,
+          start,
+          end: start + 1.2,
+          text: `Câu ${index}`,
+        };
+      }),
+      settings: {
+        binaryPath: "piper",
+        modelPath: "/models/voice.onnx",
+        preserveTimestampGaps: false,
+      },
+    });
+
+    expect(spawnMock).toHaveBeenCalledTimes(6);
+  });
+
+  it("preserves segment order when chunked synthesis includes silence segments", async () => {
+    const spawnMock = createMockSpawn();
+    const ffmpegCalls: string[][] = [];
+    setPiperSpawnForTest(spawnMock as never);
+    setPiperFileExistsForTest(() => true);
+    setPiperReadFileForTest(async () => createPcmWavBuffer(0.2));
+    setPiperFfmpegRunnerForTest(async (args) => {
+      ffmpegCalls.push(args);
+      return { stderr: "" };
+    });
+
+    await generateVoiceFromSegments({
+      segments: [
+        { id: 0, start: 0, end: 0.5, text: "... !!!" },
+        { id: 1, start: 1, end: 1.5, text: "Câu nói ở giữa" },
+        { id: 2, start: 2, end: 2.5, text: "???" },
+      ],
+      settings: {
+        binaryPath: "piper",
+        modelPath: "/models/voice.onnx",
+        preserveTimestampGaps: true,
+        alignmentMode: "strict",
+      },
+    });
+
+    const finalMixCall = ffmpegCalls.at(-1) ?? [];
+    const filterComplex =
+      finalMixCall[finalMixCall.indexOf("-filter_complex") + 1] ?? "";
+
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+    expect(filterComplex.indexOf("adelay=0:all=1")).toBeLessThan(
+      filterComplex.indexOf("adelay=1000:all=1"),
+    );
+    expect(filterComplex.indexOf("adelay=1000:all=1")).toBeLessThan(
+      filterComplex.indexOf("adelay=2000:all=1"),
+    );
+  });
+
+  it("chunks large strict timeline mixes before the final absolute mix", async () => {
+    const spawnMock = createMockSpawn();
+    const ffmpegCalls: string[][] = [];
+    setPiperSpawnForTest(spawnMock as never);
+    setPiperFileExistsForTest(() => true);
+    setPiperReadFileForTest(async () => createPcmWavBuffer(0.2));
+    setPiperFfmpegRunnerForTest(async (args) => {
+      ffmpegCalls.push(args);
+      return { stderr: "" };
+    });
+
+    const result = await generateVoiceFromSegments({
+      segments: Array.from({ length: 450 }, (_, index) => ({
+        id: index,
+        start: index,
+        end: index + 0.5,
+        text: `Câu ${index}`,
+      })),
+      settings: {
+        binaryPath: "piper",
+        modelPath: "/models/voice.onnx",
+        preserveTimestampGaps: true,
+        alignmentMode: "strict",
+      },
+    });
+
+    const filterComplexes = ffmpegCalls
+      .map((args) => args[args.indexOf("-filter_complex") + 1])
+      .filter((value): value is string => Boolean(value));
+    const finalMix = filterComplexes.at(-1) ?? "";
+
+    expect(spawnMock).toHaveBeenCalledTimes(3);
+    expect(
+      filterComplexes.filter((filter) => filter.includes("amix=inputs=200")),
+    ).toHaveLength(2);
+    expect(
+      filterComplexes.filter((filter) => filter.includes("amix=inputs=50")),
+    ).toHaveLength(1);
+    expect(finalMix).toContain("amix=inputs=3");
+    expect(finalMix).toContain("adelay=0:all=1");
+    expect(finalMix).toContain("adelay=200000:all=1");
+    expect(finalMix).toContain("adelay=400000:all=1");
+    expect(result.alignment.processingChunks).toEqual([
+      {
+        index: 1,
+        segmentCount: 200,
+        start: 0,
+        end: 199.5,
+        durationSeconds: 199.5,
+      },
+      {
+        index: 2,
+        segmentCount: 200,
+        start: 200,
+        end: 399.5,
+        durationSeconds: 199.5,
+      },
+      {
+        index: 3,
+        segmentCount: 50,
+        start: 400,
+        end: 449.5,
+        durationSeconds: 49.5,
+      },
+    ]);
+  });
 });

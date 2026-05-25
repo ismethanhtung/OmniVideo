@@ -87,6 +87,7 @@ import {
 import type { VideoDubbingResult } from "@/lib/multilingual-audio/video-dubbing";
 import type { VideoVipProcessingResult } from "@/lib/multilingual-audio/video-vip-processing";
 import { buildWordAwareVoiceSegments } from "@/lib/multilingual-audio/voice-segment-timing";
+import { loadLocalVideoEditSetup } from "@/lib/video-processing/local-video-edit-setup";
 
 type WorkspaceCanvasPanelProps = {
     section: LeftbarNavItem;
@@ -338,6 +339,24 @@ function buildDubbingProgressStepDescription(input: {
         .join("\n");
 }
 
+function buildVoiceProcessingChunkLines(
+    alignment: VideoVipProcessingResult["voice"]["alignment"],
+) {
+    const chunks = alignment.processingChunks ?? [];
+    if (chunks.length === 0) return [];
+
+    const segmentCounts = chunks
+        .map((chunk) => String(chunk.segmentCount))
+        .join("/");
+    return [
+        `Voice chunks: ${chunks.length} chunk(s) · ${segmentCounts} segment(s)`,
+        ...chunks.map(
+            (chunk) =>
+                `Voice chunk ${chunk.index}: ${chunk.segmentCount} segment(s) · ${formatTimelineTimestamp(chunk.start)} -> ${formatTimelineTimestamp(chunk.end)} · ${formatDurationMs(chunk.durationSeconds * 1000)}`,
+        ),
+    ];
+}
+
 function buildVipProgressStepDescription(input: {
     nodeLabel: string;
     result: VideoVipProcessingResult;
@@ -345,6 +364,9 @@ function buildVipProgressStepDescription(input: {
     const summary = `VIP processing ${input.nodeLabel} complete.`;
     const segments = input.result.translation.translatedSegments;
     const stage = input.result.stages;
+    const voiceChunkLines = buildVoiceProcessingChunkLines(
+        input.result.voice.alignment,
+    );
     const metadataLines = [
         "Metadata:",
         `File: ${input.result.fileName}`,
@@ -355,6 +377,13 @@ function buildVipProgressStepDescription(input: {
         `Translation: ${segments.length} segment(s) · ${input.result.translation.provider.name} · ${input.result.translation.model}`,
         `Voice: ${input.result.voice.segmentCount} segment(s) · ${formatBytes(input.result.voice.byteLength)} · ${input.result.voice.alignment.mode} alignment`,
         `Stages: preprocess ${formatDurationMs(stage.preprocessDurationMs)} · transcript ${formatDurationMs(stage.transcriptionDurationMs)} · translate ${formatDurationMs(stage.translationDurationMs)} · voice ${formatDurationMs(stage.voiceDurationMs)} · render (speed+mix+mirror+blur+sub) ${formatDurationMs(stage.finalRenderDurationMs)} · metadata ${formatDurationMs(stage.metadataDurationMs)}`,
+        "Stage log:",
+        `Completed transcript stage (${formatDurationMs(stage.transcriptionDurationMs)}).`,
+        `Completed translation stage (${formatDurationMs(stage.translationDurationMs)}).`,
+        `Completed voice generation stage (${formatDurationMs(stage.voiceDurationMs)}).`,
+        `Completed final render stage (speed + mirror + blur + subtitles + audio mix) (${formatDurationMs(stage.finalRenderDurationMs)}).`,
+        `Completed metadata generation stage (${formatDurationMs(stage.metadataDurationMs)}).`,
+        ...voiceChunkLines,
     ];
 
     if (segments.length === 0) return [summary, ...metadataLines].join("\n");
@@ -425,6 +454,13 @@ function findUpstreamSourceAssetNode(
     return findUpstreamNodeByTemplateType(graph, targetNodeId, [
         "source.asset",
     ]);
+}
+
+function findUpstreamSourceFileNode(
+    graph: WorkspaceGraph,
+    targetNodeId: string,
+) {
+    return findUpstreamNodeByTemplateType(graph, targetNodeId, ["source.file"]);
 }
 
 function findUpstreamMetadataNode(graph: WorkspaceGraph, targetNodeId: string) {
@@ -706,6 +742,98 @@ function getWorkspaceApiErrorMessage(
     return fallback;
 }
 
+type WorkspaceApiStep = {
+    id?: string;
+    label?: string;
+    status?: string;
+    detail?: string;
+    metrics?: Record<string, unknown>;
+};
+
+type WorkspaceApiErrorPayload = {
+    error?: unknown;
+    errorCode?: unknown;
+    steps?: unknown;
+};
+
+class WorkspaceApiError extends Error {
+    readonly status?: number;
+    readonly payload: unknown;
+    readonly url: string;
+    readonly actionLabel: string;
+
+    constructor(input: {
+        message: string;
+        status?: number;
+        payload: unknown;
+        url: string;
+        actionLabel: string;
+    }) {
+        super(input.message);
+        this.name = "WorkspaceApiError";
+        this.status = input.status;
+        this.payload = input.payload;
+        this.url = input.url;
+        this.actionLabel = input.actionLabel;
+    }
+}
+
+function parseWorkspaceApiSteps(payload: unknown): WorkspaceApiStep[] {
+    if (!payload || typeof payload !== "object") return [];
+    const steps = (payload as WorkspaceApiErrorPayload).steps;
+    if (!Array.isArray(steps)) return [];
+    return steps.filter(
+        (step): step is WorkspaceApiStep =>
+            Boolean(step) && typeof step === "object",
+    );
+}
+
+function formatWorkspaceMetricValue(value: unknown) {
+    if (typeof value === "string") return value;
+    if (typeof value === "number") return Number.isFinite(value) ? String(value) : "";
+    if (typeof value === "boolean") return value ? "true" : "false";
+    return "";
+}
+
+function buildWorkspaceApiFailureDetailLines(payload: unknown) {
+    const lines: string[] = [];
+    if (!payload || typeof payload !== "object") return lines;
+    const data = payload as WorkspaceApiErrorPayload;
+    const errorCode =
+        typeof data.errorCode === "string" ? data.errorCode.trim() : "";
+    const error =
+        typeof data.error === "string" ? data.error.trim() : "";
+
+    if (errorCode) lines.push(`API error code: ${errorCode}`);
+    if (error) lines.push(`API error: ${error}`);
+
+    const steps = parseWorkspaceApiSteps(payload);
+    if (steps.length === 0) return lines;
+
+    lines.push("VIP stage details:");
+    for (const step of steps) {
+        const status = typeof step.status === "string" ? step.status : "unknown";
+        const label = typeof step.label === "string" ? step.label : step.id ?? "step";
+        const detail = typeof step.detail === "string" ? step.detail : "";
+        lines.push(`[${status}] ${label}${detail ? `: ${detail}` : ""}`);
+
+        if (step.metrics && typeof step.metrics === "object") {
+            const metricParts = Object.entries(step.metrics)
+                .map(([key, value]) => {
+                    const formatted = formatWorkspaceMetricValue(value);
+                    if (!formatted) return "";
+                    return `${key}=${formatted}`;
+                })
+                .filter(Boolean);
+            if (metricParts.length > 0) {
+                lines.push(`metrics: ${metricParts.join(", ")}`);
+            }
+        }
+    }
+
+    return lines;
+}
+
 async function fetchWorkspaceJson<T>(input: {
     url: string;
     actionLabel: string;
@@ -739,13 +867,17 @@ async function fetchWorkspaceJson<T>(input: {
             (payload as { ok?: unknown }).ok !== false);
 
     if (!ok) {
-        throw new Error(
-            `${input.actionLabel} failed at ${input.url}: ${getWorkspaceApiErrorMessage(
+        throw new WorkspaceApiError({
+            message: `${input.actionLabel} failed at ${input.url}: ${getWorkspaceApiErrorMessage(
                 payload,
                 "Unexpected API error.",
                 response.status,
             )}`,
-        );
+            status: response.status,
+            payload,
+            url: input.url,
+            actionLabel: input.actionLabel,
+        });
     }
 
     return payload as T;
@@ -2045,6 +2177,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                 objectUrl: string;
             }
         > = {};
+        const progressStepDetailByKey: Record<string, string> = {};
 
         let currentProgressStep: WorkspaceFlowStep | null = null;
         const advanceProgress = (
@@ -2071,6 +2204,8 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
             description?: string,
         ) => {
             const descriptor = getProgressDescriptor(step);
+            progressStepDetailByKey[descriptor.key] =
+                description ?? descriptor.subtitle;
             startProgressStep({
                 taskId: progressTaskId,
                 stepId: descriptor.key,
@@ -2088,6 +2223,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
             },
         ) => {
             const descriptor = getProgressDescriptor(step);
+            progressStepDetailByKey[descriptor.key] = input.description;
             updateProgressStep(progressTaskId, descriptor.key, input);
         };
 
@@ -2678,6 +2814,13 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     ).trim();
                     if (sourceDescription) {
                         formData.set("description", sourceDescription);
+                    }
+                    const localSetup = loadLocalVideoEditSetup(file);
+                    if (localSetup) {
+                        formData.set(
+                            "videoEditSetupJson",
+                            JSON.stringify(localSetup.videoEditSetup),
+                        );
                     }
                     formData.set("contentIntent", "other");
                     formData.set("ownershipStatus", "unknown");
@@ -3793,23 +3936,55 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         updateProgressStepDetail(step, {
                             progressMode: "indeterminate",
                             progress: 0,
-                            description: vipStageLogs.join("\\n"),
+                            description: vipStageLogs.join("\n"),
                         });
                     };
                     appendVipStageLog(
                         "Running transcript -> translate -> voice -> final render -> metadata...",
                     );
-                    const vipPayload = await fetchWorkspaceJson<{
+                    appendVipStageLog(
+                        "Server-side VIP is running. Live sub-stage status is not streamed in current mode.",
+                    );
+                    appendVipStageLog(
+                        "When done or failed, detailed stage results will be attached here.",
+                    );
+                    let vipPayload: {
                         ok: true;
                         data: VideoVipProcessingResult & {
                             artifactId?: string;
                             artifactExpiresAt?: string;
                         };
-                    }>({
-                        url: "/api/audio/video-vip-processing",
-                        actionLabel: "VIP processing",
-                        init: { method: "POST", body: formData },
-                    });
+                    };
+                    try {
+                        vipPayload = await fetchWorkspaceJson<{
+                            ok: true;
+                            data: VideoVipProcessingResult & {
+                                artifactId?: string;
+                                artifactExpiresAt?: string;
+                            };
+                        }>({
+                            url: "/api/audio/video-vip-processing",
+                            actionLabel: "VIP processing",
+                            init: { method: "POST", body: formData },
+                        });
+                    } catch (error) {
+                        if (error instanceof WorkspaceApiError) {
+                            if (error.status === 413) {
+                                appendVipStageLog(
+                                    "HTTP 413: request body too large before VIP API returned full result.",
+                                );
+                                appendVipStageLog(
+                                    "Likely cause: upload body limit or provider upload limit (for Groq Whisper usually 25MB audio cap).",
+                                );
+                            }
+                            for (const line of buildWorkspaceApiFailureDetailLines(
+                                error.payload,
+                            )) {
+                                appendVipStageLog(line);
+                            }
+                        }
+                        throw error;
+                    }
                     if (vipPayload.data.checkpoint?.reusedStages.length) {
                         appendVipStageLog(
                             `Resumed VIP checkpoint: ${vipPayload.data.checkpoint.reusedStages.join(", ")}.`,
@@ -3853,13 +4028,26 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         "success",
                         `${formatBytes(vipPayload.data.byteLength)} MP4.`,
                     );
-                    appendVipStageLog("Completed transcript stage.");
-                    appendVipStageLog("Completed translation stage.");
-                    appendVipStageLog("Completed voice generation stage.");
                     appendVipStageLog(
-                        "Completed final render stage (speed + mirror + blur + subtitles + audio mix).",
+                        `Completed transcript stage (${formatDurationMs(vipPayload.data.stages.transcriptionDurationMs)}).`,
                     );
-                    appendVipStageLog("Completed metadata generation stage.");
+                    appendVipStageLog(
+                        `Completed translation stage (${formatDurationMs(vipPayload.data.stages.translationDurationMs)}).`,
+                    );
+                    appendVipStageLog(
+                        `Completed voice generation stage (${formatDurationMs(vipPayload.data.stages.voiceDurationMs)}).`,
+                    );
+                    for (const line of buildVoiceProcessingChunkLines(
+                        vipPayload.data.voice.alignment,
+                    )) {
+                        appendVipStageLog(line);
+                    }
+                    appendVipStageLog(
+                        `Completed final render stage (speed + mirror + blur + subtitles + audio mix) (${formatDurationMs(vipPayload.data.stages.finalRenderDurationMs)}).`,
+                    );
+                    appendVipStageLog(
+                        `Completed metadata generation stage (${formatDurationMs(vipPayload.data.stages.metadataDurationMs)}).`,
+                    );
                     summary.push(
                         `VIP video ready: ${formatBytes(vipPayload.data.byteLength)}.`,
                     );
@@ -4766,9 +4954,14 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     error instanceof Error
                         ? error.message
                         : "Workspace step failed.";
+                const descriptor = getProgressDescriptor(step);
+                const lastDetail = progressStepDetailByKey[descriptor.key];
                 finishWorkspaceProgressStep(step, {
                     status: "failed",
-                    description: message,
+                    description:
+                        step.kind === "vip-process-video" && lastDetail
+                            ? lastDetail
+                            : message,
                     error: message,
                 });
                 if (
@@ -5394,6 +5587,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     aiModelsByProviderId={aiModelsByProviderId}
                     storageAssets={storageAssets}
                     thumbnailAssets={thumbnailAssets}
+                    runtimeFilesByNodeId={runtimeFilesByNodeId}
                     runtimeFile={
                         selectedNode
                             ? (runtimeFilesByNodeId[selectedNode.id] ?? null)
@@ -5798,6 +5992,9 @@ function WorkspaceFlowSetupModal({
                                             storageAssets={storageAssets}
                                             thumbnailAssets={
                                                 thumbnailAssets
+                                            }
+                                            runtimeFilesByNodeId={
+                                                runtimeFilesByNodeId
                                             }
                                             runtimeFile={
                                                 runtimeFilesByNodeId[node.id] ??
@@ -6525,6 +6722,7 @@ function NodeRuntimeConfig({
     aiModelsByProviderId,
     storageAssets,
     thumbnailAssets,
+    runtimeFilesByNodeId = {},
     runtimeFile,
     runtimeArtifact,
     facebookPagesByAccount,
@@ -6545,6 +6743,7 @@ function NodeRuntimeConfig({
     aiModelsByProviderId: Record<string, WorkspaceAiModel[] | undefined>;
     storageAssets: WorkspaceAsset[];
     thumbnailAssets: WorkspaceThumbnailAsset[];
+    runtimeFilesByNodeId: Record<string, File | undefined>;
     runtimeFile: File | null;
     runtimeArtifact: WorkspaceRuntimeArtifact | null;
     facebookPagesByAccount: Record<string, FacebookPageOption[]>;
@@ -6567,6 +6766,11 @@ function NodeRuntimeConfig({
 }) {
     const setConfig = (patch: WorkspaceNodeInstance["config"]) =>
         onUpdateNodeConfig(node.id, patch);
+    const upstreamSourceFileNode = findUpstreamSourceFileNode(graph, node.id);
+    const upstreamRuntimeFile = upstreamSourceFileNode
+        ? (runtimeFilesByNodeId[upstreamSourceFileNode.id] ?? null)
+        : null;
+    const upstreamLocalSetup = loadLocalVideoEditSetup(upstreamRuntimeFile);
 
     if (node.templateNodeType === "source.file") {
         return (
@@ -6591,6 +6795,11 @@ function NodeRuntimeConfig({
                         {runtimeFile ? (
                             <span className="mt-1 block truncate text-[10px] text-muted">
                                 {runtimeFile.name}
+                            </span>
+                        ) : null}
+                        {loadLocalVideoEditSetup(runtimeFile) ? (
+                            <span className="mt-1 block border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-[10px] text-emerald-700">
+                                Video Tools Lab setup found
                             </span>
                         ) : null}
                     </label>
@@ -6708,7 +6917,9 @@ function NodeRuntimeConfig({
               )
             : undefined;
         const sourceAssetSetupRaw =
-            upstreamSourceAsset?.metadata?.videoEditSetup ?? null;
+            upstreamSourceAsset?.metadata?.videoEditSetup ??
+            upstreamLocalSetup?.videoEditSetup ??
+            null;
         const sourceMirrorParity =
             upstreamVideoNode && upstreamSourceAssetNode
                 ? findMirrorParityToAncestorNode(
@@ -6728,6 +6939,7 @@ function NodeRuntimeConfig({
             upstreamSourceAsset?.metadata?.title ??
             upstreamSourceAsset?.providerAssetId ??
             upstreamSourceAsset?._id ??
+            upstreamLocalSetup?.fileName ??
             "";
 
         return (
@@ -7669,7 +7881,9 @@ function NodeRuntimeConfig({
               )
             : undefined;
         const sourceAssetSetupRaw =
-            upstreamSourceAsset?.metadata?.videoEditSetup ?? null;
+            upstreamSourceAsset?.metadata?.videoEditSetup ??
+            upstreamLocalSetup?.videoEditSetup ??
+            null;
         const sourceMirrorParity = upstreamSourceAssetNode
             ? findMirrorParityToAncestorNode(
                   graph,
@@ -7688,6 +7902,7 @@ function NodeRuntimeConfig({
             upstreamSourceAsset?.metadata?.title ??
             upstreamSourceAsset?.providerAssetId ??
             upstreamSourceAsset?._id ??
+            upstreamLocalSetup?.fileName ??
             "";
 
         return (
@@ -8529,6 +8744,7 @@ function InspectorPanel({
     aiModelsByProviderId,
     storageAssets,
     thumbnailAssets,
+    runtimeFilesByNodeId,
     runtimeFile,
     runtimeArtifact,
     facebookPagesByAccount,
@@ -8558,6 +8774,7 @@ function InspectorPanel({
     aiModelsByProviderId: Record<string, WorkspaceAiModel[] | undefined>;
     storageAssets: WorkspaceAsset[];
     thumbnailAssets: WorkspaceThumbnailAsset[];
+    runtimeFilesByNodeId: Record<string, File | undefined>;
     runtimeFile: File | null;
     runtimeArtifact: WorkspaceRuntimeArtifact | null;
     facebookPagesByAccount: Record<string, FacebookPageOption[]>;
@@ -8702,6 +8919,7 @@ function InspectorPanel({
                         aiModelsByProviderId={aiModelsByProviderId}
                         storageAssets={storageAssets}
                         thumbnailAssets={thumbnailAssets}
+                        runtimeFilesByNodeId={runtimeFilesByNodeId}
                         runtimeFile={runtimeFile}
                         runtimeArtifact={runtimeArtifact}
                         facebookPagesByAccount={facebookPagesByAccount}

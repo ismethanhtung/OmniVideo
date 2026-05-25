@@ -44,7 +44,7 @@ describe("navigation registry", () => {
     expect(getNavItem("inspirationVault")?.label).toBe("Inspiration Vault");
   });
 
-  it("registers Piper TTS sandbox in test group and leaves Groq TTS sandbox removed", () => {
+  it("registers feature sandbox in test group and leaves Groq TTS sandbox removed", () => {
     const testGroup = LEFTBAR_NAV.find(
       (group) => group.sectionId === "test",
     );
@@ -59,8 +59,10 @@ describe("navigation registry", () => {
       "piperTtsSandbox",
     );
     expect(pipelineGroup?.items.map((item) => item.id)).toContain("videoToolsLab");
-    expect(getNavItem("piperTtsSandbox")?.description).toContain("CPU");
+    expect(getNavItem("piperTtsSandbox")?.label).toBe("Feature Sandbox");
+    expect(getNavItem("piperTtsSandbox")?.description).toContain("transcript retry");
     expect(getNavItem("videoToolsLab")?.description).toContain("mirror video");
+    expect(getNavItem("videoSplitter")?.label).toBe("Video Split & Merge");
     expect(navIds).not.toContain("groqTtsSandbox");
   });
 

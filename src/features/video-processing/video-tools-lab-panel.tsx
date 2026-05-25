@@ -25,6 +25,7 @@ import {
     startProgressTask,
     updateProgressTask,
 } from "@/lib/ui/progress-center";
+import { saveLocalVideoEditSetup } from "@/lib/video-processing/local-video-edit-setup";
 
 type VideoEditApiPayload =
     | {
@@ -376,6 +377,7 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
     const [isRunningEdit, setIsRunningEdit] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [saveMessage, setSaveMessage] = useState<string | null>(null);
+    const [isSavingSetup, setIsSavingSetup] = useState(false);
     const [result, setResult] = useState<
         Extract<VideoEditApiPayload, { ok: true }>["data"] | null
     >(null);
@@ -764,11 +766,16 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
     ]);
 
     const saveSetupToSelectedAsset = async () => {
-        if (!selectedAssetId) {
-            setError("Chọn Storage Asset trước khi lưu setup theo video.");
+        if (!selectedAssetId && !videoFile) {
+            setError(
+                "Chọn Storage Asset hoặc file local trước khi lưu setup theo video.",
+            );
             setSaveMessage(null);
             return;
         }
+        setIsSavingSetup(true);
+        setError(null);
+        setSaveMessage("Đang lưu setup...");
         try {
             const videoEditSetup: VideoEditSetup = {
                 mirrorEnabled,
@@ -795,26 +802,45 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                 subtitleSampleWidthPercent,
                 subtitlePreviewPlacement: getCurrentSubtitlePreviewPlacement(),
             };
-            const payload = {
-                metadata: {
+            if (!selectedAssetId && videoFile) {
+                saveLocalVideoEditSetup({
+                    file: videoFile,
                     videoEditSetup,
-                },
-            };
-            const response = await fetch(
-                `/api/storage/assets/${selectedAssetId}`,
-                {
-                    method: "PATCH",
-                    headers: { "content-type": "application/json" },
-                    body: JSON.stringify(payload),
-                },
-            );
+                });
+                setError(null);
+                setSaveMessage(
+                    "Đã lưu setup local. Khi Workspace upload đúng file này, setup sẽ tự gắn vào asset.",
+                );
+                return;
+            }
+            const formData = new FormData();
+            formData.set("videoEditSetupJson", JSON.stringify(videoEditSetup));
+            if (selectedAssetId) {
+                formData.set("assetId", selectedAssetId);
+            }
+            const response = await fetch("/api/storage/assets/save-video-setup", {
+                method: "POST",
+                body: formData,
+            });
             const resultPayload = await response.json();
             if (!response.ok || !resultPayload.ok) {
                 throw new Error(resultPayload.error ?? "Save setup failed.");
             }
+            const responseMode =
+                typeof resultPayload.data?.mode === "string"
+                    ? resultPayload.data.mode
+                    : "";
+            const resolvedAssetId =
+                typeof resultPayload.data?.assetId === "string"
+                    ? resultPayload.data.assetId
+                    : selectedAssetId;
+            if (!resolvedAssetId) {
+                throw new Error("Save setup succeeded but missing asset id.");
+            }
+            setSelectedAssetId(resolvedAssetId);
             setAssets((current) =>
                 current.map((asset) =>
-                    asset._id === selectedAssetId
+                    asset._id === resolvedAssetId
                         ? {
                               ...asset,
                               metadata: {
@@ -842,7 +868,11 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                     },
                 );
             setError(null);
-            setSaveMessage("Đã lưu setup vào video asset.");
+            setSaveMessage(
+                selectedAssetId || responseMode === "existing-asset"
+                    ? "Đã lưu setup vào video asset."
+                    : "Đã lưu setup vào video asset.",
+            );
         } catch (saveError) {
             setError(
                 saveError instanceof Error
@@ -850,6 +880,8 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                     : "Save setup failed.",
             );
             setSaveMessage(null);
+        } finally {
+            setIsSavingSetup(false);
         }
     };
 
@@ -1031,9 +1063,9 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                                 type="file"
                                 accept="video/*,.mp4,.webm,.mov"
                                 onChange={(event) => {
-                                    setVideoFile(
-                                        event.currentTarget.files?.[0] ?? null,
-                                    );
+                                    const nextFile =
+                                        event.currentTarget.files?.[0] ?? null;
+                                    setVideoFile(nextFile);
                                     setSelectedAssetId("");
                                     setResult(null);
                                     setError(null);
@@ -1226,11 +1258,16 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                         <div className="mt-2 grid grid-cols-1 gap-2">
                             <button
                                 type="button"
-                                disabled={!selectedAssetId}
+                                disabled={
+                                    isSavingSetup ||
+                                    (!selectedAssetId && !videoFile)
+                                }
                                 onClick={saveSetupToSelectedAsset}
                                 className="border border-main bg-secondary px-2 py-1 text-[10px] font-semibold text-main hover:bg-secondary/75 disabled:cursor-not-allowed disabled:opacity-60"
                             >
-                                Save Setup To Asset
+                                {isSavingSetup
+                                    ? "Saving Setup..."
+                                    : "Save Setup To Asset"}
                             </button>
                         </div>
                         {saveMessage ? (

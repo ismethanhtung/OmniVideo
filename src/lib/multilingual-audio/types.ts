@@ -68,6 +68,8 @@ export type ChineseTranscriptionRequest = {
     language?: string;
     prompt?: string;
     includeWordTimestamps?: boolean;
+    overlongSegmentRetryMode?: "strict" | "best-effort";
+    retryPromptHardConstraint?: boolean;
 };
 
 export type AudioTranscriptionStep = {
@@ -203,6 +205,13 @@ export type VoiceGenerationResult = {
             pauseBeforeSeconds?: number;
             driftSeconds?: number;
             warningCodes: string[];
+        }[];
+        processingChunks?: {
+            index: number;
+            segmentCount: number;
+            start: number;
+            end: number;
+            durationSeconds: number;
         }[];
         warnings?: string[];
     };

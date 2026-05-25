@@ -23,6 +23,14 @@
 
 ## Review
 
+- `FAST-VIDEO-016` - Add multi-file video merge mode to Video Splitter page.
+- `FAST-AUDIO-066` - Chunk Groq transcription uploads and fix VIP multiline progress detail.
+- `FAST-WORKSPACE-041` - Surface full VIP failure stage details in Workspace.
+- `FAST-WORKSPACE-040` - Fix VIP blur before mirror order.
+- `FAST-AUDIO-065` - Chunk strict voice timeline mix and surface VIP stage details.
+- `FAST-AUDIO-064` - Chunk Piper voice synthesis at 200 segments.
+- `FAST-AUDIO-063` - Add retry hard-constraint transcript test in Feature Sandbox.
+- `FAST-AUDIO-062` - Keep VIP processing running when segment retry is exhausted.
 - `FAST-VIDEO-015` - Add split-by-parts mode (input number of parts) and refine Video Splitter UX.
 - `FAST-VIDEO-013` - Add Video Splitter page for local ffmpeg split and direct zip download.
 - `FAST-INTAKE-014` - Add visible fallback signal and direct link for Video Intake downloads.

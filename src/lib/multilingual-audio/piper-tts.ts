@@ -47,6 +47,17 @@ const REQUIRED_PIPER_DYLIBS = [
 const BATCH_TIMEOUT_BASE_MS = 60000;
 const BATCH_TIMEOUT_PER_TEXT_MS = 5000;
 const BATCH_TIMEOUT_MAX_MS = 15 * 60 * 1000;
+const DEFAULT_PIPER_SEGMENT_BATCH_SIZE = 200;
+const VOICE_CHUNK_TARGET_DURATION_SECONDS = 10 * 60;
+const MIN_ADAPTIVE_PIPER_SEGMENT_BATCH_SIZE = 60;
+const PIPER_SEGMENT_BATCH_SIZE = Math.max(
+  1,
+  Math.min(
+    500,
+    Number(process.env.PIPER_TTS_SEGMENT_BATCH_SIZE) ||
+      DEFAULT_PIPER_SEGMENT_BATCH_SIZE,
+  ),
+);
 const ALIGNMENT_FFMPEG_CONCURRENCY = Math.max(
   1,
   Math.min(4, Number(process.env.PIPER_ALIGNMENT_FFMPEG_CONCURRENCY) || 4),
@@ -93,6 +104,41 @@ type TimelineAlignmentChunk = {
   driftSeconds?: number;
   warningCodes: string[];
 };
+
+type AlignedTimelineItem = {
+  path: string;
+  start: number;
+  chunk: TimelineAlignmentChunk;
+};
+
+type TimelineProcessingChunk = {
+  index: number;
+  segmentCount: number;
+  start: number;
+  end: number;
+  durationSeconds: number;
+};
+
+function resolveAdaptiveSegmentBatchSize(
+  segments: Array<{ start: number; end: number }>,
+) {
+  if (segments.length === 0) return PIPER_SEGMENT_BATCH_SIZE;
+  const starts = segments.map((segment) => segment.start);
+  const ends = segments.map((segment) => segment.end);
+  const spanSeconds = Math.max(...ends) - Math.min(...starts);
+  if (!Number.isFinite(spanSeconds) || spanSeconds <= VOICE_CHUNK_TARGET_DURATION_SECONDS) {
+    return PIPER_SEGMENT_BATCH_SIZE;
+  }
+  const targetChunks = Math.max(
+    1,
+    Math.ceil(spanSeconds / VOICE_CHUNK_TARGET_DURATION_SECONDS),
+  );
+  const adaptiveSize = Math.ceil(segments.length / targetChunks);
+  return Math.max(
+    MIN_ADAPTIVE_PIPER_SEGMENT_BATCH_SIZE,
+    Math.min(PIPER_SEGMENT_BATCH_SIZE, adaptiveSize),
+  );
+}
 
 export type PiperTtsResult = {
   audioBase64: string;
@@ -968,8 +1014,12 @@ async function synthesizeSegmentFiles(input: {
   workDir: string;
   timelineMode?: boolean;
 }) {
-  const files: Array<{ segment: VoiceGenerationSegment; filePath: string }> = [];
+  const filesByIndex = new Array<{
+    segment: VoiceGenerationSegment;
+    filePath: string;
+  } | null>(input.segments.length).fill(null);
   const batchItems: Array<{
+    segmentIndex: number;
     segment: VoiceGenerationSegment;
     outputPath: string;
     textChunks: string[];
@@ -982,7 +1032,7 @@ async function synthesizeSegmentFiles(input: {
         )
       : input.settings.sentenceSilence;
 
-  for (const segment of input.segments) {
+  for (const [segmentIndex, segment] of input.segments.entries()) {
     const textChunks = splitTextForPiperSynthesis(segment.text);
     const outputPath = path.join(input.workDir, `segment-${segment.id}.wav`);
     if (textChunks.length === 0) {
@@ -990,102 +1040,128 @@ async function synthesizeSegmentFiles(input: {
         outputPath,
         durationSeconds: segmentDuration(segment) || 0.12,
       });
-      files.push({ segment, filePath: outputPath });
+      filesByIndex[segmentIndex] = { segment, filePath: outputPath };
       continue;
     }
 
     batchItems.push({
+      segmentIndex,
       segment,
       outputPath,
       textChunks,
     });
   }
   if (batchItems.length === 0) {
-    return files;
+    return filesByIndex.filter(
+      (file): file is { segment: VoiceGenerationSegment; filePath: string } =>
+        Boolean(file),
+    );
   }
 
   const batchSettings = { ...input.settings, sentenceSilence };
-  try {
-    const batchOutputPaths = await generatePiperSpeechBatch({
-      texts: batchItems.flatMap((item) => item.textChunks),
-      settings: batchSettings,
-      workDir: input.workDir,
-      outputDir: path.join(input.workDir, "piper-batch-output"),
-    });
-    let batchIndex = 0;
+  const batchGroups: Array<typeof batchItems> = [];
+  const segmentBatchSize = resolveAdaptiveSegmentBatchSize(
+    input.segments.map((segment) => ({ start: segment.start, end: segment.end })),
+  );
+  for (
+    let index = 0;
+    index < batchItems.length;
+    index += segmentBatchSize
+  ) {
+    batchGroups.push(batchItems.slice(index, index + segmentBatchSize));
+  }
 
-    for (const item of batchItems) {
-      const chunkPaths = batchOutputPaths.slice(
-        batchIndex,
-        batchIndex + item.textChunks.length,
-      );
-      batchIndex += item.textChunks.length;
+  for (const [groupIndex, groupItems] of batchGroups.entries()) {
+    try {
+      const batchOutputPaths = await generatePiperSpeechBatch({
+        texts: groupItems.flatMap((item) => item.textChunks),
+        settings: batchSettings,
+        workDir: input.workDir,
+        outputDir: path.join(input.workDir, `piper-batch-output-${groupIndex}`),
+      });
+      let batchIndex = 0;
 
-      if (chunkPaths.length === 1) {
-        await writeFile(
-          item.outputPath,
-          piperReadFileForTest
-            ? await piperReadFileForTest(chunkPaths[0])
-            : await readFile(chunkPaths[0]),
+      for (const item of groupItems) {
+        const chunkPaths = batchOutputPaths.slice(
+          batchIndex,
+          batchIndex + item.textChunks.length,
         );
-      } else {
-        await concatWavFiles({
-          workDir: input.workDir,
-          filePaths: chunkPaths,
-          outputPath: item.outputPath,
-        });
-      }
-      files.push({ segment: item.segment, filePath: item.outputPath });
-    }
-  } catch (error) {
-    // Piper batch mode can intermittently fail near the end even after writing many
-    // wav files (e.g. wave.Error "# channels not specified"). Fallback to per-item
-    // synthesis to keep voice generation resilient.
-    for (const item of batchItems) {
-      const chunkOutputs: string[] = [];
-      for (let index = 0; index < item.textChunks.length; index += 1) {
-        const chunkText = item.textChunks[index];
-        const chunkResult = await generatePiperSpeech({
-          text: chunkText,
-          binaryPath: batchSettings.binaryPath,
-          modelPath: batchSettings.modelPath,
-          configPath: batchSettings.configPath,
-          speaker: batchSettings.speaker,
-          lengthScale: batchSettings.lengthScale,
-          noiseScale: batchSettings.noiseScale,
-          noiseW: batchSettings.noiseW,
-          sentenceSilence: batchSettings.sentenceSilence,
-        });
-        const chunkOutputPath = path.join(
-          input.workDir,
-          `segment-${item.segment.id}-chunk-${index}.wav`,
-        );
-        await writeFile(
-          chunkOutputPath,
-          Buffer.from(chunkResult.audioBase64, "base64"),
-        );
-        chunkOutputs.push(chunkOutputPath);
-      }
+        batchIndex += item.textChunks.length;
 
-      if (chunkOutputs.length === 1) {
-        await writeFile(
-          item.outputPath,
-          piperReadFileForTest
-            ? await piperReadFileForTest(chunkOutputs[0])
-            : await readFile(chunkOutputs[0]),
-        );
-      } else {
-        await concatWavFiles({
-          workDir: input.workDir,
-          filePaths: chunkOutputs,
-          outputPath: item.outputPath,
-        });
+        if (chunkPaths.length === 1) {
+          await writeFile(
+            item.outputPath,
+            piperReadFileForTest
+              ? await piperReadFileForTest(chunkPaths[0])
+              : await readFile(chunkPaths[0]),
+          );
+        } else {
+          await concatWavFiles({
+            workDir: input.workDir,
+            filePaths: chunkPaths,
+            outputPath: item.outputPath,
+          });
+        }
+        filesByIndex[item.segmentIndex] = {
+          segment: item.segment,
+          filePath: item.outputPath,
+        };
       }
-      files.push({ segment: item.segment, filePath: item.outputPath });
+    } catch (error) {
+      // Piper batch mode can intermittently fail near the end even after writing
+      // many wav files. Fallback only the failed group to keep large jobs moving.
+      for (const item of groupItems) {
+        const chunkOutputs: string[] = [];
+        for (let index = 0; index < item.textChunks.length; index += 1) {
+          const chunkText = item.textChunks[index];
+          const chunkResult = await generatePiperSpeech({
+            text: chunkText,
+            binaryPath: batchSettings.binaryPath,
+            modelPath: batchSettings.modelPath,
+            configPath: batchSettings.configPath,
+            speaker: batchSettings.speaker,
+            lengthScale: batchSettings.lengthScale,
+            noiseScale: batchSettings.noiseScale,
+            noiseW: batchSettings.noiseW,
+            sentenceSilence: batchSettings.sentenceSilence,
+          });
+          const chunkOutputPath = path.join(
+            input.workDir,
+            `segment-${item.segment.id}-chunk-${index}.wav`,
+          );
+          await writeFile(
+            chunkOutputPath,
+            Buffer.from(chunkResult.audioBase64, "base64"),
+          );
+          chunkOutputs.push(chunkOutputPath);
+        }
+
+        if (chunkOutputs.length === 1) {
+          await writeFile(
+            item.outputPath,
+            piperReadFileForTest
+              ? await piperReadFileForTest(chunkOutputs[0])
+              : await readFile(chunkOutputs[0]),
+          );
+        } else {
+          await concatWavFiles({
+            workDir: input.workDir,
+            filePaths: chunkOutputs,
+            outputPath: item.outputPath,
+          });
+        }
+        filesByIndex[item.segmentIndex] = {
+          segment: item.segment,
+          filePath: item.outputPath,
+        };
+      }
     }
   }
 
-  return files;
+  return filesByIndex.filter(
+    (file): file is { segment: VoiceGenerationSegment; filePath: string } =>
+      Boolean(file),
+  );
 }
 
 export function buildTimelineAlignmentChunk(input: {
@@ -1146,16 +1222,97 @@ export function buildTimelineAlignmentChunk(input: {
   } satisfies TimelineAlignmentChunk;
 }
 
+function timelineItemEndSeconds(item: AlignedTimelineItem) {
+  return (
+    item.chunk.scheduledEndSeconds ??
+    item.start + item.chunk.targetDurationSeconds
+  );
+}
+
+function buildTimelineProcessingChunk(
+  groupItems: AlignedTimelineItem[],
+  groupIndex: number,
+): TimelineProcessingChunk {
+  const start = Math.min(...groupItems.map((item) => item.start));
+  const end = Math.max(...groupItems.map(timelineItemEndSeconds));
+  return {
+    index: groupIndex + 1,
+    segmentCount: groupItems.length,
+    start,
+    end,
+    durationSeconds: Math.max(0, end - start),
+  };
+}
+
+async function mixAlignedTimelineItems(input: {
+  items: AlignedTimelineItem[];
+  workDir: string;
+  outputPath: string;
+  targetDurationSeconds: number;
+}) {
+  const segmentBatchSize = resolveAdaptiveSegmentBatchSize(
+    input.items.map((item) => ({
+      start: item.start,
+      end: timelineItemEndSeconds(item),
+    })),
+  );
+  if (input.items.length <= segmentBatchSize) {
+    await mixWavFilesOnAbsoluteTimeline({
+      filePaths: input.items.map((item) => item.path),
+      startsSeconds: input.items.map((item) => item.start),
+      outputPath: input.outputPath,
+      targetDurationSeconds: input.targetDurationSeconds,
+    });
+    return [] as TimelineProcessingChunk[];
+  }
+
+  const groups: AlignedTimelineItem[][] = [];
+  for (
+    let index = 0;
+    index < input.items.length;
+    index += segmentBatchSize
+  ) {
+    groups.push(input.items.slice(index, index + segmentBatchSize));
+  }
+
+  const mixedChunks = await mapWithConcurrency(
+    groups,
+    Math.min(2, ALIGNMENT_FFMPEG_CONCURRENCY),
+    async (groupItems, groupIndex) => {
+      const chunk = buildTimelineProcessingChunk(groupItems, groupIndex);
+      const outputPath = path.join(
+        input.workDir,
+        `timeline-mix-chunk-${groupIndex}.wav`,
+      );
+      await mixWavFilesOnAbsoluteTimeline({
+        filePaths: groupItems.map((item) => item.path),
+        startsSeconds: groupItems.map((item) => item.start - chunk.start),
+        outputPath,
+        targetDurationSeconds: Math.max(0.001, chunk.durationSeconds),
+      });
+      return {
+        path: outputPath,
+        start: chunk.start,
+        chunk,
+      };
+    },
+  );
+
+  await mixWavFilesOnAbsoluteTimeline({
+    filePaths: mixedChunks.map((item) => item.path),
+    startsSeconds: mixedChunks.map((item) => item.start),
+    outputPath: input.outputPath,
+    targetDurationSeconds: input.targetDurationSeconds,
+  });
+
+  return mixedChunks.map((item) => item.chunk);
+}
+
 async function alignPiperFilesToTimeline(input: {
   files: Array<{ segment: VoiceGenerationSegment; filePath: string }>;
   workDir: string;
   outputPath: string;
 }) {
-  type AlignedTimelineItem = {
-    path: string;
-    start: number;
-    chunk: TimelineAlignmentChunk;
-  };
   const alignedItems = (
     await mapWithConcurrency(
       input.files,
@@ -1201,10 +1358,12 @@ async function alignPiperFilesToTimeline(input: {
         };
       },
     )
-  ).filter((item): item is AlignedTimelineItem => Boolean(item));
+  ).filter(Boolean) as AlignedTimelineItem[];
   const timelinePaths = alignedItems.map((item) => item.path);
-  const timelineStarts = alignedItems.map((item) => item.start);
   const chunks = alignedItems.map((item) => item.chunk);
+  const targetDurationSeconds = Math.max(
+    ...input.files.map((file) => file.segment.end),
+  );
 
   if (timelinePaths.length === 0) {
     await concatWavFiles({
@@ -1212,19 +1371,18 @@ async function alignPiperFilesToTimeline(input: {
       filePaths: input.files.map((file) => file.filePath),
       outputPath: input.outputPath,
     });
-    return { chunks: [], warnings: [] };
+    return { chunks: [], warnings: [], processingChunks: [] };
   }
 
-  await mixWavFilesOnAbsoluteTimeline({
-    filePaths: timelinePaths,
-    startsSeconds: timelineStarts,
+  const processingChunks = await mixAlignedTimelineItems({
+    items: alignedItems,
+    workDir: input.workDir,
     outputPath: input.outputPath,
-    targetDurationSeconds: Math.max(
-      ...input.files.map((file) => file.segment.end),
-    ),
+    targetDurationSeconds,
   });
   return {
     chunks,
+    processingChunks,
     warnings: Array.from(
       new Set(chunks.flatMap((chunk) => chunk.warningCodes)),
     ),
@@ -1359,7 +1517,7 @@ async function alignPiperFilesToBalancedTimeline(input: {
       filePaths: input.files.map((file) => file.filePath),
       outputPath: input.outputPath,
     });
-    return { chunks: [], warnings: [] };
+    return { chunks: [], warnings: [], processingChunks: [] };
   }
 
   await mapWithConcurrency(
@@ -1378,6 +1536,7 @@ async function alignPiperFilesToBalancedTimeline(input: {
   });
   return {
     chunks,
+    processingChunks: [],
     warnings: Array.from(
       new Set(chunks.flatMap((chunk) => chunk.warningCodes)),
     ),
@@ -1453,6 +1612,7 @@ export async function generateVoiceFromSegments(input: {
         targetDurationSeconds,
         chunks: segments.length,
         timeline: timelineAlignment?.chunks,
+        processingChunks: timelineAlignment?.processingChunks,
         warnings: timelineAlignment?.warnings,
       },
       settings,

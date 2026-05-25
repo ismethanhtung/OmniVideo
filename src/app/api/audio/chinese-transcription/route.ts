@@ -112,6 +112,8 @@ export async function POST(request: Request) {
             includeWordTimestamps:
                 readFormValue(formData, "includeWordTimestamps") === "true",
             videoSpeedFactor: readNumberFormValue(formData, "videoSpeedFactor"),
+            retryPromptHardConstraint:
+                readFormValue(formData, "retryPromptHardConstraint") === "true",
         });
 
         return NextResponse.json({ ok: true, data: result });

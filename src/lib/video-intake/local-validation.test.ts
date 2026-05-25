@@ -29,6 +29,27 @@ describe("validateLocalIntakeInput", () => {
     expect(result.fileSizeBytes).toBe(4);
   });
 
+  it("keeps Video Tools Lab setup for later asset metadata persistence", () => {
+    const result = validateLocalIntakeInput({
+      storageProvider: "drive",
+      storageProviderAccountId: "507f1f77bcf86cd799439011",
+      folder: "workspace",
+      tags: [],
+      fileName: "demo.mp4",
+      fileSizeBytes: 4,
+      fileBytes: new Uint8Array([1, 2, 3, 4]),
+      videoEditSetup: {
+        blurEnabled: true,
+        subtitleFontSize: 55,
+      },
+    });
+
+    expect(result.videoEditSetup).toEqual({
+      blurEnabled: true,
+      subtitleFontSize: 55,
+    });
+  });
+
   it("rejects missing storage provider account id", () => {
     expect(() =>
       validateLocalIntakeInput({

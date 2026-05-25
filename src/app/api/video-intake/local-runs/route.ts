@@ -13,6 +13,16 @@ function readFormValue(formData: FormData, key: string) {
   return typeof value === "string" ? value : "";
 }
 
+function readJsonObjectFormValue(formData: FormData, key: string) {
+  const raw = readFormValue(formData, key);
+  if (!raw) return undefined;
+  const parsed = JSON.parse(raw) as unknown;
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error(`${key} must be a JSON object.`);
+  }
+  return parsed as Record<string, unknown>;
+}
+
 export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
@@ -154,6 +164,7 @@ export async function POST(request: Request) {
       languageHint: readFormValue(formData, "languageHint") || undefined,
       contentIntent: readFormValue(formData, "contentIntent") || "other",
       ownershipStatus: readFormValue(formData, "ownershipStatus") || "unknown",
+      videoEditSetup: readJsonObjectFormValue(formData, "videoEditSetupJson"),
       fileName: sourceFile.fileName,
       mimeType: sourceFile.mimeType,
       fileSizeBytes: sourceFile.fileSizeBytes,

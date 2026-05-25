@@ -102,6 +102,7 @@ export type LocalIntakeInput = {
   languageHint?: string;
   contentIntent?: string;
   ownershipStatus?: string;
+  videoEditSetup?: Record<string, unknown>;
   fileName: string;
   mimeType?: string;
   fileSizeBytes: number;
@@ -118,6 +119,7 @@ export type ValidatedLocalIntakeInput = {
   languageHint?: string;
   contentIntent: string;
   ownershipStatus: string;
+  videoEditSetup?: Record<string, unknown>;
   fileName: string;
   mimeType?: string;
   fileSizeBytes: number;

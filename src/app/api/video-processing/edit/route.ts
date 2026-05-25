@@ -391,19 +391,23 @@ export async function POST(request: Request) {
                 input.subtitles?.enabled === true
                     ? await probeVideoDimensionsFromPath(uploadedPath)
                     : null;
-            const normalizedInput = subtitleDimensions
-                ? {
-                      ...input,
-                      subtitles: {
-                          ...input.subtitles,
-                          style: {
-                              ...(input.subtitles?.style ?? {}),
-                              playResX: subtitleDimensions.width,
-                              playResY: subtitleDimensions.height,
+            const normalizedInput =
+                subtitleDimensions &&
+                input.subtitles?.enabled === true
+                    ? {
+                          ...input,
+                          subtitles: {
+                              ...input.subtitles,
+                              enabled: true,
+                              segments: input.subtitles.segments,
+                              style: {
+                                  ...(input.subtitles.style ?? {}),
+                                  playResX: subtitleDimensions.width,
+                                  playResY: subtitleDimensions.height,
+                              },
                           },
-                      },
-                  }
-                : input;
+                      }
+                    : input;
 
             const result = await runVideoEditPipelineFromPath({
                 ...normalizedInput,

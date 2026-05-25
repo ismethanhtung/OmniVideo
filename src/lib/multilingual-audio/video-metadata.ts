@@ -173,38 +173,49 @@ export async function generateVietnameseVideoMetadata(input: {
   const model = input.model?.trim() || DEFAULT_MODEL;
   const fetcher = input.fetcher ?? fetch;
 
-  const response = await fetcher(`${baseUrl}/chat/completions`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model,
-      temperature: 0.3,
-      response_format: { type: "json_object" },
-      messages: [
-        {
-          role: "system",
-          content:
-            "You generate concise Vietnamese social video metadata. Return JSON only.",
-        },
-        {
-          role: "user",
-          content: [
-            "Generate Vietnamese metadata for social publishing.",
-            'Output JSON: {"title":"...","description":"...","hashtags":["tag1","tag2"]}.',
-            "Rules: keep title <= 100 chars, description <= 500 chars, hashtags 5-12 items, no # symbol in array items.",
-            `Preferred tags to include when content matches: ${PREFERRED_VI_METADATA_TAGS.join(", ")}.`,
-            "If the content is a film review/recap/summary, include review phim and/or tóm tắt phim. If it is a story/novel/comic review or summary, include review truyện and/or tóm tắt truyện. If it is short-story content, include truyện ngắn. If it is animation/donghua/cartoon, include hoạt hình and add hoạt hình trung quốc when it is Chinese animation. If the content is a full review/recap, include review full.",
-            `Source title: ${input.sourceTitle ?? ""}`,
-            `Source description: ${input.sourceDescription ?? ""}`,
-            `Translated segments: ${JSON.stringify(input.translatedSegments.map((s) => s.translatedText).slice(0, 24))}`,
-          ].join("\n"),
-        },
-      ],
-    }),
-  });
+  let response: Response;
+  try {
+    response = await fetcher(`${baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model,
+        temperature: 0.3,
+        response_format: { type: "json_object" },
+        messages: [
+          {
+            role: "system",
+            content:
+              "You generate concise Vietnamese social video metadata. Return JSON only.",
+          },
+          {
+            role: "user",
+            content: [
+              "Generate Vietnamese metadata for social publishing.",
+              'Output JSON: {"title":"...","description":"...","hashtags":["tag1","tag2"]}.',
+              "Rules: keep title <= 100 chars, description <= 500 chars, hashtags 5-12 items, no # symbol in array items.",
+              `Preferred tags to include when content matches: ${PREFERRED_VI_METADATA_TAGS.join(", ")}.`,
+              "If the content is a film review/recap/summary, include review phim and/or tóm tắt phim. If it is a story/novel/comic review or summary, include review truyện and/or tóm tắt truyện. If it is short-story content, include truyện ngắn. If it is animation/donghua/cartoon, include hoạt hình and add hoạt hình trung quốc when it is Chinese animation. If the content is a full review/recap, include review full.",
+              `Source title: ${input.sourceTitle ?? ""}`,
+              `Source description: ${input.sourceDescription ?? ""}`,
+              `Translated segments: ${JSON.stringify(input.translatedSegments.map((s) => s.translatedText).slice(0, 24))}`,
+            ].join("\n"),
+          },
+        ],
+      }),
+    });
+  } catch (error) {
+    throw new ChineseTranscriptionError(
+      "PRV_GROQ_TRANSLATION_FAILED",
+      error instanceof Error
+        ? `Metadata generation request failed: ${error.message}`
+        : "Metadata generation request failed.",
+      502,
+    );
+  }
 
   const payload = (await response.json().catch(() => ({}))) as {
     id?: string;

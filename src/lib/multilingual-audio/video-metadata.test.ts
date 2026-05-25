@@ -98,4 +98,27 @@ describe("Vietnamese video metadata preferred tags", () => {
       expect.arrayContaining(["ngontinh", "co_trang", "review full", "hoạt hình trung quốc"]),
     );
   });
+
+  it("maps metadata network failures to provider error code", async () => {
+    const fetcher = vi.fn().mockRejectedValue(new TypeError("fetch failed"));
+
+    await expect(
+      generateVietnameseVideoMetadata({
+        apiKey: "test-key",
+        fetcher,
+        translatedSegments: [
+          {
+            id: 1,
+            start: 0,
+            end: 1,
+            sourceText: "demo",
+            translatedText: "xin chao",
+          },
+        ],
+      }),
+    ).rejects.toMatchObject({
+      code: "PRV_GROQ_TRANSLATION_FAILED",
+      message: expect.stringContaining("fetch failed"),
+    });
+  });
 });

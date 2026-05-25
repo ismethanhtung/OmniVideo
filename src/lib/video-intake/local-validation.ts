@@ -123,6 +123,12 @@ export function validateLocalIntakeInput(
     languageHint: input.languageHint?.trim() || undefined,
     contentIntent: input.contentIntent?.trim() || "other",
     ownershipStatus: input.ownershipStatus?.trim() || "unknown",
+    videoEditSetup:
+      input.videoEditSetup &&
+      typeof input.videoEditSetup === "object" &&
+      !Array.isArray(input.videoEditSetup)
+        ? input.videoEditSetup
+        : undefined,
     fileName,
     mimeType: input.mimeType?.trim() || undefined,
     fileSizeBytes: input.fileSizeBytes,

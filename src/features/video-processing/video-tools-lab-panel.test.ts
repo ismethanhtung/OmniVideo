@@ -29,6 +29,12 @@ describe("Video Tools Lab source preview controls", () => {
         expect(source).toContain("hasSavedVideoEditSetup");
         expect(source).toContain("Saved setup");
         expect(source).toContain("applyVideoEditSetup(videoEditSetup)");
+        expect(source).toContain("/api/storage/assets/save-video-setup");
+        expect(source).toContain("!selectedAssetId && !videoFile");
+        expect(source).toContain("Đang lưu setup...");
+        expect(source).toContain("Saving Setup...");
+        expect(source).toContain("saveLocalVideoEditSetup");
+        expect(source).toContain("Workspace upload đúng file này");
     });
 
     it("makes asset picking searchable by folder metadata", () => {
