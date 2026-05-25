@@ -23,6 +23,9 @@ import {
     UserRound,
     VideoIcon,
     Lightbulb,
+    PackageOpen,
+    Briefcase,
+    ToolCase,
 } from "lucide-react";
 
 import type { AppSectionId, LeftbarNavGroup, LeftbarNavItem } from "./types";
@@ -184,15 +187,15 @@ export const LEFTBAR_NAV: LeftbarNavGroup[] = [
             },
             {
                 id: "piperTtsSandbox",
-                icon: RadioTower,
+                icon: PackageOpen,
                 label: "Feature Sandbox",
                 description:
                     "Test nhanh các tính năng audio/video runtime (transcript retry, Piper TTS, segment inspection).",
             },
             {
                 id: "videoSplitter",
-                icon: Scissors,
-                label: "Video Split & Merge",
+                icon: ToolCase,
+                label: "Video Tools",
                 description:
                     "Cắt video dài theo block/số phần hoặc ghép nhiều video local thành một file MP4.",
             },

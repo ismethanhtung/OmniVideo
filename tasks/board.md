@@ -23,6 +23,10 @@
 
 ## Review
 
+- `FAST-WORKSPACE-044` - Surface VIP partial checkpoints on failed continue.
+- `FAST-WORKSPACE-043` - Save Workspace runtime video directly to local.
+- `FAST-WORKSPACE-042` - Apply Video Tools cover box and text overlay in Workspace.
+- `FAST-VIDEO-017` - Add Video Tools cover box and text overlay.
 - `FAST-VIDEO-016` - Add multi-file video merge mode to Video Splitter page.
 - `FAST-AUDIO-066` - Chunk Groq transcription uploads and fix VIP multiline progress detail.
 - `FAST-WORKSPACE-041` - Surface full VIP failure stage details in Workspace.

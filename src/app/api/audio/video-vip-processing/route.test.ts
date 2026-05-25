@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { ChineseTranscriptionError } from "@/lib/multilingual-audio/types";
 import { runVideoVipProcessing } from "@/lib/multilingual-audio/video-vip-processing";
 import { getAiProviderById } from "@/lib/ai-providers/repository";
 import { resolveAssetDownload } from "@/lib/storage/asset-download";
@@ -274,6 +275,55 @@ describe("video vip processing API", () => {
     );
   });
 
+  it("returns reusable VIP checkpoint stages when processing fails mid-node", async () => {
+    const error = new ChineseTranscriptionError(
+      "SYS_DUBBING_MUX_FAILED",
+      "VIP render failed: fetch failed",
+      500,
+    ) as ChineseTranscriptionError & {
+      checkpoint: {
+        failedStage: string;
+        savedStages: string[];
+        reusableStages: string[];
+      };
+    };
+    error.checkpoint = {
+      failedStage: "render",
+      savedStages: ["transcript", "translation", "voice"],
+      reusableStages: ["transcript", "translation", "voice"],
+    };
+    mockedRunVideoVipProcessing.mockRejectedValueOnce(error);
+
+    const formData = createFormData({
+      vipResumeKey: "workspace-vip:node:source:asset",
+    });
+    formData.set(
+      "videoFile",
+      new File([new Uint8Array([1, 2, 3])], "source.mp4", {
+        type: "video/mp4",
+      }),
+    );
+
+    const response = await POST(
+      new Request("http://localhost/api/audio/video-vip-processing", {
+        method: "POST",
+        body: formData,
+      }),
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(payload).toMatchObject({
+      ok: false,
+      errorCode: "SYS_DUBBING_MUX_FAILED",
+      checkpoint: {
+        failedStage: "render",
+        savedStages: ["transcript", "translation", "voice"],
+        reusableStages: ["transcript", "translation", "voice"],
+      },
+    });
+  });
+
   it("falls back to saved asset subtitle setup when VIP request values are defaults", async () => {
     mockedRunVideoVipProcessing.mockResolvedValueOnce({
       videoBase64: Buffer.from("vip").toString("base64"),
@@ -393,6 +443,144 @@ describe("video vip processing API", () => {
           regions: [
             expect.objectContaining({
               region: expect.objectContaining({ y: 87.6 }),
+            }),
+          ],
+        }),
+      }),
+    );
+  });
+
+  it("uses saved asset cover box and text overlay setup for VIP render", async () => {
+    mockedRunVideoVipProcessing.mockResolvedValueOnce({
+      videoBase64: Buffer.from("vip").toString("base64"),
+      mimeType: "video/mp4",
+      extension: "mp4",
+      fileName: "vip-output.mp4",
+      byteLength: 3,
+      generationDurationMs: 100,
+      transcript: {
+        text: "",
+        language: "zh",
+        model: "whisper-large-v3-turbo",
+        segments: [],
+        words: [],
+        source: { fileName: "source.mp4", fileSizeBytes: 3 },
+        audio: {
+          format: "mp3",
+          sampleRate: 16000,
+          channels: 1,
+          bitrateKbps: 64,
+          fileSizeBytes: 3,
+        },
+        steps: [],
+        provider: { name: "groq" },
+      },
+      translation: {
+        sourceLanguage: "zh",
+        targetLanguage: "vi",
+        model: "cx/gpt-5.3-codex-low",
+        translatedSegments: [],
+        generationDurationMs: 5,
+        chunks: [],
+        provider: { name: "groq" },
+      },
+      voice: {
+        mimeType: "audio/wav",
+        extension: "wav",
+        fileName: "voice.wav",
+        byteLength: 9,
+        segmentCount: 1,
+        generationDurationMs: 4,
+        alignment: { mode: "timeline", chunks: 1, targetDurationSeconds: 1 },
+        settings: { binaryPath: "piper", modelPath: "" },
+        provider: { name: "piper", mode: "local-cli" },
+      },
+      metadata: {
+        title: "Tiêu đề",
+        description: "Mô tả",
+        hashtags: ["review"],
+        model: "cx/gpt-5.3-codex-low",
+        provider: { name: "groq" },
+      },
+      stages: {
+        preprocessDurationMs: 0,
+        transcriptionDurationMs: 1,
+        translationDurationMs: 1,
+        voiceDurationMs: 1,
+        muxDurationMs: 0,
+        finalRenderDurationMs: 1,
+        metadataDurationMs: 1,
+      },
+    });
+    mockedGetIntakeDb.mockResolvedValueOnce({} as Awaited<ReturnType<typeof getIntakeDb>>);
+    mockedGetVideoAssetById.mockResolvedValueOnce({
+      _id: "asset-1",
+      mimeType: "video/mp4",
+      metadata: {
+        title: "Cover setup asset",
+        videoEditSetup: {
+          blurEnabled: false,
+          coverBoxEnabled: true,
+          subtitleBackgroundColor: "#000000",
+          subtitleBackgroundOpacity: 65,
+          textOverlayEnabled: true,
+          textOverlay: {
+            text: "Ăn Không Ngồi Rồi",
+            fontFamily: "Baloo 2",
+            fontSize: 52,
+            x: 82,
+            y: 10,
+          },
+          blurRegions: [
+            {
+              x: 0,
+              y: 82,
+              width: 100,
+              height: 14,
+              start: 0,
+              end: 36000,
+              strength: 50,
+            },
+          ],
+        },
+      },
+    } as Awaited<ReturnType<typeof getVideoAssetById>>);
+    mockedResolveAssetDownload.mockResolvedValueOnce({
+      ok: true,
+      body: new Uint8Array([1, 2, 3]),
+      headers: new Headers({ "content-type": "video/mp4" }),
+    });
+
+    const response = await POST(
+      new Request("http://localhost/api/audio/video-vip-processing", {
+        method: "POST",
+        body: createFormData({
+          assetId: "asset-1",
+          useSourceAssetVideoEditSetup: "true",
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(mockedRunVideoVipProcessing).toHaveBeenCalledWith(
+      expect.objectContaining({
+        blur: undefined,
+        coverBoxes: expect.objectContaining({
+          enabled: true,
+          color: "#000000",
+          opacity: 65,
+          regions: [
+            expect.objectContaining({
+              region: expect.objectContaining({ y: 82 }),
+            }),
+          ],
+        }),
+        textOverlays: expect.objectContaining({
+          enabled: true,
+          overlays: [
+            expect.objectContaining({
+              text: "Ăn Không Ngồi Rồi",
+              fontFamily: "Baloo 2",
             }),
           ],
         }),

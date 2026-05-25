@@ -1,5 +1,70 @@
 # OmniVideo Changelog
 
+## FAST-WORKSPACE-044 - Surface VIP Partial Checkpoints on Failed Continue
+
+- Bumped app version from `0.10.47` to `0.10.48` as a patch release for Workspace VIP resume clarity.
+- Added VIP checkpoint metadata to failed VIP processing errors, including failed stage, stages saved in the current run, and reusable stages for the next retry.
+- Updated `/api/audio/video-vip-processing` to return checkpoint telemetry in error JSON when a VIP internal stage fails after partial progress.
+- Updated Workspace failure detail rendering to show reusable VIP checkpoint stages and explain that `Continue Failed Flow` skips them on the same server/source/config.
+- Added Continue-mode VIP progress copy so retries make checkpoint reuse explicit instead of looking like a full restart.
+- Updated Video Pipeline docs to require VIP failure checkpoint telemetry.
+- Verification (FAST-WORKSPACE-044):
+  - `npm run test -- --run src/lib/multilingual-audio/video-vip-processing.test.ts src/app/api/audio/video-vip-processing/route.test.ts src/features/workspace/workspace-canvas-panel.test.ts` pass (3 files / 34 tests).
+  - `npm run build` pass; existing ESLint circular-config warning remains unchanged from repo baseline.
+  - `npm run guard:version` pass.
+
+## FAST-WORKSPACE-043 - Save Workspace Runtime Video Directly to Local
+
+- Bumped app version from `0.10.46` to `0.10.47` as a patch release for Workspace local output parity.
+- Updated the Workspace local output node copy from download-only behavior toward `Save to Local`.
+- Extended Workspace planning so `Save to Local` can consume generated video artifact producers directly, including `VIP Processing`, without requiring `Save to Storage` first.
+- Updated Workspace runtime save-local execution to use:
+  - Storage asset download when the upstream producer is a Storage asset,
+  - inline `File`/base64 runtime artifacts when available,
+  - server-side workspace artifact download when large VIP/edit/preprocess outputs are represented by `artifactId`.
+- Added `/api/workspace/artifacts/[artifactId]/download` for temporary Workspace server-side artifacts.
+- Updated Video Pipeline docs to record direct local save support for runtime video artifacts.
+- Verification (FAST-WORKSPACE-043):
+  - `npm run test -- --run src/lib/workspace/workspace-graph.test.ts src/features/workspace/workspace-canvas-panel.test.ts 'src/app/api/workspace/artifacts/[artifactId]/download/route.test.ts'` pass (3 files / 73 tests).
+  - `npm run build` pass; existing ESLint circular-config warning remains unchanged from repo baseline.
+  - `npm run guard:version` pass.
+
+## FAST-WORKSPACE-042 - Apply Video Tools Cover Box and Text Overlay in Workspace
+
+- Bumped app version from `0.10.45` to `0.10.46` as a patch release for Workspace video edit parity.
+- Updated Workspace saved `videoEditSetup` typing/resolution to include:
+  - `blurEnabled`,
+  - `coverBoxEnabled`,
+  - `textOverlayEnabled`,
+  - `textOverlay`.
+- Updated Workspace `edit-video` requests to forward cover box and text overlay fields to `/api/video-processing/edit`, including text overlay play resolution.
+- Updated Workspace VIP processing requests to forward saved cover box and text overlay setup instead of forcing blur-only behavior.
+- Extended `/api/audio/video-vip-processing` to read saved/form cover box and text overlay setup.
+- Extended VIP final composite render to apply cover boxes before mirror and text overlays after subtitles.
+- Updated Video Pipeline docs to require Workspace render parity with Video Tools Lab setup.
+- Verification (FAST-WORKSPACE-042):
+  - `npm run test -- --run src/features/workspace/workspace-canvas-panel.test.ts src/app/api/audio/video-vip-processing/route.test.ts src/lib/multilingual-audio/video-vip-processing.test.ts src/lib/video-processing/video-edit-pipeline.test.ts src/app/api/video-processing/edit/route.test.ts` pass (5 files / 53 tests).
+  - `npm run build` pass; existing ESLint circular-config warning remains unchanged from repo baseline.
+  - `npm run guard:version` pass.
+
+## FAST-VIDEO-017 - Add Video Tools Cover Box and Text Overlay
+
+- Bumped app version from `0.10.44` to `0.10.45` as a patch release for Video Tools Lab edit workflow.
+- Added a lightweight cover-box transform to the video edit pipeline using ffmpeg `drawbox`, so old subtitle regions can be covered with the Vietnamese subtitle background color/opacity without running blur.
+- Added simple ASS-based Text Overlay support for channel watermark text, preserving Vietnamese text such as `Ăn Không Ngồi Rồi`.
+- Extended `/api/video-processing/edit` to parse `coverBoxEnabled`, `coverBoxesJson`, `textOverlayEnabled`, and `textOverlaysJson`.
+- Updated Video Tools Lab with:
+  - default no-blur `Cover subtitle box`,
+  - explicit `Partial blur` toggle,
+  - quick `Add subtitle box` region,
+  - simple Text Overlay controls and draggable preview layer,
+  - setup save/load fields for cover box and text overlay.
+- Updated Video Pipeline docs to include cover boxes and text overlays as edit capabilities.
+- Verification (FAST-VIDEO-017):
+  - `npm run test -- --run src/lib/video-processing/video-edit-pipeline.test.ts src/app/api/video-processing/edit/route.test.ts src/features/video-processing/video-tools-lab-panel.test.ts` pass (3 files / 25 tests).
+  - `npm run build` pass; existing ESLint circular-config warning remains unchanged from repo baseline.
+  - `npm run guard:version` pass.
+
 ## FAST-VIDEO-016 - Add Multi-file Video Merge Mode to Video Splitter Page
 
 - Bumped app version from `0.10.43` to `0.10.44` as a patch release for local video tools.

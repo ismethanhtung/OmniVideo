@@ -62,7 +62,7 @@ describe("navigation registry", () => {
     expect(getNavItem("piperTtsSandbox")?.label).toBe("Feature Sandbox");
     expect(getNavItem("piperTtsSandbox")?.description).toContain("transcript retry");
     expect(getNavItem("videoToolsLab")?.description).toContain("mirror video");
-    expect(getNavItem("videoSplitter")?.label).toBe("Video Split & Merge");
+    expect(getNavItem("videoSplitter")?.label).toBe("Video Tools");
     expect(navIds).not.toContain("groqTtsSandbox");
   });
 

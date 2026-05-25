@@ -10,6 +10,7 @@ import {
     ChineseTranscriptionError,
 } from "@/lib/multilingual-audio/types";
 import { runVideoVipProcessing } from "@/lib/multilingual-audio/video-vip-processing";
+import type { VideoEditInput } from "@/lib/video-processing/video-edit-pipeline";
 import { getIntakeDb, getVideoAssetById } from "@/lib/video-intake/repository";
 import {
     buildWorkspaceMediaPayload,
@@ -112,7 +113,15 @@ function readFormBooleanWithSetupFallback(input: {
 function readBlurConfig(
     formData: FormData,
     sourceVideoEditSetup?: Record<string, unknown> | null,
-) {
+): VideoEditInput["blur"] | undefined {
+    const formBlurEnabled = readOptionalBoolean(formData, "blurEnabled");
+    const setupBlurEnabled = readSetupBoolean(
+        sourceVideoEditSetup,
+        "blurEnabled",
+    );
+    const blurEnabled = formBlurEnabled ?? setupBlurEnabled ?? true;
+    if (!blurEnabled) return undefined;
+
     const blurRegionsJson = readFormValue(formData, "blurRegionsJson").trim();
     if (blurRegionsJson) {
         try {
@@ -224,6 +233,268 @@ function readBlurConfig(
         },
         strength: readOptionalNumber(formData, "blurStrength") ?? 50,
     };
+}
+
+function readCoverBoxConfig(
+    formData: FormData,
+    sourceVideoEditSetup?: Record<string, unknown> | null,
+): VideoEditInput["coverBoxes"] | undefined {
+    const formCoverBoxEnabled = readOptionalBoolean(
+        formData,
+        "coverBoxEnabled",
+    );
+    const setupCoverBoxEnabled = readSetupBoolean(
+        sourceVideoEditSetup,
+        "coverBoxEnabled",
+    );
+    const coverBoxEnabled = formCoverBoxEnabled ?? setupCoverBoxEnabled ?? false;
+    if (!coverBoxEnabled) return undefined;
+
+    const color =
+        readFormValue(formData, "coverBoxColor").trim() ||
+        readSetupString(sourceVideoEditSetup, "subtitleBackgroundColor") ||
+        "#000000";
+    const opacity =
+        readOptionalNumber(formData, "coverBoxOpacity") ??
+        readSetupNumber(sourceVideoEditSetup, "subtitleBackgroundOpacity") ??
+        65;
+
+    const coverBoxesJson = readFormValue(formData, "coverBoxesJson").trim();
+    if (coverBoxesJson) {
+        try {
+            const parsed = JSON.parse(coverBoxesJson) as Array<{
+                x: number;
+                y: number;
+                width: number;
+                height: number;
+                start: number;
+                end: number;
+                color?: string;
+                opacity?: number;
+            }>;
+            if (Array.isArray(parsed) && parsed.length > 0) {
+                return {
+                    enabled: true,
+                    color,
+                    opacity,
+                    regions: parsed
+                        .map((item) => ({
+                            region: {
+                                x: Number(item.x),
+                                y: Number(item.y),
+                                width: Number(item.width),
+                                height: Number(item.height),
+                            },
+                            timeline: {
+                                start: Number(item.start),
+                                end: Number(item.end),
+                            },
+                            color:
+                                typeof item.color === "string"
+                                    ? item.color
+                                    : color,
+                            opacity: Number.isFinite(item.opacity)
+                                ? Number(item.opacity)
+                                : opacity,
+                        }))
+                        .filter(
+                            (item) =>
+                                Number.isFinite(item.region.x) &&
+                                Number.isFinite(item.region.y) &&
+                                Number.isFinite(item.region.width) &&
+                                Number.isFinite(item.region.height) &&
+                                Number.isFinite(item.timeline.start) &&
+                                Number.isFinite(item.timeline.end),
+                        ),
+                };
+            }
+        } catch {
+            // fallback to setup or single region fields
+        }
+    }
+
+    const setupBlurRegions = Array.isArray(sourceVideoEditSetup?.blurRegions)
+        ? sourceVideoEditSetup.blurRegions
+        : [];
+    if (setupBlurRegions.length > 0) {
+        const setupCoverBoxRegions = setupBlurRegions.reduce<
+            NonNullable<NonNullable<VideoEditInput["coverBoxes"]>["regions"]>
+        >((regions, item) => {
+            const candidate =
+                typeof item === "object" && item !== null
+                    ? (item as Record<string, unknown>)
+                    : null;
+            if (!candidate) return regions;
+            const next = {
+                region: {
+                    x: Number(candidate.x),
+                    y: Number(candidate.y),
+                    width: Number(candidate.width),
+                    height: Number(candidate.height),
+                },
+                timeline: {
+                    start: Number(candidate.start),
+                    end: Number(candidate.end),
+                },
+                color,
+                opacity,
+            };
+            if (
+                Number.isFinite(next.region.x) &&
+                Number.isFinite(next.region.y) &&
+                Number.isFinite(next.region.width) &&
+                Number.isFinite(next.region.height) &&
+                Number.isFinite(next.timeline.start) &&
+                Number.isFinite(next.timeline.end)
+            ) {
+                regions.push(next);
+            }
+            return regions;
+        }, []);
+        return {
+            enabled: true,
+            color,
+            opacity,
+            regions: setupCoverBoxRegions,
+        };
+    }
+
+    return {
+        enabled: true,
+        color,
+        opacity,
+        region: {
+            x: readFormNumberWithSetupFallback({
+                formData,
+                key: "regionX",
+                defaultValue: 0,
+                setup: sourceVideoEditSetup,
+            }),
+            y: readFormNumberWithSetupFallback({
+                formData,
+                key: "regionY",
+                defaultValue: 84,
+                setup: sourceVideoEditSetup,
+            }),
+            width: readFormNumberWithSetupFallback({
+                formData,
+                key: "regionWidth",
+                defaultValue: 100,
+                setup: sourceVideoEditSetup,
+            }),
+            height: readFormNumberWithSetupFallback({
+                formData,
+                key: "regionHeight",
+                defaultValue: 16,
+                setup: sourceVideoEditSetup,
+            }),
+        },
+        timeline: {
+            start: readFormNumberWithSetupFallback({
+                formData,
+                key: "timelineStart",
+                defaultValue: 0,
+                setup: sourceVideoEditSetup,
+            }),
+            end: readFormNumberWithSetupFallback({
+                formData,
+                key: "timelineEnd",
+                defaultValue: 36000,
+                setup: sourceVideoEditSetup,
+            }),
+        },
+    };
+}
+
+function readTextOverlayConfig(
+    formData: FormData,
+    sourceVideoEditSetup?: Record<string, unknown> | null,
+): VideoEditInput["textOverlays"] | undefined {
+    const formTextOverlayEnabled = readOptionalBoolean(
+        formData,
+        "textOverlayEnabled",
+    );
+    const setupTextOverlayEnabled = readSetupBoolean(
+        sourceVideoEditSetup,
+        "textOverlayEnabled",
+    );
+    const enabled = formTextOverlayEnabled ?? setupTextOverlayEnabled ?? false;
+    if (!enabled) return undefined;
+
+    const textOverlaysJson = readFormValue(formData, "textOverlaysJson").trim();
+    if (textOverlaysJson) {
+        try {
+            const parsed = JSON.parse(textOverlaysJson) as unknown;
+            if (Array.isArray(parsed) && parsed.length > 0) {
+                return {
+                    enabled: true,
+                    overlays: parsed
+                        .filter(
+                            (item): item is Record<string, unknown> =>
+                                typeof item === "object" && item !== null,
+                        )
+                        .map((item) => ({
+                            text:
+                                typeof item.text === "string"
+                                    ? item.text
+                                    : "",
+                            fontFamily:
+                                typeof item.fontFamily === "string"
+                                    ? item.fontFamily
+                                    : undefined,
+                            fontSize: Number(item.fontSize),
+                            fontWeight: Number(item.fontWeight),
+                            textColor:
+                                typeof item.textColor === "string"
+                                    ? item.textColor
+                                    : undefined,
+                            strokeColor:
+                                typeof item.strokeColor === "string"
+                                    ? item.strokeColor
+                                    : undefined,
+                            strokeWidth: Number(item.strokeWidth),
+                            backgroundEnabled:
+                                item.backgroundEnabled === true ||
+                                item.backgroundEnabled === "true",
+                            backgroundColor:
+                                typeof item.backgroundColor === "string"
+                                    ? item.backgroundColor
+                                    : undefined,
+                            backgroundOpacity: Number(item.backgroundOpacity),
+                            x: Number(item.x),
+                            y: Number(item.y),
+                            start: Number(item.start),
+                            end: Number(item.end),
+                        }))
+                        .filter((item) => item.text.trim().length > 0),
+                    playResX: readOptionalNumber(formData, "textOverlayPlayResX"),
+                    playResY: readOptionalNumber(formData, "textOverlayPlayResY"),
+                };
+            }
+        } catch {
+            // fallback to setup textOverlay
+        }
+    }
+
+    const setupTextOverlay = sourceVideoEditSetup?.textOverlay;
+    if (
+        setupTextOverlay &&
+        typeof setupTextOverlay === "object" &&
+        !Array.isArray(setupTextOverlay)
+    ) {
+        return {
+            enabled: true,
+            overlays: [
+                setupTextOverlay as NonNullable<
+                    VideoEditInput["textOverlays"]
+                >["overlays"][number],
+            ],
+            playResX: readOptionalNumber(formData, "textOverlayPlayResX"),
+            playResY: readOptionalNumber(formData, "textOverlayPlayResY"),
+        };
+    }
+
+    return undefined;
 }
 
 async function readStorageAssetVideo(assetId: string) {
@@ -437,6 +708,7 @@ export async function POST(request: Request) {
                 formData,
                 sourceSetupForRender,
             ),
+            coverBoxes: readCoverBoxConfig(formData, sourceSetupForRender),
             subtitleStyle: {
                 fontFamily: readFormStringWithSetupFallback({
                     formData,
@@ -494,6 +766,10 @@ export async function POST(request: Request) {
                     setup: sourceSetupForRender,
                 }),
             },
+            textOverlays: readTextOverlayConfig(
+                formData,
+                sourceSetupForRender,
+            ),
             omitVideoBase64: true,
         });
 
@@ -517,12 +793,19 @@ export async function POST(request: Request) {
         });
     } catch (error) {
         if (error instanceof ChineseTranscriptionError) {
+            const checkpoint =
+                error &&
+                typeof error === "object" &&
+                "checkpoint" in error
+                    ? (error as { checkpoint?: unknown }).checkpoint
+                    : undefined;
             return NextResponse.json(
                 {
                     ok: false,
                     errorCode: error.code,
                     error: error.message,
                     steps: error.steps,
+                    checkpoint,
                 },
                 { status: error.status },
             );

@@ -70,8 +70,11 @@ describe("video edit API", () => {
             transform: {
                 mirror: true,
                 partialBlur: true,
+                coverBox: false,
                 subtitleOverlay: true,
                 segmentCount: 1,
+                textOverlay: false,
+                textOverlayCount: 0,
             },
         });
         const formData = createFormData({
@@ -160,8 +163,11 @@ describe("video edit API", () => {
             transform: {
                 mirror: false,
                 partialBlur: true,
+                coverBox: false,
                 subtitleOverlay: true,
                 segmentCount: 1,
+                textOverlay: false,
+                textOverlayCount: 0,
             },
         });
         const formData = createFormData({
@@ -221,8 +227,11 @@ describe("video edit API", () => {
             transform: {
                 mirror: false,
                 partialBlur: true,
+                coverBox: false,
                 subtitleOverlay: true,
                 segmentCount: 1,
+                textOverlay: false,
+                textOverlayCount: 0,
             },
         });
         setProbeVideoDimensionsFromPathForTest(
@@ -306,6 +315,101 @@ describe("video edit API", () => {
         });
     });
 
+    it("parses cover boxes and text overlays without requiring blur", async () => {
+        mockedRunVideoEditPipeline.mockResolvedValueOnce({
+            videoBase64: Buffer.from("edited").toString("base64"),
+            mimeType: "video/mp4",
+            extension: "mp4",
+            fileName: "source-edit.mp4",
+            byteLength: 6,
+            generationDurationMs: 12,
+            transform: {
+                mirror: false,
+                partialBlur: false,
+                coverBox: true,
+                subtitleOverlay: false,
+                segmentCount: 0,
+                textOverlay: true,
+                textOverlayCount: 1,
+            },
+        });
+        const formData = createFormData({
+            coverBoxEnabled: "true",
+            coverBoxColor: "#000000",
+            coverBoxOpacity: "65",
+            textOverlayEnabled: "true",
+            textOverlayPlayResX: "1920",
+            textOverlayPlayResY: "1080",
+            coverBoxesJson: JSON.stringify([
+                {
+                    x: 0,
+                    y: 82,
+                    width: 100,
+                    height: 14,
+                    start: 0,
+                    end: 36000,
+                },
+            ]),
+            textOverlaysJson: JSON.stringify([
+                {
+                    text: "Ăn Không Ngồi Rồi",
+                    fontFamily: "Baloo 2",
+                    fontSize: 52,
+                    fontWeight: 800,
+                    textColor: "#ffffff",
+                    strokeColor: "#111827",
+                    strokeWidth: 3,
+                    x: 82,
+                    y: 10,
+                },
+            ]),
+        });
+        formData.set(
+            "videoFile",
+            new File([new Uint8Array([1, 2, 3])], "source.mp4", {
+                type: "video/mp4",
+            }),
+        );
+
+        const response = await POST(
+            new Request("http://localhost/api/video-processing/edit", {
+                method: "POST",
+                body: formData,
+            }),
+        );
+
+        expect(response.status).toBe(200);
+        expect(mockedRunVideoEditPipeline).toHaveBeenCalledWith(
+            expect.objectContaining({
+                blur: undefined,
+                coverBoxes: expect.objectContaining({
+                    enabled: true,
+                    color: "#000000",
+                    opacity: 65,
+                    regions: [
+                        expect.objectContaining({
+                            region: { x: 0, y: 82, width: 100, height: 14 },
+                            timeline: { start: 0, end: 36000 },
+                        }),
+                    ],
+                }),
+                textOverlays: expect.objectContaining({
+                    enabled: true,
+                    playResX: 1920,
+                    playResY: 1080,
+                    overlays: [
+                        expect.objectContaining({
+                            text: "Ăn Không Ngồi Rồi",
+                            fontFamily: "Baloo 2",
+                            x: 82,
+                            y: 10,
+                        }),
+                    ],
+                }),
+            }),
+        );
+    });
+
     it("parses multi blur regions json and forwards to pipeline", async () => {
         mockedRunVideoEditPipeline.mockResolvedValueOnce({
             videoBase64: Buffer.from("edited").toString("base64"),
@@ -317,8 +421,11 @@ describe("video edit API", () => {
             transform: {
                 mirror: false,
                 partialBlur: true,
+                coverBox: false,
                 subtitleOverlay: true,
                 segmentCount: 1,
+                textOverlay: false,
+                textOverlayCount: 0,
             },
         });
         const formData = createFormData({

@@ -76,6 +76,19 @@ describe("WorkspaceCanvasPanel canvas interactions", () => {
         expect(source).toContain("Mirror output video");
     });
 
+    it("forwards saved Video Tools cover box and text overlay setup to Workspace render APIs", () => {
+        expect(source).toContain("coverBoxEnabled");
+        expect(source).toContain("textOverlayEnabled");
+        expect(source).toContain("textOverlaysJson");
+        expect(source).toContain('"coverBoxEnabled"');
+        expect(source).toContain('"coverBoxesJson"');
+        expect(source).toContain('"coverBoxColor"');
+        expect(source).toContain('"textOverlayEnabled"');
+        expect(source).toContain('"textOverlaysJson"');
+        expect(source).toContain("textOverlayPlayResX");
+        expect(source).toContain("Text overlay");
+    });
+
     it("supports enable toggle for preprocess and passthrough behavior", () => {
         expect(source).toContain("Enable preprocess");
         expect(source).toContain("function RuntimeNumberInput");
@@ -168,6 +181,12 @@ describe("WorkspaceCanvasPanel canvas interactions", () => {
         expect(source).toContain("buildDubbingProgressStepDescription");
         expect(source).toContain("WorkspaceApiError");
         expect(source).toContain("buildWorkspaceApiFailureDetailLines");
+        expect(source).toContain("parseWorkspaceApiCheckpoint");
+        expect(source).toContain("VIP checkpoint reusable stages");
+        expect(source).toContain("Continue Failed Flow will skip those VIP stages");
+        expect(source).toContain(
+            "Continue mode: server-side VIP checkpoints will be reused when the source/config match.",
+        );
         expect(source).toContain("VIP stage details:");
         expect(source).toContain("metrics:");
         expect(source).toContain("HTTP 413: request body too large");
@@ -230,12 +249,18 @@ describe("WorkspaceCanvasPanel canvas interactions", () => {
         expect(source).toContain('init: { method: "DELETE" }');
     });
 
-    it("supports local download output node with browser and folder-picker modes", () => {
+    it("supports save-to-local output node with browser and folder-picker modes", () => {
         expect(source).toContain('node.templateNodeType === "output.download-local"');
         expect(source).toContain("Browser Downloads folder");
         expect(source).toContain("Choose folder on every run");
         expect(source).toContain('step.kind === "download-local"');
         expect(source).toContain('url: `/api/storage/assets/${assetId}/download`');
+        expect(source).toContain(
+            'url: `/api/workspace/artifacts/${artifact.artifactId}/download`',
+        );
+        expect(source).toContain("resolveRuntimeArtifactFileForLocalSave");
+        expect(source).toContain("Saving output to local machine");
+        expect(source).toContain("Save Local ·");
         expect(source).toContain("showSaveFilePicker");
     });
 

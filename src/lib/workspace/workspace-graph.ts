@@ -1270,9 +1270,9 @@ export const WORKSPACE_NODE_TEMPLATES: WorkspaceNodeTemplate[] = [
     {
         nodeType: "output.download-local",
         version: "1.0.0",
-        label: "Download Local",
+        label: "Save to Local",
         description:
-            "Tải output về máy local qua trình duyệt (mặc định Downloads hoặc chọn nơi lưu).",
+            "Lưu output về máy local từ Storage hoặc runtime artifact, không cần upload lên Storage trước.",
         category: "output",
         status: "available",
         inputPorts: [{ id: "asset", label: "Asset", dataType: "asset" }],
@@ -1280,7 +1280,7 @@ export const WORKSPACE_NODE_TEMPLATES: WorkspaceNodeTemplate[] = [
         configFields: [
             {
                 key: "downloadMode",
-                label: "Download mode",
+                label: "Save mode",
                 type: "select",
                 required: true,
                 defaultValue: "downloads",
@@ -1724,6 +1724,34 @@ function findUpstreamProducer(
         if (visited.has(current)) continue;
         visited.add(current);
         if (producers.has(current)) {
+            return current;
+        }
+        for (const edge of graph.edges) {
+            if (edge.toNodeId === current && !visited.has(edge.fromNodeId)) {
+                stack.push(edge.fromNodeId);
+            }
+        }
+    }
+
+    return undefined;
+}
+
+function findUpstreamLocalSaveProducer(
+    graph: WorkspaceGraph,
+    targetNodeId: string,
+    assetProducers: Set<string>,
+    artifactProducers: Set<string>,
+): string | undefined {
+    const visited = new Set<string>();
+    const stack = graph.edges
+        .filter((edge) => edge.toNodeId === targetNodeId)
+        .map((edge) => edge.fromNodeId);
+
+    while (stack.length > 0) {
+        const current = stack.pop() as string;
+        if (visited.has(current)) continue;
+        visited.add(current);
+        if (assetProducers.has(current) || artifactProducers.has(current)) {
             return current;
         }
         for (const edge of graph.edges) {
@@ -2732,14 +2760,15 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
         { kind: "download-local" }
     >[] = [];
     for (const downloadNode of downloadNodes) {
-        const producer = findUpstreamProducer(
+        const producer = findUpstreamLocalSaveProducer(
             graph,
             downloadNode.id,
             producers,
+            artifactProducers,
         );
         if (!producer) {
             errors.push(
-                `Download Local '${downloadNode.label}' (${downloadNode.id}) cần upstream Storage Asset hoặc Save to Storage.`,
+                `Save to Local '${downloadNode.label}' (${downloadNode.id}) cần upstream Storage Asset, Save to Storage hoặc generated video artifact.`,
             );
             continue;
         }

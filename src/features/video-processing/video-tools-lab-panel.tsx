@@ -5,13 +5,12 @@ import {
     Captions,
     Clapperboard,
     FlipHorizontal2,
-    Loader2,
     Pause,
     Play,
     ScanLine,
+    Type,
     Volume2,
     VolumeX,
-    Wand2,
 } from "lucide-react";
 
 import type { LeftbarNavItem } from "@/components/layout/types";
@@ -39,8 +38,11 @@ type VideoEditApiPayload =
               transform: {
                   mirror: boolean;
                   partialBlur: boolean;
+                  coverBox?: boolean;
                   subtitleOverlay: boolean;
                   segmentCount: number;
+                  textOverlay?: boolean;
+                  textOverlayCount?: number;
               };
           };
       }
@@ -67,6 +69,7 @@ type StoredVideoAsset = {
         videoEditSetup?: {
             mirrorEnabled?: boolean;
             blurEnabled?: boolean;
+            coverBoxEnabled?: boolean;
             subtitleOverlayEnabled?: boolean;
             blurRegions?: Array<{
                 x: number;
@@ -91,6 +94,23 @@ type StoredVideoAsset = {
                 leftPercent?: number;
                 topPercent?: number;
             } | null;
+            textOverlayEnabled?: boolean;
+            textOverlay?: {
+                text?: string;
+                fontFamily?: string;
+                fontSize?: number;
+                fontWeight?: number;
+                textColor?: string;
+                strokeColor?: string;
+                strokeWidth?: number;
+                backgroundEnabled?: boolean;
+                backgroundColor?: string;
+                backgroundOpacity?: number;
+                x?: number;
+                y?: number;
+                start?: number;
+                end?: number;
+            } | null;
         } | null;
     };
 };
@@ -104,6 +124,23 @@ type BlurRegionDraft = {
     start: number;
     end: number;
     strength: number;
+};
+
+type TextOverlayDraft = {
+    text: string;
+    fontFamily: string;
+    fontSize: number;
+    fontWeight: number;
+    textColor: string;
+    strokeColor: string;
+    strokeWidth: number;
+    backgroundEnabled: boolean;
+    backgroundColor: string;
+    backgroundOpacity: number;
+    x: number;
+    y: number;
+    start: number;
+    end: number;
 };
 
 type VideoEditSetup = NonNullable<
@@ -303,6 +340,68 @@ const SUBTITLE_BACKGROUND_COLOR_OPTIONS = [
     { value: "#808080", label: "Xám" },
 ] as const;
 
+const VIDEO_TEXT_FONT_OPTIONS: Array<{
+    value: string;
+    label: string;
+    cssVariable: string;
+    fallbackFamily: string;
+}> = [
+    {
+        value: "Montserrat",
+        label: "Montserrat",
+        cssVariable: "--font-thumb-montserrat",
+        fallbackFamily: '"Montserrat", sans-serif',
+    },
+    {
+        value: "Baloo 2",
+        label: "Baloo 2",
+        cssVariable: "--font-thumb-baloo-2",
+        fallbackFamily: '"Baloo 2", sans-serif',
+    },
+    {
+        value: "Bangers",
+        label: "Bangers",
+        cssVariable: "--font-thumb-bangers",
+        fallbackFamily: '"Bangers", sans-serif',
+    },
+    {
+        value: "Prompt",
+        label: "Prompt",
+        cssVariable: "--font-thumb-prompt",
+        fallbackFamily: '"Prompt", sans-serif',
+    },
+    {
+        value: "Sriracha",
+        label: "Sriracha",
+        cssVariable: "--font-thumb-sriracha",
+        fallbackFamily: '"Sriracha", cursive',
+    },
+];
+
+const DEFAULT_TEXT_OVERLAY: TextOverlayDraft = {
+    text: "Ăn Không Ngồi Rồi",
+    fontFamily: "Baloo 2",
+    fontSize: 52,
+    fontWeight: 800,
+    textColor: "#ffffff",
+    strokeColor: "#111827",
+    strokeWidth: 3,
+    backgroundEnabled: false,
+    backgroundColor: "#000000",
+    backgroundOpacity: 60,
+    x: 82,
+    y: 10,
+    start: 0,
+    end: 36000,
+};
+
+function buildDraftId(prefix: string) {
+    if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+        return `${prefix}-${crypto.randomUUID()}`;
+    }
+    return `${prefix}-${Date.now()}-${Math.random()}`;
+}
+
 function normalizeSubtitleBackgroundColor(value: string | null | undefined) {
     const normalized = (value || "").trim().toUpperCase();
     return SUBTITLE_BACKGROUND_COLOR_OPTIONS.some(
@@ -310,6 +409,13 @@ function normalizeSubtitleBackgroundColor(value: string | null | undefined) {
     )
         ? normalized
         : "#000000";
+}
+
+function getVideoTextFontOption(fontFamily: string) {
+    return (
+        VIDEO_TEXT_FONT_OPTIONS.find((option) => option.value === fontFamily) ??
+        VIDEO_TEXT_FONT_OPTIONS[0]
+    );
 }
 
 function hasSavedVideoEditSetup(asset: StoredVideoAsset | null) {
@@ -324,7 +430,8 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
     const [showAssetPicker, setShowAssetPicker] = useState(false);
     const [assetSearchQuery, setAssetSearchQuery] = useState("");
     const [mirrorEnabled, setMirrorEnabled] = useState(false);
-    const [blurEnabled, setBlurEnabled] = useState(true);
+    const [blurEnabled, setBlurEnabled] = useState(false);
+    const [coverBoxEnabled, setCoverBoxEnabled] = useState(true);
     const [subtitleOverlayEnabled, setSubtitleOverlayEnabled] = useState(true);
     const [blurRegions, setBlurRegions] = useState<BlurRegionDraft[]>([]);
     const [activeRegionId, setActiveRegionId] = useState<string | null>(null);
@@ -357,6 +464,10 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
         leftPercent: number;
         topPercent: number;
     } | null>(null);
+    const [textOverlayEnabled, setTextOverlayEnabled] = useState(false);
+    const [textOverlay, setTextOverlay] = useState<TextOverlayDraft>({
+        ...DEFAULT_TEXT_OVERLAY,
+    });
     const [videoNaturalSize, setVideoNaturalSize] = useState({
         width: 1920,
         height: 1080,
@@ -373,6 +484,11 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
         x: 0,
         y: 0,
     });
+    const [isDraggingTextOverlay, setIsDraggingTextOverlay] = useState(false);
+    const [textOverlayDragOffset, setTextOverlayDragOffset] = useState({
+        x: 0,
+        y: 0,
+    });
     const [translatedSegmentsJson, setTranslatedSegmentsJson] = useState("");
     const [isRunningEdit, setIsRunningEdit] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -386,6 +502,7 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
     );
     const previewFrameRef = useRef<HTMLDivElement | null>(null);
     const subtitleBoxRef = useRef<HTMLDivElement | null>(null);
+    const textOverlayBoxRef = useRef<HTMLDivElement | null>(null);
     const sourceVideoRef = useRef<HTMLVideoElement | null>(null);
     const subtitlePreviewPosRef = useRef({ left: 120, top: 320 });
 
@@ -451,6 +568,14 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
         setSubtitleBackgroundOpacity(65);
         setSubtitleSampleWidthPercent(100);
         setSubtitlePreviewPlacement(null);
+    }, []);
+
+    const applyDefaultTextOverlaySetup = useCallback(() => {
+        setTextOverlay({ ...DEFAULT_TEXT_OVERLAY });
+    }, []);
+
+    const updateTextOverlay = useCallback((patch: Partial<TextOverlayDraft>) => {
+        setTextOverlay((current) => ({ ...current, ...patch }));
     }, []);
 
     const getCurrentSubtitlePreviewPlacement = useCallback(() => {
@@ -584,6 +709,41 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
     ]);
 
     useEffect(() => {
+        if (!isDraggingTextOverlay) return;
+
+        const handlePointerMove = (event: MouseEvent) => {
+            const frame = previewFrameRef.current;
+            if (!frame) return;
+            const frameRect = frame.getBoundingClientRect();
+            if (frameRect.width <= 0 || frameRect.height <= 0) return;
+            const centerX =
+                event.clientX - frameRect.left - textOverlayDragOffset.x;
+            const centerY =
+                event.clientY - frameRect.top - textOverlayDragOffset.y;
+            updateTextOverlay({
+                x: clampNumber((centerX / frameRect.width) * 100, 0, 100),
+                y: clampNumber((centerY / frameRect.height) * 100, 0, 100),
+            });
+        };
+
+        const handlePointerUp = () => {
+            setIsDraggingTextOverlay(false);
+        };
+
+        window.addEventListener("mousemove", handlePointerMove);
+        window.addEventListener("mouseup", handlePointerUp, { once: true });
+        return () => {
+            window.removeEventListener("mousemove", handlePointerMove);
+            window.removeEventListener("mouseup", handlePointerUp);
+        };
+    }, [
+        isDraggingTextOverlay,
+        textOverlayDragOffset.x,
+        textOverlayDragOffset.y,
+        updateTextOverlay,
+    ]);
+
+    useEffect(() => {
         if (isDraggingSubtitle) return;
         const frame = previewFrameRef.current;
         const subtitleBox = subtitleBoxRef.current;
@@ -704,11 +864,20 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
     const applyVideoEditSetup = useCallback(
         (setup: VideoEditSetup | null) => {
             if (!setup) {
+                setMirrorEnabled(false);
+                setBlurEnabled(false);
+                setCoverBoxEnabled(true);
+                setSubtitleOverlayEnabled(true);
+                setBlurRegions([]);
+                setActiveRegionId(null);
                 applyDefaultSubtitleSetup();
+                setTextOverlayEnabled(false);
+                applyDefaultTextOverlaySetup();
                 return;
             }
             setMirrorEnabled(setup.mirrorEnabled === true);
-            setBlurEnabled(setup.blurEnabled !== false);
+            setBlurEnabled(setup.blurEnabled === true);
+            setCoverBoxEnabled(setup.coverBoxEnabled !== false);
             setSubtitleOverlayEnabled(setup.subtitleOverlayEnabled !== false);
             setBlurRegions(
                 (setup.blurRegions ?? []).map((region, index) => ({
@@ -751,8 +920,70 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                       }
                     : null,
             );
+            setTextOverlayEnabled(setup.textOverlayEnabled === true);
+            const savedTextOverlay = setup.textOverlay;
+            setTextOverlay({
+                ...DEFAULT_TEXT_OVERLAY,
+                ...(savedTextOverlay && typeof savedTextOverlay === "object"
+                    ? {
+                          text:
+                              typeof savedTextOverlay.text === "string"
+                                  ? savedTextOverlay.text
+                                  : DEFAULT_TEXT_OVERLAY.text,
+                          fontFamily:
+                              typeof savedTextOverlay.fontFamily === "string"
+                                  ? savedTextOverlay.fontFamily
+                                  : DEFAULT_TEXT_OVERLAY.fontFamily,
+                          fontSize: Number.isFinite(savedTextOverlay.fontSize)
+                              ? Number(savedTextOverlay.fontSize)
+                              : DEFAULT_TEXT_OVERLAY.fontSize,
+                          fontWeight: Number.isFinite(
+                              savedTextOverlay.fontWeight,
+                          )
+                              ? Number(savedTextOverlay.fontWeight)
+                              : DEFAULT_TEXT_OVERLAY.fontWeight,
+                          textColor:
+                              typeof savedTextOverlay.textColor === "string"
+                                  ? savedTextOverlay.textColor
+                                  : DEFAULT_TEXT_OVERLAY.textColor,
+                          strokeColor:
+                              typeof savedTextOverlay.strokeColor === "string"
+                                  ? savedTextOverlay.strokeColor
+                                  : DEFAULT_TEXT_OVERLAY.strokeColor,
+                          strokeWidth: Number.isFinite(
+                              savedTextOverlay.strokeWidth,
+                          )
+                              ? Number(savedTextOverlay.strokeWidth)
+                              : DEFAULT_TEXT_OVERLAY.strokeWidth,
+                          backgroundEnabled:
+                              savedTextOverlay.backgroundEnabled === true,
+                          backgroundColor:
+                              typeof savedTextOverlay.backgroundColor ===
+                              "string"
+                                  ? savedTextOverlay.backgroundColor
+                                  : DEFAULT_TEXT_OVERLAY.backgroundColor,
+                          backgroundOpacity: Number.isFinite(
+                              savedTextOverlay.backgroundOpacity,
+                          )
+                              ? Number(savedTextOverlay.backgroundOpacity)
+                              : DEFAULT_TEXT_OVERLAY.backgroundOpacity,
+                          x: Number.isFinite(savedTextOverlay.x)
+                              ? Number(savedTextOverlay.x)
+                              : DEFAULT_TEXT_OVERLAY.x,
+                          y: Number.isFinite(savedTextOverlay.y)
+                              ? Number(savedTextOverlay.y)
+                              : DEFAULT_TEXT_OVERLAY.y,
+                          start: Number.isFinite(savedTextOverlay.start)
+                              ? Number(savedTextOverlay.start)
+                              : DEFAULT_TEXT_OVERLAY.start,
+                          end: Number.isFinite(savedTextOverlay.end)
+                              ? Number(savedTextOverlay.end)
+                              : DEFAULT_TEXT_OVERLAY.end,
+                      }
+                    : {}),
+            });
         },
-        [applyDefaultSubtitleSetup],
+        [applyDefaultSubtitleSetup, applyDefaultTextOverlaySetup],
     );
 
     useEffect(() => {
@@ -780,6 +1011,7 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
             const videoEditSetup: VideoEditSetup = {
                 mirrorEnabled,
                 blurEnabled,
+                coverBoxEnabled,
                 subtitleOverlayEnabled,
                 blurRegions: blurRegions.map((item) => ({
                     x: item.x,
@@ -801,6 +1033,8 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                 subtitleBackgroundOpacity,
                 subtitleSampleWidthPercent,
                 subtitlePreviewPlacement: getCurrentSubtitlePreviewPlacement(),
+                textOverlayEnabled,
+                textOverlay: { ...textOverlay },
             };
             if (!selectedAssetId && videoFile) {
                 saveLocalVideoEditSetup({
@@ -818,10 +1052,13 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
             if (selectedAssetId) {
                 formData.set("assetId", selectedAssetId);
             }
-            const response = await fetch("/api/storage/assets/save-video-setup", {
-                method: "POST",
-                body: formData,
-            });
+            const response = await fetch(
+                "/api/storage/assets/save-video-setup",
+                {
+                    method: "POST",
+                    body: formData,
+                },
+            );
             const resultPayload = await response.json();
             if (!response.ok || !resultPayload.ok) {
                 throw new Error(resultPayload.error ?? "Save setup failed.");
@@ -893,6 +1130,22 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
         setActiveRegionId(null);
     };
 
+    const addDefaultSubtitleCoverBox = () => {
+        const id = buildDraftId("cover");
+        const next: BlurRegionDraft = {
+            id,
+            x: 0,
+            y: 82,
+            width: 100,
+            height: 14,
+            start: regionTimeStart,
+            end: regionTimeEnd,
+            strength: regionStrength,
+        };
+        setBlurRegions((current) => [...current, next]);
+        setActiveRegionId(id);
+    };
+
     const runCombinedEdit = async () => {
         if (!videoFile && !selectedAssetId) {
             setError(
@@ -900,9 +1153,15 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
             );
             return;
         }
-        if (!mirrorEnabled && !blurEnabled && !subtitleOverlayEnabled) {
+        if (
+            !mirrorEnabled &&
+            !blurEnabled &&
+            !coverBoxEnabled &&
+            !subtitleOverlayEnabled &&
+            !textOverlayEnabled
+        ) {
             setError(
-                "Hãy bật ít nhất một transform: mirror, blur hoặc subtitle.",
+                "Hãy bật ít nhất một transform: mirror, cover, blur, subtitle hoặc text.",
             );
             return;
         }
@@ -912,8 +1171,16 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
             );
             return;
         }
-        if (blurEnabled && blurRegions.length === 0) {
-            setError("Hãy vẽ ít nhất 1 blur region trước khi chạy.");
+        if (subtitleOverlayEnabled && !translatedSegmentsJson.trim()) {
+            setError("Subtitle overlay cần translated subtitle segments.");
+            return;
+        }
+        if ((blurEnabled || coverBoxEnabled) && blurRegions.length === 0) {
+            setError("Hãy vẽ hoặc thêm ít nhất 1 mask region trước khi chạy.");
+            return;
+        }
+        if (textOverlayEnabled && !textOverlay.text.trim()) {
+            setError("Text Overlay cần nội dung chữ.");
             return;
         }
 
@@ -954,11 +1221,18 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
             formData.set("videoFile", inputFile);
             formData.set("mirrorEnabled", String(mirrorEnabled));
             formData.set("blurEnabled", String(blurEnabled));
+            formData.set("coverBoxEnabled", String(coverBoxEnabled));
             formData.set(
                 "subtitleOverlayEnabled",
                 String(subtitleOverlayEnabled),
             );
             formData.set("blurRegionsJson", JSON.stringify(blurRegions));
+            formData.set("coverBoxesJson", JSON.stringify(blurRegions));
+            formData.set("coverBoxColor", subtitleBackgroundColor);
+            formData.set(
+                "coverBoxOpacity",
+                String(subtitleBackgroundOpacity),
+            );
             formData.set("subtitleFontFamily", subtitleFontFamily);
             formData.set("subtitleFontSize", String(subtitleFontSize));
             formData.set("subtitleMarginBottom", String(subtitleMarginBottom));
@@ -976,6 +1250,16 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
             );
             formData.set("subtitlePlayResX", String(videoNaturalSize.width));
             formData.set("subtitlePlayResY", String(videoNaturalSize.height));
+            formData.set("textOverlayEnabled", String(textOverlayEnabled));
+            formData.set("textOverlayPlayResX", String(videoNaturalSize.width));
+            formData.set(
+                "textOverlayPlayResY",
+                String(videoNaturalSize.height),
+            );
+            formData.set(
+                "textOverlaysJson",
+                JSON.stringify(textOverlayEnabled ? [textOverlay] : []),
+            );
             formData.set("translatedSegmentsJson", translatedSegmentsJson);
 
             updateProgressTask(progressTaskId, {
@@ -1022,35 +1306,10 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
 
     return (
         <section className="w-full max-w-none border border-main bg-main">
-            <header className="flex flex-col gap-3 border-b border-main bg-secondary/45 px-5 py-4 lg:flex-row lg:items-start lg:justify-between">
-                <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                        <Icon className="h-4 w-4 text-muted" />
-                        <h1 className="truncate text-[15px] font-semibold text-main">
-                            {section.label}
-                        </h1>
-                    </div>
-                    <p className="mt-1 max-w-3xl text-[12px] leading-5 text-muted">
-                        {section.description}
-                    </p>
-                </div>
-                <div className="grid shrink-0 grid-cols-2 gap-2 text-[10px] text-muted">
-                    <div className="border border-main bg-main px-3 py-2">
-                        <p className="font-semibold text-main">Engine</p>
-                        <p>ffmpeg filters</p>
-                    </div>
-                    <div className="border border-main bg-main px-3 py-2">
-                        <p className="font-semibold text-main">Scope</p>
-                        <p>Lab + Workspace</p>
-                    </div>
-                </div>
-            </header>
-
             <div className="grid w-full gap-4 p-5 xl:grid-cols-[340px_minmax(0,1fr)]">
                 <aside className="space-y-3">
                     <div className="border border-main bg-secondary/20 p-4">
                         <div className="flex items-center gap-2">
-                            <Clapperboard className="h-4 w-4 text-muted" />
                             <p className="text-[12px] font-semibold text-main">
                                 Source Video
                             </p>
@@ -1263,7 +1522,7 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                                     (!selectedAssetId && !videoFile)
                                 }
                                 onClick={saveSetupToSelectedAsset}
-                                className="border border-main bg-secondary px-2 py-1 text-[10px] font-semibold text-main hover:bg-secondary/75 disabled:cursor-not-allowed disabled:opacity-60"
+                                className="inline-flex w-full items-center justify-center gap-2 border border-accent/35 bg-accent/10 px-3 py-2 text-[12px] font-semibold text-accent transition-colors hover:bg-accent/15 disabled:cursor-not-allowed disabled:opacity-60"
                             >
                                 {isSavingSetup
                                     ? "Saving Setup..."
@@ -1283,8 +1542,8 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                         </p>
                         <p className="text-[10px] leading-4 text-muted">
                             Chạy trực tiếp trên video local. Một request có thể
-                            kết hợp mirror, blur vùng/timeline và burn phụ đề
-                            tiếng Việt theo timestamps.
+                            kết hợp mirror, cover box, blur, subtitle và text
+                            overlay.
                         </p>
 
                         <label className="flex items-center justify-between gap-3 border border-main bg-main px-3 py-2">
@@ -1317,10 +1576,39 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                                 <ScanLine className="mt-0.5 h-3.5 w-3.5 text-muted" />
                                 <span>
                                     <span className="block text-[11px] font-semibold text-main">
-                                        Partial Blur + stamp
+                                        Cover subtitle box
                                     </span>
                                     <span className="block text-[10px] text-muted">
-                                        Blur luôn đi kèm phụ đề/stamp overlay.
+                                        Dùng màu nền subtitle, không chạy blur.
+                                    </span>
+                                </span>
+                            </span>
+                            <input
+                                type="checkbox"
+                                checked={coverBoxEnabled}
+                                disabled={isRunningEdit}
+                                onChange={(event) => {
+                                    const nextValue =
+                                        event.currentTarget.checked;
+                                    setCoverBoxEnabled(nextValue);
+                                    if (nextValue) {
+                                        setBlurEnabled(false);
+                                        setSubtitleOverlayEnabled(true);
+                                    }
+                                }}
+                                className="h-4 w-4 accent-[var(--color-accent)]"
+                            />
+                        </label>
+
+                        <label className="flex items-center justify-between gap-3 border border-main bg-main px-3 py-2">
+                            <span className="flex items-start gap-2">
+                                <ScanLine className="mt-0.5 h-3.5 w-3.5 text-muted" />
+                                <span>
+                                    <span className="block text-[11px] font-semibold text-main">
+                                        Partial blur
+                                    </span>
+                                    <span className="block text-[10px] text-muted">
+                                        Chỉ bật khi thật sự cần làm mờ vùng.
                                     </span>
                                 </span>
                             </span>
@@ -1333,6 +1621,7 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                                         event.currentTarget.checked;
                                     setBlurEnabled(nextValue);
                                     if (nextValue) {
+                                        setCoverBoxEnabled(false);
                                         setSubtitleOverlayEnabled(true);
                                     }
                                 }}
@@ -1365,14 +1654,49 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                             />
                         </label>
 
-                        {blurEnabled ? (
+                        <label className="flex items-center justify-between gap-3 border border-main bg-main px-3 py-2">
+                            <span className="flex items-start gap-2">
+                                <Type className="mt-0.5 h-3.5 w-3.5 text-muted" />
+                                <span>
+                                    <span className="block text-[11px] font-semibold text-main">
+                                        Text Overlay
+                                    </span>
+                                    <span className="block text-[10px] text-muted">
+                                        Tên kênh / watermark chữ đơn giản.
+                                    </span>
+                                </span>
+                            </span>
+                            <input
+                                type="checkbox"
+                                checked={textOverlayEnabled}
+                                disabled={isRunningEdit}
+                                onChange={(event) =>
+                                    setTextOverlayEnabled(
+                                        event.currentTarget.checked,
+                                    )
+                                }
+                                className="h-4 w-4 accent-[var(--color-accent)]"
+                            />
+                        </label>
+
+                        {blurEnabled || coverBoxEnabled ? (
                             <div className="grid gap-2 border border-main bg-main p-3">
-                                <p className="text-[11px] font-semibold text-main">
-                                    Blur regions (% of output frame)
-                                </p>
+                                <div className="flex items-center justify-between gap-2">
+                                    <p className="text-[11px] font-semibold text-main">
+                                        Mask regions (% of output frame)
+                                    </p>
+                                    <button
+                                        type="button"
+                                        disabled={isRunningEdit}
+                                        onClick={addDefaultSubtitleCoverBox}
+                                        className="border border-main bg-secondary px-2 py-1 text-[10px] font-semibold text-main hover:bg-secondary/75 disabled:cursor-not-allowed disabled:opacity-60"
+                                    >
+                                        Add subtitle box
+                                    </button>
+                                </div>
                                 <p className="text-[10px] leading-4 text-muted">
-                                    Vẽ trực tiếp trên preview gốc để thêm vùng
-                                    blur. Có thể thêm nhiều vùng cho một video.
+                                    Vẽ trên preview hoặc thêm nhanh một box đáy
+                                    màn hình.
                                 </p>
                                 <div className="grid grid-cols-3 gap-2">
                                     <label className="block">
@@ -1417,14 +1741,17 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                                     </label>
                                     <label className="block">
                                         <span className="mb-1 block text-[10px] font-semibold text-muted">
-                                            Strength
+                                            Blur strength
                                         </span>
                                         <input
                                             type="number"
                                             min={1}
                                             max={60}
                                             value={regionStrength}
-                                            disabled={isRunningEdit}
+                                            disabled={
+                                                isRunningEdit ||
+                                                !blurEnabled
+                                            }
                                             onChange={(event) =>
                                                 setRegionStrength(
                                                     Number(
@@ -1593,6 +1920,7 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                                                 min={1}
                                                 max={60}
                                                 value={activeRegion.strength}
+                                                disabled={!blurEnabled}
                                                 onChange={(event) =>
                                                     updateActiveRegion({
                                                         strength: Number(
@@ -1613,6 +1941,232 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                                         </button>
                                     </div>
                                 ) : null}
+                            </div>
+                        ) : null}
+
+                        {textOverlayEnabled ? (
+                            <div className="space-y-2 border border-main bg-main p-3">
+                                <div className="flex items-center justify-between gap-2">
+                                    <p className="text-[11px] font-semibold text-main">
+                                        Text Overlay
+                                    </p>
+                                    <button
+                                        type="button"
+                                        disabled={isRunningEdit}
+                                        onClick={applyDefaultTextOverlaySetup}
+                                        className="border border-main bg-secondary px-2 py-1 text-[10px] font-semibold text-main hover:bg-secondary/75 disabled:cursor-not-allowed disabled:opacity-60"
+                                    >
+                                        Channel preset
+                                    </button>
+                                </div>
+                                <label className="block">
+                                    <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                        Text
+                                    </span>
+                                    <input
+                                        value={textOverlay.text}
+                                        disabled={isRunningEdit}
+                                        onChange={(event) =>
+                                            updateTextOverlay({
+                                                text: event.currentTarget.value,
+                                            })
+                                        }
+                                        className="w-full border border-main bg-secondary/30 px-2 py-1.5 text-[11px] text-main"
+                                    />
+                                </label>
+                                <div className="grid grid-cols-3 gap-2">
+                                    <label className="block">
+                                        <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                            Font
+                                        </span>
+                                        <select
+                                            value={textOverlay.fontFamily}
+                                            disabled={isRunningEdit}
+                                            onChange={(event) =>
+                                                updateTextOverlay({
+                                                    fontFamily:
+                                                        event.currentTarget
+                                                            .value,
+                                                })
+                                            }
+                                            className="w-full border border-main bg-secondary/30 px-2 py-1.5 text-[11px] text-main"
+                                        >
+                                            {VIDEO_TEXT_FONT_OPTIONS.map(
+                                                (option) => (
+                                                    <option
+                                                        key={option.value}
+                                                        value={option.value}
+                                                    >
+                                                        {option.label}
+                                                    </option>
+                                                ),
+                                            )}
+                                        </select>
+                                    </label>
+                                    <label className="block">
+                                        <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                            Size
+                                        </span>
+                                        <input
+                                            type="number"
+                                            min={12}
+                                            max={180}
+                                            value={textOverlay.fontSize}
+                                            disabled={isRunningEdit}
+                                            onChange={(event) =>
+                                                updateTextOverlay({
+                                                    fontSize: Number(
+                                                        event.currentTarget
+                                                            .value,
+                                                    ),
+                                                })
+                                            }
+                                            className="w-full border border-main bg-secondary/30 px-2 py-1.5 text-[11px] text-main"
+                                        />
+                                    </label>
+                                    <label className="block">
+                                        <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                            Weight
+                                        </span>
+                                        <input
+                                            type="number"
+                                            min={100}
+                                            max={900}
+                                            step={100}
+                                            value={textOverlay.fontWeight}
+                                            disabled={isRunningEdit}
+                                            onChange={(event) =>
+                                                updateTextOverlay({
+                                                    fontWeight: Number(
+                                                        event.currentTarget
+                                                            .value,
+                                                    ),
+                                                })
+                                            }
+                                            className="w-full border border-main bg-secondary/30 px-2 py-1.5 text-[11px] text-main"
+                                        />
+                                    </label>
+                                </div>
+                                <div className="grid grid-cols-3 gap-2">
+                                    <label className="block">
+                                        <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                            Text color
+                                        </span>
+                                        <input
+                                            type="color"
+                                            value={textOverlay.textColor}
+                                            disabled={isRunningEdit}
+                                            onChange={(event) =>
+                                                updateTextOverlay({
+                                                    textColor:
+                                                        event.currentTarget
+                                                            .value,
+                                                })
+                                            }
+                                            className="h-8 w-full border border-main bg-secondary/30 p-1"
+                                        />
+                                    </label>
+                                    <label className="block">
+                                        <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                            Stroke
+                                        </span>
+                                        <input
+                                            type="color"
+                                            value={textOverlay.strokeColor}
+                                            disabled={isRunningEdit}
+                                            onChange={(event) =>
+                                                updateTextOverlay({
+                                                    strokeColor:
+                                                        event.currentTarget
+                                                            .value,
+                                                })
+                                            }
+                                            className="h-8 w-full border border-main bg-secondary/30 p-1"
+                                        />
+                                    </label>
+                                    <label className="block">
+                                        <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                            Stroke px
+                                        </span>
+                                        <input
+                                            type="number"
+                                            min={0}
+                                            max={20}
+                                            value={textOverlay.strokeWidth}
+                                            disabled={isRunningEdit}
+                                            onChange={(event) =>
+                                                updateTextOverlay({
+                                                    strokeWidth: Number(
+                                                        event.currentTarget
+                                                            .value,
+                                                    ),
+                                                })
+                                            }
+                                            className="w-full border border-main bg-secondary/30 px-2 py-1.5 text-[11px] text-main"
+                                        />
+                                    </label>
+                                </div>
+                                <div className="grid grid-cols-2 gap-2">
+                                    <label className="block">
+                                        <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                            X %
+                                        </span>
+                                        <input
+                                            type="number"
+                                            min={0}
+                                            max={100}
+                                            value={textOverlay.x}
+                                            disabled={isRunningEdit}
+                                            onChange={(event) =>
+                                                updateTextOverlay({
+                                                    x: Number(
+                                                        event.currentTarget
+                                                            .value,
+                                                    ),
+                                                })
+                                            }
+                                            className="w-full border border-main bg-secondary/30 px-2 py-1.5 text-[11px] text-main"
+                                        />
+                                    </label>
+                                    <label className="block">
+                                        <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                            Y %
+                                        </span>
+                                        <input
+                                            type="number"
+                                            min={0}
+                                            max={100}
+                                            value={textOverlay.y}
+                                            disabled={isRunningEdit}
+                                            onChange={(event) =>
+                                                updateTextOverlay({
+                                                    y: Number(
+                                                        event.currentTarget
+                                                            .value,
+                                                    ),
+                                                })
+                                            }
+                                            className="w-full border border-main bg-secondary/30 px-2 py-1.5 text-[11px] text-main"
+                                        />
+                                    </label>
+                                </div>
+                                <label className="flex items-center justify-between gap-3 border border-main bg-secondary/20 px-3 py-2">
+                                    <span className="text-[10px] font-semibold text-muted">
+                                        Text background
+                                    </span>
+                                    <input
+                                        type="checkbox"
+                                        checked={textOverlay.backgroundEnabled}
+                                        disabled={isRunningEdit}
+                                        onChange={(event) =>
+                                            updateTextOverlay({
+                                                backgroundEnabled:
+                                                    event.currentTarget.checked,
+                                            })
+                                        }
+                                        className="h-4 w-4 accent-[var(--color-accent)]"
+                                    />
+                                </label>
                             </div>
                         ) : null}
 
@@ -1933,9 +2487,11 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                                         className="relative inline-block overflow-hidden border border-main bg-black"
                                         onMouseDown={(event) => {
                                             if (
-                                                !blurEnabled ||
+                                                (!blurEnabled &&
+                                                    !coverBoxEnabled) ||
                                                 isRunningEdit ||
-                                                isDraggingSubtitle
+                                                isDraggingSubtitle ||
+                                                isDraggingTextOverlay
                                             ) {
                                                 return;
                                             }
@@ -1993,11 +2549,7 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                                             );
                                             if (width >= 1 && height >= 1) {
                                                 const id =
-                                                    typeof crypto !==
-                                                        "undefined" &&
-                                                    "randomUUID" in crypto
-                                                        ? crypto.randomUUID()
-                                                        : `${Date.now()}-${Math.random()}`;
+                                                    buildDraftId("mask");
                                                 const next: BlurRegionDraft = {
                                                     id,
                                                     x: Math.max(
@@ -2194,6 +2746,13 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                                                     top: `${region.y}%`,
                                                     width: `${region.width}%`,
                                                     height: `${region.height}%`,
+                                                    backgroundColor:
+                                                        coverBoxEnabled
+                                                            ? hexToRgba(
+                                                                  subtitleBackgroundColor,
+                                                                  subtitleBackgroundOpacity,
+                                                              )
+                                                            : undefined,
                                                 }}
                                             />
                                         ))}
@@ -2221,6 +2780,73 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                                                     )}%`,
                                                 }}
                                             />
+                                        ) : null}
+                                        {textOverlayEnabled ? (
+                                            <div
+                                                ref={textOverlayBoxRef}
+                                                onMouseDown={(event) => {
+                                                    if (isRunningEdit) return;
+                                                    event.stopPropagation();
+                                                    const boxRect =
+                                                        event.currentTarget.getBoundingClientRect();
+                                                    setTextOverlayDragOffset({
+                                                        x:
+                                                            event.clientX -
+                                                            (boxRect.left +
+                                                                boxRect.width /
+                                                                    2),
+                                                        y:
+                                                            event.clientY -
+                                                            (boxRect.top +
+                                                                boxRect.height /
+                                                                    2),
+                                                    });
+                                                    setIsDraggingTextOverlay(
+                                                        true,
+                                                    );
+                                                }}
+                                                className="absolute cursor-move select-none whitespace-nowrap px-1 text-center"
+                                                style={{
+                                                    left: `${textOverlay.x}%`,
+                                                    top: `${textOverlay.y}%`,
+                                                    transform:
+                                                        "translate(-50%, -50%)",
+                                                    fontFamily: `var(${getVideoTextFontOption(textOverlay.fontFamily).cssVariable}), ${getVideoTextFontOption(textOverlay.fontFamily).fallbackFamily}`,
+                                                    fontSize: `${Math.max(
+                                                        8,
+                                                        ((textOverlay.fontSize *
+                                                            (previewFrameRef
+                                                                .current
+                                                                ?.clientHeight ??
+                                                                420)) /
+                                                            videoNaturalSize.height) *
+                                                            (72 / 96),
+                                                    )}px`,
+                                                    fontWeight:
+                                                        textOverlay.fontWeight,
+                                                    color: textOverlay.textColor,
+                                                    WebkitTextStroke: `${Math.max(
+                                                        0,
+                                                        ((textOverlay.strokeWidth *
+                                                            (previewFrameRef
+                                                                .current
+                                                                ?.clientHeight ??
+                                                                420)) /
+                                                            videoNaturalSize.height) *
+                                                            (72 / 96),
+                                                    )}px ${textOverlay.strokeColor}`,
+                                                    paintOrder: "stroke fill",
+                                                    backgroundColor:
+                                                        textOverlay.backgroundEnabled
+                                                            ? hexToRgba(
+                                                                  textOverlay.backgroundColor,
+                                                                  textOverlay.backgroundOpacity,
+                                                              )
+                                                            : "transparent",
+                                                }}
+                                            >
+                                                {textOverlay.text}
+                                            </div>
                                         ) : null}
                                     </div>
                                 </div>
@@ -2295,7 +2921,7 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                         ) : (
                             <div className="flex min-h-28 items-center justify-center border border-dashed border-main bg-main px-4 py-3 text-center text-[11px] text-muted">
                                 Chạy Video Edit để preview output gồm mirror,
-                                blur và subtitle overlay.
+                                cover box, blur, subtitle và text overlay.
                             </div>
                         )}
                     </div>

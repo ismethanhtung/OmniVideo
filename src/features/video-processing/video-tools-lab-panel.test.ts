@@ -42,4 +42,17 @@ describe("Video Tools Lab source preview controls", () => {
         expect(source).toContain("Search title, folder, tags...");
         expect(source).toContain("AssetLifecycleBadges");
     });
+
+    it("adds no-blur cover box and text overlay controls to the edit request", () => {
+        expect(source).toContain("coverBoxEnabled");
+        expect(source).toContain("Cover subtitle box");
+        expect(source).toContain("Add subtitle box");
+        expect(source).toContain("coverBoxesJson");
+        expect(source).toContain("coverBoxColor");
+        expect(source).toContain("Text Overlay");
+        expect(source).toContain("Ăn Không Ngồi Rồi");
+        expect(source).toContain("textOverlaysJson");
+        expect(source).toContain("textOverlayPlayResX");
+        expect(source).toContain("getVideoTextFontOption");
+    });
 });

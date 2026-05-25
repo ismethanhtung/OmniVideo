@@ -135,6 +135,7 @@ type WorkspaceAsset = {
         videoEditSetup?: {
             mirrorEnabled?: boolean;
             blurEnabled?: boolean;
+            coverBoxEnabled?: boolean;
             subtitleOverlayEnabled?: boolean;
             blurRegions?: Array<{
                 x: number;
@@ -154,6 +155,23 @@ type WorkspaceAsset = {
             subtitleBackgroundEnabled?: boolean;
             subtitleBackgroundColor?: string;
             subtitleBackgroundOpacity?: number;
+            textOverlayEnabled?: boolean;
+            textOverlay?: {
+                text?: string;
+                fontFamily?: string;
+                fontSize?: number;
+                fontWeight?: number;
+                textColor?: string;
+                strokeColor?: string;
+                strokeWidth?: number;
+                backgroundEnabled?: boolean;
+                backgroundColor?: string;
+                backgroundOpacity?: number;
+                x?: number;
+                y?: number;
+                start?: number;
+                end?: number;
+            } | null;
         } | null;
     };
     createdAt?: string;
@@ -711,7 +729,7 @@ function base64ToFile(artifact: WorkspaceRuntimeArtifact) {
     if (artifact.file) return artifact.file;
     if (!artifact.base64) {
         throw new Error(
-            `Runtime artifact '${artifact.fileName}' không có file/base64 để upload trực tiếp từ browser.`,
+            `Runtime artifact '${artifact.fileName}' không có file/base64 để dùng trực tiếp từ browser.`,
         );
     }
     const binary = atob(artifact.base64);
@@ -720,6 +738,33 @@ function base64ToFile(artifact: WorkspaceRuntimeArtifact) {
         bytes[index] = binary.charCodeAt(index);
     }
     return new File([bytes], artifact.fileName, { type: artifact.mimeType });
+}
+
+async function resolveRuntimeArtifactFileForLocalSave(input: {
+    artifact: WorkspaceRuntimeArtifact;
+    actionLabel: string;
+    onProgress?: (progress: WorkspaceFileProgress) => void;
+}) {
+    const { artifact } = input;
+    if (artifact.file || artifact.base64) {
+        const file = base64ToFile(artifact);
+        return {
+            file,
+            fileName: artifact.fileName,
+            mimeType: artifact.mimeType,
+            byteLength: artifact.byteLength || file.size,
+        };
+    }
+    if (artifact.artifactId) {
+        return fetchWorkspaceFile({
+            url: `/api/workspace/artifacts/${artifact.artifactId}/download`,
+            actionLabel: input.actionLabel,
+            onProgress: input.onProgress,
+        });
+    }
+    throw new Error(
+        `Runtime artifact '${artifact.fileName}' không có file/base64/artifactId để lưu về máy local.`,
+    );
 }
 
 function getWorkspaceApiErrorMessage(
@@ -754,6 +799,7 @@ type WorkspaceApiErrorPayload = {
     error?: unknown;
     errorCode?: unknown;
     steps?: unknown;
+    checkpoint?: unknown;
 };
 
 class WorkspaceApiError extends Error {
@@ -795,6 +841,34 @@ function formatWorkspaceMetricValue(value: unknown) {
     return "";
 }
 
+function readWorkspaceCheckpointStages(value: unknown) {
+    return Array.isArray(value)
+        ? value.filter(
+              (stage): stage is string =>
+                  typeof stage === "string" && stage.trim().length > 0,
+          )
+        : [];
+}
+
+function parseWorkspaceApiCheckpoint(payload: unknown) {
+    if (!payload || typeof payload !== "object") return null;
+    const checkpoint = (payload as WorkspaceApiErrorPayload).checkpoint;
+    if (!checkpoint || typeof checkpoint !== "object") return null;
+    const data = checkpoint as {
+        failedStage?: unknown;
+        reusedStages?: unknown;
+        savedStages?: unknown;
+        reusableStages?: unknown;
+    };
+    return {
+        failedStage:
+            typeof data.failedStage === "string" ? data.failedStage : "",
+        reusedStages: readWorkspaceCheckpointStages(data.reusedStages),
+        savedStages: readWorkspaceCheckpointStages(data.savedStages),
+        reusableStages: readWorkspaceCheckpointStages(data.reusableStages),
+    };
+}
+
 function buildWorkspaceApiFailureDetailLines(payload: unknown) {
     const lines: string[] = [];
     if (!payload || typeof payload !== "object") return lines;
@@ -806,6 +880,31 @@ function buildWorkspaceApiFailureDetailLines(payload: unknown) {
 
     if (errorCode) lines.push(`API error code: ${errorCode}`);
     if (error) lines.push(`API error: ${error}`);
+
+    const checkpoint = parseWorkspaceApiCheckpoint(payload);
+    if (checkpoint) {
+        if (checkpoint.failedStage) {
+            lines.push(`VIP failed stage: ${checkpoint.failedStage}`);
+        }
+        if (checkpoint.reusableStages.length > 0) {
+            lines.push(
+                `VIP checkpoint reusable stages: ${checkpoint.reusableStages.join(", ")}`,
+            );
+            lines.push(
+                "Continue Failed Flow will skip those VIP stages on the same server/source/config.",
+            );
+        }
+        if (checkpoint.savedStages.length > 0) {
+            lines.push(
+                `VIP checkpoint saved this run: ${checkpoint.savedStages.join(", ")}`,
+            );
+        }
+        if (checkpoint.reusedStages.length > 0) {
+            lines.push(
+                `VIP checkpoint reused this run: ${checkpoint.reusedStages.join(", ")}`,
+            );
+        }
+    }
 
     const steps = parseWorkspaceApiSteps(payload);
     if (steps.length === 0) return lines;
@@ -1175,6 +1274,9 @@ function getNumberConfig(
 
 const MASK_REGION_DEFAULTS = {
     blurRegionsJson: "",
+    blurEnabled: true,
+    coverBoxEnabled: false,
+    subtitleOverlayEnabled: true,
     regionX: 0,
     regionY: 84,
     regionWidth: 100,
@@ -1192,6 +1294,8 @@ const MASK_REGION_DEFAULTS = {
     subtitleBackgroundColor: "#000000",
     subtitleBackgroundOpacity: 65,
     mirrorEnabled: false,
+    textOverlayEnabled: false,
+    textOverlaysJson: "",
 } as const;
 
 function resolveMaskStringConfig(input: {
@@ -1275,6 +1379,10 @@ function resolveMaskRegionConfig(
         setup?.blurRegions && setup.blurRegions.length > 0
             ? JSON.stringify(setup.blurRegions)
             : "";
+    const setupTextOverlaysJson =
+        setup?.textOverlayEnabled === true && setup.textOverlay
+            ? JSON.stringify([setup.textOverlay])
+            : "";
 
     return {
         mirrorEnabled: resolveMaskBooleanConfig({
@@ -1283,7 +1391,34 @@ function resolveMaskRegionConfig(
             defaultValue: MASK_REGION_DEFAULTS.mirrorEnabled,
             setupValue: setup?.mirrorEnabled,
         }),
+        blurEnabled: resolveMaskBooleanConfig({
+            node,
+            key: "blurEnabled",
+            defaultValue: MASK_REGION_DEFAULTS.blurEnabled,
+            setupValue: setup?.blurEnabled,
+        }),
+        coverBoxEnabled: resolveMaskBooleanConfig({
+            node,
+            key: "coverBoxEnabled",
+            defaultValue: MASK_REGION_DEFAULTS.coverBoxEnabled,
+            setupValue: setup?.coverBoxEnabled,
+        }),
+        subtitleOverlayEnabled: resolveMaskBooleanConfig({
+            node,
+            key: "subtitleOverlayEnabled",
+            defaultValue: MASK_REGION_DEFAULTS.subtitleOverlayEnabled,
+            setupValue: setup?.subtitleOverlayEnabled,
+        }),
         blurRegionsJson: rawBlurRegionsJson || setupBlurRegionsJson,
+        textOverlayEnabled: resolveMaskBooleanConfig({
+            node,
+            key: "textOverlayEnabled",
+            defaultValue: MASK_REGION_DEFAULTS.textOverlayEnabled,
+            setupValue: setup?.textOverlayEnabled,
+        }),
+        textOverlaysJson:
+            getStringConfig(node, "textOverlaysJson").trim() ||
+            setupTextOverlaysJson,
         regionX: resolveMaskNumberConfig({
             node,
             key: "regionX",
@@ -3880,6 +4015,25 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     );
                     if (rawVipBlurRegionsJson) {
                         formData.set("blurRegionsJson", rawVipBlurRegionsJson);
+                    } else if (maskConfig.blurRegionsJson) {
+                        formData.set(
+                            "blurRegionsJson",
+                            maskConfig.blurRegionsJson,
+                        );
+                    }
+                    formData.set(
+                        "blurEnabled",
+                        String(maskConfig.blurEnabled),
+                    );
+                    formData.set(
+                        "coverBoxEnabled",
+                        String(maskConfig.coverBoxEnabled),
+                    );
+                    if (maskConfig.blurRegionsJson) {
+                        formData.set(
+                            "coverBoxesJson",
+                            maskConfig.blurRegionsJson,
+                        );
                     }
                     formData.set("regionX", String(maskConfig.regionX));
                     formData.set("regionY", String(maskConfig.regionY));
@@ -3924,6 +4078,24 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         "subtitleBackgroundOpacity",
                         String(maskConfig.subtitleBackgroundOpacity),
                     );
+                    formData.set(
+                        "coverBoxColor",
+                        maskConfig.subtitleBackgroundColor,
+                    );
+                    formData.set(
+                        "coverBoxOpacity",
+                        String(maskConfig.subtitleBackgroundOpacity),
+                    );
+                    formData.set(
+                        "textOverlayEnabled",
+                        String(maskConfig.textOverlayEnabled),
+                    );
+                    if (maskConfig.textOverlaysJson) {
+                        formData.set(
+                            "textOverlaysJson",
+                            maskConfig.textOverlaysJson,
+                        );
+                    }
 
                     setNodeStatus(
                         vipNode.id,
@@ -3942,6 +4114,11 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     appendVipStageLog(
                         "Running transcript -> translate -> voice -> final render -> metadata...",
                     );
+                    if (mode === "resume") {
+                        appendVipStageLog(
+                            "Continue mode: server-side VIP checkpoints will be reused when the source/config match.",
+                        );
+                    }
                     appendVipStageLog(
                         "Server-side VIP is running. Live sub-stage status is not streamed in current mode.",
                     );
@@ -4211,11 +4388,25 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         "mirrorEnabled",
                         String(maskConfig.mirrorEnabled),
                     );
-                    formData.set("blurEnabled", "true");
-                    formData.set("subtitleOverlayEnabled", "true");
+                    formData.set(
+                        "blurEnabled",
+                        String(maskConfig.blurEnabled),
+                    );
+                    formData.set(
+                        "coverBoxEnabled",
+                        String(maskConfig.coverBoxEnabled),
+                    );
+                    formData.set(
+                        "subtitleOverlayEnabled",
+                        String(maskConfig.subtitleOverlayEnabled),
+                    );
                     if (maskConfig.blurRegionsJson) {
                         formData.set(
                             "blurRegionsJson",
+                            maskConfig.blurRegionsJson,
+                        );
+                        formData.set(
+                            "coverBoxesJson",
                             maskConfig.blurRegionsJson,
                         );
                     } else {
@@ -4279,6 +4470,24 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         String(maskConfig.subtitleBackgroundOpacity),
                     );
                     formData.set(
+                        "coverBoxColor",
+                        maskConfig.subtitleBackgroundColor,
+                    );
+                    formData.set(
+                        "coverBoxOpacity",
+                        String(maskConfig.subtitleBackgroundOpacity),
+                    );
+                    formData.set(
+                        "textOverlayEnabled",
+                        String(maskConfig.textOverlayEnabled),
+                    );
+                    if (maskConfig.textOverlaysJson) {
+                        formData.set(
+                            "textOverlaysJson",
+                            maskConfig.textOverlaysJson,
+                        );
+                    }
+                    formData.set(
                         "translatedSegmentsJson",
                         JSON.stringify(translation.translatedSegments),
                     );
@@ -4292,6 +4501,14 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     );
                     formData.set(
                         "subtitlePlayResY",
+                        String(sourceDimensions.height),
+                    );
+                    formData.set(
+                        "textOverlayPlayResX",
+                        String(sourceDimensions.width),
+                    );
+                    formData.set(
+                        "textOverlayPlayResY",
                         String(sourceDimensions.height),
                     );
                     formData.set("responseMode", "artifact");
@@ -4319,8 +4536,11 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                             transform: {
                                 mirror: boolean;
                                 partialBlur: boolean;
+                                coverBox?: boolean;
                                 subtitleOverlay: boolean;
                                 segmentCount: number;
+                                textOverlay?: boolean;
+                                textOverlayCount?: number;
                             };
                         };
                     }>({
@@ -4337,7 +4557,22 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         base64: editPayload.data.videoBase64,
                         byteLength: editPayload.data.byteLength,
                         kind: "video",
-                        detail: `Blur + subtitles (${translation.translatedSegments.length} segment(s))`,
+                        detail: [
+                            editPayload.data.transform.partialBlur
+                                ? "Blur"
+                                : "",
+                            editPayload.data.transform.coverBox
+                                ? "Cover box"
+                                : "",
+                            editPayload.data.transform.textOverlay
+                                ? "Text overlay"
+                                : "",
+                            editPayload.data.transform.subtitleOverlay
+                                ? "Subtitles"
+                                : "",
+                        ]
+                            .filter(Boolean)
+                            .join(" + "),
                     };
                     artifactByProducer[step.editNodeId] = artifact;
                     setRuntimeArtifactsByNodeId((current) => ({
@@ -4615,18 +4850,6 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     if (!downloadNode) {
                         throw new Error("Missing download node.");
                     }
-                    const assetId = assetByProducer[step.producerNodeId];
-                    if (!assetId) {
-                        setNodeStatus(
-                            downloadNode.id,
-                            "skipped",
-                            "Producer step chưa cung cấp asset.",
-                        );
-                        throw new Error(
-                            `Download Local '${downloadNode.label}' thiếu upstream asset.`,
-                        );
-                    }
-
                     const downloadModeRaw = getStringConfig(
                         downloadNode,
                         "downloadMode",
@@ -4640,18 +4863,59 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     setNodeStatus(
                         downloadNode.id,
                         "running",
-                        "Downloading asset source...",
+                        "Saving output to local machine...",
                     );
                     updateProgressStepDetail(step, {
                         progressMode: "indeterminate",
                         progress: 0,
-                        description: "Downloading asset source...",
+                        description: "Saving output to local machine...",
                     });
 
-                    const downloaded = await fetchWorkspaceFile({
-                        url: `/api/storage/assets/${assetId}/download`,
-                        actionLabel: "Download local",
-                    });
+                    const assetId = assetByProducer[step.producerNodeId];
+                    let downloaded: {
+                        file: File;
+                        fileName: string;
+                        mimeType: string;
+                        byteLength: number;
+                    };
+                    if (assetId) {
+                        downloaded = await fetchWorkspaceFile({
+                            url: `/api/storage/assets/${assetId}/download`,
+                            actionLabel: "Save local storage asset",
+                            onProgress: (progress) => {
+                                if (progress.percent === undefined) return;
+                                updateProgressStepDetail(step, {
+                                    progressMode: "determinate",
+                                    progress: progress.percent,
+                                    description: `Saving storage asset · ${formatBytes(progress.loadedBytes)} / ${formatBytes(progress.totalBytes ?? 0)}.`,
+                                });
+                            },
+                        });
+                    } else {
+                        const artifact = artifactByProducer[step.producerNodeId];
+                        if (!artifact || artifact.kind !== "video") {
+                            setNodeStatus(
+                                downloadNode.id,
+                                "skipped",
+                                "Producer step chưa cung cấp video artifact.",
+                            );
+                            throw new Error(
+                                `Save to Local '${downloadNode.label}' thiếu upstream video artifact.`,
+                            );
+                        }
+                        downloaded = await resolveRuntimeArtifactFileForLocalSave({
+                            artifact,
+                            actionLabel: "Save local runtime artifact",
+                            onProgress: (progress) => {
+                                if (progress.percent === undefined) return;
+                                updateProgressStepDetail(step, {
+                                    progressMode: "determinate",
+                                    progress: progress.percent,
+                                    description: `Saving runtime artifact · ${formatBytes(progress.loadedBytes)} / ${formatBytes(progress.totalBytes ?? 0)}.`,
+                                });
+                            },
+                        });
+                    }
                     await saveWorkspaceFileToLocal({
                         file: downloaded.file,
                         mode: downloadMode,
@@ -4662,9 +4926,9 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         "success",
                         `${downloaded.fileName} (${formatBytes(downloaded.byteLength)}).`,
                     );
-                    summary.push(`Downloaded ${downloaded.fileName}.`);
+                    summary.push(`Saved ${downloaded.fileName} to local.`);
                     advanceProgress(
-                        `Downloaded ${downloaded.fileName} to local machine.`,
+                        `Saved ${downloaded.fileName} to local machine.`,
                     );
                 } else if (step.kind === "publish") {
                     const publishNode = findNode(step.publishNodeId);
@@ -6512,8 +6776,8 @@ function describeStep(
         return {
             key: `download-local-${step.downloadNodeId}`,
             statusKey: step.downloadNodeId,
-            label: `Download · ${findLabel(step.downloadNodeId)}`,
-            subtitle: `Download from ${findLabel(step.producerNodeId)}`,
+            label: `Save Local · ${findLabel(step.downloadNodeId)}`,
+            subtitle: `Save from ${findLabel(step.producerNodeId)}`,
         };
     }
     if (step.kind === "cleanup-assets") {

@@ -339,18 +339,6 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
 
     return (
         <section className="border border-main bg-main">
-            <header className="border-b border-main bg-secondary/45 px-5 py-4">
-                <div className="flex items-center gap-2">
-                    <Icon className="h-4 w-4 text-muted" />
-                    <h1 className="text-[15px] font-semibold text-main">
-                        {section.label}
-                    </h1>
-                </div>
-                <p className="mt-1 text-[12px] leading-5 text-muted">
-                    {section.description}
-                </p>
-            </header>
-
             <div className="space-y-5 p-5">
                 <section className="space-y-3">
                     <h2 className="text-[13px] font-semibold text-main">
@@ -458,7 +446,9 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
                                                                     .filter(
                                                                         Boolean,
                                                                     )
-                                                                    .join(" · ")}
+                                                                    .join(
+                                                                        " · ",
+                                                                    )}
                                                             </p>
                                                         </button>
                                                     );
@@ -524,15 +514,15 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
                                     className="h-4 w-4 accent-[var(--color-accent)]"
                                 />
                             </label>
-                        <button
-                            type="button"
-                            onClick={runTranscript}
-                            disabled={isRunningTranscript}
-                            className="inline-flex w-full items-center justify-center gap-2 border border-accent/35 bg-accent/10 px-3 py-2 text-[12px] font-semibold text-accent transition-colors hover:bg-accent/15 disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                            {isRunningTranscript
-                                ? "Transcribing..."
-                                : "Run Transcript Test"}
+                            <button
+                                type="button"
+                                onClick={runTranscript}
+                                disabled={isRunningTranscript}
+                                className="inline-flex w-full items-center justify-center gap-2 border border-accent/35 bg-accent/10 px-3 py-2 text-[12px] font-semibold text-accent transition-colors hover:bg-accent/15 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                                {isRunningTranscript
+                                    ? "Transcribing..."
+                                    : "Run Transcript Test"}
                             </button>
                         </div>
 
@@ -606,7 +596,7 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
                         </div>
                     </div>
                 </section>
-                <div className="border-t border-main/70" />
+                <div className="border-t border-main" />
                 <section className="space-y-3">
                     <h2 className="text-[13px] font-semibold text-main">
                         Voice Lab
@@ -687,7 +677,7 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
                                             className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main"
                                         />
                                     </label>
-                                    ))}
+                                ))}
                             </div>
                             <button
                                 type="button"
@@ -695,7 +685,9 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
                                 disabled={isRunning}
                                 className="inline-flex w-full items-center justify-center gap-2 border border-accent/35 bg-accent/10 px-3 py-2 text-[12px] font-semibold text-accent transition-colors hover:bg-accent/15 disabled:cursor-not-allowed disabled:opacity-60"
                             >
-                                {isRunning ? "Generating..." : "Generate Speech"}
+                                {isRunning
+                                    ? "Generating..."
+                                    : "Generate Speech"}
                             </button>
                         </div>
                         <div className="space-y-4">

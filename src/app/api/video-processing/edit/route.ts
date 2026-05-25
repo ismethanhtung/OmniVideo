@@ -16,6 +16,7 @@ import {
     runVideoEditPipelineFromPath,
     type VideoEditRegionPercent,
     type VideoEditTimelineSeconds,
+    type VideoEditTextOverlay,
 } from "@/lib/video-processing/video-edit-pipeline";
 import type { TranscriptTranslationSegment } from "@/lib/multilingual-audio/types";
 import {
@@ -110,6 +111,13 @@ type ParsedBlurRegion = {
     strength: number;
 };
 
+type ParsedCoverBox = {
+    region: VideoEditRegionPercent;
+    timeline: VideoEditTimelineSeconds;
+    color?: string;
+    opacity?: number;
+};
+
 function readBlurRegions(formData: FormData): ParsedBlurRegion[] {
     const raw = readFormValue(formData, "blurRegionsJson").trim();
     if (!raw) return [];
@@ -152,6 +160,110 @@ function readBlurRegions(formData: FormData): ParsedBlurRegion[] {
                 };
             })
             .filter((entry): entry is ParsedBlurRegion => entry !== null);
+    } catch {
+        return [];
+    }
+}
+
+function readCoverBoxes(formData: FormData): ParsedCoverBox[] {
+    const raw = readFormValue(formData, "coverBoxesJson").trim();
+    if (!raw) return [];
+    try {
+        const parsed = JSON.parse(raw) as unknown;
+        if (!Array.isArray(parsed)) return [];
+        return parsed
+            .map((item): ParsedCoverBox | null => {
+                if (!item || typeof item !== "object") return null;
+                const candidate = item as {
+                    x?: unknown;
+                    y?: unknown;
+                    width?: unknown;
+                    height?: unknown;
+                    start?: unknown;
+                    end?: unknown;
+                    color?: unknown;
+                    opacity?: unknown;
+                };
+                const x = Number(candidate.x);
+                const y = Number(candidate.y);
+                const width = Number(candidate.width);
+                const height = Number(candidate.height);
+                const start = Number(candidate.start);
+                const end = Number(candidate.end);
+                const opacity = Number(candidate.opacity);
+                if (
+                    !Number.isFinite(x) ||
+                    !Number.isFinite(y) ||
+                    !Number.isFinite(width) ||
+                    !Number.isFinite(height) ||
+                    !Number.isFinite(start) ||
+                    !Number.isFinite(end)
+                ) {
+                    return null;
+                }
+                return {
+                    region: { x, y, width, height },
+                    timeline: { start, end },
+                    color:
+                        typeof candidate.color === "string"
+                            ? candidate.color
+                            : undefined,
+                    opacity: Number.isFinite(opacity) ? opacity : undefined,
+                };
+            })
+            .filter((entry): entry is ParsedCoverBox => entry !== null);
+    } catch {
+        return [];
+    }
+}
+
+function readTextOverlays(formData: FormData): VideoEditTextOverlay[] {
+    const raw = readFormValue(formData, "textOverlaysJson").trim();
+    if (!raw) return [];
+    try {
+        const parsed = JSON.parse(raw) as unknown;
+        if (!Array.isArray(parsed)) return [];
+        return parsed
+            .map((item): VideoEditTextOverlay | null => {
+                if (!item || typeof item !== "object") return null;
+                const candidate = item as Record<string, unknown>;
+                const text =
+                    typeof candidate.text === "string"
+                        ? candidate.text.trim()
+                        : "";
+                if (!text) return null;
+                return {
+                    text,
+                    fontFamily:
+                        typeof candidate.fontFamily === "string"
+                            ? candidate.fontFamily
+                            : undefined,
+                    fontSize: Number(candidate.fontSize),
+                    fontWeight: Number(candidate.fontWeight),
+                    textColor:
+                        typeof candidate.textColor === "string"
+                            ? candidate.textColor
+                            : undefined,
+                    strokeColor:
+                        typeof candidate.strokeColor === "string"
+                            ? candidate.strokeColor
+                            : undefined,
+                    strokeWidth: Number(candidate.strokeWidth),
+                    backgroundEnabled:
+                        candidate.backgroundEnabled === true ||
+                        candidate.backgroundEnabled === "true",
+                    backgroundColor:
+                        typeof candidate.backgroundColor === "string"
+                            ? candidate.backgroundColor
+                            : undefined,
+                    backgroundOpacity: Number(candidate.backgroundOpacity),
+                    x: Number(candidate.x),
+                    y: Number(candidate.y),
+                    start: Number(candidate.start),
+                    end: Number(candidate.end),
+                };
+            })
+            .filter((entry): entry is VideoEditTextOverlay => entry !== null);
     } catch {
         return [];
     }
@@ -273,9 +385,18 @@ export async function POST(request: Request) {
                   };
 
         const blurEnabled = readBoolean(formData, "blurEnabled");
+        const coverBoxEnabled = readBoolean(formData, "coverBoxEnabled");
+        const textOverlayEnabled = readBoolean(formData, "textOverlayEnabled");
         const subtitlesEnabled = readBoolean(
             formData,
             "subtitleOverlayEnabled",
+        );
+        const subtitleBackgroundColor =
+            readFormValue(formData, "subtitleBackgroundColor") || "#000000";
+        const subtitleBackgroundOpacity = readNumber(
+            formData,
+            "subtitleBackgroundOpacity",
+            65,
         );
         const region: VideoEditRegionPercent = {
             x: readNumber(formData, "regionX", 0),
@@ -288,6 +409,8 @@ export async function POST(request: Request) {
             end: readNumber(formData, "timelineEnd", 36000),
         };
         const parsedBlurRegions = readBlurRegions(formData);
+        const parsedCoverBoxes = readCoverBoxes(formData);
+        const parsedTextOverlays = readTextOverlays(formData);
         const input = {
             ...source,
             mirror: readBoolean(formData, "mirrorEnabled"),
@@ -304,6 +427,25 @@ export async function POST(request: Request) {
                                     "blurStrength",
                                     50,
                                 ),
+                            }),
+                  }
+                : undefined,
+            coverBoxes: coverBoxEnabled
+                ? {
+                      enabled: true,
+                      color:
+                          readFormValue(formData, "coverBoxColor") ||
+                          subtitleBackgroundColor,
+                      opacity: readNumber(
+                          formData,
+                          "coverBoxOpacity",
+                          subtitleBackgroundOpacity,
+                      ),
+                      ...(parsedCoverBoxes.length > 0
+                          ? { regions: parsedCoverBoxes }
+                          : {
+                                region,
+                                timeline,
                             }),
                   }
                 : undefined,
@@ -340,16 +482,8 @@ export async function POST(request: Request) {
                               "subtitleAlignment",
                               2,
                           ),
-                          backgroundColor:
-                              readFormValue(
-                                  formData,
-                                  "subtitleBackgroundColor",
-                              ) || "#000000",
-                          backgroundOpacity: readNumber(
-                              formData,
-                              "subtitleBackgroundOpacity",
-                              65,
-                          ),
+                          backgroundColor: subtitleBackgroundColor,
+                          backgroundOpacity: subtitleBackgroundOpacity,
                           backgroundEnabled:
                               readFormValue(
                                   formData,
@@ -366,6 +500,22 @@ export async function POST(request: Request) {
                               1080,
                           ),
                       },
+                  }
+                : undefined,
+            textOverlays: textOverlayEnabled
+                ? {
+                      enabled: true,
+                      overlays: parsedTextOverlays,
+                      playResX: readNumber(
+                          formData,
+                          "textOverlayPlayResX",
+                          readNumber(formData, "subtitlePlayResX", 1920),
+                      ),
+                      playResY: readNumber(
+                          formData,
+                          "textOverlayPlayResY",
+                          readNumber(formData, "subtitlePlayResY", 1080),
+                      ),
                   }
                 : undefined,
         };
@@ -387,25 +537,39 @@ export async function POST(request: Request) {
                 await writeFile(uploadedPath, artifact!.bytes);
             }
 
-            const subtitleDimensions =
-                input.subtitles?.enabled === true
+            const needsVideoDimensions =
+                input.subtitles?.enabled === true ||
+                input.textOverlays?.enabled === true;
+            const videoDimensions =
+                needsVideoDimensions
                     ? await probeVideoDimensionsFromPath(uploadedPath)
                     : null;
             const normalizedInput =
-                subtitleDimensions &&
-                input.subtitles?.enabled === true
+                videoDimensions && needsVideoDimensions
                     ? {
                           ...input,
-                          subtitles: {
-                              ...input.subtitles,
-                              enabled: true,
-                              segments: input.subtitles.segments,
-                              style: {
-                                  ...(input.subtitles.style ?? {}),
-                                  playResX: subtitleDimensions.width,
-                                  playResY: subtitleDimensions.height,
-                              },
-                          },
+                          subtitles:
+                              input.subtitles?.enabled === true
+                                  ? {
+                                        ...input.subtitles,
+                                        enabled: true,
+                                        segments: input.subtitles.segments,
+                                        style: {
+                                            ...(input.subtitles.style ?? {}),
+                                            playResX: videoDimensions.width,
+                                            playResY: videoDimensions.height,
+                                        },
+                                    }
+                                  : input.subtitles,
+                          textOverlays:
+                              input.textOverlays?.enabled === true
+                                  ? {
+                                        ...input.textOverlays,
+                                        enabled: true,
+                                        playResX: videoDimensions.width,
+                                        playResY: videoDimensions.height,
+                                    }
+                                  : input.textOverlays,
                       }
                     : input;
 

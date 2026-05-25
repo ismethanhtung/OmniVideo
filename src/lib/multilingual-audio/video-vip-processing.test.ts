@@ -121,10 +121,44 @@ describe("VIP final render filter order", () => {
             filter.indexOf("hflip[mirroredv]"),
         );
         expect(filter.indexOf("hflip[mirroredv]")).toBeLessThan(
-            filter.indexOf("ass='/tmp/subtitles.ass'[vout]"),
+            filter.indexOf("ass='/tmp/subtitles.ass'[subv]"),
         );
         expect(filter).toContain(
             "overlay=x=main_w*0.100000:y=main_h*0.200000",
+        );
+    });
+
+    it("applies cover boxes before mirror and text overlay after subtitles", () => {
+        const args = buildVipFinalRenderArgs({
+            videoPath: "/tmp/source.mp4",
+            voicePath: "/tmp/voice.wav",
+            subtitleAssPath: "/tmp/subtitles.ass",
+            textOverlayAssPath: "/tmp/text-overlays.ass",
+            outputPath: "/tmp/output.mp4",
+            speedFactor: 1,
+            mirrorEnabled: true,
+            blurRegions: [],
+            coverBoxes: [
+                {
+                    region: { x: 0, y: 82, width: 100, height: 14 },
+                    timeline: { start: 0, end: 36000 },
+                    color: "#000000",
+                    opacity: 65,
+                },
+            ],
+            originalAudioVolume: 0.1,
+            voiceVolume: 1,
+        });
+        const filter = args[args.indexOf("-filter_complex") + 1] ?? "";
+
+        expect(filter).toContain("drawbox=x=iw*0.000000:y=ih*0.820000");
+        expect(filter).toContain("color=0x000000@0.65:t=fill");
+        expect(filter).not.toContain("boxblur");
+        expect(filter.indexOf("drawbox")).toBeLessThan(
+            filter.indexOf("hflip[mirroredv]"),
+        );
+        expect(filter.indexOf("ass='/tmp/subtitles.ass'[subv]")).toBeLessThan(
+            filter.indexOf("ass='/tmp/text-overlays.ass'[vout]"),
         );
     });
 });
@@ -161,7 +195,14 @@ describe("VIP processing stage checkpoints", () => {
                 stageRunners: firstRunners,
                 omitVideoBase64: true,
             }),
-        ).rejects.toMatchObject({ code: "SYS_DUBBING_MUX_FAILED" });
+        ).rejects.toMatchObject({
+            code: "SYS_DUBBING_MUX_FAILED",
+            checkpoint: {
+                failedStage: "render",
+                savedStages: ["transcript", "translation", "voice"],
+                reusableStages: ["transcript", "translation", "voice"],
+            },
+        });
 
         expect(firstRunners.transcribe).toHaveBeenCalledTimes(1);
         expect(firstRunners.transcribe).toHaveBeenCalledWith(

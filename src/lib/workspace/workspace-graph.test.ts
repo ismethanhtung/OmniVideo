@@ -108,12 +108,13 @@ describe("workspace graph helpers", () => {
         );
     });
 
-    it("defines Download Local output template with download mode", () => {
+    it("defines Save to Local output template with save mode", () => {
         const template = WORKSPACE_NODE_TEMPLATES.find(
             (entry) => entry.nodeType === "output.download-local",
         );
 
         expect(template).toBeDefined();
+        expect(template?.label).toBe("Save to Local");
         expect(template?.category).toBe("output");
         expect(template?.configFields).toEqual(
             expect.arrayContaining([
@@ -185,6 +186,41 @@ describe("workspace graph helpers", () => {
             kind: "download-local",
             downloadNodeId: "output-download-local-1",
             producerNodeId: "source-asset-1",
+        });
+    });
+
+    it("plans local save directly from VIP runtime artifact producer", () => {
+        const assetTemplate = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "source.asset",
+        )!;
+        const vipTemplate = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "video.vip-processing",
+        )!;
+        const downloadTemplate = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "output.download-local",
+        )!;
+        let graph = createEmptyWorkspaceGraph("VIP save local");
+        graph = addWorkspaceNode(graph, assetTemplate, { x: 0, y: 0 });
+        graph = addWorkspaceNode(graph, vipTemplate, { x: 220, y: 0 });
+        graph = addWorkspaceNode(graph, downloadTemplate, { x: 440, y: 0 });
+        graph = connectWorkspaceNodes(
+            graph,
+            "source-asset-1",
+            "video-vip-processing-1",
+        );
+        graph = connectWorkspaceNodes(
+            graph,
+            "video-vip-processing-1",
+            "output-download-local-1",
+        );
+
+        const plan = planWorkspaceFlow(graph);
+
+        expect(plan.ok).toBe(true);
+        expect(plan.steps).toContainEqual({
+            kind: "download-local",
+            downloadNodeId: "output-download-local-1",
+            producerNodeId: "video-vip-processing-1",
         });
     });
 

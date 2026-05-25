@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
     buildSubtitleAssContent,
+    buildTextOverlayAssContent,
     buildVideoEditFfmpegArgs,
     runVideoEditPipeline,
     runVideoEditPipelineFromPath,
@@ -131,6 +132,57 @@ describe("video edit pipeline", () => {
         );
     });
 
+    it("builds lightweight cover box filters without boxblur", () => {
+        const args = buildVideoEditFfmpegArgs({
+            videoPath: "/tmp/source.mp4",
+            outputPath: "/tmp/out.mp4",
+            mirror: false,
+            coverBoxes: {
+                enabled: true,
+                color: "#000000",
+                opacity: 70,
+                regions: [
+                    {
+                        region: { x: 0, y: 82, width: 100, height: 14 },
+                        timeline: { start: 0, end: 36000 },
+                    },
+                ],
+            },
+        });
+
+        const filter = args[args.indexOf("-filter_complex") + 1];
+        expect(filter).toContain("drawbox=x=iw*0:y=ih*0.82");
+        expect(filter).toContain("w=iw*1:h=ih*0.14");
+        expect(filter).toContain("color=0x000000@0.7:t=fill");
+        expect(filter).toContain("enable='between(t,0,36000)'");
+        expect(filter).not.toContain("boxblur");
+    });
+
+    it("generates ASS text overlay with positioned Vietnamese channel text", () => {
+        const ass = buildTextOverlayAssContent(
+            [
+                {
+                    text: "Ăn Không Ngồi Rồi",
+                    fontFamily: "Baloo 2",
+                    fontSize: 52,
+                    fontWeight: 800,
+                    textColor: "#ffffff",
+                    strokeColor: "#111827",
+                    strokeWidth: 3,
+                    x: 82,
+                    y: 10,
+                    start: 0,
+                    end: 12,
+                },
+            ],
+            { playResX: 1920, playResY: 1080 },
+        );
+
+        expect(ass).toContain("Style: TextOverlay0,Baloo 2,52");
+        expect(ass).toContain("{\\an5\\pos(1574,108)}Ăn Không Ngồi Rồi");
+        expect(ass).toContain("Dialogue: 20,0:00:00.00,0:00:12.00");
+    });
+
     it("applies custom subtitle style overrides", () => {
         const ass = buildSubtitleAssContent(
             [
@@ -207,6 +259,27 @@ describe("video edit pipeline", () => {
         ).toThrow(/valid percentages/);
     });
 
+    it("allows cover box and text overlay without enabling blur", () => {
+        expect(() =>
+            validateVideoEditInput({
+                fileName: "source.mp4",
+                fileSizeBytes: 3,
+                fileBytes: new Uint8Array([1, 2, 3]),
+                coverBoxes: {
+                    enabled: true,
+                    color: "#000000",
+                    opacity: 65,
+                    region: { x: 0, y: 82, width: 100, height: 14 },
+                    timeline: { start: 0, end: 36000 },
+                },
+                textOverlays: {
+                    enabled: true,
+                    overlays: [{ text: "Ăn Không Ngồi Rồi" }],
+                },
+            }),
+        ).not.toThrow();
+    });
+
     it("runs ffmpeg and returns base64 output metadata", async () => {
         setVideoEditFfmpegSpawnForTest(createMockFfmpegSpawn(0) as never);
         setVideoEditReadFileForTest(
@@ -236,8 +309,11 @@ describe("video edit pipeline", () => {
             transform: {
                 mirror: true,
                 partialBlur: true,
+                coverBox: false,
                 subtitleOverlay: true,
                 segmentCount: 1,
+                textOverlay: false,
+                textOverlayCount: 0,
             },
         });
     });
@@ -265,8 +341,11 @@ describe("video edit pipeline", () => {
             transform: {
                 mirror: true,
                 partialBlur: false,
+                coverBox: false,
                 subtitleOverlay: true,
                 segmentCount: 1,
+                textOverlay: false,
+                textOverlayCount: 0,
             },
         });
     });

@@ -25,6 +25,28 @@ export type VideoEditTimelineSeconds = {
     end: number;
 };
 
+export type VideoEditTimedRegion = {
+    region: VideoEditRegionPercent;
+    timeline: VideoEditTimelineSeconds;
+};
+
+export type VideoEditTextOverlay = {
+    text: string;
+    fontFamily?: string;
+    fontSize?: number;
+    fontWeight?: number;
+    textColor?: string;
+    strokeColor?: string;
+    strokeWidth?: number;
+    backgroundEnabled?: boolean;
+    backgroundColor?: string;
+    backgroundOpacity?: number;
+    x?: number;
+    y?: number;
+    start?: number;
+    end?: number;
+};
+
 export type VideoEditInput = {
     fileName: string;
     mimeType?: string;
@@ -42,6 +64,19 @@ export type VideoEditInput = {
             strength: number;
         }>;
     };
+    coverBoxes?: {
+        enabled: boolean;
+        color?: string;
+        opacity?: number;
+        region?: VideoEditRegionPercent;
+        timeline?: VideoEditTimelineSeconds;
+        regions?: Array<
+            VideoEditTimedRegion & {
+                color?: string;
+                opacity?: number;
+            }
+        >;
+    };
     subtitles?: {
         enabled: boolean;
         segments: TranscriptTranslationSegment[];
@@ -49,7 +84,21 @@ export type VideoEditInput = {
             fontFamily?: string;
             fontSize?: number;
             marginBottom?: number;
+            marginLeft?: number;
+            marginRight?: number;
+            alignment?: number;
+            backgroundColor?: string;
+            backgroundOpacity?: number;
+            backgroundEnabled?: boolean;
+            playResX?: number;
+            playResY?: number;
         };
+    };
+    textOverlays?: {
+        enabled: boolean;
+        overlays: VideoEditTextOverlay[];
+        playResX?: number;
+        playResY?: number;
     };
 };
 
@@ -62,8 +111,11 @@ export type VideoEditMetadata = {
     transform: {
         mirror: boolean;
         partialBlur: boolean;
+        coverBox: boolean;
         subtitleOverlay: boolean;
         segmentCount: number;
+        textOverlay: boolean;
+        textOverlayCount: number;
     };
 };
 
@@ -83,6 +135,7 @@ export class VideoEditError extends Error {
             | "VAL_VIDEO_EDIT_REGION_INVALID"
             | "VAL_VIDEO_EDIT_TIMELINE_INVALID"
             | "VAL_VIDEO_EDIT_SUBTITLES_REQUIRED"
+            | "VAL_VIDEO_EDIT_TEXT_OVERLAY_REQUIRED"
             | "SYS_VIDEO_EDIT_FAILED",
         message: string,
         public readonly status = 400,
@@ -131,9 +184,17 @@ export function validateVideoEditInput(input: VideoEditInput) {
 
     const mirror = normalizeBoolean(input.mirror);
     const blurEnabled = input.blur?.enabled === true;
+    const coverBoxesEnabled = input.coverBoxes?.enabled === true;
     const subtitlesEnabled = input.subtitles?.enabled === true;
+    const textOverlaysEnabled = input.textOverlays?.enabled === true;
 
-    if (!mirror && !blurEnabled && !subtitlesEnabled) {
+    if (
+        !mirror &&
+        !blurEnabled &&
+        !coverBoxesEnabled &&
+        !subtitlesEnabled &&
+        !textOverlaysEnabled
+    ) {
         throw new VideoEditError(
             "VAL_VIDEO_EDIT_NO_TRANSFORM",
             "At least one video edit transform is required.",
@@ -160,10 +221,29 @@ export function validateVideoEditInput(input: VideoEditInput) {
         }
     }
 
+    if (coverBoxesEnabled && normalizeCoverBoxes(input.coverBoxes).length === 0) {
+        throw new VideoEditError(
+            "VAL_VIDEO_EDIT_REGION_INVALID",
+            "Cover box region must be valid percentages inside the output frame.",
+            400,
+        );
+    }
+
     if (subtitlesEnabled && !input.subtitles?.segments.length) {
         throw new VideoEditError(
             "VAL_VIDEO_EDIT_SUBTITLES_REQUIRED",
             "Subtitle overlay requires at least one translated segment.",
+            400,
+        );
+    }
+
+    if (
+        textOverlaysEnabled &&
+        normalizeTextOverlays(input.textOverlays).length === 0
+    ) {
+        throw new VideoEditError(
+            "VAL_VIDEO_EDIT_TEXT_OVERLAY_REQUIRED",
+            "Text overlay requires at least one non-empty text layer.",
             400,
         );
     }
@@ -190,6 +270,33 @@ type NormalizedBlurRegion = {
     timeline: VideoEditTimelineSeconds;
     strength: number;
 };
+
+type NormalizedCoverBox = {
+    region: VideoEditRegionPercent;
+    timeline: VideoEditTimelineSeconds;
+    color: string;
+    opacity: number;
+};
+
+type NormalizedTextOverlay = Required<
+    Pick<
+        VideoEditTextOverlay,
+        | "text"
+        | "fontFamily"
+        | "fontSize"
+        | "fontWeight"
+        | "textColor"
+        | "strokeColor"
+        | "strokeWidth"
+        | "backgroundEnabled"
+        | "backgroundColor"
+        | "backgroundOpacity"
+        | "x"
+        | "y"
+        | "start"
+        | "end"
+    >
+>;
 
 function isValidRegion(region: VideoEditRegionPercent | undefined) {
     if (!region) return false;
@@ -246,6 +353,122 @@ function normalizeBlurRegions(
         });
     }
     return output;
+}
+
+function normalizeHexColor(value: string | undefined, fallback = "#000000") {
+    const normalized = (value || fallback).trim();
+    const candidate = normalized.startsWith("#")
+        ? normalized
+        : `#${normalized}`;
+    return /^#[0-9a-fA-F]{6}$/u.test(candidate) ? candidate : fallback;
+}
+
+function normalizeOpacityPercent(value: number | undefined, fallback = 65) {
+    if (!Number.isFinite(value)) return fallback;
+    return Math.min(100, Math.max(0, Math.round(value ?? fallback)));
+}
+
+function normalizeCoverBoxes(
+    coverBoxes: VideoEditInput["coverBoxes"] | undefined,
+): NormalizedCoverBox[] {
+    if (!coverBoxes?.enabled) return [];
+    const defaultColor = normalizeHexColor(coverBoxes.color, "#000000");
+    const defaultOpacity = normalizeOpacityPercent(coverBoxes.opacity, 65);
+    const output: NormalizedCoverBox[] = [];
+
+    if (Array.isArray(coverBoxes.regions)) {
+        for (const item of coverBoxes.regions) {
+            if (!isValidRegion(item.region) || !isValidTimeline(item.timeline)) {
+                continue;
+            }
+            output.push({
+                region: item.region,
+                timeline: item.timeline,
+                color: normalizeHexColor(item.color, defaultColor),
+                opacity: normalizeOpacityPercent(item.opacity, defaultOpacity),
+            });
+        }
+    }
+
+    if (
+        output.length === 0 &&
+        isValidRegion(coverBoxes.region) &&
+        isValidTimeline(coverBoxes.timeline)
+    ) {
+        output.push({
+            region: coverBoxes.region as VideoEditRegionPercent,
+            timeline: coverBoxes.timeline as VideoEditTimelineSeconds,
+            color: defaultColor,
+            opacity: defaultOpacity,
+        });
+    }
+
+    return output;
+}
+
+function normalizeTextOverlays(
+    textOverlays: VideoEditInput["textOverlays"] | undefined,
+): NormalizedTextOverlay[] {
+    if (!textOverlays?.enabled || !Array.isArray(textOverlays.overlays)) {
+        return [];
+    }
+
+    return textOverlays.overlays
+        .map((overlay): NormalizedTextOverlay | null => {
+            const text = (overlay.text || "").trim();
+            const start = Number.isFinite(overlay.start)
+                ? Math.max(0, Number(overlay.start))
+                : 0;
+            const end = Number.isFinite(overlay.end)
+                ? Math.max(0, Number(overlay.end))
+                : 36000;
+            if (!text || end <= start) return null;
+
+            return {
+                text,
+                fontFamily: (overlay.fontFamily || "Arial")
+                    .replace(/,/g, "")
+                    .trim(),
+                fontSize: Number.isFinite(overlay.fontSize)
+                    ? Math.min(
+                          180,
+                          Math.max(12, Math.round(overlay.fontSize ?? 48)),
+                      )
+                    : 48,
+                fontWeight: Number.isFinite(overlay.fontWeight)
+                    ? Math.min(
+                          900,
+                          Math.max(100, Math.round(overlay.fontWeight ?? 800)),
+                      )
+                    : 800,
+                textColor: normalizeHexColor(overlay.textColor, "#FFFFFF"),
+                strokeColor: normalizeHexColor(overlay.strokeColor, "#111827"),
+                strokeWidth: Number.isFinite(overlay.strokeWidth)
+                    ? Math.min(
+                          20,
+                          Math.max(0, Math.round(overlay.strokeWidth ?? 3)),
+                      )
+                    : 3,
+                backgroundEnabled: overlay.backgroundEnabled === true,
+                backgroundColor: normalizeHexColor(
+                    overlay.backgroundColor,
+                    "#000000",
+                ),
+                backgroundOpacity: normalizeOpacityPercent(
+                    overlay.backgroundOpacity,
+                    65,
+                ),
+                x: Number.isFinite(overlay.x)
+                    ? Math.min(100, Math.max(0, Number(overlay.x)))
+                    : 86,
+                y: Number.isFinite(overlay.y)
+                    ? Math.min(100, Math.max(0, Number(overlay.y)))
+                    : 10,
+                start,
+                end,
+            };
+        })
+        .filter((overlay): overlay is NormalizedTextOverlay => overlay !== null);
 }
 
 function escapeAssText(text: string) {
@@ -400,6 +623,77 @@ function hexToAssColor(hex: string, opacityPercent: number) {
     return `&H${alpha}${bb}${gg}${rr}`;
 }
 
+export function buildTextOverlayAssContent(
+    textOverlays: VideoEditTextOverlay[],
+    style?: {
+        playResX?: number;
+        playResY?: number;
+    },
+) {
+    const playResX = Number.isFinite(style?.playResX)
+        ? Math.max(360, Math.round(style?.playResX ?? 1920))
+        : 1920;
+    const playResY = Number.isFinite(style?.playResY)
+        ? Math.max(360, Math.round(style?.playResY ?? 1080))
+        : 1080;
+    const normalizedOverlays = normalizeTextOverlays({
+        enabled: true,
+        overlays: textOverlays,
+    });
+
+    if (normalizedOverlays.length === 0) {
+        throw new VideoEditError(
+            "VAL_VIDEO_EDIT_TEXT_OVERLAY_REQUIRED",
+            "Text overlay requires at least one non-empty text layer.",
+            400,
+        );
+    }
+
+    const styleLines = normalizedOverlays.map((overlay, index) => {
+        const borderStyle = overlay.backgroundEnabled ? 3 : 1;
+        const bold = overlay.fontWeight >= 600 ? -1 : 0;
+        return `Style: TextOverlay${index},${overlay.fontFamily || "Arial"},${overlay.fontSize},${hexToAssColor(
+            overlay.textColor,
+            100,
+        )},&H000000FF,${hexToAssColor(
+            overlay.strokeColor,
+            100,
+        )},${hexToAssColor(
+            overlay.backgroundColor,
+            overlay.backgroundOpacity,
+        )},${bold},0,0,0,100,100,0,0,${borderStyle},${overlay.strokeWidth},0,5,0,0,0,1`;
+    });
+    const eventLines = normalizedOverlays.map((overlay, index) => {
+        const x = Math.round((overlay.x / 100) * playResX);
+        const y = Math.round((overlay.y / 100) * playResY);
+        return `Dialogue: ${20 + index},${formatAssTimestamp(
+            overlay.start,
+        )},${formatAssTimestamp(
+            overlay.end,
+        )},TextOverlay${index},,0,0,0,,{\\an5\\pos(${x},${y})}${escapeAssText(
+            overlay.text,
+        )}`;
+    });
+
+    return [
+        "[Script Info]",
+        "ScriptType: v4.00+",
+        "WrapStyle: 0",
+        "ScaledBorderAndShadow: yes",
+        `PlayResX: ${playResX}`,
+        `PlayResY: ${playResY}`,
+        "",
+        "[V4+ Styles]",
+        "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
+        ...styleLines,
+        "",
+        "[Events]",
+        "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
+        ...eventLines,
+        "",
+    ].join("\n");
+}
+
 function escapeFfmpegFilterPath(filePath: string) {
     return filePath.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
 }
@@ -417,7 +711,9 @@ export function buildVideoEditFilter(input: {
             strength: number;
         }>;
     };
+    coverBoxes?: VideoEditInput["coverBoxes"];
     subtitleAssPath?: string;
+    textOverlayAssPath?: string;
 }) {
     const filters: string[] = [];
     let currentLabel = "0:v";
@@ -451,6 +747,26 @@ export function buildVideoEditFilter(input: {
         }
     }
 
+    const coverBoxes = normalizeCoverBoxes(input.coverBoxes);
+    if (coverBoxes.length > 0) {
+        for (const coverBox of coverBoxes) {
+            const nextLabel = `v${step++}`;
+            const x = roundFilterNumber(coverBox.region.x / 100);
+            const y = roundFilterNumber(coverBox.region.y / 100);
+            const width = roundFilterNumber(coverBox.region.width / 100);
+            const height = roundFilterNumber(coverBox.region.height / 100);
+            const color = coverBox.color.replace(/^#/u, "0x");
+            const opacity = roundFilterNumber(coverBox.opacity / 100);
+
+            filters.push(
+                `[${currentLabel}]drawbox=x=iw*${x}:y=ih*${y}:w=iw*${width}:h=ih*${height}:color=${color}@${opacity}:t=fill:enable='between(t,${roundFilterNumber(
+                    coverBox.timeline.start,
+                )},${roundFilterNumber(coverBox.timeline.end)})'[${nextLabel}]`,
+            );
+            currentLabel = nextLabel;
+        }
+    }
+
     if (input.mirror) {
         const nextLabel = `v${step++}`;
         filters.push(`[${currentLabel}]hflip[${nextLabel}]`);
@@ -462,6 +778,16 @@ export function buildVideoEditFilter(input: {
         filters.push(
             `[${currentLabel}]ass='${escapeFfmpegFilterPath(
                 input.subtitleAssPath,
+            )}'[${nextLabel}]`,
+        );
+        currentLabel = nextLabel;
+    }
+
+    if (input.textOverlayAssPath) {
+        const nextLabel = `v${step++}`;
+        filters.push(
+            `[${currentLabel}]ass='${escapeFfmpegFilterPath(
+                input.textOverlayAssPath,
             )}'[${nextLabel}]`,
         );
         currentLabel = nextLabel;
@@ -488,7 +814,9 @@ export function buildVideoEditFfmpegArgs(input: {
             strength: number;
         }>;
     };
+    coverBoxes?: VideoEditInput["coverBoxes"];
     subtitleAssPath?: string;
+    textOverlayAssPath?: string;
 }) {
     const { filter, outputLabel } = buildVideoEditFilter(input);
 
@@ -595,12 +923,20 @@ export async function runVideoEditPipelineFromPath(
 
     const mirror = input.mirror === true;
     const blur = input.blur?.enabled ? input.blur : undefined;
+    const normalizedCoverBoxes = normalizeCoverBoxes(input.coverBoxes);
+    const coverBoxes =
+        normalizedCoverBoxes.length > 0 ? input.coverBoxes : undefined;
     const subtitleSegments =
         input.subtitles?.enabled === true ? input.subtitles.segments : [];
+    const normalizedTextOverlays = normalizeTextOverlays(input.textOverlays);
     const workDir = path.join(tmpdir(), `omnivideo-edit-${randomUUID()}`);
     const outputPath = path.join(workDir, "edited.mp4");
     const assPath =
         subtitleSegments.length > 0 ? path.join(workDir, "subtitles.ass") : "";
+    const textOverlayAssPath =
+        normalizedTextOverlays.length > 0
+            ? path.join(workDir, "text-overlays.ass")
+            : "";
 
     try {
         await mkdir(workDir, { recursive: true });
@@ -613,6 +949,15 @@ export async function runVideoEditPipelineFromPath(
                 ),
             );
         }
+        if (textOverlayAssPath && input.textOverlays?.enabled === true) {
+            await writeFile(
+                textOverlayAssPath,
+                buildTextOverlayAssContent(input.textOverlays.overlays, {
+                    playResX: input.textOverlays.playResX,
+                    playResY: input.textOverlays.playResY,
+                }),
+            );
+        }
 
         await runFfmpeg(
             buildVideoEditFfmpegArgs({
@@ -620,7 +965,9 @@ export async function runVideoEditPipelineFromPath(
                 outputPath,
                 mirror,
                 blur,
+                coverBoxes,
                 subtitleAssPath: assPath || undefined,
+                textOverlayAssPath: textOverlayAssPath || undefined,
             }),
         );
 
@@ -638,8 +985,11 @@ export async function runVideoEditPipelineFromPath(
             transform: {
                 mirror,
                 partialBlur: Boolean(blur),
+                coverBox: normalizedCoverBoxes.length > 0,
                 subtitleOverlay: subtitleSegments.length > 0,
                 segmentCount: subtitleSegments.length,
+                textOverlay: normalizedTextOverlays.length > 0,
+                textOverlayCount: normalizedTextOverlays.length,
             },
         };
     } catch (error) {

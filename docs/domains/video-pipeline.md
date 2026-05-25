@@ -36,17 +36,21 @@ Page URL như YouTube/TikTok/Facebook/Bilibili không phải direct media URL. O
 
 1. Trim theo timeline.
 2. Concat clip.
-3. Blur vùng chọn.
-4. Overlay watermark/subtitle.
-5. Adjust volume/ducking.
-6. Speed adjustment (creative use hợp lệ).
-7. Mirror horizontal cho biến thể edit hợp lệ.
+3. Blur vùng chọn khi thật sự cần làm mờ nguồn.
+4. Cover box vùng chọn bằng `drawbox` để che phụ đề cũ với chi phí thấp hơn blur.
+5. Overlay watermark/subtitle/text.
+6. Adjust volume/ducking.
+7. Speed adjustment (creative use hợp lệ).
+8. Mirror horizontal cho biến thể edit hợp lệ.
 
 ### 4.1 Current Workspace preprocess path
 
 1. Node `video.preprocess` điều chỉnh speed source video bằng ffmpeg và tạo video artifact downstream.
 2. Input hiện hỗ trợ `source.file`, `source.url`, `source.asset`; output artifact có thể đi tiếp sang transcript, dubbing, mirror/edit, hoặc storage.
 3. Trang `Audio Transcript` chính cũng expose Video Preprocess on-demand, mặc định tắt để giữ nguyên behavior cũ cho người dùng không bật preprocess.
+4. Workspace video edit/VIP render phải áp dụng được `videoEditSetup` lưu từ Video Tools Lab, gồm blur cũ, cover box không blur, subtitle style và text overlay tên kênh.
+5. Output `Save to Local` phải lưu được cả Storage asset lẫn video runtime artifact như VIP Processing output, không bắt buộc đi qua `Save to Storage`.
+6. VIP Processing phải trả checkpoint telemetry khi fail giữa chừng để `Continue Failed Flow` biết các stage transcript/translation/voice/render nào sẽ được reuse.
 
 ## 5. Traceability Requirements
 
