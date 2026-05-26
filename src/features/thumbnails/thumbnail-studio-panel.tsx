@@ -1196,6 +1196,13 @@ export function ThumbnailStudioPanel({
     const selectedThumbnailPreviewUrl = selectedThumbnail
         ? `/api/storage/thumbnail-assets/${selectedThumbnail._id}/download?disposition=inline&ts=${encodeURIComponent(selectedThumbnail.createdAt ?? "")}`
         : null;
+    const selectedThumbnailDownloadUrl = selectedThumbnail
+        ? `/api/storage/thumbnail-assets/${selectedThumbnail._id}/download?disposition=attachment&ts=${encodeURIComponent(selectedThumbnail.createdAt ?? "")}`
+        : null;
+    const selectedThumbnailNameHint =
+        selectedThumbnail?.metadata?.title?.trim() ||
+        thumbnailName.trim() ||
+        "-";
 
     useEffect(() => {
         if (!selectedThumbnail) {
@@ -3006,21 +3013,47 @@ export function ThumbnailStudioPanel({
                             </div>
 
                             <div className="border border-main bg-secondary/20 p-4">
-                                <label className="block">
-                                    <span className="mb-1 block text-[10px] font-semibold text-muted">
-                                        Thumbnail name
-                                    </span>
-                                    <input
-                                        value={thumbnailName}
-                                        onChange={(event) =>
-                                            setThumbnailName(
-                                                event.currentTarget.value,
-                                            )
-                                        }
-                                        placeholder="e.g. con meo"
-                                        className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main"
-                                    />
-                                </label>
+                                <div className="block">
+                                    <div className="mb-1 flex items-center justify-between gap-2">
+                                        <span className="text-[10px] font-semibold text-muted">
+                                            Thumbnail name
+                                        </span>
+                                        <span className="max-w-[180px] truncate text-right text-[10px] text-muted">
+                                            {selectedThumbnailNameHint}
+                                        </span>
+                                    </div>
+                                    <div className="flex min-w-0 items-center gap-2">
+                                        <input
+                                            value={thumbnailName}
+                                            onChange={(event) =>
+                                                setThumbnailName(
+                                                    event.currentTarget.value,
+                                                )
+                                            }
+                                            placeholder="e.g. con meo"
+                                            className="w-full flex-1 border border-main bg-main px-2 py-1.5 text-[11px] text-main"
+                                        />
+                                        <a
+                                            href={
+                                                selectedThumbnailDownloadUrl ??
+                                                undefined
+                                            }
+                                            download
+                                            aria-disabled={
+                                                !selectedThumbnailDownloadUrl
+                                            }
+                                            className={cn(
+                                                "inline-flex shrink-0 items-center gap-1 border px-2 py-1.5 text-[10px] font-semibold",
+                                                selectedThumbnailDownloadUrl
+                                                    ? "border-main bg-main text-main hover:bg-secondary/60"
+                                                    : "pointer-events-none border-main/40 bg-main/60 text-muted/60",
+                                            )}
+                                        >
+                                            <DownloadCloud className="h-3 w-3" />
+                                            Download
+                                        </a>
+                                    </div>
+                                </div>
 
                                 <div className="mt-2 grid gap-2 sm:grid-cols-2">
                                     <label className="block">
@@ -3700,6 +3733,7 @@ export function ThumbnailStudioPanel({
 
                             <div className="space-y-2 border border-main bg-secondary/20 p-3">
                                 <div className="flex items-center gap-2">
+                                    <Droplets className="h-4 w-4 text-muted" />
                                     <p className="text-[12px] font-semibold text-main">
                                         Blur
                                     </p>

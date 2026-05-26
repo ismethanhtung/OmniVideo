@@ -68,7 +68,7 @@ describe("video edit pipeline", () => {
                 "-c:v",
                 "libx264",
                 "-preset",
-                "veryfast",
+                "superfast",
                 "-c:a",
                 "copy",
             ]),
@@ -99,6 +99,25 @@ describe("video edit pipeline", () => {
         expect(ass).toContain("Style: BackgroundBox,Arial,100");
         expect(ass).toContain("Style: ForegroundText,Arial,100");
         expect(ass).toContain(",60,60,150,1");
+    });
+
+    it("wraps long subtitle lines into ASS line breaks", () => {
+        const ass = buildSubtitleAssContent(
+            [
+                {
+                    id: 8,
+                    start: 0,
+                    end: 4,
+                    sourceText: "source",
+                    translatedText:
+                        "Khi ay con noi muon cam kiem theo gio cham toi troi dat gio ta hoi lai chi ay con do khong",
+                },
+            ],
+            { fontSize: 55, marginLeft: 60, marginRight: 60, playResX: 1920 },
+        );
+
+        expect(ass).toContain("Dialogue: 0,0:00:00.00,0:00:04.00");
+        expect(ass).toContain("\\N");
     });
 
     it("builds ffmpeg filter with multiple blur regions", () => {

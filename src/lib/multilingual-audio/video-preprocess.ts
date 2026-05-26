@@ -58,7 +58,7 @@ export function buildVideoPreprocessFfmpegArgs(input: {
         "-c:v",
         "libx264",
         "-preset",
-        "veryfast",
+        "superfast",
         "-crf",
         "23",
         "-c:a",

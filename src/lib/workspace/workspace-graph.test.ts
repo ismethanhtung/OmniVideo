@@ -248,6 +248,11 @@ describe("workspace graph helpers", () => {
                 ttsPreserveTimestampGaps: true,
                 ttsAlignmentMode: "strict",
             });
+            if (nodeType === "audio.video-dubbing") {
+                expect(graph.nodes[0].config).toMatchObject({
+                    originalAudioVolume: 0,
+                });
+            }
         }
     });
 

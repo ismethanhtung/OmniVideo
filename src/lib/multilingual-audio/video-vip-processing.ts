@@ -261,6 +261,47 @@ function uniqueStages(stages: VipStageName[]) {
     return Array.from(new Set(stages));
 }
 
+function summarizeVipError(error: unknown) {
+    if (error instanceof ChineseTranscriptionError) {
+        return {
+            name: error.name,
+            code: error.code,
+            status: error.status,
+            message: error.message,
+            stack: error.stack?.split("\n").slice(0, 4).join("\n"),
+        };
+    }
+    if (error instanceof Error) {
+        return {
+            name: error.name,
+            message: error.message,
+            stack: error.stack?.split("\n").slice(0, 4).join("\n"),
+        };
+    }
+    return { message: String(error) };
+}
+
+function getVipProviderHost(baseUrl: string | undefined) {
+    if (!baseUrl) return "default";
+    try {
+        return new URL(baseUrl).host;
+    } catch {
+        return "invalid-url";
+    }
+}
+
+function logVipEvent(
+    runId: string,
+    event: string,
+    data: Record<string, unknown> = {},
+) {
+    console.log("[VIP]", {
+        runId,
+        event,
+        ...data,
+    });
+}
+
 function getReusableCheckpointStages(state: VipCheckpointState) {
     const stages: VipStageName[] = [];
     if (state.transcript) stages.push("transcript");
@@ -541,7 +582,7 @@ export function buildVipFinalRenderArgs(input: {
         "-c:v",
         "libx264",
         "-preset",
-        "veryfast",
+        "superfast",
         "-crf",
         "23",
         "-c:a",
@@ -721,6 +762,7 @@ export async function runVideoVipProcessing(
     input: VideoVipProcessingInput,
 ): Promise<VideoVipProcessingResult> {
     const startedAt = Date.now();
+    const runId = randomUUID();
     if (!input.fileBytes || input.fileBytes.byteLength === 0) {
         throw new ChineseTranscriptionError(
             "VAL_DUBBING_VIDEO_REQUIRED",
@@ -730,6 +772,24 @@ export async function runVideoVipProcessing(
     }
 
     const clampedSpeed = Math.min(2, Math.max(0.5, input.videoSpeedFactor ?? 1));
+    logVipEvent(runId, "run-start", {
+        fileName: input.fileName,
+        mimeType: input.mimeType,
+        fileSizeBytes: input.fileBytes.byteLength,
+        language: input.language ?? "zh",
+        sourceLanguage: input.sourceLanguage,
+        targetLanguage: input.targetLanguage ?? "vi",
+        translationProvider: input.providerName ?? "default",
+        translationProviderHost: getVipProviderHost(input.baseUrl),
+        translationModel: input.model ?? DEFAULT_TRANSLATION_MODEL,
+        metadataProvider: input.metadataProviderName ?? input.providerName ?? "default",
+        metadataProviderHost: getVipProviderHost(input.metadataBaseUrl ?? input.baseUrl),
+        metadataModel: input.metadataModel ?? input.model ?? DEFAULT_TRANSLATION_MODEL,
+        speedFactor: clampedSpeed,
+        originalAudioVolume: normalizeVolume(input.originalAudioVolume, 0),
+        voiceVolume: normalizeVolume(input.voiceVolume, 1),
+        checkpointEnabled: Boolean(input.checkpointKey),
+    });
     const runners: VipStageRunners = {
         transcribe: input.stageRunners?.transcribe ?? runChineseVideoTranscription,
         translate: input.stageRunners?.translate ?? translateTranscriptSegments,
@@ -742,6 +802,12 @@ export async function runVideoVipProcessing(
     const checkpointPaths = checkpoint.paths;
     let checkpointState =
         checkpoint.state ?? buildEmptyCheckpointState(input);
+    logVipEvent(runId, "checkpoint-read", {
+        checkpointEnabled: Boolean(checkpointPaths),
+        checkpointKey: checkpointPaths?.key,
+        reusableStages: getReusableCheckpointStages(checkpointState),
+        checkpointHit: Boolean(checkpoint.state),
+    });
     const reusedStages: VipStageName[] = [];
     const savedStages: VipStageName[] = [];
     const saveCheckpoint = async (stage: VipStageName) => {
@@ -751,6 +817,12 @@ export async function runVideoVipProcessing(
             state: checkpointState,
         });
         savedStages.push(stage);
+        logVipEvent(runId, "checkpoint-saved", {
+            stage,
+            savedStages: uniqueStages(savedStages),
+            reusableStages: getReusableCheckpointStages(checkpointState),
+            checkpointKey: checkpointPaths.key,
+        });
     };
 
     const preprocessStartedAt = Date.now();
@@ -759,8 +831,20 @@ export async function runVideoVipProcessing(
     const preprocessDurationMs =
         checkpointState.durations?.preprocessDurationMs ??
         Date.now() - preprocessStartedAt;
+    logVipEvent(runId, "stage-success", {
+        stage: "preprocess",
+        durationMs: preprocessDurationMs,
+        note: "VIP preprocess is lightweight; speed is applied to transcription timing and final render.",
+    });
 
     const transcriptionStartedAt = Date.now();
+    logVipEvent(runId, "stage-start", {
+        stage: "transcript",
+        reused: Boolean(checkpointState.transcript),
+        fileSizeBytes: input.fileBytes.byteLength,
+        language: input.language ?? "zh",
+        speedFactor: clampedSpeed,
+    });
     const transcript =
         checkpointState.transcript ??
         (await (async () => {
@@ -776,6 +860,11 @@ export async function runVideoVipProcessing(
                     videoSpeedFactor: clampedSpeed,
                 });
             } catch (error) {
+                logVipEvent(runId, "stage-failed", {
+                    stage: "transcript",
+                    durationMs: Date.now() - transcriptionStartedAt,
+                    error: summarizeVipError(error),
+                });
                 throw toVipCheckpointError({
                     error,
                     paths: checkpointPaths,
@@ -791,6 +880,12 @@ export async function runVideoVipProcessing(
         Date.now() - transcriptionStartedAt;
     if (checkpointState.transcript) {
         reusedStages.push("transcript");
+        logVipEvent(runId, "stage-reused", {
+            stage: "transcript",
+            segmentCount: transcript.segments.length,
+            wordCount: transcript.words.length,
+            durationMs: transcriptionDurationMs,
+        });
     } else {
         checkpointState = {
             ...checkpointState,
@@ -802,9 +897,27 @@ export async function runVideoVipProcessing(
             },
         };
         await saveCheckpoint("transcript");
+        logVipEvent(runId, "stage-success", {
+            stage: "transcript",
+            segmentCount: transcript.segments.length,
+            wordCount: transcript.words.length,
+            transcriptChars: transcript.text.length,
+            audioFileSizeBytes: transcript.audio.fileSizeBytes,
+            durationMs: transcriptionDurationMs,
+        });
     }
 
     const translationStartedAt = Date.now();
+    logVipEvent(runId, "stage-start", {
+        stage: "translation",
+        reused: Boolean(checkpointState.translation),
+        segmentCount: transcript.segments.length,
+        provider: input.providerName ?? "default",
+        providerHost: getVipProviderHost(input.baseUrl),
+        model: input.model ?? DEFAULT_TRANSLATION_MODEL,
+        sourceLanguage: input.sourceLanguage ?? transcript.language,
+        targetLanguage: input.targetLanguage ?? "vi",
+    });
     const translation =
         checkpointState.translation ??
         (await (async () => {
@@ -819,6 +932,15 @@ export async function runVideoVipProcessing(
                     providerName: input.providerName,
                 });
             } catch (error) {
+                logVipEvent(runId, "stage-failed", {
+                    stage: "translation",
+                    durationMs: Date.now() - translationStartedAt,
+                    segmentCount: transcript.segments.length,
+                    provider: input.providerName ?? "default",
+                    providerHost: getVipProviderHost(input.baseUrl),
+                    model: input.model ?? DEFAULT_TRANSLATION_MODEL,
+                    error: summarizeVipError(error),
+                });
                 throw toVipCheckpointError({
                     error,
                     paths: checkpointPaths,
@@ -834,6 +956,14 @@ export async function runVideoVipProcessing(
         Date.now() - translationStartedAt;
     if (checkpointState.translation) {
         reusedStages.push("translation");
+        logVipEvent(runId, "stage-reused", {
+            stage: "translation",
+            translatedCount: translation.translatedSegments.length,
+            chunkCount: translation.chunks.length,
+            provider: translation.provider.name,
+            requestId: translation.provider.requestId,
+            durationMs: translationDurationMs,
+        });
     } else {
         checkpointState = {
             ...checkpointState,
@@ -844,15 +974,40 @@ export async function runVideoVipProcessing(
             },
         };
         await saveCheckpoint("translation");
+        logVipEvent(runId, "stage-success", {
+            stage: "translation",
+            translatedCount: translation.translatedSegments.length,
+            chunkCount: translation.chunks.length,
+            provider: translation.provider.name,
+            requestId: translation.provider.requestId,
+            totalTokensUsed: "totalTokensUsed" in translation
+                ? translation.totalTokensUsed
+                : undefined,
+            durationMs: translationDurationMs,
+        });
     }
 
     const voiceStartedAt = Date.now();
+    const voiceInputSegments = buildVideoDubbingVoiceSegments({
+        transcript,
+        translation,
+    });
+    logVipEvent(runId, "stage-start", {
+        stage: "voice",
+        reused: Boolean(checkpointState.voice),
+        segmentCount: voiceInputSegments.length,
+        alignmentMode:
+            input.ttsSettings?.alignmentMode ??
+            DEFAULT_PIPER_TTS_SETTINGS.alignmentMode,
+        binaryPath: input.ttsSettings?.binaryPath ?? DEFAULT_PIPER_TTS_SETTINGS.binaryPath,
+        modelPath: input.ttsSettings?.modelPath ?? DEFAULT_PIPER_TTS_SETTINGS.modelPath,
+    });
     const voice =
         checkpointState.voice ??
         (await (async () => {
             try {
                 return await runners.generateVoice({
-                    segments: buildVideoDubbingVoiceSegments({ transcript, translation }),
+                    segments: voiceInputSegments,
                     settings: {
                         ...DEFAULT_PIPER_TTS_SETTINGS,
                         ...input.ttsSettings,
@@ -862,6 +1017,12 @@ export async function runVideoVipProcessing(
                     },
                 });
             } catch (error) {
+                logVipEvent(runId, "stage-failed", {
+                    stage: "voice",
+                    durationMs: Date.now() - voiceStartedAt,
+                    segmentCount: voiceInputSegments.length,
+                    error: summarizeVipError(error),
+                });
                 throw toVipCheckpointError({
                     error,
                     paths: checkpointPaths,
@@ -877,6 +1038,13 @@ export async function runVideoVipProcessing(
         Date.now() - voiceStartedAt;
     if (checkpointState.voice) {
         reusedStages.push("voice");
+        logVipEvent(runId, "stage-reused", {
+            stage: "voice",
+            segmentCount: voice.segmentCount,
+            byteLength: voice.byteLength,
+            alignmentMode: voice.alignment.mode,
+            durationMs: voiceDurationMs,
+        });
     } else {
         checkpointState = {
             ...checkpointState,
@@ -887,18 +1055,50 @@ export async function runVideoVipProcessing(
             },
         };
         await saveCheckpoint("voice");
+        logVipEvent(runId, "stage-success", {
+            stage: "voice",
+            segmentCount: voice.segmentCount,
+            byteLength: voice.byteLength,
+            alignmentMode: voice.alignment.mode,
+            durationMs: voiceDurationMs,
+        });
     }
 
-    const originalAudioVolume = normalizeVolume(input.originalAudioVolume, 0.1);
+    const originalAudioVolume = normalizeVolume(input.originalAudioVolume, 0);
     const voiceVolume = normalizeVolume(input.voiceVolume, 1);
 
     const finalRenderStartedAt = Date.now();
     let videoBytes: Buffer;
+    logVipEvent(runId, "stage-start", {
+        stage: "render",
+        reused: Boolean(checkpointState.renderedVideo),
+        sourceFileSizeBytes: input.fileBytes.byteLength,
+        voiceByteLength: voice.byteLength,
+        translatedCount: translation.translatedSegments.length,
+        speedFactor: clampedSpeed,
+        mirrorEnabled: input.mirrorEnabled === true,
+        blurEnabled: input.blur?.enabled === true,
+        coverBoxEnabled: input.coverBoxes?.enabled === true,
+        textOverlayEnabled: input.textOverlays?.enabled === true,
+        originalAudioVolume,
+        voiceVolume,
+    });
     if (checkpointState.renderedVideo && checkpointPaths) {
         try {
             videoBytes = await readFile(checkpointPaths.videoPath);
             reusedStages.push("render");
+            logVipEvent(runId, "stage-reused", {
+                stage: "render",
+                byteLength: videoBytes.byteLength,
+                checkpointVideoPath: checkpointPaths.videoPath,
+                durationMs: Date.now() - finalRenderStartedAt,
+            });
         } catch {
+            logVipEvent(runId, "checkpoint-render-missing", {
+                stage: "render",
+                checkpointVideoPath: checkpointPaths.videoPath,
+                action: "rerender",
+            });
             checkpointState = {
                 ...checkpointState,
                 renderedVideo: undefined,
@@ -919,6 +1119,11 @@ export async function runVideoVipProcessing(
                     voiceVolume,
                 });
             } catch (error) {
+                logVipEvent(runId, "stage-failed", {
+                    stage: "render",
+                    durationMs: Date.now() - finalRenderStartedAt,
+                    error: summarizeVipError(error),
+                });
                 throw toVipCheckpointError({
                     error,
                     paths: checkpointPaths,
@@ -946,6 +1151,11 @@ export async function runVideoVipProcessing(
                 voiceVolume,
             });
         } catch (error) {
+            logVipEvent(runId, "stage-failed", {
+                stage: "render",
+                durationMs: Date.now() - finalRenderStartedAt,
+                error: summarizeVipError(error),
+            });
             throw toVipCheckpointError({
                 error,
                 paths: checkpointPaths,
@@ -978,9 +1188,22 @@ export async function runVideoVipProcessing(
             },
         };
         await saveCheckpoint("render");
+        logVipEvent(runId, "stage-success", {
+            stage: "render",
+            byteLength: videoBytes.byteLength,
+            durationMs: finalRenderDurationMs,
+        });
     }
 
     const metadataStartedAt = Date.now();
+    logVipEvent(runId, "stage-start", {
+        stage: "metadata",
+        reused: Boolean(checkpointState.metadata),
+        translatedCount: translation.translatedSegments.length,
+        provider: input.metadataProviderName ?? input.providerName ?? "default",
+        providerHost: getVipProviderHost(input.metadataBaseUrl ?? input.baseUrl),
+        model: input.metadataModel ?? input.model ?? DEFAULT_TRANSLATION_MODEL,
+    });
     const metadata =
         checkpointState.metadata ??
         (await (async () => {
@@ -995,6 +1218,14 @@ export async function runVideoVipProcessing(
                     providerName: input.metadataProviderName ?? input.providerName,
                 });
             } catch (error) {
+                logVipEvent(runId, "stage-failed", {
+                    stage: "metadata",
+                    durationMs: Date.now() - metadataStartedAt,
+                    provider: input.metadataProviderName ?? input.providerName ?? "default",
+                    providerHost: getVipProviderHost(input.metadataBaseUrl ?? input.baseUrl),
+                    model: input.metadataModel ?? input.model ?? DEFAULT_TRANSLATION_MODEL,
+                    error: summarizeVipError(error),
+                });
                 throw toVipCheckpointError({
                     error,
                     paths: checkpointPaths,
@@ -1010,6 +1241,12 @@ export async function runVideoVipProcessing(
         Date.now() - metadataStartedAt;
     if (checkpointState.metadata) {
         reusedStages.push("metadata");
+        logVipEvent(runId, "stage-reused", {
+            stage: "metadata",
+            title: metadata.title,
+            hashtagCount: metadata.hashtags.length,
+            durationMs: metadataDurationMs,
+        });
     } else {
         checkpointState = {
             ...checkpointState,
@@ -1020,7 +1257,21 @@ export async function runVideoVipProcessing(
             },
         };
         await saveCheckpoint("metadata");
+        logVipEvent(runId, "stage-success", {
+            stage: "metadata",
+            title: metadata.title,
+            hashtagCount: metadata.hashtags.length,
+            durationMs: metadataDurationMs,
+        });
     }
+
+    logVipEvent(runId, "run-success", {
+        totalDurationMs: Date.now() - startedAt,
+        reusedStages: uniqueStages(reusedStages),
+        savedStages: uniqueStages(savedStages),
+        outputFileName: sanitizeOutputName(input.fileName),
+        outputByteLength: videoBytes.byteLength,
+    });
 
     return {
         ...(input.omitVideoBase64

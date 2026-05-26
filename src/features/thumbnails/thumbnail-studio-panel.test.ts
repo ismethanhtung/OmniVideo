@@ -74,6 +74,11 @@ describe("Thumbnail Studio UI shell", () => {
         expect(source).toContain("handleInlineTitleRename");
         expect(source).toContain("onDoubleClick");
         expect(source).toContain("Thumbnail name updated.");
+        expect(source).toContain("selectedThumbnailDownloadUrl");
+        expect(source).toContain("selectedThumbnailNameHint");
+        expect(source).toContain("DownloadCloud");
+        expect(source).toContain("<DownloadCloud className=\"h-3 w-3\" />");
+        expect(source).toContain("truncate text-right text-[10px] text-muted");
         expect(source).not.toContain('aria-label="Duplicate thumbnail"');
         expect(source).not.toContain('aria-label="Delete thumbnail"');
         expect(source).toContain("flex h-fit w-full flex-col border text-left");

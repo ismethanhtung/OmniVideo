@@ -111,7 +111,7 @@ export function buildDubbedVideoFfmpegArgs(input: {
     originalAudioVolume: number;
     voiceVolume: number;
 }) {
-    const originalVolume = normalizeVolume(input.originalAudioVolume, 0.1);
+    const originalVolume = normalizeVolume(input.originalAudioVolume, 0);
     const voiceVolume = normalizeVolume(input.voiceVolume, 1);
 
     if (originalVolume <= 0) {
@@ -273,10 +273,7 @@ export async function runVideoDubbing(
                 DEFAULT_PIPER_TTS_SETTINGS.preserveTimestampGaps,
         },
     });
-    const originalAudioVolume = normalizeVolume(
-        input.originalAudioVolume,
-        0.1,
-    );
+    const originalAudioVolume = normalizeVolume(input.originalAudioVolume, 0);
     const voiceVolume = normalizeVolume(input.voiceVolume, 1);
     const videoBytes = await muxDubbedVideo({
         videoBytes: new Uint8Array(processedSource.fileBytes),

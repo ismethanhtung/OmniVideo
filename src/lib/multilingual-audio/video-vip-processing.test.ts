@@ -2,7 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ChineseTranscriptionError } from "./types";
 import {
@@ -114,6 +114,7 @@ describe("VIP final render filter order", () => {
         });
         const filter = args[args.indexOf("-filter_complex") + 1] ?? "";
 
+        expect(args).toEqual(expect.arrayContaining(["-preset", "superfast"]));
         expect(filter.indexOf("setpts=1.25*PTS[basev]")).toBeLessThan(
             filter.indexOf("boxblur"),
         );
@@ -151,6 +152,7 @@ describe("VIP final render filter order", () => {
         });
         const filter = args[args.indexOf("-filter_complex") + 1] ?? "";
 
+        expect(args).toEqual(expect.arrayContaining(["-preset", "superfast"]));
         expect(filter).toContain("drawbox=x=iw*0.000000:y=ih*0.820000");
         expect(filter).toContain("color=0x000000@0.65:t=fill");
         expect(filter).not.toContain("boxblur");
@@ -164,7 +166,12 @@ describe("VIP final render filter order", () => {
 });
 
 describe("VIP processing stage checkpoints", () => {
+    beforeEach(() => {
+        vi.spyOn(console, "log").mockImplementation(() => {});
+    });
+
     afterEach(async () => {
+        vi.restoreAllMocks();
         await Promise.all(
             checkpointDirs.splice(0).map((dir) =>
                 rm(dir, { recursive: true, force: true }),
@@ -212,6 +219,33 @@ describe("VIP processing stage checkpoints", () => {
         );
         expect(firstRunners.translate).toHaveBeenCalledTimes(1);
         expect(firstRunners.generateVoice).toHaveBeenCalledTimes(1);
+        expect(console.log).toHaveBeenCalledWith(
+            "[VIP]",
+            expect.objectContaining({
+                event: "stage-start",
+                stage: "translation",
+                segmentCount: 1,
+            }),
+        );
+        expect(console.log).toHaveBeenCalledWith(
+            "[VIP]",
+            expect.objectContaining({
+                event: "stage-success",
+                stage: "translation",
+                translatedCount: 1,
+            }),
+        );
+        expect(console.log).toHaveBeenCalledWith(
+            "[VIP]",
+            expect.objectContaining({
+                event: "stage-failed",
+                stage: "render",
+                error: expect.objectContaining({
+                    code: "SYS_DUBBING_MUX_FAILED",
+                    message: "render failed",
+                }),
+            }),
+        );
 
         const secondRunners = createStageRunners();
         const result = await runVideoVipProcessing({

@@ -51,6 +51,7 @@ describe("storage asset patch route", () => {
     } as never);
     mockedDeleteRemoteAssetIfNeeded.mockResolvedValue({
       deletedRemote: true,
+      skippedMissingRemote: false,
     } as never);
     mockedUpdateVideoAssetMetadataById.mockResolvedValue({
       _id: { toString: () => "asset-1" },
@@ -101,6 +102,7 @@ describe("storage asset delete route", () => {
     } as never);
     mockedDeleteRemoteAssetIfNeeded.mockResolvedValue({
       deletedRemote: true,
+      skippedMissingRemote: false,
     } as never);
   });
 
@@ -141,5 +143,29 @@ describe("storage asset delete route", () => {
 
     expect(response.status).toBe(500);
     expect(mockedDeleteVideoAssetById).not.toHaveBeenCalled();
+  });
+
+  it("continues local deletion when drive file is already missing remotely", async () => {
+    mockedDeleteRemoteAssetIfNeeded.mockResolvedValueOnce({
+      deletedRemote: false,
+      skippedMissingRemote: true,
+    } as never);
+
+    const response = await DELETE(
+      new Request("http://localhost/api/storage/assets/asset-1", {
+        method: "DELETE",
+      }),
+      { params: Promise.resolve({ assetId: "asset-1" }) },
+    );
+
+    expect(response.status).toBe(200);
+    expect(mockedDeleteVideoAssetById).toHaveBeenCalledWith({
+      db: {},
+      assetId: "asset-1",
+    });
+    expect(mockedDeleteIntakeJobRunsByAssetId).toHaveBeenCalledWith({
+      db: {},
+      assetId: "asset-1",
+    });
   });
 });

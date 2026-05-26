@@ -153,7 +153,7 @@ async function transcribeWithGroqChunking(input: {
 
     const mergedSegments: AudioTranscriptSegment[] = [];
     const mergedWords: AudioTranscriptWord[] = [];
-    let textParts: string[] = [];
+    const textParts: string[] = [];
     let lastRequestId: string | undefined;
 
     for (const chunk of chunks) {

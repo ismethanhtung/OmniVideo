@@ -357,22 +357,11 @@ function buildDubbingProgressStepDescription(input: {
         .join("\n");
 }
 
-function buildVoiceProcessingChunkLines(
-    alignment: VideoVipProcessingResult["voice"]["alignment"],
-) {
-    const chunks = alignment.processingChunks ?? [];
-    if (chunks.length === 0) return [];
-
-    const segmentCounts = chunks
-        .map((chunk) => String(chunk.segmentCount))
-        .join("/");
-    return [
-        `Voice chunks: ${chunks.length} chunk(s) · ${segmentCounts} segment(s)`,
-        ...chunks.map(
-            (chunk) =>
-                `Voice chunk ${chunk.index}: ${chunk.segmentCount} segment(s) · ${formatTimelineTimestamp(chunk.start)} -> ${formatTimelineTimestamp(chunk.end)} · ${formatDurationMs(chunk.durationSeconds * 1000)}`,
-        ),
-    ];
+function buildVipMetadataTagLine(metadata: VideoVipProcessingResult["metadata"]) {
+    if (!Array.isArray(metadata.hashtags) || metadata.hashtags.length === 0) {
+        return "Tags: (none)";
+    }
+    return `Tags: ${metadata.hashtags.map((tag) => `#${tag}`).join(" ")}`;
 }
 
 function buildVipProgressStepDescription(input: {
@@ -382,9 +371,6 @@ function buildVipProgressStepDescription(input: {
     const summary = `VIP processing ${input.nodeLabel} complete.`;
     const segments = input.result.translation.translatedSegments;
     const stage = input.result.stages;
-    const voiceChunkLines = buildVoiceProcessingChunkLines(
-        input.result.voice.alignment,
-    );
     const metadataLines = [
         "Metadata:",
         `File: ${input.result.fileName}`,
@@ -394,6 +380,9 @@ function buildVipProgressStepDescription(input: {
         `Transcript: ${input.result.transcript.segments.length} segment(s) · ${input.result.transcript.words.length} word(s)`,
         `Translation: ${segments.length} segment(s) · ${input.result.translation.provider.name} · ${input.result.translation.model}`,
         `Voice: ${input.result.voice.segmentCount} segment(s) · ${formatBytes(input.result.voice.byteLength)} · ${input.result.voice.alignment.mode} alignment`,
+        `Title: ${input.result.metadata.title}`,
+        `Description: ${summarizeTextForProgress(input.result.metadata.description, 180)}`,
+        buildVipMetadataTagLine(input.result.metadata),
         `Stages: preprocess ${formatDurationMs(stage.preprocessDurationMs)} · transcript ${formatDurationMs(stage.transcriptionDurationMs)} · translate ${formatDurationMs(stage.translationDurationMs)} · voice ${formatDurationMs(stage.voiceDurationMs)} · render (speed+mix+mirror+blur+sub) ${formatDurationMs(stage.finalRenderDurationMs)} · metadata ${formatDurationMs(stage.metadataDurationMs)}`,
         "Stage log:",
         `Completed transcript stage (${formatDurationMs(stage.transcriptionDurationMs)}).`,
@@ -401,7 +390,6 @@ function buildVipProgressStepDescription(input: {
         `Completed voice generation stage (${formatDurationMs(stage.voiceDurationMs)}).`,
         `Completed final render stage (speed + mirror + blur + subtitles + audio mix) (${formatDurationMs(stage.finalRenderDurationMs)}).`,
         `Completed metadata generation stage (${formatDurationMs(stage.metadataDurationMs)}).`,
-        ...voiceChunkLines,
     ];
 
     if (segments.length === 0) return [summary, ...metadataLines].join("\n");
@@ -3673,7 +3661,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                             getNumberConfig(
                                 dubbingNode,
                                 "originalAudioVolume",
-                                0.1,
+                                0,
                             ),
                         ),
                     );
@@ -3900,7 +3888,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     formData.set(
                         "originalAudioVolume",
                         String(
-                            getNumberConfig(vipNode, "originalAudioVolume", 0.1),
+                            getNumberConfig(vipNode, "originalAudioVolume", 0),
                         ),
                     );
                     formData.set(
@@ -4214,16 +4202,17 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     appendVipStageLog(
                         `Completed voice generation stage (${formatDurationMs(vipPayload.data.stages.voiceDurationMs)}).`,
                     );
-                    for (const line of buildVoiceProcessingChunkLines(
-                        vipPayload.data.voice.alignment,
-                    )) {
-                        appendVipStageLog(line);
-                    }
                     appendVipStageLog(
                         `Completed final render stage (speed + mirror + blur + subtitles + audio mix) (${formatDurationMs(vipPayload.data.stages.finalRenderDurationMs)}).`,
                     );
                     appendVipStageLog(
                         `Completed metadata generation stage (${formatDurationMs(vipPayload.data.stages.metadataDurationMs)}).`,
+                    );
+                    appendVipStageLog(
+                        `Metadata title: ${vipPayload.data.metadata.title}`,
+                    );
+                    appendVipStageLog(
+                        `Metadata tags: ${buildVipMetadataTagLine(vipPayload.data.metadata).replace("Tags: ", "")}`,
                     );
                     summary.push(
                         `VIP video ready: ${formatBytes(vipPayload.data.byteLength)}.`,
@@ -8359,10 +8348,10 @@ function NodeRuntimeConfig({
                         <RuntimeTextInput
                             label="Original volume"
                             value={String(
-                                getNumberConfig(node, "originalAudioVolume", 0.1),
+                                getNumberConfig(node, "originalAudioVolume", 0),
                             )}
                             disabled={isRunningFlow}
-                            placeholder="0.1"
+                            placeholder="0"
                             onChange={(value) =>
                                 setConfig({ originalAudioVolume: Number(value) })
                             }
@@ -8825,11 +8814,11 @@ function NodeRuntimeConfig({
                                         getNumberConfig(
                                             node,
                                             "originalAudioVolume",
-                                            0.1,
+                                            0,
                                         ),
                                     )}
                                     disabled={isRunningFlow}
-                                    placeholder="0.1"
+                                    placeholder="0"
                                     onChange={(value) =>
                                         setConfig({
                                             originalAudioVolume: Number(value),

@@ -32,6 +32,52 @@ const DEFAULT_TRANSLATION_CHUNK_CONCURRENCY = 4;
 const DEFAULT_MAX_QUALITY_RETRIES = 2;
 const INVALID_JSON_SNIPPET_MAX_CHARS = 220;
 
+function summarizeError(error: unknown) {
+    if (error instanceof ChineseTranscriptionError) {
+        return {
+            name: error.name,
+            code: error.code,
+            status: error.status,
+            message: error.message,
+            stack: error.stack?.split("\n").slice(0, 4).join("\n"),
+        };
+    }
+    if (error instanceof Error) {
+        return {
+            name: error.name,
+            message: error.message,
+            stack: error.stack?.split("\n").slice(0, 4).join("\n"),
+        };
+    }
+    return { message: String(error) };
+}
+
+function getUrlHost(url: string) {
+    try {
+        return new URL(url).host;
+    } catch {
+        return "invalid-url";
+    }
+}
+
+function segmentRange(segments: AudioTranscriptSegment[]) {
+    const first = segments[0];
+    const last = segments[segments.length - 1];
+    return {
+        firstId: first?.id,
+        lastId: last?.id,
+        start: first?.start,
+        end: last?.end,
+    };
+}
+
+function logTranslationEvent(event: string, data: Record<string, unknown>) {
+    console.log("[TranscriptTranslation]", {
+        event,
+        ...data,
+    });
+}
+
 function trimForErrorSnippet(value: string) {
     const normalized = value.replace(/\s+/gu, " ").trim();
     if (!normalized) return "(empty)";
@@ -349,6 +395,38 @@ function buildTranslationPrompt(input: {
     ].join("\n");
 }
 
+async function fetchTranslationProvider(input: {
+    fetcher: typeof fetch;
+    url: string;
+    init: RequestInit;
+    context: Record<string, unknown>;
+}) {
+    const startedAt = Date.now();
+    try {
+        const response = await input.fetcher(input.url, input.init);
+        logTranslationEvent("provider-response", {
+            ...input.context,
+            status: response.status,
+            ok: response.ok,
+            durationMs: Date.now() - startedAt,
+        });
+        return response;
+    } catch (error) {
+        logTranslationEvent("provider-fetch-failed", {
+            ...input.context,
+            durationMs: Date.now() - startedAt,
+            error: summarizeError(error),
+        });
+        throw new ChineseTranscriptionError(
+            "PRV_GROQ_TRANSLATION_FAILED",
+            error instanceof Error
+                ? `Translation provider network request failed: ${error.message}`
+                : "Translation provider network request failed.",
+            502,
+        );
+    }
+}
+
 async function requestTranslationChunk(input: {
     segments: AudioTranscriptSegment[];
     fullTranscriptContext: string;
@@ -359,6 +437,7 @@ async function requestTranslationChunk(input: {
     baseUrl: string;
     fetcher: typeof fetch;
     retryMode?: boolean;
+    chunkLabel?: string;
 }) {
     const url = `${input.baseUrl}/chat/completions`;
     const requestBody = JSON.stringify({
@@ -384,21 +463,31 @@ async function requestTranslationChunk(input: {
         ],
     });
 
-    console.log("[AudioTranscript Translation] provider request", {
+    const requestContext = {
         mode: "chunk-json",
-        url,
-        segmentIds: input.segments.map((segment) => segment.id),
+        providerHost: getUrlHost(url),
+        model: input.model,
+        chunkLabel: input.chunkLabel ?? "chunk",
         retryMode: input.retryMode ?? false,
-        body: requestBody,
-    });
+        segmentCount: input.segments.length,
+        ...segmentRange(input.segments),
+        requestBytes: Buffer.byteLength(requestBody),
+        fullTranscriptChars: input.fullTranscriptContext.length,
+    };
+    logTranslationEvent("provider-request", requestContext);
 
-    const response = await input.fetcher(url, {
-        method: "POST",
-        headers: {
-            Authorization: `Bearer ${input.apiKey}`,
-            "Content-Type": "application/json",
+    const response = await fetchTranslationProvider({
+        fetcher: input.fetcher,
+        url,
+        context: requestContext,
+        init: {
+            method: "POST",
+            headers: {
+                Authorization: `Bearer ${input.apiKey}`,
+                "Content-Type": "application/json",
+            },
+            body: requestBody,
         },
-        body: requestBody,
     });
 
     const rawResponseBody = await response.text();
@@ -419,14 +508,12 @@ async function requestTranslationChunk(input: {
         };
     };
 
-    console.log("[AudioTranscript Translation] provider response", {
-        mode: "chunk-json",
-        url,
-        segmentIds: input.segments.map((segment) => segment.id),
-        retryMode: input.retryMode ?? false,
+    logTranslationEvent("provider-body-read", {
+        ...requestContext,
         status: response.status,
         requestId: payload.id,
-        body: rawResponseBody,
+        responseBytes: Buffer.byteLength(rawResponseBody),
+        responsePreview: rawResponseBody.slice(0, 500),
     });
 
     if (!response.ok) {
@@ -480,20 +567,30 @@ async function requestSingleSegmentPlainTextFallback(input: {
             },
         ],
     });
-    console.log("[AudioTranscript Translation] provider request", {
+    const requestContext = {
         mode: "single-fallback",
-        url,
-        segmentIds: [input.segment.id],
-        body: requestBody,
-    });
+        providerHost: getUrlHost(url),
+        model: input.model,
+        segmentId: input.segment.id,
+        start: input.segment.start,
+        end: input.segment.end,
+        requestBytes: Buffer.byteLength(requestBody),
+        fullTranscriptChars: input.fullTranscriptContext.length,
+    };
+    logTranslationEvent("provider-request", requestContext);
 
-    const response = await input.fetcher(url, {
-        method: "POST",
-        headers: {
-            Authorization: `Bearer ${input.apiKey}`,
-            "Content-Type": "application/json",
+    const response = await fetchTranslationProvider({
+        fetcher: input.fetcher,
+        url,
+        context: requestContext,
+        init: {
+            method: "POST",
+            headers: {
+                Authorization: `Bearer ${input.apiKey}`,
+                "Content-Type": "application/json",
+            },
+            body: requestBody,
         },
-        body: requestBody,
     });
 
     const rawResponseBody = await response.text();
@@ -510,13 +607,12 @@ async function requestSingleSegmentPlainTextFallback(input: {
         usage?: { total_tokens?: number };
     };
 
-    console.log("[AudioTranscript Translation] provider response", {
-        mode: "single-fallback",
-        url,
-        segmentIds: [input.segment.id],
+    logTranslationEvent("provider-body-read", {
+        ...requestContext,
         status: response.status,
         requestId: payload.id,
-        body: rawResponseBody,
+        responseBytes: Buffer.byteLength(rawResponseBody),
+        responsePreview: rawResponseBody.slice(0, 500),
     });
     if (!response.ok) {
         throw new ChineseTranscriptionError(
@@ -580,6 +676,7 @@ async function translateChunkAdaptive(input: {
     retryMode?: boolean;
     qualityRetryDepth?: number;
     plainTextFallbackTried?: boolean;
+    chunkLabel?: string;
 }): Promise<{
     requestIds: string[];
     totalTokens: number;
@@ -587,8 +684,23 @@ async function translateChunkAdaptive(input: {
     chunkCount: number;
 }> {
     try {
+        logTranslationEvent("chunk-start", {
+            chunkLabel: input.chunkLabel ?? "chunk",
+            retryMode: input.retryMode ?? false,
+            qualityRetryDepth: input.qualityRetryDepth ?? 0,
+            segmentCount: input.segments.length,
+            ...segmentRange(input.segments),
+        });
         const result = await requestTranslationChunk(input);
         const unresolved = result.segments.filter(needsTranslationRetry);
+        logTranslationEvent("chunk-response-normalized", {
+            chunkLabel: input.chunkLabel ?? "chunk",
+            segmentCount: input.segments.length,
+            translatedCount: result.segments.length,
+            unresolvedCount: unresolved.length,
+            requestId: result.requestId,
+            totalTokens: result.totalTokens,
+        });
 
         if (
             unresolved.length > 0 &&
@@ -605,6 +717,7 @@ async function translateChunkAdaptive(input: {
                 segments: unresolvedSource,
                 retryMode: true,
                 qualityRetryDepth: (input.qualityRetryDepth ?? 0) + 1,
+                chunkLabel: `${input.chunkLabel ?? "chunk"}.quality-retry`,
             });
             const retryById = new Map(
                 retry.segments.map((segment) => [segment.id, segment]),
@@ -633,15 +746,22 @@ async function translateChunkAdaptive(input: {
             (isRequestTooLargeError(error) || isInvalidJsonError(error)) &&
             input.segments.length > 1
         ) {
+            logTranslationEvent("chunk-split-retry", {
+                chunkLabel: input.chunkLabel ?? "chunk",
+                segmentCount: input.segments.length,
+                reason: summarizeError(error),
+            });
             const midpoint = Math.ceil(input.segments.length / 2);
             const [left, right] = await Promise.all([
                 translateChunkAdaptive({
                     ...input,
                     segments: input.segments.slice(0, midpoint),
+                    chunkLabel: `${input.chunkLabel ?? "chunk"}.left`,
                 }),
                 translateChunkAdaptive({
                     ...input,
                     segments: input.segments.slice(midpoint),
+                    chunkLabel: `${input.chunkLabel ?? "chunk"}.right`,
                 }),
             ]);
             return {
@@ -661,6 +781,7 @@ async function translateChunkAdaptive(input: {
                 ...input,
                 retryMode: true,
                 qualityRetryDepth: (input.qualityRetryDepth ?? 0) + 1,
+                chunkLabel: `${input.chunkLabel ?? "chunk"}.json-retry`,
             });
         }
         if (
@@ -668,6 +789,11 @@ async function translateChunkAdaptive(input: {
             input.segments.length === 1 &&
             !input.plainTextFallbackTried
         ) {
+            logTranslationEvent("single-fallback-start", {
+                chunkLabel: input.chunkLabel ?? "chunk",
+                segmentId: input.segments[0].id,
+                reason: summarizeError(error),
+            });
             const fallback = await requestSingleSegmentPlainTextFallback({
                 segment: input.segments[0],
                 fullTranscriptContext: input.fullTranscriptContext,
@@ -685,6 +811,12 @@ async function translateChunkAdaptive(input: {
                 chunkCount: 1,
             };
         }
+        logTranslationEvent("chunk-failed", {
+            chunkLabel: input.chunkLabel ?? "chunk",
+            segmentCount: input.segments.length,
+            ...segmentRange(input.segments),
+            error: summarizeError(error),
+        });
         throw error;
     }
 }
@@ -723,10 +855,27 @@ export async function translateTranscriptSegments(input: {
             ? DEFAULT_MAX_SOURCE_CHARS_PER_CHUNK
             : LIMITED_PROVIDER_MAX_SOURCE_CHARS_PER_CHUNK,
     );
+    logTranslationEvent("run-start", {
+        providerName,
+        providerHost: getUrlHost(baseUrl),
+        model,
+        sourceLanguage,
+        targetLanguage,
+        segmentCount: input.segments.length,
+        chunkCount: chunks.length,
+        concurrency: DEFAULT_TRANSLATION_CHUNK_CONCURRENCY,
+        fullTranscriptChars: fullTranscriptContext.length,
+        maxSegmentsPerChunk: isGroqCompatibleDefault
+            ? DEFAULT_MAX_SEGMENTS_PER_CHUNK
+            : LIMITED_PROVIDER_MAX_SEGMENTS_PER_CHUNK,
+        maxCharsPerChunk: isGroqCompatibleDefault
+            ? DEFAULT_MAX_SOURCE_CHARS_PER_CHUNK
+            : LIMITED_PROVIDER_MAX_SOURCE_CHARS_PER_CHUNK,
+    });
     const translatedChunks = await mapWithConcurrency(
         chunks,
         DEFAULT_TRANSLATION_CHUNK_CONCURRENCY,
-        (chunk) =>
+        (chunk, index) =>
             translateChunkAdaptive({
                 segments: chunk,
                 fullTranscriptContext,
@@ -736,6 +885,7 @@ export async function translateTranscriptSegments(input: {
                 apiKey,
                 baseUrl,
                 fetcher,
+                chunkLabel: `${index + 1}/${chunks.length}`,
             }),
     );
     const requestIds = translatedChunks.flatMap((chunk) => chunk.requestIds);
@@ -743,6 +893,23 @@ export async function translateTranscriptSegments(input: {
         (sum, chunk) => sum + chunk.totalTokens,
         0,
     );
+    logTranslationEvent("run-success", {
+        providerName,
+        providerHost: getUrlHost(baseUrl),
+        model,
+        segmentCount: input.segments.length,
+        translatedCount: translatedChunks.reduce(
+            (sum, chunk) => sum + chunk.segments.length,
+            0,
+        ),
+        chunkCount: chunks.length,
+        actualRequestCount: translatedChunks.reduce(
+            (sum, chunk) => sum + chunk.chunkCount,
+            0,
+        ),
+        totalTokensUsed,
+        durationMs: Date.now() - startedAt,
+    });
 
     return {
         sourceLanguage,

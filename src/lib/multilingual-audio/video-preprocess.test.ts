@@ -15,6 +15,7 @@ describe("video preprocess ffmpeg args", () => {
         expect(args).toContain("-filter:a");
         expect(args).toContain("atempo=0.5");
         expect(args).toContain("libx264");
+        expect(args).toEqual(expect.arrayContaining(["-preset", "superfast"]));
         expect(args.at(-1)).toBe("/tmp/out.mp4");
     });
 });

@@ -200,8 +200,10 @@ describe("WorkspaceCanvasPanel canvas interactions", () => {
         expect(source).toContain("Translation:");
         expect(source).toContain("Stage log:");
         expect(source).toContain("Completed transcript stage");
-        expect(source).toContain("Voice chunks:");
-        expect(source).toContain("Voice chunk ${chunk.index}");
+        expect(source).toContain("Metadata title:");
+        expect(source).toContain("Metadata tags:");
+        expect(source).toContain("Title:");
+        expect(source).toContain("Tags:");
         expect(source).toContain("Mix:");
         expect(source).toContain("Segments (");
         expect(source).not.toContain("more segment(s) not shown");

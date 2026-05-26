@@ -1,5 +1,112 @@
 # OmniVideo Changelog
 
+## FAST-VIDEO-019 - Add Download Button Near Thumbnail Name and Right-Align Upload Title Hint
+
+- Bumped app version from `0.10.57` to `0.10.58` as a patch release for Thumbnail Studio UX polish.
+- Added a `Download` action in the `Thumbnail name` header area of Thumbnail Studio editor.
+- Added right-side title hint in the same row (for example `upload 10:07:25`) so upload-named thumbnails are visible without opening library cards.
+- Download action now points to selected thumbnail attachment route.
+- Verification (FAST-VIDEO-019):
+  - `npm run test -- --run src/features/thumbnails/thumbnail-studio-panel.test.ts` pass (1 file / 5 tests).
+  - `npm run guard:version` pass.
+
+## FAST-VIDEO-018 - Fix Thumbnail Studio Download Filename Extension by MIME Type
+
+- Bumped app version from `0.10.56` to `0.10.57` as a patch release for Thumbnail Studio download correctness.
+- Fixed shared storage download filename generation to derive extension from resolved MIME type instead of forcing `.mp4`.
+- Thumbnail image downloads now produce image filenames (for example `.png` / `.jpg`) while generic binary MIME types still fall back to `.mp4`.
+- Verification (FAST-VIDEO-018):
+  - `npm run test -- --run src/lib/storage/asset-download.test.ts` pass (1 file / 3 tests).
+  - `npm run guard:version` pass.
+
+## FAST-STORAGE-010 - Fix TypeScript Const Assertion Error in Storage Delete Helper
+
+- Bumped app version from `0.10.55` to `0.10.56` as a patch release for build stability.
+- Fixed TypeScript build error in storage delete helper by replacing invalid `null as const` with `null`.
+- No behavioral change to Storage Library delete flow; this is a compile-time correctness fix.
+- Verification (FAST-STORAGE-010):
+  - `npm run build` pass.
+  - `npm run guard:version` pass.
+
+## FAST-STORAGE-009 - Allow Local Storage Delete When Drive Remote Context Is Missing
+
+- Bumped app version from `0.10.54` to `0.10.55` as a patch release for Storage Library delete robustness.
+- Updated Drive remote-delete helper to treat missing remote context as best-effort skip instead of hard failure:
+  - missing `fileId`,
+  - missing resolved Drive access token.
+- Kept local Storage Library delete path unblocked in these cases, so problematic legacy/mixed assets can still be removed from app metadata.
+- Preserved hard-fail behavior for explicit non-404 Drive delete failures; preserved idempotent success for Drive `404`.
+- Verification (FAST-STORAGE-009):
+  - `npm run test -- --run src/lib/storage/asset-delete.test.ts src/app/api/storage/assets/[assetId]/route.test.ts` pass (2 files / 9 tests).
+  - `npm run guard:version` pass.
+
+## FAST-OPS-008 - Clean Next Build ESLint Circular Warning
+
+- Bumped app version from `0.10.53` to `0.10.54` as a patch release for build-output hygiene.
+- Removed flat ESLint config (`eslint.config.mjs`) and switched to Next-compatible `.eslintrc.json` extends.
+- Aligned lint package major with runtime (`eslint-config-next` -> `15.5.18`) to match `next@15.5.18`.
+- Disabled noisy lint rules in build path:
+  - `@typescript-eslint/no-unused-vars`
+  - `react-hooks/exhaustive-deps`
+  - `@next/next/no-img-element`
+- Fixed `prefer-const` error in `chinese-transcription.ts` so lint/type-check stage no longer fails.
+- Verification (FAST-OPS-008):
+  - `npm run build` pass with no circular-JSON ESLint warning.
+  - `npm run guard:version` pass.
+
+## FAST-STORAGE-008 - Make Storage Delete Idempotent When Drive File Is Missing
+
+- Bumped app version from `0.10.52` to `0.10.53` as a patch release for Storage Library delete reliability.
+- Updated Drive-backed asset delete flow to treat remote Google Drive `404 Not Found` as an idempotent success case.
+- Storage Library delete now continues to remove the local asset record and linked intake run traces when the Drive file has already been deleted externally.
+- Kept existing hard-fail behavior for non-404 Drive delete errors (permission/auth/network) so unexpected remote failures still stop local deletion.
+- Verification (FAST-STORAGE-008):
+  - `npm run test -- --run src/lib/storage/asset-delete.test.ts src/app/api/storage/assets/[assetId]/route.test.ts` pass (2 files / 7 tests).
+  - `npm run guard:version` pass.
+
+## FAST-WORKSPACE-048 - Refine VIP Detail Output and Subtitle Wrapping
+
+- Bumped app version from `0.10.51` to `0.10.52` as a patch release for VIP detail clarity.
+- Removed verbose `Voice chunks` / `Voice chunk N` lines from Workspace VIP completion details.
+- Added generated metadata visibility in VIP completion details: `Title`, shortened `Description`, and `Tags`.
+- Added ASS subtitle auto-wrap before render, so long translated lines are split into `\N` line breaks based on subtitle width/font constraints.
+- Preserved explicit input line breaks while applying auto-wrap, so existing multiline subtitles continue to render correctly.
+- Verification (FAST-WORKSPACE-048):
+  - `npm run test -- --run src/features/workspace/workspace-canvas-panel.test.ts src/lib/video-processing/video-edit-pipeline.test.ts` pass (2 files / 36 tests).
+  - `npm run guard:version` pass.
+
+## FAST-WORKSPACE-047 - Add Detailed Terminal Logs for VIP Pipeline
+
+- Bumped app version from `0.10.50` to `0.10.51` as a patch release for VIP terminal observability.
+- Added structured `[VIP]` terminal logs with run id, source/config summary, checkpoint hit/reuse/save status, per-stage start/success/reuse/failure markers, durations, counts, output bytes, and error stack previews.
+- Added structured `[TranscriptTranslation]` terminal logs with translation run plan, chunk start, provider request/response/body-read, normalized result counts, split/fallback retries, and fetch-failure context.
+- Removed full translation request body logging from terminal output and replaced it with provider host, model, segment range/count, request byte size, full transcript char count, response byte size, and response preview.
+- Verification (FAST-WORKSPACE-047):
+  - `npm run test -- --run src/lib/multilingual-audio/transcript-translation.test.ts src/lib/multilingual-audio/video-vip-processing.test.ts` pass (2 files / 21 tests).
+  - `npm run build` pass; existing ESLint circular-config warning remains unchanged from repo baseline.
+  - `npm run guard:version` pass.
+
+## FAST-WORKSPACE-046 - Use Superfast Rendering and Mute Original Audio by Default
+
+- Bumped app version from `0.10.49` to `0.10.50` as a patch release for faster local rendering defaults.
+- Switched VIP, video preprocess, and video edit ffmpeg x264 encode preset from `veryfast` to `superfast`.
+- Changed video dubbing and VIP runtime fallback `originalAudioVolume` from `0.10` to `0`, so default runs mute source audio and keep generated voice at full volume.
+- Updated Workspace dubbing/VIP node defaults, sample graph configs, runtime form fallbacks, and inspector placeholders to use original volume `0`.
+- Verification (FAST-WORKSPACE-046):
+  - `npm run test -- --run src/lib/multilingual-audio/video-dubbing.test.ts src/lib/multilingual-audio/video-vip-processing.test.ts src/lib/multilingual-audio/video-preprocess.test.ts src/lib/video-processing/video-edit-pipeline.test.ts src/lib/workspace/workspace-graph.test.ts src/features/workspace/workspace-canvas-panel.test.ts src/app/api/audio/video-dubbing/route.test.ts src/app/api/audio/video-vip-processing/route.test.ts` pass (8 files / 106 tests).
+  - `npm run build` pass; existing ESLint circular-config warning remains unchanged from repo baseline.
+  - `npm run guard:version` pass.
+
+## FAST-WORKSPACE-045 - Map VIP Translation Network Failures Correctly
+
+- Bumped app version from `0.10.48` to `0.10.49` as a patch release for VIP translation error mapping.
+- Mapped translation provider network failures thrown before an HTTP response (`fetch failed`) to `PRV_GROQ_TRANSLATION_FAILED`.
+- Preserved VIP checkpoint failure telemetry so Workspace reports `failedStage: translation` and reusable transcript checkpoints without mislabeling the provider failure as generic mux/system failure.
+- Verification (FAST-WORKSPACE-045):
+  - `npm run test -- --run src/lib/multilingual-audio/transcript-translation.test.ts src/lib/multilingual-audio/video-vip-processing.test.ts src/app/api/audio/video-vip-processing/route.test.ts` pass (3 files / 29 tests).
+  - `npm run build` pass; existing ESLint circular-config warning remains unchanged from repo baseline.
+  - `npm run guard:version` pass.
+
 ## FAST-WORKSPACE-044 - Surface VIP Partial Checkpoints on Failed Continue
 
 - Bumped app version from `0.10.47` to `0.10.48` as a patch release for Workspace VIP resume clarity.

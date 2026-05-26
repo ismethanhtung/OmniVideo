@@ -70,8 +70,10 @@ describe("video dubbing adapter", () => {
             voiceVolume: 1,
         });
 
-        expect(args).toContain("-filter_complex");
-        expect(args.join(" ")).toContain("[0:a]volume=0.100");
+        expect(args).not.toContain("-filter_complex");
+        expect(args).toEqual(
+            expect.arrayContaining(["-map", "0:v:0", "-map", "1:a:0"]),
+        );
     });
 
     it("rejects missing source video bytes", async () => {

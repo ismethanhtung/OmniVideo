@@ -198,20 +198,37 @@ describe("transcript translation", () => {
       translatedText: "Người dẫn đường có nằm mơ cũng không ngờ tới",
     });
     expect(console.log).toHaveBeenCalledWith(
-      "[AudioTranscript Translation] provider request",
+      "[TranscriptTranslation]",
       expect.objectContaining({
-        mode: "chunk-json",
-        segmentIds: [0, 1],
-        body: expect.stringContaining("寻导人做梦都想不到"),
+        event: "run-start",
+        providerHost: "api.groq.com",
+        segmentCount: 2,
+        chunkCount: 1,
+        concurrency: 4,
       }),
     );
     expect(console.log).toHaveBeenCalledWith(
-      "[AudioTranscript Translation] provider response",
+      "[TranscriptTranslation]",
       expect.objectContaining({
+        event: "provider-request",
         mode: "chunk-json",
+        chunkLabel: "1/1",
+        firstId: 0,
+        lastId: 1,
+        requestBytes: expect.any(Number),
+        fullTranscriptChars: 24,
+      }),
+    );
+    expect(console.log).toHaveBeenCalledWith(
+      "[TranscriptTranslation]",
+      expect.objectContaining({
+        event: "provider-body-read",
+        mode: "chunk-json",
+        chunkLabel: "1/1",
         status: 200,
         requestId: "chat_123",
-        body: expect.stringContaining("Người dẫn đường"),
+        responseBytes: expect.any(Number),
+        responsePreview: expect.stringContaining("Người dẫn đường"),
       }),
     );
     const [, init] = fetchImpl.mock.calls[0];
@@ -259,6 +276,36 @@ describe("transcript translation", () => {
       code: "PRV_GROQ_TRANSLATION_FAILED",
       message: "rate limit",
     });
+  });
+
+  it("maps translation provider network failures before response", async () => {
+    const fetchImpl = vi.fn(async () => {
+      throw new TypeError("fetch failed");
+    });
+
+    await expect(
+      translateTranscriptSegments({
+        segments: sourceSegments,
+        apiKey: "secret",
+        fetchImpl,
+      }),
+    ).rejects.toMatchObject({
+      code: "PRV_GROQ_TRANSLATION_FAILED",
+      message: "Translation provider network request failed: fetch failed",
+      status: 502,
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(console.log).toHaveBeenCalledWith(
+      "[TranscriptTranslation]",
+      expect.objectContaining({
+        event: "provider-fetch-failed",
+        mode: "chunk-json",
+        chunkLabel: "1/1",
+        error: expect.objectContaining({
+          message: "fetch failed",
+        }),
+      }),
+    );
   });
 
   it("splits chunks and recovers when a limited provider returns invalid JSON", async () => {
@@ -432,6 +479,34 @@ describe("transcript translation", () => {
         translatedText: "Phim ngắn.",
       },
     ]);
+  });
+
+  it("maps single-segment fallback network failures before response", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            id: "chat_bad",
+            choices: [{ message: { content: "{ bad json" } }],
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockRejectedValueOnce(new TypeError("fetch failed"));
+
+    await expect(
+      translateTranscriptSegments({
+        segments: [sourceSegments[0]],
+        apiKey: "secret",
+        fetchImpl,
+      }),
+    ).rejects.toMatchObject({
+      code: "PRV_GROQ_TRANSLATION_FAILED",
+      message: "Translation provider network request failed: fetch failed",
+      status: 502,
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 
   it("splits translation chunks when Groq reports request too large", async () => {

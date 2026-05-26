@@ -478,6 +478,35 @@ function escapeAssText(text: string) {
         .replace(/\}/g, "\\}");
 }
 
+function wrapSubtitleTextForAss(text: string, maxCharsPerLine: number) {
+    const rawLines = text
+        .split(/\r?\n/gu)
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0);
+    if (rawLines.length === 0) return "";
+    const wrappedLines: string[] = [];
+
+    for (const rawLine of rawLines) {
+        const normalized = rawLine.replace(/\s+/gu, " ").trim();
+        if (!normalized) continue;
+        const words = normalized.split(" ");
+        let current = "";
+
+        for (const word of words) {
+            const candidate = current.length > 0 ? `${current} ${word}` : word;
+            if (candidate.length <= maxCharsPerLine || current.length === 0) {
+                current = candidate;
+                continue;
+            }
+            wrappedLines.push(current);
+            current = word;
+        }
+        if (current.length > 0) wrappedLines.push(current);
+    }
+
+    return wrappedLines.join("\n");
+}
+
 function formatAssTimestamp(seconds: number) {
     const safeSeconds = Math.max(0, seconds);
     const centiseconds = Math.round(safeSeconds * 100);
@@ -540,6 +569,14 @@ export function buildSubtitleAssContent(
     const playResY = Number.isFinite(style?.playResY)
         ? Math.max(360, Math.round(style?.playResY ?? 1080))
         : 1080;
+    const availableWidth = Math.max(
+        240,
+        playResX - subtitleMarginLeft - subtitleMarginRight,
+    );
+    const autoMaxCharsPerLine = Math.min(
+        72,
+        Math.max(18, Math.floor((availableWidth / subtitleFontSize) * 1.7)),
+    );
     const normalizedSegments = segments
         .filter(
             (segment) =>
@@ -551,7 +588,12 @@ export function buildSubtitleAssContent(
         .map((segment) => ({
             start: formatAssTimestamp(segment.start),
             end: formatAssTimestamp(segment.end),
-            text: escapeAssText(segment.translatedText.trim()),
+            text: escapeAssText(
+                wrapSubtitleTextForAss(
+                    segment.translatedText,
+                    autoMaxCharsPerLine,
+                ),
+            ),
         }));
 
     if (normalizedSegments.length === 0) {
@@ -841,7 +883,7 @@ export function buildVideoEditFfmpegArgs(input: {
         "-c:v",
         "libx264",
         "-preset",
-        "veryfast",
+        "superfast",
         "-crf",
         "22",
         "-c:a",

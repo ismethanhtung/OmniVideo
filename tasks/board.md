@@ -23,6 +23,16 @@
 
 ## Review
 
+- `FAST-VIDEO-019` - Add Download button near Thumbnail name and right-align upload title hint.
+- `FAST-VIDEO-018` - Fix Thumbnail Studio download filename extension by MIME type.
+- `FAST-WORKSPACE-047` - Add detailed terminal logs for VIP pipeline.
+- `FAST-WORKSPACE-048` - Refine VIP detail output and subtitle wrapping.
+- `FAST-STORAGE-008` - Make Storage delete idempotent when Drive file is missing.
+- `FAST-OPS-008` - Clean Next build ESLint circular warning.
+- `FAST-STORAGE-009` - Allow local storage delete when Drive remote context is missing.
+- `FAST-STORAGE-010` - Fix TypeScript const-assertion error in storage delete helper.
+- `FAST-WORKSPACE-046` - Use superfast rendering and mute original audio by default.
+- `FAST-WORKSPACE-045` - Map VIP translation network failures correctly.
 - `FAST-WORKSPACE-044` - Surface VIP partial checkpoints on failed continue.
 - `FAST-WORKSPACE-043` - Save Workspace runtime video directly to local.
 - `FAST-WORKSPACE-042` - Apply Video Tools cover box and text overlay in Workspace.
