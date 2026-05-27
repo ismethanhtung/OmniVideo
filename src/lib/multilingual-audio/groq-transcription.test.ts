@@ -107,4 +107,24 @@ describe("Groq transcription adapter", () => {
       message: "quota exceeded",
     });
   });
+
+  it("maps Groq network fetch failures to provider transcription error", async () => {
+    const fetchImpl = vi.fn(async () => {
+      throw new TypeError("fetch failed");
+    });
+
+    await expect(
+      transcribeWithGroq({
+        apiKey: "secret",
+        audioBytes: new Uint8Array([1]),
+        language: "zh",
+        timestampGranularities: ["segment"],
+        fetchImpl,
+      }),
+    ).rejects.toMatchObject({
+      code: "PRV_GROQ_TRANSCRIPTION_FAILED",
+      status: 502,
+      message: "Groq transcription network request failed: fetch failed",
+    });
+  });
 });

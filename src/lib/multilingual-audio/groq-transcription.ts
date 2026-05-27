@@ -143,16 +143,27 @@ export async function transcribeWithGroq(input: {
         "speech.mp3",
     );
 
-    const response = await fetcher(
-        "https://api.groq.com/openai/v1/audio/transcriptions",
-        {
-            method: "POST",
-            headers: {
-                Authorization: `Bearer ${input.apiKey}`,
+    let response: Response;
+    try {
+        response = await fetcher(
+            "https://api.groq.com/openai/v1/audio/transcriptions",
+            {
+                method: "POST",
+                headers: {
+                    Authorization: `Bearer ${input.apiKey}`,
+                },
+                body: formData,
             },
-            body: formData,
-        },
-    );
+        );
+    } catch (error) {
+        throw new ChineseTranscriptionError(
+            "PRV_GROQ_TRANSCRIPTION_FAILED",
+            error instanceof Error
+                ? `Groq transcription network request failed: ${error.message}`
+                : "Groq transcription network request failed.",
+            502,
+        );
+    }
     const payload = (await response.json().catch(() => ({}))) as
         | GroqVerboseTranscription
         | { error?: { message?: string } };

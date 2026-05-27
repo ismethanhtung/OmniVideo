@@ -303,4 +303,50 @@ describe("VIP processing stage checkpoints", () => {
         expect(secondRunners.translate).toHaveBeenCalledTimes(1);
         expect(result.checkpoint?.reusedStages).toEqual([]);
     });
+
+    it("uses imported translation lines without calling AI translate runner", async () => {
+        const runners = createStageRunners();
+        const result = await runVideoVipProcessing({
+            fileName: "source.mp4",
+            fileSizeBytes: 3,
+            fileBytes: new Uint8Array([1, 2, 3]),
+            translationMode: "import",
+            importedTranslationLines: ["Xin chào"],
+            stageRunners: runners,
+            omitVideoBase64: true,
+        });
+
+        expect(runners.transcribe).toHaveBeenCalledTimes(1);
+        expect(runners.translate).not.toHaveBeenCalled();
+        expect(result.translation.provider.name).toBe("manual-import");
+        expect(result.translation.translatedSegments).toEqual([
+            expect.objectContaining({
+                sourceText: "你好",
+                translatedText: "Xin chào",
+            }),
+        ]);
+    });
+
+    it("fails import mode when line count does not match transcript segment count", async () => {
+        const runners = createStageRunners();
+        await expect(
+            runVideoVipProcessing({
+                fileName: "source.mp4",
+                fileSizeBytes: 3,
+                fileBytes: new Uint8Array([1, 2, 3]),
+                translationMode: "import",
+                importedTranslationLines: ["Xin chào", "Dư dòng"],
+                stageRunners: runners,
+                omitVideoBase64: true,
+            }),
+        ).rejects.toMatchObject({
+            code: "VAL_TRANSLATION_SEGMENT_COUNT_MISMATCH",
+            status: 422,
+            manualTranslationPrompt: expect.objectContaining({
+                expectedSegmentCount: 1,
+                actualSegmentCount: 2,
+            }),
+        });
+        expect(runners.translate).not.toHaveBeenCalled();
+    });
 });

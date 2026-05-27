@@ -323,6 +323,86 @@ function summarizeTextForProgress(value: string, limit = 88) {
     return `${compact.slice(0, limit - 1).trimEnd()}...`;
 }
 
+function parseVipImportedTranslationLines(value: string) {
+    return value
+        .split(/\r?\n/u)
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0)
+        .map((line) =>
+            line
+                .replace(/^\d+\s*[\.\):\-]\s*/u, "")
+                .replace(/^[-*]\s+/u, "")
+                .trim(),
+        )
+        .filter((line) => line.length > 0);
+}
+
+function buildVipManualImportPrompt(input: {
+    sourceLanguage: string;
+    targetLanguage: string;
+}) {
+    return [
+        "System:",
+        "",
+        "You are a senior audiovisual translator. Preserve timestamps exactly and output valid JSON only.",
+        "",
+        "",
+        "User:",
+        "",
+        "Translate the transcript segments into natural Vietnamese while preserving meaning, context, names, and continuity across segments.",
+        "",
+        "Before translating, infer a small cast/gender map from the whole chunk, then apply that map consistently to every segment.",
+        "",
+        "Chinese pronouns are context-sensitive: do not translate 他 mechanically as 'hắn/anh ấy' when the current referent is female. Resolve the referent from the nearest named character, titles, actions, and surrounding segments.",
+        "",
+        "Female cues: 她, 师妹, 师姐, 圣女, 姑娘, 小姐, 女子, 女修, 仙子, 美人, 绝美, 师尊 if the context describes a female master. Use Vietnamese female references such as 'nàng' or 'cô ấy' consistently.",
+        "",
+        "Male cues: 他, 师兄, 师弟, 公子, 少年, 男子, 男修. Use Vietnamese male references such as 'hắn', 'anh ấy', or 'chàng' only when the referent is clearly male.",
+        "",
+        "When a name/title establishes gender in one segment, keep that gender for later pronouns that refer to the same person, even if later Chinese uses 他 ambiguously.",
+        "",
+        "If gender is ambiguous, prefer a neutral Vietnamese wording that avoids gendered pronouns instead of guessing.",
+        "",
+        "Never insert pronouns inside another word; pronouns must remain separate Vietnamese words only when they are actually needed.",
+        "",
+        "Keep each segment aligned to its original timing. Do not merge, split, reorder, or drop segments.",
+        "",
+        "This translation will be synthesized as Vietnamese voice-over. Prefer concise spoken Vietnamese that fits the segment duration at a natural speaking pace.",
+        "",
+        "Do not force Vietnamese to match the source character count exactly; Chinese and Vietnamese have different written length and spoken duration. Use source length only as a compression signal: short Chinese segments need short Vietnamese, long Chinese segments can use fuller wording if timing allows.",
+        "",
+        "For very short segments, use the shortest natural equivalent. Avoid explanatory additions, filler words, and verbose literal phrasing that would force the TTS to speak too fast.",
+        "",
+        "If a literal translation is too long for the duration, compress the wording while preserving the core meaning and tone.",
+        "",
+        "Normalize standalone Arabic numerals into spoken Vietnamese words in translatedText (example: 20 -> hai mươi, 125 -> một trăm hai mươi lăm). Keep numbers as digits only for codes/IDs/measurements where spelling out is unnatural.",
+        "",
+        "Make translatedText friendly for Vietnamese TTS pronunciation. Spell foreign food/brand-like terms phonetically when they are likely to be misread (example: wasabi -> wa sa bi). Expand compact measurement abbreviations into spoken Vietnamese units while preserving the number when useful (examples: 50cm -> 50 xen ti mét, 12kg -> 12 ki lô gam, 5ml -> 5 mi li lít).",
+        "",
+        "For scientific/biochemical terms that sound unnatural if read as raw English, use a Vietnamese phonetic rendering (examples: isothiocyanate -> ai sô thio xai a nết, myrosinase -> mai rô si nâyz, enzyme/enzym -> en zim).",
+        "",
+        'If a segment is only a production/channel bumper (example: "YoYo Television Series Exclusive"), rewrite it to a short neutral phrase like "Phim ngắn." instead of literal branding copy.',
+        "",
+        "Every translatedText must be in the target language. Do not copy the source text unless it is a proper noun, code, or number.",
+        "",
+        "",
+        "Return plain text only. Do not return JSON. Do not return markdown. Do not add explanations.",
+        "",
+        "Required output format (strict):",
+        "1. ...",
+        "2. ...",
+        "3. ...",
+        "",
+        "Each translated line must correspond exactly to one source segment, in the same order. No missing lines. No extra lines.",
+        "",
+        `Source language: ${input.sourceLanguage}. Target language: ${input.targetLanguage}.`,
+        "",
+        "Full source transcript context (read-only):",
+        "",
+        "Use this only to resolve continuity, names, referents, relationships, and tone across the entire transcript. Do not translate or output this whole context. Return translations only for the requested Segments below.",
+    ].join("\n");
+}
+
 function buildDubbingProgressStepDescription(input: {
     nodeLabel: string;
     result: VideoDubbingResult;
@@ -788,6 +868,14 @@ type WorkspaceApiErrorPayload = {
     errorCode?: unknown;
     steps?: unknown;
     checkpoint?: unknown;
+    manualTranslationPrompt?: unknown;
+};
+
+type VipManualTranslationPrompt = {
+    transcript: ChineseTranscriptionResult;
+    sourceLines: string[];
+    expectedSegmentCount: number;
+    actualSegmentCount: number;
 };
 
 class WorkspaceApiError extends Error {
@@ -854,6 +942,40 @@ function parseWorkspaceApiCheckpoint(payload: unknown) {
         reusedStages: readWorkspaceCheckpointStages(data.reusedStages),
         savedStages: readWorkspaceCheckpointStages(data.savedStages),
         reusableStages: readWorkspaceCheckpointStages(data.reusableStages),
+    };
+}
+
+function parseWorkspaceApiVipManualTranslationPrompt(
+    payload: unknown,
+): VipManualTranslationPrompt | null {
+    if (!payload || typeof payload !== "object") return null;
+    const prompt = (payload as WorkspaceApiErrorPayload).manualTranslationPrompt;
+    if (!prompt || typeof prompt !== "object") return null;
+    const data = prompt as {
+        transcript?: unknown;
+        sourceLines?: unknown;
+        expectedSegmentCount?: unknown;
+        actualSegmentCount?: unknown;
+    };
+    if (!data.transcript || typeof data.transcript !== "object") return null;
+    const transcript = data.transcript as ChineseTranscriptionResult;
+    const sourceLines = Array.isArray(data.sourceLines)
+        ? data.sourceLines.filter(
+              (line): line is string =>
+                  typeof line === "string" && line.trim().length > 0,
+          )
+        : transcript.segments.map((segment) => segment.text);
+    const expectedSegmentCount = Number(data.expectedSegmentCount);
+    const actualSegmentCount = Number(data.actualSegmentCount);
+    return {
+        transcript,
+        sourceLines,
+        expectedSegmentCount: Number.isFinite(expectedSegmentCount)
+            ? expectedSegmentCount
+            : transcript.segments.length,
+        actualSegmentCount: Number.isFinite(actualSegmentCount)
+            ? actualSegmentCount
+            : sourceLines.length,
     };
 }
 
@@ -3836,6 +3958,22 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                             source.detail,
                         ].join(":"),
                     );
+                    const vipTranslationMode =
+                        getStringConfig(vipNode, "translationMode", "ai") ===
+                        "import"
+                            ? "import"
+                            : "ai";
+                    formData.set("translationMode", vipTranslationMode);
+                    const importedTranslationText = getStringConfig(
+                        vipNode,
+                        "importedTranslationText",
+                    );
+                    if (vipTranslationMode === "import") {
+                        formData.set(
+                            "importedTranslationText",
+                            importedTranslationText,
+                        );
+                    }
                     const translationProviderId = getStringConfig(
                         vipNode,
                         "translationProviderId",
@@ -4102,6 +4240,11 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     appendVipStageLog(
                         "Running transcript -> translate -> voice -> final render -> metadata...",
                     );
+                    if (vipTranslationMode === "import") {
+                        appendVipStageLog(
+                            "Import mode enabled: VIP will use manual translated lines instead of AI translate API.",
+                        );
+                    }
                     if (mode === "resume") {
                         appendVipStageLog(
                             "Continue mode: server-side VIP checkpoints will be reused when the source/config match.",
@@ -4147,6 +4290,22 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                             )) {
                                 appendVipStageLog(line);
                             }
+                            const manualPrompt =
+                                parseWorkspaceApiVipManualTranslationPrompt(
+                                    error.payload,
+                                );
+                            if (manualPrompt) {
+                                setRuntimeTranscriptsByNodeId((current) => ({
+                                    ...current,
+                                    [step.vipNodeId]: manualPrompt.transcript,
+                                }));
+                                appendVipStageLog(
+                                    `Manual translate input needed: ${manualPrompt.actualSegmentCount}/${manualPrompt.expectedSegmentCount} imported line(s).`,
+                                );
+                                appendVipStageLog(
+                                    "Copy source text from VIP node runtime config, then paste translated lines and run Continue Failed Flow.",
+                                );
+                            }
                         }
                         throw error;
                     }
@@ -4174,6 +4333,10 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     setRuntimeTranslationsByNodeId((current) => ({
                         ...current,
                         [step.vipNodeId]: vipPayload.data.translation,
+                    }));
+                    setRuntimeTranscriptsByNodeId((current) => ({
+                        ...current,
+                        [step.vipNodeId]: vipPayload.data.transcript,
                     }));
                     setRuntimeVietnameseMetadataByNodeId((current) => ({
                         ...current,
@@ -5855,6 +6018,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     facebookPagesByAccount={facebookPagesByAccount}
                     loadingFacebookAccountIds={loadingFacebookAccountIds}
                     loadingAiModelProviderIds={loadingAiModelProviderIds}
+                    runtimeTranscriptsByNodeId={runtimeTranscriptsByNodeId}
                     runtimeVietnameseMetadataByNodeId={
                         runtimeVietnameseMetadataByNodeId
                     }
@@ -5888,6 +6052,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     thumbnailAssets={thumbnailAssets}
                     runtimeFilesByNodeId={runtimeFilesByNodeId}
                     runtimeArtifactsByNodeId={runtimeArtifactsByNodeId}
+                    runtimeTranscriptsByNodeId={runtimeTranscriptsByNodeId}
                     facebookPagesByAccount={facebookPagesByAccount}
                     loadingFacebookAccountIds={loadingFacebookAccountIds}
                     loadingAiModelProviderIds={loadingAiModelProviderIds}
@@ -5922,6 +6087,7 @@ function WorkspaceFlowSetupModal({
     thumbnailAssets,
     runtimeFilesByNodeId,
     runtimeArtifactsByNodeId,
+    runtimeTranscriptsByNodeId,
     facebookPagesByAccount,
     loadingFacebookAccountIds,
     loadingAiModelProviderIds,
@@ -5950,6 +6116,10 @@ function WorkspaceFlowSetupModal({
     runtimeArtifactsByNodeId: Record<
         string,
         WorkspaceRuntimeArtifact | undefined
+    >;
+    runtimeTranscriptsByNodeId: Record<
+        string,
+        ChineseTranscriptionResult | undefined
     >;
     facebookPagesByAccount: Record<string, FacebookPageOption[]>;
     loadingFacebookAccountIds: Record<string, boolean>;
@@ -6266,6 +6436,9 @@ function WorkspaceFlowSetupModal({
                                             }
                                             loadingAiModelProviderIds={
                                                 loadingAiModelProviderIds
+                                            }
+                                            runtimeTranscriptsByNodeId={
+                                                runtimeTranscriptsByNodeId
                                             }
                                             runtimeVietnameseMetadataByNodeId={
                                                 runtimeVietnameseMetadataByNodeId
@@ -6981,6 +7154,7 @@ function NodeRuntimeConfig({
     facebookPagesByAccount,
     loadingFacebookAccountIds,
     loadingAiModelProviderIds,
+    runtimeTranscriptsByNodeId,
     runtimeVietnameseMetadataByNodeId,
     isRunningFlow,
     onUpdateNodeConfig,
@@ -7002,6 +7176,10 @@ function NodeRuntimeConfig({
     facebookPagesByAccount: Record<string, FacebookPageOption[]>;
     loadingFacebookAccountIds: Record<string, boolean>;
     loadingAiModelProviderIds: Record<string, boolean>;
+    runtimeTranscriptsByNodeId: Record<
+        string,
+        ChineseTranscriptionResult | undefined
+    >;
     runtimeVietnameseMetadataByNodeId: Record<
         string,
         VietnameseVideoMetadataResult | undefined
@@ -7024,6 +7202,12 @@ function NodeRuntimeConfig({
         ? (runtimeFilesByNodeId[upstreamSourceFileNode.id] ?? null)
         : null;
     const upstreamLocalSetup = loadLocalVideoEditSetup(upstreamRuntimeFile);
+    const [vipSourceCopyState, setVipSourceCopyState] = useState<
+        "idle" | "success" | "error"
+    >("idle");
+    const [vipPromptCopyState, setVipPromptCopyState] = useState<
+        "idle" | "success" | "error"
+    >("idle");
 
     if (node.templateNodeType === "source.file") {
         return (
@@ -8105,6 +8289,10 @@ function NodeRuntimeConfig({
     }
 
     if (node.templateNodeType === "video.vip-processing") {
+        const vipTranslationMode =
+            getStringConfig(node, "translationMode", "ai") === "import"
+                ? "import"
+                : "ai";
         const selectedTranslationProviderId = getStringConfig(
             node,
             "translationProviderId",
@@ -8157,6 +8345,26 @@ function NodeRuntimeConfig({
             upstreamSourceAsset?._id ??
             upstreamLocalSetup?.fileName ??
             "";
+        const vipTranscript = runtimeTranscriptsByNodeId[node.id];
+        const importedTranslationText = getStringConfig(
+            node,
+            "importedTranslationText",
+        );
+        const importedTranslationLines = parseVipImportedTranslationLines(
+            importedTranslationText,
+        );
+        const expectedImportedLineCount = vipTranscript?.segments.length ?? null;
+        const hasImportedCountMismatch =
+            expectedImportedLineCount !== null &&
+            importedTranslationLines.length !== expectedImportedLineCount;
+        const vipSourceTranscriptText =
+            vipTranscript?.segments
+                .map((segment, index) => `${index + 1}. ${segment.text}`)
+                .join("\n") ?? "";
+        const vipManualImportPrompt = buildVipManualImportPrompt({
+            sourceLanguage: getStringConfig(node, "language", "zh"),
+            targetLanguage: getStringConfig(node, "targetLanguage", "vi"),
+        });
 
         return (
             <InspectorSection title="Runtime Config">
@@ -8192,68 +8400,229 @@ function NodeRuntimeConfig({
                         <option value="vi">Vietnamese (vi)</option>
                     </RuntimeSelect>
                     <RuntimeSelect
-                        label="AI Provider (translation)"
-                        value={selectedTranslationProviderId}
+                        label="Translation mode"
+                        value={vipTranslationMode}
                         disabled={isRunningFlow}
-                        onChange={async (value) => {
+                        onChange={(value) =>
                             setConfig({
-                                translationProviderId: value,
-                                model: value ? "" : DEFAULT_TRANSLATION_MODEL,
-                            });
-                            if (value) {
-                                const models =
-                                    await onEnsureAiProviderModels(value);
-                                if (models[0]) {
-                                    const preferredModelId =
-                                        models.find(
-                                            (model) =>
-                                                model.id ===
-                                                DEFAULT_TRANSLATION_MODEL,
-                                        )?.id ?? models[0].id;
+                                translationMode:
+                                    value === "import" ? "import" : "ai",
+                            })
+                        }
+                    >
+                        <option value="ai">AI API</option>
+                        <option value="import">Import manual translate</option>
+                    </RuntimeSelect>
+                    {vipTranslationMode === "ai" ? (
+                        <>
+                            <RuntimeSelect
+                                label="AI Provider (translation)"
+                                value={selectedTranslationProviderId}
+                                disabled={isRunningFlow}
+                                onChange={async (value) => {
                                     setConfig({
                                         translationProviderId: value,
-                                        model: preferredModelId,
+                                        model: value
+                                            ? ""
+                                            : DEFAULT_TRANSLATION_MODEL,
                                     });
-                                }
-                            }
-                        }}
-                    >
-                        <option value="">
-                            {DEFAULT_OPENAI_COMPATIBLE_PROVIDER_LABEL} (
-                            {DEFAULT_OPENAI_COMPATIBLE_PROVIDER_TYPE})
-                        </option>
-                        {aiProviders.map((provider) => (
-                            <option key={provider._id} value={provider._id}>
-                                {provider.label} ({provider.providerType})
-                            </option>
-                        ))}
-                    </RuntimeSelect>
-                    {selectedTranslationProviderId &&
-                    translationModels.length > 0 ? (
-                        <RuntimeSelect
-                            label={`Translation model${isLoadingTranslationModels ? " (loading...)" : ""}`}
-                            value={getStringConfig(node, "model")}
-                            disabled={isRunningFlow || isLoadingTranslationModels}
-                            onChange={(value) => setConfig({ model: value })}
-                        >
-                            {translationModels.map((model) => (
-                                <option key={model.id} value={model.id}>
-                                    {model.name}
+                                    if (value) {
+                                        const models =
+                                            await onEnsureAiProviderModels(
+                                                value,
+                                            );
+                                        if (models[0]) {
+                                            const preferredModelId =
+                                                models.find(
+                                                    (model) =>
+                                                        model.id ===
+                                                        DEFAULT_TRANSLATION_MODEL,
+                                                )?.id ?? models[0].id;
+                                            setConfig({
+                                                translationProviderId: value,
+                                                model: preferredModelId,
+                                            });
+                                        }
+                                    }
+                                }}
+                            >
+                                <option value="">
+                                    {DEFAULT_OPENAI_COMPATIBLE_PROVIDER_LABEL} (
+                                    {DEFAULT_OPENAI_COMPATIBLE_PROVIDER_TYPE})
                                 </option>
-                            ))}
-                        </RuntimeSelect>
-                    ) : (
-                        <RuntimeTextInput
-                            label={`Translation model${isLoadingTranslationModels ? " (loading...)" : ""}`}
-                            value={getStringConfig(
-                                node,
-                                "model",
-                                DEFAULT_TRANSLATION_MODEL,
+                                {aiProviders.map((provider) => (
+                                    <option
+                                        key={provider._id}
+                                        value={provider._id}
+                                    >
+                                        {provider.label} ({provider.providerType}
+                                        )
+                                    </option>
+                                ))}
+                            </RuntimeSelect>
+                            {selectedTranslationProviderId &&
+                            translationModels.length > 0 ? (
+                                <RuntimeSelect
+                                    label={`Translation model${isLoadingTranslationModels ? " (loading...)" : ""}`}
+                                    value={getStringConfig(node, "model")}
+                                    disabled={
+                                        isRunningFlow ||
+                                        isLoadingTranslationModels
+                                    }
+                                    onChange={(value) =>
+                                        setConfig({ model: value })
+                                    }
+                                >
+                                    {translationModels.map((model) => (
+                                        <option key={model.id} value={model.id}>
+                                            {model.name}
+                                        </option>
+                                    ))}
+                                </RuntimeSelect>
+                            ) : (
+                                <RuntimeTextInput
+                                    label={`Translation model${isLoadingTranslationModels ? " (loading...)" : ""}`}
+                                    value={getStringConfig(
+                                        node,
+                                        "model",
+                                        DEFAULT_TRANSLATION_MODEL,
+                                    )}
+                                    disabled={isRunningFlow}
+                                    placeholder="cx/gpt-5.3-codex-low"
+                                    onChange={(value) =>
+                                        setConfig({ model: value })
+                                    }
+                                />
                             )}
-                            disabled={isRunningFlow}
-                            placeholder="cx/gpt-5.3-codex-low"
-                            onChange={(value) => setConfig({ model: value })}
-                        />
+                        </>
+                    ) : (
+                        <div className="space-y-2 border border-main bg-main px-3 py-2">
+                            <p className="text-[10px] leading-4 text-muted">
+                                Import mode: VIP sẽ chạy transcript trước, sau
+                                đó dùng bản dịch bạn dán vào đây thay vì gọi AI
+                                translation API.
+                            </p>
+                            {vipTranscript ? (
+                                <div className="space-y-2 border border-main bg-secondary/15 p-2">
+                                    <div className="flex flex-wrap items-center justify-between gap-2">
+                                        <p className="text-[10px] font-semibold text-main">
+                                            Transcript source ready:{" "}
+                                            {vipTranscript.segments.length} line(s)
+                                        </p>
+                                        <div className="flex items-center gap-2">
+                                            <button
+                                                type="button"
+                                                disabled={isRunningFlow}
+                                                onClick={async () => {
+                                                    if (!vipSourceTranscriptText)
+                                                        return;
+                                                    try {
+                                                        await navigator.clipboard.writeText(
+                                                            vipSourceTranscriptText,
+                                                        );
+                                                        setVipSourceCopyState(
+                                                            "success",
+                                                        );
+                                                    } catch {
+                                                        setVipSourceCopyState(
+                                                            "error",
+                                                        );
+                                                    }
+                                                }}
+                                                className="border border-main bg-main px-2 py-1 text-[10px] font-semibold text-main hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-60"
+                                            >
+                                                Copy source text
+                                            </button>
+                                            <button
+                                                type="button"
+                                                disabled={isRunningFlow}
+                                                onClick={async () => {
+                                                    try {
+                                                        await navigator.clipboard.writeText(
+                                                            vipManualImportPrompt,
+                                                        );
+                                                        setVipPromptCopyState(
+                                                            "success",
+                                                        );
+                                                    } catch {
+                                                        setVipPromptCopyState(
+                                                            "error",
+                                                        );
+                                                    }
+                                                }}
+                                                className="border border-main bg-main px-2 py-1 text-[10px] font-semibold text-main hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-60"
+                                            >
+                                                Copy prompt
+                                            </button>
+                                        </div>
+                                    </div>
+                                    {vipSourceCopyState === "success" ? (
+                                        <p className="text-[10px] text-emerald-700">
+                                            Source transcript copied.
+                                        </p>
+                                    ) : null}
+                                    {vipSourceCopyState === "error" ? (
+                                        <p className="text-[10px] text-rose-700">
+                                            Copy failed. Please copy manually.
+                                        </p>
+                                    ) : null}
+                                    {vipPromptCopyState === "success" ? (
+                                        <p className="text-[10px] text-emerald-700">
+                                            Prompt copied.
+                                        </p>
+                                    ) : null}
+                                    {vipPromptCopyState === "error" ? (
+                                        <p className="text-[10px] text-rose-700">
+                                            Prompt copy failed. Please copy manually.
+                                        </p>
+                                    ) : null}
+                                </div>
+                            ) : (
+                                <p className="text-[10px] leading-4 text-muted">
+                                    Chưa có transcript runtime cho node này. Run
+                                    flow với import mode để lấy source text, sau
+                                    đó paste bản dịch và Continue.
+                                </p>
+                            )}
+                            <label className="block">
+                                <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                    Imported translated subtitles (1 line per
+                                    segment)
+                                </span>
+                                <textarea
+                                    value={importedTranslationText}
+                                    disabled={isRunningFlow}
+                                    placeholder="1. Dòng dịch 1&#10;2. Dòng dịch 2"
+                                    onChange={(event) =>
+                                        setConfig({
+                                            importedTranslationText:
+                                                event.currentTarget.value,
+                                        })
+                                    }
+                                    className="min-h-[140px] w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main"
+                                />
+                            </label>
+                            <p
+                                className={cn(
+                                    "text-[10px] leading-4",
+                                    hasImportedCountMismatch
+                                        ? "text-amber-700"
+                                        : "text-muted",
+                                )}
+                            >
+                                Imported lines: {importedTranslationLines.length}
+                                {expectedImportedLineCount === null
+                                    ? " (run transcript first to validate count)."
+                                    : ` / expected ${expectedImportedLineCount}.`}
+                            </p>
+                            {hasImportedCountMismatch ? (
+                                <p className="text-[10px] leading-4 text-amber-700">
+                                    Segment count mismatch. Hệ thống sẽ chặn VIP
+                                    continuation cho đến khi số dòng khớp
+                                    transcript.
+                                </p>
+                            ) : null}
+                        </div>
                     )}
                     <RuntimeSelect
                         label="Target language"
@@ -9003,6 +9372,7 @@ function InspectorPanel({
     facebookPagesByAccount,
     loadingFacebookAccountIds,
     loadingAiModelProviderIds,
+    runtimeTranscriptsByNodeId,
     runtimeVietnameseMetadataByNodeId,
     isRunningFlow,
     seedTemplates,
@@ -9033,6 +9403,10 @@ function InspectorPanel({
     facebookPagesByAccount: Record<string, FacebookPageOption[]>;
     loadingFacebookAccountIds: Record<string, boolean>;
     loadingAiModelProviderIds: Record<string, boolean>;
+    runtimeTranscriptsByNodeId: Record<
+        string,
+        ChineseTranscriptionResult | undefined
+    >;
     runtimeVietnameseMetadataByNodeId: Record<
         string,
         VietnameseVideoMetadataResult | undefined
@@ -9178,6 +9552,9 @@ function InspectorPanel({
                         facebookPagesByAccount={facebookPagesByAccount}
                         loadingFacebookAccountIds={loadingFacebookAccountIds}
                         loadingAiModelProviderIds={loadingAiModelProviderIds}
+                        runtimeTranscriptsByNodeId={
+                            runtimeTranscriptsByNodeId
+                        }
                         runtimeVietnameseMetadataByNodeId={
                             runtimeVietnameseMetadataByNodeId
                         }

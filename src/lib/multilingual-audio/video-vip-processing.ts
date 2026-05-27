@@ -37,6 +37,7 @@ type VipStageName =
     | "voice"
     | "render"
     | "metadata";
+type VipTranslationMode = "ai" | "import";
 
 type VipCheckpointState = {
     fingerprint: string;
@@ -63,12 +64,23 @@ type VipCheckpointFailureInfo = {
 };
 
 class VipCheckpointError extends ChineseTranscriptionError {
+    readonly manualTranslationPrompt?: unknown;
+
     constructor(
         error: ChineseTranscriptionError,
         public readonly checkpoint?: VipCheckpointFailureInfo,
     ) {
         super(error.code, error.message, error.status, error.steps);
         this.name = "VipCheckpointError";
+        if (
+            error &&
+            typeof error === "object" &&
+            "manualTranslationPrompt" in error
+        ) {
+            this.manualTranslationPrompt = (
+                error as { manualTranslationPrompt?: unknown }
+            ).manualTranslationPrompt;
+        }
     }
 }
 
@@ -104,6 +116,8 @@ export type VideoVipProcessingInput = {
     textOverlays?: VideoEditInput["textOverlays"];
     sourceTitle?: string;
     sourceDescription?: string;
+    translationMode?: VipTranslationMode;
+    importedTranslationLines?: string[];
     metadataApiKey?: string;
     metadataBaseUrl?: string;
     metadataProviderName?: string;
@@ -199,8 +213,94 @@ function buildVipCheckpointFingerprint(input: VideoVipProcessingInput) {
             textOverlays: input.textOverlays,
             sourceTitle: input.sourceTitle,
             sourceDescription: input.sourceDescription,
+            translationMode: input.translationMode ?? "ai",
+            importedTranslationLinesHash:
+                input.translationMode === "import" &&
+                Array.isArray(input.importedTranslationLines)
+                    ? hashText(input.importedTranslationLines.join("\n"))
+                    : undefined,
         }),
     );
+}
+
+function buildImportedTranslationResult(input: {
+    transcript: ChineseTranscriptionResult;
+    sourceLanguage: string;
+    targetLanguage: string;
+    model: string;
+    importedLines?: string[];
+}) {
+    const importedLines = input.importedLines ?? [];
+    if (importedLines.length === 0) {
+        const error = new ChineseTranscriptionError(
+            "VAL_TRANSLATION_IMPORT_REQUIRED",
+            "Imported translation is required after transcript stage.",
+            409,
+        );
+        (
+            error as ChineseTranscriptionError & {
+                manualTranslationPrompt?: {
+                    transcript: ChineseTranscriptionResult;
+                    sourceLines: string[];
+                    expectedSegmentCount: number;
+                    actualSegmentCount: number;
+                };
+            }
+        ).manualTranslationPrompt = {
+            transcript: input.transcript,
+            sourceLines: input.transcript.segments.map((segment) => segment.text),
+            expectedSegmentCount: input.transcript.segments.length,
+            actualSegmentCount: importedLines.length,
+        };
+        throw error;
+    }
+    if (importedLines.length !== input.transcript.segments.length) {
+        const error = new ChineseTranscriptionError(
+            "VAL_TRANSLATION_SEGMENT_COUNT_MISMATCH",
+            `Imported translation line count ${importedLines.length} does not match transcript segment count ${input.transcript.segments.length}.`,
+            422,
+        );
+        (
+            error as ChineseTranscriptionError & {
+                manualTranslationPrompt?: {
+                    transcript: ChineseTranscriptionResult;
+                    sourceLines: string[];
+                    expectedSegmentCount: number;
+                    actualSegmentCount: number;
+                };
+            }
+        ).manualTranslationPrompt = {
+            transcript: input.transcript,
+            sourceLines: input.transcript.segments.map((segment) => segment.text),
+            expectedSegmentCount: input.transcript.segments.length,
+            actualSegmentCount: importedLines.length,
+        };
+        throw error;
+    }
+
+    return {
+        sourceLanguage: input.sourceLanguage,
+        targetLanguage: input.targetLanguage,
+        model: input.model,
+        translatedSegments: input.transcript.segments.map((segment, index) => ({
+            id: segment.id,
+            start: segment.start,
+            end: segment.end,
+            sourceText: segment.text,
+            translatedText: importedLines[index] ?? "",
+        })),
+        generationDurationMs: 0,
+        chunks: [
+            {
+                index: 0,
+                segmentCount: importedLines.length,
+            },
+        ],
+        provider: {
+            name: "manual-import",
+            requestId: undefined,
+        },
+    } satisfies TranscriptTranslationResult;
 }
 
 function resolveVipCheckpointPaths(input: VideoVipProcessingInput) {
@@ -771,6 +871,7 @@ export async function runVideoVipProcessing(
         );
     }
 
+    const translationMode = input.translationMode ?? "ai";
     const clampedSpeed = Math.min(2, Math.max(0.5, input.videoSpeedFactor ?? 1));
     logVipEvent(runId, "run-start", {
         fileName: input.fileName,
@@ -782,6 +883,7 @@ export async function runVideoVipProcessing(
         translationProvider: input.providerName ?? "default",
         translationProviderHost: getVipProviderHost(input.baseUrl),
         translationModel: input.model ?? DEFAULT_TRANSLATION_MODEL,
+        translationMode,
         metadataProvider: input.metadataProviderName ?? input.providerName ?? "default",
         metadataProviderHost: getVipProviderHost(input.metadataBaseUrl ?? input.baseUrl),
         metadataModel: input.metadataModel ?? input.model ?? DEFAULT_TRANSLATION_MODEL,
@@ -911,6 +1013,7 @@ export async function runVideoVipProcessing(
     logVipEvent(runId, "stage-start", {
         stage: "translation",
         reused: Boolean(checkpointState.translation),
+        mode: translationMode,
         segmentCount: transcript.segments.length,
         provider: input.providerName ?? "default",
         providerHost: getVipProviderHost(input.baseUrl),
@@ -922,6 +1025,15 @@ export async function runVideoVipProcessing(
         checkpointState.translation ??
         (await (async () => {
             try {
+                if (translationMode === "import") {
+                    return buildImportedTranslationResult({
+                        transcript,
+                        sourceLanguage: input.sourceLanguage ?? transcript.language,
+                        targetLanguage: input.targetLanguage ?? "vi",
+                        model: input.model ?? DEFAULT_TRANSLATION_MODEL,
+                        importedLines: input.importedTranslationLines,
+                    });
+                }
                 return await runners.translate({
                     segments: transcript.segments,
                     sourceLanguage: input.sourceLanguage ?? transcript.language,

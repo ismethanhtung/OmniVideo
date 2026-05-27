@@ -202,6 +202,16 @@ describe("WorkspaceCanvasPanel canvas interactions", () => {
         expect(source).toContain("Completed transcript stage");
         expect(source).toContain("Metadata title:");
         expect(source).toContain("Metadata tags:");
+        expect(source).toContain("translationMode");
+        expect(source).toContain("Import manual translate");
+        expect(source).toContain("Copy source text");
+        expect(source).toContain("Copy prompt");
+        expect(source).toContain("buildVipManualImportPrompt");
+        expect(source).toContain("Return plain text only. Do not return JSON.");
+        expect(source).toContain("Required output format (strict):");
+        expect(source).toContain("Segment count mismatch");
+        expect(source).toContain("parseVipImportedTranslationLines");
+        expect(source).toContain("manualTranslationPrompt");
         expect(source).toContain("Title:");
         expect(source).toContain("Tags:");
         expect(source).toContain("Mix:");

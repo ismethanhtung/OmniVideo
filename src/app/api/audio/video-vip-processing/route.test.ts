@@ -275,6 +275,113 @@ describe("video vip processing API", () => {
     );
   });
 
+  it("forwards manual import translation mode and parsed lines", async () => {
+    mockedRunVideoVipProcessing.mockResolvedValueOnce({
+      videoBase64: Buffer.from("vip").toString("base64"),
+      mimeType: "video/mp4",
+      extension: "mp4",
+      fileName: "vip-output.mp4",
+      byteLength: 3,
+      generationDurationMs: 10,
+      transcript: {
+        text: "你好\n世界",
+        language: "zh",
+        model: "whisper-large-v3-turbo",
+        segments: [
+          { id: 0, start: 0, end: 1, text: "你好" },
+          { id: 1, start: 1, end: 2, text: "世界" },
+        ],
+        words: [],
+        source: { fileName: "source.mp4", fileSizeBytes: 3 },
+        audio: {
+          format: "mp3",
+          sampleRate: 16000,
+          channels: 1,
+          bitrateKbps: 64,
+          fileSizeBytes: 3,
+        },
+        steps: [],
+        provider: { name: "groq" },
+      },
+      translation: {
+        sourceLanguage: "zh",
+        targetLanguage: "vi",
+        model: "manual",
+        translatedSegments: [
+          {
+            id: 0,
+            start: 0,
+            end: 1,
+            sourceText: "你好",
+            translatedText: "Xin chào",
+          },
+          {
+            id: 1,
+            start: 1,
+            end: 2,
+            sourceText: "世界",
+            translatedText: "Thế giới",
+          },
+        ],
+        generationDurationMs: 0,
+        chunks: [{ index: 0, segmentCount: 2 }],
+        provider: { name: "manual-import" },
+      },
+      voice: {
+        mimeType: "audio/wav",
+        extension: "wav",
+        fileName: "voice.wav",
+        byteLength: 9,
+        segmentCount: 2,
+        generationDurationMs: 4,
+        alignment: { mode: "timeline", chunks: 1, targetDurationSeconds: 2 },
+        settings: { binaryPath: "piper", modelPath: "" },
+        provider: { name: "piper", mode: "local-cli" },
+      },
+      metadata: {
+        title: "Tiêu đề",
+        description: "Mô tả",
+        hashtags: ["review"],
+        model: "cx/gpt-5.3-codex-low",
+        provider: { name: "groq" },
+      },
+      stages: {
+        preprocessDurationMs: 0,
+        transcriptionDurationMs: 1,
+        translationDurationMs: 1,
+        voiceDurationMs: 1,
+        muxDurationMs: 0,
+        finalRenderDurationMs: 1,
+        metadataDurationMs: 1,
+      },
+    });
+    const formData = createFormData({
+      translationMode: "import",
+      importedTranslationText: "1. Xin chào\n2. Thế giới",
+    });
+    formData.set(
+      "videoFile",
+      new File([new Uint8Array([1, 2, 3])], "source.mp4", {
+        type: "video/mp4",
+      }),
+    );
+
+    const response = await POST(
+      new Request("http://localhost/api/audio/video-vip-processing", {
+        method: "POST",
+        body: formData,
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(mockedRunVideoVipProcessing).toHaveBeenCalledWith(
+      expect.objectContaining({
+        translationMode: "import",
+        importedTranslationLines: ["Xin chào", "Thế giới"],
+      }),
+    );
+  });
+
   it("returns reusable VIP checkpoint stages when processing fails mid-node", async () => {
     const error = new ChineseTranscriptionError(
       "SYS_DUBBING_MUX_FAILED",
@@ -320,6 +427,87 @@ describe("video vip processing API", () => {
         failedStage: "render",
         savedStages: ["transcript", "translation", "voice"],
         reusableStages: ["transcript", "translation", "voice"],
+      },
+    });
+  });
+
+  it("returns manual translation prompt payload when VIP import mode needs user input", async () => {
+    const error = new ChineseTranscriptionError(
+      "VAL_TRANSLATION_IMPORT_REQUIRED",
+      "Imported translation is required after transcript stage.",
+      409,
+    ) as ChineseTranscriptionError & {
+      manualTranslationPrompt?: {
+        transcript: {
+          text: string;
+          language: string;
+          model: "whisper-large-v3-turbo";
+          segments: Array<{ id: number; start: number; end: number; text: string }>;
+          words: [];
+          source: { fileName: string; fileSizeBytes: number };
+          audio: {
+            format: "mp3";
+            sampleRate: 16000;
+            channels: 1;
+            bitrateKbps: 64;
+            fileSizeBytes: number;
+          };
+          steps: [];
+          provider: { name: "groq" };
+        };
+        sourceLines: string[];
+        expectedSegmentCount: number;
+        actualSegmentCount: number;
+      };
+    };
+    error.manualTranslationPrompt = {
+      transcript: {
+        text: "你好",
+        language: "zh",
+        model: "whisper-large-v3-turbo",
+        segments: [{ id: 0, start: 0, end: 1, text: "你好" }],
+        words: [],
+        source: { fileName: "source.mp4", fileSizeBytes: 3 },
+        audio: {
+          format: "mp3",
+          sampleRate: 16000,
+          channels: 1,
+          bitrateKbps: 64,
+          fileSizeBytes: 3,
+        },
+        steps: [],
+        provider: { name: "groq" },
+      },
+      sourceLines: ["你好"],
+      expectedSegmentCount: 1,
+      actualSegmentCount: 0,
+    };
+    mockedRunVideoVipProcessing.mockRejectedValueOnce(error);
+
+    const formData = createFormData({ translationMode: "import" });
+    formData.set(
+      "videoFile",
+      new File([new Uint8Array([1, 2, 3])], "source.mp4", {
+        type: "video/mp4",
+      }),
+    );
+
+    const response = await POST(
+      new Request("http://localhost/api/audio/video-vip-processing", {
+        method: "POST",
+        body: formData,
+      }),
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(payload).toMatchObject({
+      ok: false,
+      errorCode: "VAL_TRANSLATION_IMPORT_REQUIRED",
+      manualTranslationPrompt: {
+        expectedSegmentCount: 1,
+        actualSegmentCount: 0,
+        sourceLines: ["你好"],
       },
     });
   });

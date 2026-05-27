@@ -1,5 +1,34 @@
 # OmniVideo Changelog
 
+## FAST-WORKSPACE-050 - Fix VIP Transcript Network Error Mapping and Stage Log Clarity
+
+- Bumped app version from `0.10.59` to `0.10.60` as a patch release for VIP transcript failure diagnostics.
+- Fixed Groq transcription adapter to map network fetch exceptions (for example `fetch failed`) into structured `PRV_GROQ_TRANSCRIPTION_FAILED` errors.
+- Preserved transcript-stage step evidence in the VIP path when transcription fails, so Workspace can show actionable failure details instead of generic mux-only messaging.
+- This prevents transcript network failures from being downgraded into ambiguous `SYS_DUBBING_MUX_FAILED` top-level errors.
+- Verification (FAST-WORKSPACE-050):
+  - `npm run test -- --run src/lib/multilingual-audio/groq-transcription.test.ts src/lib/multilingual-audio/chinese-transcription.test.ts src/lib/multilingual-audio/video-vip-processing.test.ts` pass (3 files / 18 tests).
+  - `npm run guard:version` pass.
+
+## FAST-WORKSPACE-049 - Add Manual Translate Import Mode for VIP Node
+
+- Bumped app version from `0.10.58` to `0.10.59` as a patch release for VIP translation flexibility.
+- Added VIP `Translation mode` in Workspace Pre-run configuration with two options: `AI API` (existing flow) and `Import manual translate`.
+- Added manual import UI for VIP mode:
+  - runtime multiline input for translated subtitles (one line per transcript segment),
+  - source transcript copy action (`Copy source text`) once transcript stage is available,
+  - inline imported-line count vs expected-segment count feedback.
+- Updated VIP runtime/API to support manual translation path without calling transcript-translation AI API:
+  - API accepts `translationMode` + `importedTranslationText`,
+  - server parses numbered/manual line formats and maps them to transcript segments by order,
+  - server validates line count and returns structured manual-translation prompt payload when missing/mismatched.
+- Updated Workspace VIP run handling to capture manual-translation prompt responses, persist runtime transcript for the VIP node, and show actionable continue guidance.
+- Preserved default behavior: when mode is `AI API`, VIP translation still runs through provider/model flow unchanged.
+- Verification (FAST-WORKSPACE-049):
+  - `npm run test -- --run src/lib/multilingual-audio/video-vip-processing.test.ts src/app/api/audio/video-vip-processing/route.test.ts src/features/workspace/workspace-canvas-panel.test.ts` pass (3 files / 38 tests).
+  - `npm run build` pass.
+  - `npm run guard:version` pass.
+
 ## FAST-VIDEO-019 - Add Download Button Near Thumbnail Name and Right-Align Upload Title Hint
 
 - Bumped app version from `0.10.57` to `0.10.58` as a patch release for Thumbnail Studio UX polish.

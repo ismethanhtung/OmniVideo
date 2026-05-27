@@ -42,6 +42,20 @@ function readOptionalAlignmentMode(formData: FormData) {
     return value === "strict" || value === "balanced" ? value : undefined;
 }
 
+function parseImportedTranslationLines(raw: string) {
+    return raw
+        .split(/\r?\n/u)
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0)
+        .map((line) =>
+            line
+                .replace(/^\d+\s*[\.\):\-]\s*/u, "")
+                .replace(/^[-*]\s+/u, "")
+                .trim(),
+        )
+        .filter((line) => line.length > 0);
+}
+
 function readSetupNumber(
     setup: Record<string, unknown> | null | undefined,
     key: string,
@@ -589,6 +603,17 @@ export async function POST(request: Request) {
         const providerId = readFormValue(formData, "providerId").trim();
         const metadataProviderId = readFormValue(formData, "metadataProviderId").trim();
         const vipResumeKey = readFormValue(formData, "vipResumeKey").trim();
+        const translationModeRaw = readFormValue(
+            formData,
+            "translationMode",
+        ).trim();
+        const translationMode = translationModeRaw === "import" ? "import" : "ai";
+        const importedTranslationLines =
+            translationMode === "import"
+                ? parseImportedTranslationLines(
+                      readFormValue(formData, "importedTranslationText"),
+                  )
+                : [];
         const useSourceAssetVideoEditSetup =
             readOptionalBoolean(formData, "useSourceAssetVideoEditSetup") ===
             true;
@@ -697,6 +722,8 @@ export async function POST(request: Request) {
             metadataApiKey,
             metadataBaseUrl,
             metadataProviderName,
+            translationMode,
+            importedTranslationLines,
             checkpointKey: vipResumeKey || undefined,
             ttsSettings,
             originalAudioVolume: readOptionalNumber(formData, "originalAudioVolume"),
@@ -799,6 +826,13 @@ export async function POST(request: Request) {
                 "checkpoint" in error
                     ? (error as { checkpoint?: unknown }).checkpoint
                     : undefined;
+            const manualTranslationPrompt =
+                error &&
+                typeof error === "object" &&
+                "manualTranslationPrompt" in error
+                    ? (error as { manualTranslationPrompt?: unknown })
+                          .manualTranslationPrompt
+                    : undefined;
             return NextResponse.json(
                 {
                     ok: false,
@@ -806,6 +840,7 @@ export async function POST(request: Request) {
                     error: error.message,
                     steps: error.steps,
                     checkpoint,
+                    manualTranslationPrompt,
                 },
                 { status: error.status },
             );
