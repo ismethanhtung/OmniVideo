@@ -38,6 +38,7 @@ type VipStageName =
     | "render"
     | "metadata";
 type VipTranslationMode = "ai" | "import";
+type VipRenderPreset = "superfast" | "veryfast";
 
 type VipCheckpointState = {
     fingerprint: string;
@@ -109,6 +110,7 @@ export type VideoVipProcessingInput = {
     originalAudioVolume?: number;
     voiceVolume?: number;
     videoSpeedFactor?: number;
+    renderPreset?: VipRenderPreset;
     mirrorEnabled?: boolean;
     blur?: VideoEditInput["blur"];
     coverBoxes?: VideoEditInput["coverBoxes"];
@@ -170,6 +172,12 @@ function normalizeVolume(value: number | undefined, fallback: number) {
     return Math.min(2, Math.max(0, value));
 }
 
+function normalizeRenderPreset(
+    value: string | undefined,
+): VipRenderPreset {
+    return value === "veryfast" ? "veryfast" : "superfast";
+}
+
 function sanitizeOutputName(fileName: string) {
     const base = fileName.replace(/\.[^.]+$/u, "") || "omnivideo-vip";
     return `${
@@ -206,6 +214,7 @@ function buildVipCheckpointFingerprint(input: VideoVipProcessingInput) {
             originalAudioVolume: input.originalAudioVolume,
             voiceVolume: input.voiceVolume,
             videoSpeedFactor: input.videoSpeedFactor,
+            renderPreset: normalizeRenderPreset(input.renderPreset),
             mirrorEnabled: input.mirrorEnabled,
             blur: input.blur,
             coverBoxes: input.coverBoxes,
@@ -584,6 +593,7 @@ export function buildVipFinalRenderArgs(input: {
     coverBoxes?: ReturnType<typeof normalizeCoverBoxes>;
     originalAudioVolume: number;
     voiceVolume: number;
+    renderPreset?: VipRenderPreset;
 }) {
     const clampedSpeed = Math.min(2, Math.max(0.5, input.speedFactor || 1));
     const videoFilters: string[] = [];
@@ -666,6 +676,7 @@ export function buildVipFinalRenderArgs(input: {
         `[1:a]volume=${input.voiceVolume.toFixed(3)}[voice]`,
         `[orig][voice]amix=inputs=2:duration=longest:dropout_transition=0[aout]`,
     ];
+    const renderPreset = normalizeRenderPreset(input.renderPreset);
 
     return [
         "-y",
@@ -682,7 +693,7 @@ export function buildVipFinalRenderArgs(input: {
         "-c:v",
         "libx264",
         "-preset",
-        "superfast",
+        renderPreset,
         "-crf",
         "23",
         "-c:a",
@@ -793,6 +804,7 @@ async function renderVipCompositeVideo(input: {
     textOverlays?: VideoEditInput["textOverlays"];
     originalAudioVolume: number;
     voiceVolume: number;
+    renderPreset?: VipRenderPreset;
 }) {
     const workDir = path.join(tmpdir(), `omnivideo-vip-${randomUUID()}`);
     const inputPath = path.join(workDir, "source.mp4");
@@ -841,6 +853,7 @@ async function renderVipCompositeVideo(input: {
                 coverBoxes: normalizeCoverBoxes(input.coverBoxes),
                 originalAudioVolume: input.originalAudioVolume,
                 voiceVolume: input.voiceVolume,
+                renderPreset: input.renderPreset,
             }),
         );
 
@@ -873,6 +886,7 @@ export async function runVideoVipProcessing(
 
     const translationMode = input.translationMode ?? "ai";
     const clampedSpeed = Math.min(2, Math.max(0.5, input.videoSpeedFactor ?? 1));
+    const renderPreset = normalizeRenderPreset(input.renderPreset);
     logVipEvent(runId, "run-start", {
         fileName: input.fileName,
         mimeType: input.mimeType,
@@ -888,6 +902,7 @@ export async function runVideoVipProcessing(
         metadataProviderHost: getVipProviderHost(input.metadataBaseUrl ?? input.baseUrl),
         metadataModel: input.metadataModel ?? input.model ?? DEFAULT_TRANSLATION_MODEL,
         speedFactor: clampedSpeed,
+        renderPreset,
         originalAudioVolume: normalizeVolume(input.originalAudioVolume, 0),
         voiceVolume: normalizeVolume(input.voiceVolume, 1),
         checkpointEnabled: Boolean(input.checkpointKey),
@@ -1192,6 +1207,7 @@ export async function runVideoVipProcessing(
         blurEnabled: input.blur?.enabled === true,
         coverBoxEnabled: input.coverBoxes?.enabled === true,
         textOverlayEnabled: input.textOverlays?.enabled === true,
+        renderPreset,
         originalAudioVolume,
         voiceVolume,
     });
@@ -1229,6 +1245,7 @@ export async function runVideoVipProcessing(
                     textOverlays: input.textOverlays,
                     originalAudioVolume,
                     voiceVolume,
+                    renderPreset,
                 });
             } catch (error) {
                 logVipEvent(runId, "stage-failed", {
@@ -1261,6 +1278,7 @@ export async function runVideoVipProcessing(
                 textOverlays: input.textOverlays,
                 originalAudioVolume,
                 voiceVolume,
+                renderPreset,
             });
         } catch (error) {
             logVipEvent(runId, "stage-failed", {

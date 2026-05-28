@@ -90,6 +90,7 @@ export type VideoEditInput = {
             backgroundColor?: string;
             backgroundOpacity?: number;
             backgroundEnabled?: boolean;
+            backgroundPaddingY?: number;
             playResX?: number;
             playResY?: number;
         };
@@ -534,6 +535,7 @@ export function buildSubtitleAssContent(
         backgroundColor?: string;
         backgroundOpacity?: number;
         backgroundEnabled?: boolean;
+        backgroundPaddingY?: number;
         playResX?: number;
         playResY?: number;
     },
@@ -562,6 +564,9 @@ export function buildSubtitleAssContent(
         : 65;
     const backgroundColor = (style?.backgroundColor || "#000000").trim();
     const backgroundAssColor = hexToAssColor(backgroundColor, backgroundOpacity);
+    const backgroundPaddingY = Number.isFinite(style?.backgroundPaddingY)
+        ? Math.min(24, Math.max(0, Math.round(style?.backgroundPaddingY ?? 2)))
+        : 2;
     const borderStyle = backgroundEnabled ? 3 : 1;
     const playResX = Number.isFinite(style?.playResX)
         ? Math.max(360, Math.round(style?.playResX ?? 1920))
@@ -610,7 +615,7 @@ export function buildSubtitleAssContent(
     if (backgroundEnabled) {
         // Layer 1: opaque box only (transparent glyph), Layer 2: visible text with black outline.
         styleLines.push(
-            `Style: BackgroundBox,${subtitleFontFamily || "Arial"},${subtitleFontSize},&HFF000000,&H000000FF,${backgroundAssColor},${backgroundAssColor},-1,0,0,0,100,100,0,0,3,2,0,${subtitleAlignment},${subtitleMarginLeft},${subtitleMarginRight},${subtitleMarginBottom},1`,
+            `Style: BackgroundBox,${subtitleFontFamily || "Arial"},${subtitleFontSize},&HFF000000,&H000000FF,${backgroundAssColor},${backgroundAssColor},-1,0,0,0,100,100,0,0,3,${backgroundPaddingY},0,${subtitleAlignment},${subtitleMarginLeft},${subtitleMarginRight},${subtitleMarginBottom},1`,
             `Style: ForegroundText,${subtitleFontFamily || "Arial"},${subtitleFontSize},&H00FFFFFF,&H000000FF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,2,0,${subtitleAlignment},${subtitleMarginLeft},${subtitleMarginRight},${subtitleMarginBottom},1`,
         );
         for (const segment of normalizedSegments) {

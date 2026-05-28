@@ -1,5 +1,16 @@
 # OmniVideo Changelog
 
+## FAST-WORKSPACE-051 - Add VIP Render Mode Selector (veryfast/superfast)
+
+- Bumped app version from `0.10.60` to `0.10.61` as a patch release for VIP render control.
+- Added VIP `Render mode` runtime config with two presets: `superfast` (default) and `veryfast`.
+- Wired selected render mode through Workspace VIP run payload (`renderPreset`) to `/api/audio/video-vip-processing`.
+- Updated VIP API/runtime render pipeline to apply selected preset directly on ffmpeg x264 `-preset`.
+- Preserved backward compatibility by defaulting/fallback to `superfast` when preset is missing or invalid.
+- Verification (FAST-WORKSPACE-051):
+  - `npm run test -- --run src/lib/multilingual-audio/video-vip-processing.test.ts src/app/api/audio/video-vip-processing/route.test.ts src/features/workspace/workspace-canvas-panel.test.ts src/lib/workspace/workspace-graph.test.ts` pass (4 files / 89 tests).
+  - `npm run guard:version` pass.
+
 ## FAST-WORKSPACE-050 - Fix VIP Transcript Network Error Mapping and Stage Log Clarity
 
 - Bumped app version from `0.10.59` to `0.10.60` as a patch release for VIP transcript failure diagnostics.

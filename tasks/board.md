@@ -23,9 +23,11 @@
 
 ## Review
 
+- `FAST-WORKSPACE-051` - Add VIP render mode selector (veryfast/superfast).
 - `FAST-WORKSPACE-050` - Fix VIP transcript network error mapping and stage log clarity.
 - `FAST-WORKSPACE-049` - Add manual translate import mode for VIP node.
 - `FAST-VIDEO-019` - Add Download button near Thumbnail name and right-align upload title hint.
+- `FAST-VIDEO-020` - Soften Vietsub black background and add independent subtitle background height.
 - `FAST-VIDEO-018` - Fix Thumbnail Studio download filename extension by MIME type.
 - `FAST-WORKSPACE-047` - Add detailed terminal logs for VIP pipeline.
 - `FAST-WORKSPACE-048` - Refine VIP detail output and subtitle wrapping.

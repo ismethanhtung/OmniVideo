@@ -42,6 +42,11 @@ function readOptionalAlignmentMode(formData: FormData) {
     return value === "strict" || value === "balanced" ? value : undefined;
 }
 
+function readOptionalRenderPreset(formData: FormData) {
+    const value = readFormValue(formData, "renderPreset").trim();
+    return value === "veryfast" || value === "superfast" ? value : undefined;
+}
+
 function parseImportedTranslationLines(raw: string) {
     return raw
         .split(/\r?\n/u)
@@ -729,6 +734,7 @@ export async function POST(request: Request) {
             originalAudioVolume: readOptionalNumber(formData, "originalAudioVolume"),
             voiceVolume: readOptionalNumber(formData, "voiceVolume"),
             videoSpeedFactor: readOptionalNumber(formData, "videoSpeedFactor"),
+            renderPreset: readOptionalRenderPreset(formData),
             mirrorEnabled:
                 readOptionalBoolean(formData, "mirrorEnabled") ?? true,
             blur: readBlurConfig(

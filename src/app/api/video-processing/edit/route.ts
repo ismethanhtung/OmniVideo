@@ -489,6 +489,11 @@ export async function POST(request: Request) {
                                   formData,
                                   "subtitleBackgroundEnabled",
                               ) !== "false",
+                          backgroundPaddingY: readNumber(
+                              formData,
+                              "subtitleBackgroundPaddingY",
+                              2,
+                          ),
                           playResX: readNumber(
                               formData,
                               "subtitlePlayResX",

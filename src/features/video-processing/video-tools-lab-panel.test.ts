@@ -49,6 +49,7 @@ describe("Video Tools Lab source preview controls", () => {
         expect(source).toContain("Add subtitle box");
         expect(source).toContain("coverBoxesJson");
         expect(source).toContain("coverBoxColor");
+        expect(source).toContain("subtitleBackgroundPaddingY");
         expect(source).toContain("Text Overlay");
         expect(source).toContain("Ăn Không Ngồi Rồi");
         expect(source).toContain("textOverlaysJson");

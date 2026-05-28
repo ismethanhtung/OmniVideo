@@ -204,6 +204,10 @@ describe("WorkspaceCanvasPanel canvas interactions", () => {
         expect(source).toContain("Metadata tags:");
         expect(source).toContain("translationMode");
         expect(source).toContain("Import manual translate");
+        expect(source).toContain("renderPreset");
+        expect(source).toContain("Render mode");
+        expect(source).toContain("superfast");
+        expect(source).toContain("veryfast");
         expect(source).toContain("Copy source text");
         expect(source).toContain("Copy prompt");
         expect(source).toContain("buildVipManualImportPrompt");

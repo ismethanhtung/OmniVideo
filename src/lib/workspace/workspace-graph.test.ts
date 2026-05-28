@@ -256,6 +256,24 @@ describe("workspace graph helpers", () => {
         }
     });
 
+    it("creates VIP nodes with superfast render preset default", () => {
+        const template = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "video.vip-processing",
+        );
+
+        expect(template).toBeDefined();
+
+        const graph = addWorkspaceNode(
+            createEmptyWorkspaceGraph("VIP"),
+            template!,
+            { x: 100, y: 160 },
+        );
+
+        expect(graph.nodes[0].config).toMatchObject({
+            renderPreset: "superfast",
+        });
+    });
+
     it("connects nodes, keeps duplicate edges as no-op, and rejects missing nodes", () => {
         const sourceTemplate = WORKSPACE_NODE_TEMPLATES.find(
             (entry) => entry.nodeType === "source.url",

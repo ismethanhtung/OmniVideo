@@ -111,10 +111,11 @@ describe("VIP final render filter order", () => {
             ],
             originalAudioVolume: 0.1,
             voiceVolume: 1,
+            renderPreset: "veryfast",
         });
         const filter = args[args.indexOf("-filter_complex") + 1] ?? "";
 
-        expect(args).toEqual(expect.arrayContaining(["-preset", "superfast"]));
+        expect(args).toEqual(expect.arrayContaining(["-preset", "veryfast"]));
         expect(filter.indexOf("setpts=1.25*PTS[basev]")).toBeLessThan(
             filter.indexOf("boxblur"),
         );
@@ -162,6 +163,39 @@ describe("VIP final render filter order", () => {
         expect(filter.indexOf("ass='/tmp/subtitles.ass'[subv]")).toBeLessThan(
             filter.indexOf("ass='/tmp/text-overlays.ass'[vout]"),
         );
+    });
+
+    it("falls back to superfast preset when render preset is not provided", () => {
+        const args = buildVipFinalRenderArgs({
+            videoPath: "/tmp/source.mp4",
+            voicePath: "/tmp/voice.wav",
+            subtitleAssPath: "/tmp/subtitles.ass",
+            outputPath: "/tmp/output.mp4",
+            speedFactor: 1,
+            mirrorEnabled: true,
+            blurRegions: [],
+            originalAudioVolume: 0,
+            voiceVolume: 1,
+        });
+
+        expect(args).toEqual(expect.arrayContaining(["-preset", "superfast"]));
+    });
+
+    it("falls back to superfast preset when render preset is invalid", () => {
+        const args = buildVipFinalRenderArgs({
+            videoPath: "/tmp/source.mp4",
+            voicePath: "/tmp/voice.wav",
+            subtitleAssPath: "/tmp/subtitles.ass",
+            outputPath: "/tmp/output.mp4",
+            speedFactor: 1,
+            mirrorEnabled: true,
+            blurRegions: [],
+            originalAudioVolume: 0,
+            voiceVolume: 1,
+            renderPreset: "ultrafast" as unknown as "superfast",
+        });
+
+        expect(args).toEqual(expect.arrayContaining(["-preset", "superfast"]));
     });
 });
 

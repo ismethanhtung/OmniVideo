@@ -914,6 +914,13 @@ export const WORKSPACE_NODE_TEMPLATES: WorkspaceNodeTemplate[] = [
                 defaultValue: 0.7,
             },
             {
+                key: "renderPreset",
+                label: "Render mode",
+                type: "select",
+                required: false,
+                defaultValue: "superfast",
+            },
+            {
                 key: "originalAudioVolume",
                 label: "Original audio volume",
                 type: "number",
@@ -3585,6 +3592,7 @@ export function createAssetVipProcessingSampleGraph(): WorkspaceGraph {
                     model: "cx/gpt-5.3-codex-low",
                     metadataModel: "cx/gpt-5.3-codex-low",
                     speedFactor: 0.7,
+                    renderPreset: "superfast",
                     originalAudioVolume: 0,
                     voiceVolume: 1,
                     ttsNoiseScale: 0.667,

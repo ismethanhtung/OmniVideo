@@ -4023,6 +4023,12 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         "videoSpeedFactor",
                         String(getNumberConfig(vipNode, "speedFactor", 0.7)),
                     );
+                    const vipRenderPreset =
+                        getStringConfig(vipNode, "renderPreset", "superfast") ===
+                        "veryfast"
+                            ? "veryfast"
+                            : "superfast";
+                    formData.set("renderPreset", vipRenderPreset);
                     formData.set(
                         "originalAudioVolume",
                         String(
@@ -8714,6 +8720,30 @@ function NodeRuntimeConfig({
                                 setConfig({ speedFactor: Number(value) })
                             }
                         />
+                        <RuntimeSelect
+                            label="Render mode"
+                            value={
+                                getStringConfig(
+                                    node,
+                                    "renderPreset",
+                                    "superfast",
+                                ) === "veryfast"
+                                    ? "veryfast"
+                                    : "superfast"
+                            }
+                            disabled={isRunningFlow}
+                            onChange={(value) =>
+                                setConfig({
+                                    renderPreset:
+                                        value === "veryfast"
+                                            ? "veryfast"
+                                            : "superfast",
+                                })
+                            }
+                        >
+                            <option value="superfast">superfast</option>
+                            <option value="veryfast">veryfast</option>
+                        </RuntimeSelect>
                         <RuntimeTextInput
                             label="Original volume"
                             value={String(

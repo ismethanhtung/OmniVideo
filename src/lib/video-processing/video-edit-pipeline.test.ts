@@ -245,6 +245,29 @@ describe("video edit pipeline", () => {
         expect(ass).toContain("&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,2");
     });
 
+    it("applies configured subtitle background padding Y independently from font size", () => {
+        const ass = buildSubtitleAssContent(
+            [
+                {
+                    id: 1,
+                    start: 0,
+                    end: 1,
+                    sourceText: "src",
+                    translatedText: "txt",
+                },
+            ],
+            {
+                fontSize: 42,
+                backgroundEnabled: true,
+                backgroundPaddingY: 12,
+            },
+        );
+
+        expect(ass).toContain("Style: BackgroundBox,Arial,42");
+        expect(ass).toContain(",3,12,0,2,60,60,150,1");
+        expect(ass).toContain("Style: ForegroundText,Arial,42");
+    });
+
     it("rejects partial blur without translated subtitle overlay", () => {
         expect(() =>
             validateVideoEditInput({

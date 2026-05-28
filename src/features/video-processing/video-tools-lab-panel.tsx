@@ -89,6 +89,7 @@ type StoredVideoAsset = {
             subtitleBackgroundEnabled?: boolean;
             subtitleBackgroundColor?: string;
             subtitleBackgroundOpacity?: number;
+            subtitleBackgroundPaddingY?: number;
             subtitleSampleWidthPercent?: number;
             subtitlePreviewPlacement?: {
                 leftPercent?: number;
@@ -457,7 +458,9 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
     const [subtitleBackgroundColor, setSubtitleBackgroundColor] =
         useState("#000000");
     const [subtitleBackgroundOpacity, setSubtitleBackgroundOpacity] =
-        useState(65);
+        useState(50);
+    const [subtitleBackgroundPaddingY, setSubtitleBackgroundPaddingY] =
+        useState(2);
     const [subtitleSampleWidthPercent, setSubtitleSampleWidthPercent] =
         useState(100);
     const [subtitlePreviewPlacement, setSubtitlePreviewPlacement] = useState<{
@@ -565,7 +568,8 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
         setSubtitleAlignment(2);
         setSubtitleBackgroundEnabled(true);
         setSubtitleBackgroundColor("#000000");
-        setSubtitleBackgroundOpacity(65);
+        setSubtitleBackgroundOpacity(50);
+        setSubtitleBackgroundPaddingY(2);
         setSubtitleSampleWidthPercent(100);
         setSubtitlePreviewPlacement(null);
     }, []);
@@ -897,7 +901,8 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
             setSubtitleBackgroundColor(
                 normalizeSubtitleBackgroundColor(setup.subtitleBackgroundColor),
             );
-            setSubtitleBackgroundOpacity(setup.subtitleBackgroundOpacity ?? 65);
+            setSubtitleBackgroundOpacity(setup.subtitleBackgroundOpacity ?? 50);
+            setSubtitleBackgroundPaddingY(setup.subtitleBackgroundPaddingY ?? 2);
             setSubtitleSampleWidthPercent(
                 setup.subtitleSampleWidthPercent ?? 100,
             );
@@ -1031,6 +1036,7 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                 subtitleBackgroundEnabled,
                 subtitleBackgroundColor,
                 subtitleBackgroundOpacity,
+                subtitleBackgroundPaddingY,
                 subtitleSampleWidthPercent,
                 subtitlePreviewPlacement: getCurrentSubtitlePreviewPlacement(),
                 textOverlayEnabled,
@@ -1247,6 +1253,10 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
             formData.set(
                 "subtitleBackgroundOpacity",
                 String(subtitleBackgroundOpacity),
+            );
+            formData.set(
+                "subtitleBackgroundPaddingY",
+                String(subtitleBackgroundPaddingY),
             );
             formData.set("subtitlePlayResX", String(videoNaturalSize.width));
             formData.set("subtitlePlayResY", String(videoNaturalSize.height));
@@ -2418,6 +2428,30 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                                             className="w-full border border-main bg-secondary/30 px-2 py-1.5 text-[11px] text-main"
                                         />
                                     </label>
+                                    <label className="block">
+                                        <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                            Background padding Y
+                                        </span>
+                                        <input
+                                            type="number"
+                                            min={0}
+                                            max={24}
+                                            value={subtitleBackgroundPaddingY}
+                                            disabled={
+                                                isRunningEdit ||
+                                                !subtitleBackgroundEnabled
+                                            }
+                                            onChange={(event) =>
+                                                setSubtitleBackgroundPaddingY(
+                                                    Number(
+                                                        event.currentTarget
+                                                            .value,
+                                                    ),
+                                                )
+                                            }
+                                            className="w-full border border-main bg-secondary/30 px-2 py-1.5 text-[11px] text-main"
+                                        />
+                                    </label>
                                 </div>
                                 <label className="block">
                                     <span className="mb-1 block text-[10px] font-semibold text-muted">
@@ -2711,7 +2745,10 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                                                             ?.clientHeight ??
                                                             420) /
                                                             videoNaturalSize.height) *
-                                                            ASS_SUBTITLE_OUTLINE,
+                                                            Math.max(
+                                                                ASS_SUBTITLE_OUTLINE,
+                                                                subtitleBackgroundPaddingY,
+                                                            ),
                                                     )}px`,
                                                     paddingBottom: `${Math.max(
                                                         1,
@@ -2720,12 +2757,15 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                                                             ?.clientHeight ??
                                                             420) /
                                                             videoNaturalSize.height) *
-                                                            ASS_SUBTITLE_OUTLINE,
+                                                            Math.max(
+                                                                ASS_SUBTITLE_OUTLINE,
+                                                                subtitleBackgroundPaddingY,
+                                                            ),
                                                     )}px`,
                                                     backgroundColor:
                                                         subtitleBackgroundEnabled
                                                             ? hexToRgba(
-                                                                  subtitleBackgroundColor,
+                                                                subtitleBackgroundColor,
                                                                   subtitleBackgroundOpacity,
                                                               )
                                                             : "transparent",
