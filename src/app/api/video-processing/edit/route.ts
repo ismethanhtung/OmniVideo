@@ -421,7 +421,7 @@ export async function POST(request: Request) {
         const subtitleBackgroundOpacity = readNumber(
             formData,
             "subtitleBackgroundOpacity",
-            65,
+            0,
         );
         const region: VideoEditRegionPercent = {
             x: readNumber(formData, "regionX", 0),
@@ -481,11 +481,11 @@ export async function POST(request: Request) {
                       style: {
                           fontFamily:
                               readFormValue(formData, "subtitleFontFamily") ||
-                              "Arial",
+                              "Bangers",
                           fontSize: readNumber(
                               formData,
                               "subtitleFontSize",
-                              35,
+                              40,
                           ),
                           marginBottom: readNumber(
                               formData,

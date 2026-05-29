@@ -1420,15 +1420,15 @@ const MASK_REGION_DEFAULTS = {
     timelineStart: 0,
     timelineEnd: 36000,
     blurStrength: 50,
-    subtitleFontFamily: "Arial",
-    subtitleFontSize: 35,
+    subtitleFontFamily: "Bangers",
+    subtitleFontSize: 40,
     subtitleMarginBottom: 150,
     subtitleMarginLeft: 60,
     subtitleMarginRight: 60,
     subtitleAlignment: 2,
     subtitleBackgroundEnabled: true,
     subtitleBackgroundColor: "#000000",
-    subtitleBackgroundOpacity: 65,
+    subtitleBackgroundOpacity: 0,
     subtitleBackgroundPaddingY: 8,
     mirrorEnabled: false,
     textOverlayEnabled: false,
@@ -8431,7 +8431,7 @@ function NodeRuntimeConfig({
                                 DEFAULT_TRANSLATION_MODEL,
                             )}
                             disabled={isRunningFlow}
-                            placeholder="cx/gpt-5.3-codex-low"
+                            placeholder="cx/gpt-5.5"
                             onChange={(value) => setConfig({ model: value })}
                         />
                     )}
@@ -8529,7 +8529,7 @@ function NodeRuntimeConfig({
                                 DEFAULT_TRANSLATION_MODEL,
                             )}
                             disabled={isRunningFlow}
-                            placeholder="cx/gpt-5.3-codex-low"
+                            placeholder="cx/gpt-5.5"
                             onChange={(value) => setConfig({ model: value })}
                         />
                     )}
@@ -8742,7 +8742,7 @@ function NodeRuntimeConfig({
                                         DEFAULT_TRANSLATION_MODEL,
                                     )}
                                     disabled={isRunningFlow}
-                                    placeholder="cx/gpt-5.3-codex-low"
+                                    placeholder="cx/gpt-5.5"
                                     onChange={(value) =>
                                         setConfig({ model: value })
                                     }
@@ -8951,7 +8951,7 @@ function NodeRuntimeConfig({
                                 DEFAULT_TRANSLATION_MODEL,
                             )}
                             disabled={isRunningFlow}
-                            placeholder="cx/gpt-5.3-codex-low"
+                            placeholder="cx/gpt-5.5"
                             onChange={(value) =>
                                 setConfig({ metadataModel: value })
                             }
@@ -9433,7 +9433,7 @@ function NodeRuntimeConfig({
                                         DEFAULT_TRANSLATION_MODEL,
                                     )}
                                     disabled={isRunningFlow}
-                                    placeholder="cx/gpt-5.3-codex-low"
+                                    placeholder="cx/gpt-5.5"
                                     onChange={(value) =>
                                         setConfig({ model: value })
                                     }

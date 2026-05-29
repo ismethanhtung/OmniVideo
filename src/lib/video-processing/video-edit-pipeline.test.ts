@@ -112,10 +112,10 @@ describe("video edit pipeline", () => {
         ]);
 
         expect(ass).toContain("Dialogue: 0,0:01:02.12,0:01:04.50");
-        expect(ass).toContain("Dong 1\\N{\\fs18}\\h\\N{\\fs100}Dong 2");
+        expect(ass).toContain("DONG 1\\N{\\fs7}\\h\\N{\\fs40}DONG 2");
         expect(ass).toContain("WrapStyle: 0");
-        expect(ass).toContain("Style: BackgroundBox,Arial,100");
-        expect(ass).toContain("Style: ForegroundText,Arial,100");
+        expect(ass).toContain("Style: BackgroundBox,Bangers,40");
+        expect(ass).toContain("Style: ForegroundText,Bangers,40");
         expect(ass).toContain(",60,60,150,1");
     });
 
@@ -160,7 +160,7 @@ describe("video edit pipeline", () => {
         );
 
         expect(ass).not.toContain("su phu\\Nkhong");
-        expect(ass).toContain("Nguoi co muon bai ta lam su phu khong?");
+        expect(ass).toContain("NGUOI CO MUON BAI TA LAM SU PHU KHONG?");
     });
 
     it("adds a controlled ASS spacer between wrapped subtitle lines", () => {
@@ -177,7 +177,7 @@ describe("video edit pipeline", () => {
             { fontSize: 35 },
         );
 
-        expect(ass).toContain("Dong 1\\N{\\fs6}\\h\\N{\\fs35}Dong 2");
+        expect(ass).toContain("DONG 1\\N{\\fs6}\\h\\N{\\fs35}DONG 2");
     });
 
     it("builds ffmpeg filter with multiple blur regions", () => {
@@ -323,9 +323,9 @@ describe("video edit pipeline", () => {
             },
         );
 
-        expect(ass).toContain("Style: BackgroundBox,Arial,42");
+        expect(ass).toContain("Style: BackgroundBox,Bangers,42");
         expect(ass).toContain(",3,12,0,2,60,60,150,1");
-        expect(ass).toContain("Style: ForegroundText,Arial,42");
+        expect(ass).toContain("Style: ForegroundText,Bangers,42");
     });
 
     it("positions subtitles by video percent region when provided", () => {
@@ -347,7 +347,7 @@ describe("video edit pipeline", () => {
         );
 
         expect(ass).toContain(",5,0,0,0,1");
-        expect(ass).toContain("{\\an5\\pos(960,945)}txt");
+        expect(ass).toContain("{\\an5\\pos(960,945)}TXT");
     });
 
     it("rejects partial blur without translated subtitle overlay", () => {

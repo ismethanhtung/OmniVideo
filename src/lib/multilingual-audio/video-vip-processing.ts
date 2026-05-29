@@ -1,7 +1,15 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { createHash } from "node:crypto";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import {
+    access,
+    copyFile,
+    mkdir,
+    readdir,
+    readFile,
+    rm,
+    writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -92,6 +100,176 @@ type VipStageRunners = {
     render: typeof renderVipCompositeVideo;
     generateMetadata: typeof generateVietnameseVideoMetadata;
 };
+
+const VIP_BUNDLED_SUBTITLE_FONT_FILES: Record<string, string> = {
+    Bangers: path.join(process.cwd(), "public", "fonts", "Bangers-Regular.ttf"),
+    Lobster: path.join(process.cwd(), "public", "fonts", "Lobster-Regular.ttf"),
+};
+
+const VIP_FALLBACK_BUNDLED_SUBTITLE_FONT_FILES: Record<string, string> = {
+    Lobster: path.join(
+        process.cwd(),
+        "src",
+        "assets",
+        "fonts",
+        "Lobster-Regular.ttf",
+    ),
+};
+
+function normalizeFontFamilyCandidates(value: string) {
+    const trimmed = value.trim();
+    if (!trimmed) return [];
+    const firstFamily = trimmed.split(",")[0]?.trim() ?? "";
+    const unquoted = firstFamily.replace(/^['"]+|['"]+$/gu, "").trim();
+    const variants = [trimmed, firstFamily, unquoted].filter(Boolean);
+    const canonical = new Set<string>();
+    for (const variant of variants) {
+        canonical.add(variant);
+        canonical.add(variant.toLowerCase());
+    }
+    return Array.from(canonical);
+}
+
+function resolveBundledVipFontPath(fontFamily: string) {
+    const candidates = normalizeFontFamilyCandidates(fontFamily);
+    for (const candidate of candidates) {
+        const direct =
+            VIP_BUNDLED_SUBTITLE_FONT_FILES[candidate] ??
+            VIP_BUNDLED_SUBTITLE_FONT_FILES[
+                candidate.charAt(0).toUpperCase() + candidate.slice(1)
+            ];
+        if (direct) return direct;
+    }
+    for (const candidate of candidates) {
+        const fallback =
+            VIP_FALLBACK_BUNDLED_SUBTITLE_FONT_FILES[candidate] ??
+            VIP_FALLBACK_BUNDLED_SUBTITLE_FONT_FILES[
+                candidate.charAt(0).toUpperCase() + candidate.slice(1)
+            ];
+        if (fallback) return fallback;
+    }
+    return null;
+}
+
+function escapeRegExp(value: string) {
+    return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+}
+
+async function resolveGoogleFontMediaPathsForFamily(fontFamily: string) {
+    const nextServerDir = path.join(process.cwd(), ".next", "server");
+    const cssRootCandidates = [
+        path.join(nextServerDir, "app"),
+        path.join(nextServerDir, "pages"),
+    ];
+    const resolvedPaths = new Set<string>();
+
+    for (const rootDir of cssRootCandidates) {
+        let chunks: string[] = [];
+        try {
+            chunks = await readdir(rootDir);
+        } catch {
+            continue;
+        }
+        for (const chunkName of chunks) {
+            const chunkDir = path.join(rootDir, chunkName);
+            let entries: string[] = [];
+            try {
+                entries = await readdir(chunkDir);
+            } catch {
+                continue;
+            }
+            for (const entry of entries) {
+                if (
+                    !entry.includes("internal_font_google") ||
+                    !entry.endsWith(".single.css")
+                ) {
+                    continue;
+                }
+                const cssPath = path.join(chunkDir, entry);
+                let css = "";
+                try {
+                    css = await readFile(cssPath, "utf8");
+                } catch {
+                    continue;
+                }
+                const familyPattern = new RegExp(
+                    `font-family:\\s*${escapeRegExp(fontFamily)};`,
+                    "u",
+                );
+                if (!familyPattern.test(css)) continue;
+
+                const mediaPathMatches = css.matchAll(
+                    /url\("\.\.\/media\/([^"]+)"\)/gu,
+                );
+                for (const match of mediaPathMatches) {
+                    const mediaFile = match[1];
+                    if (!mediaFile) continue;
+                    const mediaPath = path.join(
+                        chunkDir,
+                        "..",
+                        "media",
+                        mediaFile,
+                    );
+                    resolvedPaths.add(path.resolve(mediaPath));
+                }
+            }
+        }
+    }
+
+    return Array.from(resolvedPaths);
+}
+
+function buildSpeechTimedSubtitleSegments(input: {
+    translatedSegments: TranscriptTranslationResult["translatedSegments"];
+    voiceSegments: ReturnType<typeof buildVideoDubbingVoiceSegments>;
+}) {
+    const timingBySourceSegmentId = new Map<number, { start: number; end: number }>();
+
+    for (const voiceSegment of input.voiceSegments) {
+        const sourceSegmentId =
+            typeof voiceSegment.sourceSegmentId === "number"
+                ? voiceSegment.sourceSegmentId
+                : voiceSegment.id;
+        const start = Number(voiceSegment.start);
+        const end = Number(voiceSegment.end);
+        if (!Number.isFinite(sourceSegmentId)) continue;
+        if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+            continue;
+        }
+        const existing = timingBySourceSegmentId.get(sourceSegmentId);
+        if (!existing) {
+            timingBySourceSegmentId.set(sourceSegmentId, { start, end });
+            continue;
+        }
+        timingBySourceSegmentId.set(sourceSegmentId, {
+            start: Math.min(existing.start, start),
+            end: Math.max(existing.end, end),
+        });
+    }
+
+    const timedSegments = input.translatedSegments.map((segment) => {
+        const timed = timingBySourceSegmentId.get(segment.id);
+        if (!timed) return segment;
+        return {
+            ...segment,
+            start: timed.start,
+            end: timed.end,
+        };
+    });
+
+    const MIN_SUBTITLE_DURATION_SECONDS = 0.01;
+    let previousEnd = 0;
+    return timedSegments.map((segment) => {
+        const start = Math.max(segment.start, previousEnd);
+        const end = Math.max(segment.end, start + MIN_SUBTITLE_DURATION_SECONDS);
+        previousEnd = end;
+        return {
+            ...segment,
+            start,
+            end,
+        };
+    });
+}
 
 export type VideoVipProcessingInput = {
     fileName: string;
@@ -585,6 +763,7 @@ export function buildVipFinalRenderArgs(input: {
     videoPath: string;
     voicePath: string;
     subtitleAssPath: string;
+    subtitleFontsDir?: string;
     textOverlayAssPath?: string;
     outputPath: string;
     speedFactor: number;
@@ -643,6 +822,9 @@ export function buildVipFinalRenderArgs(input: {
     const escapeFilterPath = (filePath: string) =>
         filePath.replace(/\\/g, "\\\\").replace(/:/g, "\\:").replace(/'/g, "\\\\'");
     const escapedSubtitlePath = escapeFilterPath(input.subtitleAssPath);
+    const escapedSubtitleFontsDir = input.subtitleFontsDir
+        ? escapeFilterPath(input.subtitleFontsDir)
+        : "";
     const escapedTextOverlayPath = input.textOverlayAssPath
         ? escapeFilterPath(input.textOverlayAssPath)
         : "";
@@ -659,11 +841,21 @@ export function buildVipFinalRenderArgs(input: {
         videoEditChains.push(`[${currentVideoLabel}]hflip[${mirroredVideoLabel}]`);
         currentVideoLabel = mirroredVideoLabel;
     }
-    videoEditChains.push(`[${currentVideoLabel}]ass='${escapedSubtitlePath}'[subv]`);
+    videoEditChains.push(
+        `[${currentVideoLabel}]ass='${escapedSubtitlePath}'${
+            escapedSubtitleFontsDir
+                ? `:fontsdir='${escapedSubtitleFontsDir}'`
+                : ""
+        }[subv]`,
+    );
     currentVideoLabel = "subv";
     if (escapedTextOverlayPath) {
         videoEditChains.push(
-            `[${currentVideoLabel}]ass='${escapedTextOverlayPath}'[vout]`,
+            `[${currentVideoLabel}]ass='${escapedTextOverlayPath}'${
+                escapedSubtitleFontsDir
+                    ? `:fontsdir='${escapedSubtitleFontsDir}'`
+                    : ""
+            }[vout]`,
         );
     } else {
         videoEditChains.push(`[${currentVideoLabel}]null[vout]`);
@@ -703,6 +895,58 @@ export function buildVipFinalRenderArgs(input: {
         "+faststart",
         input.outputPath,
     ];
+}
+
+async function prepareVipSubtitleFontsDir(input: {
+    workDir: string;
+    subtitleFontFamily?: string;
+    textOverlayFontFamilies?: string[];
+}) {
+    const fontFamilies = new Set<string>();
+    if (input.subtitleFontFamily?.trim()) {
+        fontFamilies.add(input.subtitleFontFamily.trim());
+    }
+    for (const family of input.textOverlayFontFamilies ?? []) {
+        if (family?.trim()) fontFamilies.add(family.trim());
+    }
+    if (fontFamilies.size === 0) return undefined;
+
+    const fontFiles = new Set<string>();
+    const resolvedBundledFamilies = new Set<string>();
+    for (const family of fontFamilies) {
+        const bundledPath = resolveBundledVipFontPath(family);
+        if (!bundledPath) continue;
+        try {
+            await access(bundledPath);
+            fontFiles.add(bundledPath);
+            resolvedBundledFamilies.add(family);
+        } catch {
+            // Continue to dynamic discovery.
+        }
+    }
+    for (const family of fontFamilies) {
+        if (resolvedBundledFamilies.has(family)) continue;
+        const mediaPaths = await resolveGoogleFontMediaPathsForFamily(family);
+        for (const mediaPath of mediaPaths) {
+            fontFiles.add(mediaPath);
+        }
+    }
+    if (fontFiles.size === 0) return undefined;
+
+    const fontsDir = path.join(input.workDir, "fonts");
+    await mkdir(fontsDir, { recursive: true });
+    let copiedCount = 0;
+    for (const fontFile of fontFiles) {
+        const target = path.join(fontsDir, path.basename(fontFile));
+        try {
+            await copyFile(fontFile, target);
+            copiedCount += 1;
+        } catch {
+            // ignore copy failures for optional fonts
+        }
+    }
+    if (copiedCount === 0) return undefined;
+    return fontsDir;
 }
 
 async function runFfmpeg(args: string[]) {
@@ -839,12 +1083,23 @@ async function renderVipCompositeVideo(input: {
                 }),
             );
         }
+        const subtitleFontsDir = await prepareVipSubtitleFontsDir({
+            workDir,
+            subtitleFontFamily: input.subtitleStyle?.fontFamily,
+            textOverlayFontFamilies:
+                input.textOverlays?.enabled === true
+                    ? input.textOverlays.overlays
+                          .map((overlay) => overlay.fontFamily)
+                          .filter((family): family is string => Boolean(family))
+                    : [],
+        });
 
         await runFfmpeg(
             buildVipFinalRenderArgs({
                 videoPath: inputPath,
                 voicePath,
                 subtitleAssPath: assPath,
+                subtitleFontsDir,
                 textOverlayAssPath: textOverlayAssPath || undefined,
                 outputPath,
                 speedFactor: input.speedFactor,
@@ -1119,6 +1374,10 @@ export async function runVideoVipProcessing(
         transcript,
         translation,
     });
+    const subtitleSegments = buildSpeechTimedSubtitleSegments({
+        translatedSegments: translation.translatedSegments,
+        voiceSegments: voiceInputSegments,
+    });
     logVipEvent(runId, "stage-start", {
         stage: "voice",
         reused: Boolean(checkpointState.voice),
@@ -1236,7 +1495,7 @@ export async function runVideoVipProcessing(
                     sourceVideoBytes: input.fileBytes,
                     sourceFileName: input.fileName,
                     voiceBytes: Buffer.from(voice.audioBase64, "base64"),
-                    translatedSegments: translation.translatedSegments,
+                    translatedSegments: subtitleSegments,
                     speedFactor: clampedSpeed,
                     mirrorEnabled: input.mirrorEnabled === true,
                     blur: input.blur,
@@ -1269,7 +1528,7 @@ export async function runVideoVipProcessing(
                 sourceVideoBytes: input.fileBytes,
                 sourceFileName: input.fileName,
                 voiceBytes: Buffer.from(voice.audioBase64, "base64"),
-                translatedSegments: translation.translatedSegments,
+                translatedSegments: subtitleSegments,
                 speedFactor: clampedSpeed,
                 mirrorEnabled: input.mirrorEnabled === true,
                 blur: input.blur,

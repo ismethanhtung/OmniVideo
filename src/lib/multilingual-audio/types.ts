@@ -1,6 +1,6 @@
 export type AudioTimestampGranularity = "segment" | "word";
 
-export const DEFAULT_TRANSLATION_MODEL = "cx/gpt-5.3-codex-low";
+export const DEFAULT_TRANSLATION_MODEL = "cx/gpt-5.5";
 
 export const GROQ_TRANSLATION_MODELS = [
     {

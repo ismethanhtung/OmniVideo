@@ -25,6 +25,7 @@
 
 ## Review
 
+- `FAST-VIDEO-023` - Update subtitle defaults (size 45, opacity 0) and force uppercase render.
 - `FAST-VIDEO-022` - Persist Video Tools Lab local upload setup across reload.
 - `FAST-WORKSPACE-051` - Add VIP render mode selector (veryfast/superfast).
 - `FAST-VIDEO-021` - Match Video Tools Lab subtitle preview in product render.

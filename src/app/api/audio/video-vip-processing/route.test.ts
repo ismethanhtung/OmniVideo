@@ -95,7 +95,7 @@ describe("video vip processing API", () => {
       translation: {
         sourceLanguage: "zh",
         targetLanguage: "vi",
-        model: "cx/gpt-5.3-codex-low",
+        model: "cx/gpt-5.5",
         translatedSegments: [
           {
             id: 0,
@@ -128,7 +128,7 @@ describe("video vip processing API", () => {
         title: "Tiêu đề",
         description: "Mô tả",
         hashtags: ["review"],
-        model: "cx/gpt-5.3-codex-low",
+        model: "cx/gpt-5.5",
         provider: { name: "groq" },
       },
       stages: {
@@ -145,7 +145,7 @@ describe("video vip processing API", () => {
     const formData = createFormData({
       language: "zh",
       targetLanguage: "vi",
-      model: "cx/gpt-5.3-codex-low",
+      model: "cx/gpt-5.5",
       videoSpeedFactor: "0.7",
       renderPreset: "veryfast",
       mirrorEnabled: "true",
@@ -217,7 +217,7 @@ describe("video vip processing API", () => {
       translation: {
         sourceLanguage: "zh",
         targetLanguage: "vi",
-        model: "cx/gpt-5.3-codex-low",
+        model: "cx/gpt-5.5",
         translatedSegments: [],
         generationDurationMs: 5,
         chunks: [],
@@ -238,7 +238,7 @@ describe("video vip processing API", () => {
         title: "Tiêu đề",
         description: "Mô tả",
         hashtags: ["review"],
-        model: "cx/gpt-5.3-codex-low",
+        model: "cx/gpt-5.5",
         provider: { name: "groq" },
       },
       stages: {
@@ -344,7 +344,7 @@ describe("video vip processing API", () => {
         title: "Tiêu đề",
         description: "Mô tả",
         hashtags: ["review"],
-        model: "cx/gpt-5.3-codex-low",
+        model: "cx/gpt-5.5",
         provider: { name: "groq" },
       },
       stages: {
@@ -542,7 +542,7 @@ describe("video vip processing API", () => {
       translation: {
         sourceLanguage: "zh",
         targetLanguage: "vi",
-        model: "cx/gpt-5.3-codex-low",
+        model: "cx/gpt-5.5",
         translatedSegments: [],
         generationDurationMs: 5,
         chunks: [],
@@ -563,7 +563,7 @@ describe("video vip processing API", () => {
         title: "Tiêu đề",
         description: "Mô tả",
         hashtags: ["review"],
-        model: "cx/gpt-5.3-codex-low",
+        model: "cx/gpt-5.5",
         provider: { name: "groq" },
       },
       stages: {
@@ -682,7 +682,7 @@ describe("video vip processing API", () => {
       translation: {
         sourceLanguage: "zh",
         targetLanguage: "vi",
-        model: "cx/gpt-5.3-codex-low",
+        model: "cx/gpt-5.5",
         translatedSegments: [],
         generationDurationMs: 5,
         chunks: [],
@@ -703,7 +703,7 @@ describe("video vip processing API", () => {
         title: "Tiêu đề",
         description: "Mô tả",
         hashtags: ["review"],
-        model: "cx/gpt-5.3-codex-low",
+        model: "cx/gpt-5.5",
         provider: { name: "groq" },
       },
       stages: {
@@ -820,7 +820,7 @@ describe("video vip processing API", () => {
       translation: {
         sourceLanguage: "zh",
         targetLanguage: "vi",
-        model: "cx/gpt-5.3-codex-low",
+        model: "cx/gpt-5.5",
         translatedSegments: [],
         generationDurationMs: 5,
         chunks: [],
@@ -841,7 +841,7 @@ describe("video vip processing API", () => {
         title: "Tiêu đề",
         description: "Mô tả",
         hashtags: ["review"],
-        model: "cx/gpt-5.3-codex-low",
+        model: "cx/gpt-5.5",
         provider: { name: "groq" },
       },
       stages: {

@@ -21,6 +21,12 @@ let videoEditFfmpegSpawnForTest: FfmpegSpawn | null = null;
 let videoEditReadFileForTest: ((filePath: string) => Promise<Buffer>) | null =
     null;
 const BUNDLED_SUBTITLE_FONT_FILES: Record<string, string> = {
+    Bangers: path.join(
+        process.cwd(),
+        "public",
+        "fonts",
+        "Bangers-Regular.ttf",
+    ),
     Lobster: path.join(
         process.cwd(),
         "public",
@@ -580,12 +586,12 @@ export function buildSubtitleAssContent(
         playResY?: number;
     },
 ) {
-    const subtitleFontFamily = (style?.fontFamily || "Arial")
+    const subtitleFontFamily = (style?.fontFamily || "Bangers")
         .replace(/,/g, "")
         .trim();
     const subtitleFontSize = Number.isFinite(style?.fontSize)
-        ? Math.min(160, Math.max(20, Math.round(style?.fontSize ?? 100)))
-        : 100;
+        ? Math.min(160, Math.max(20, Math.round(style?.fontSize ?? 40)))
+        : 40;
     const subtitleMarginBottom = Number.isFinite(style?.marginBottom)
         ? Math.min(520, Math.max(0, Math.round(style?.marginBottom ?? 150)))
         : 150;
@@ -600,8 +606,8 @@ export function buildSubtitleAssContent(
         : 2;
     const backgroundEnabled = style?.backgroundEnabled !== false;
     const backgroundOpacity = Number.isFinite(style?.backgroundOpacity)
-        ? Math.min(100, Math.max(0, Math.round(style?.backgroundOpacity ?? 65)))
-        : 65;
+        ? Math.min(100, Math.max(0, Math.round(style?.backgroundOpacity ?? 0)))
+        : 0;
     const backgroundColor = (style?.backgroundColor || "#000000").trim();
     const backgroundAssColor = hexToAssColor(backgroundColor, backgroundOpacity);
     const backgroundPaddingY = Number.isFinite(style?.backgroundPaddingY)
@@ -673,7 +679,7 @@ export function buildSubtitleAssContent(
             text: addAssLineGap({
                 escapedText: escapeAssText(
                     wrapSubtitleTextForAss(
-                        segment.translatedText,
+                        segment.translatedText.toLocaleUpperCase("vi-VN"),
                         autoMaxCharsPerLine,
                     ),
                 ),
@@ -695,8 +701,8 @@ export function buildSubtitleAssContent(
     if (backgroundEnabled) {
         // Layer 1: opaque box only (transparent glyph), Layer 2: visible text with black outline.
         styleLines.push(
-            `Style: BackgroundBox,${subtitleFontFamily || "Arial"},${subtitleFontSize},&HFF000000,&H000000FF,${backgroundAssColor},${backgroundAssColor},-1,0,0,0,100,100,0,0,3,${backgroundPaddingY},0,${effectiveSubtitleAlignment},${effectiveSubtitleMarginLeft},${effectiveSubtitleMarginRight},${effectiveSubtitleMarginBottom},1`,
-            `Style: ForegroundText,${subtitleFontFamily || "Arial"},${subtitleFontSize},&H00FFFFFF,&H000000FF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,2,0,${effectiveSubtitleAlignment},${effectiveSubtitleMarginLeft},${effectiveSubtitleMarginRight},${effectiveSubtitleMarginBottom},1`,
+            `Style: BackgroundBox,${subtitleFontFamily || "Bangers"},${subtitleFontSize},&HFF000000,&H000000FF,${backgroundAssColor},${backgroundAssColor},-1,0,0,0,100,100,0,0,3,${backgroundPaddingY},0,${effectiveSubtitleAlignment},${effectiveSubtitleMarginLeft},${effectiveSubtitleMarginRight},${effectiveSubtitleMarginBottom},1`,
+            `Style: ForegroundText,${subtitleFontFamily || "Bangers"},${subtitleFontSize},&H00FFFFFF,&H000000FF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,2,0,${effectiveSubtitleAlignment},${effectiveSubtitleMarginLeft},${effectiveSubtitleMarginRight},${effectiveSubtitleMarginBottom},1`,
         );
         for (const segment of normalizedSegments) {
             eventLines.push(
@@ -706,7 +712,7 @@ export function buildSubtitleAssContent(
         }
     } else {
         styleLines.push(
-            `Style: Default,${subtitleFontFamily || "Arial"},${subtitleFontSize},&H00FFFFFF,&H000000FF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,${borderStyle},2,0,${effectiveSubtitleAlignment},${effectiveSubtitleMarginLeft},${effectiveSubtitleMarginRight},${effectiveSubtitleMarginBottom},1`,
+            `Style: Default,${subtitleFontFamily || "Bangers"},${subtitleFontSize},&H00FFFFFF,&H000000FF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,${borderStyle},2,0,${effectiveSubtitleAlignment},${effectiveSubtitleMarginLeft},${effectiveSubtitleMarginRight},${effectiveSubtitleMarginBottom},1`,
         );
         for (const segment of normalizedSegments) {
             eventLines.push(

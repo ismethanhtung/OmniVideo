@@ -1,5 +1,25 @@
 # OmniVideo Changelog
 
+## FAST-VIDEO-023 - Update Subtitle Defaults and Force Uppercase Render
+
+- Bumped app version from `0.10.73` to `0.10.74` as a patch release for subtitle defaults/style consistency.
+- Updated subtitle default font size to `40` in Video Tools Lab, Workspace mask/VIP defaults, and edit/VIP API fallback paths.
+- Updated subtitle background opacity default to `0` in Video Tools Lab, Workspace mask/VIP defaults, and edit/VIP API fallback paths.
+- Forced subtitle overlay text to render in uppercase during ASS subtitle generation.
+- Updated VIP subtitle timing to follow repaired voice segment timing, so subtitles appear with spoken audio instead of showing too early on leading silence.
+- Added de-overlap normalization for subtitle segment times before VIP render, preventing consecutive subtitle rows from stacking on top of each other.
+- Fixed VIP composite render to pass `fontsdir` into ASS subtitle/text-overlay filters, so Workspace output uses the selected custom font (for example `Lobster`) instead of default fallback.
+- Added VIP dynamic Google-font media fallback (matching edit pipeline) so `Bangers` can resolve/render without a bundled local `.ttf`.
+- Bundled `public/fonts/Bangers-Regular.ttf` and mapped `Bangers` in both edit and VIP bundled-font resolution, ensuring ffmpeg/libass uses true Bangers glyphs instead of falling back from `woff2`.
+- Changed default subtitle font to `Bangers` across Video Tools Lab, Workspace runtime defaults/seeds, and edit/VIP API subtitle fallback paths.
+- Changed default translation/metadata model to `cx/gpt-5.5` (replacing `cx/gpt-5.3-codex-low`) across shared constants, Workspace defaults/seeds, and related UI placeholders/tests.
+- Verification (FAST-VIDEO-023):
+  - `npm run test -- --run src/features/video-processing/video-tools-lab-panel.test.ts src/lib/workspace/workspace-graph.test.ts src/lib/video-processing/video-edit-pipeline.test.ts src/lib/multilingual-audio/video-vip-processing.test.ts`
+  - `npm run test -- src/lib/workspace/workspace-graph.test.ts src/features/video-processing/video-tools-lab-panel.test.ts src/app/api/audio/video-vip-processing/route.test.ts src/lib/multilingual-audio/transcript-translation.test.ts`
+  - `npm run test -- src/lib/multilingual-audio/video-vip-processing.test.ts src/lib/video-processing/video-edit-pipeline.test.ts`
+  - `npm run test -- src/lib/multilingual-audio/video-vip-processing.test.ts`
+  - `npm run guard:version`
+
 ## FAST-WORKSPACE-053 - Prioritize Saved Video Tools Setup Over Node Defaults
 
 - Fixed Workspace VIP/edit mask config precedence so saved Video Tools Lab setup is applied when node fields remain at template defaults.

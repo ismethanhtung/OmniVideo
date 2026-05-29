@@ -508,8 +508,8 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
     const [regionTimeStart, setRegionTimeStart] = useState(0);
     const [regionTimeEnd, setRegionTimeEnd] = useState(36000);
     const [regionStrength, setRegionStrength] = useState(50);
-    const [subtitleFontFamily, setSubtitleFontFamily] = useState("Arial");
-    const [subtitleFontSize, setSubtitleFontSize] = useState(35);
+    const [subtitleFontFamily, setSubtitleFontFamily] = useState("Bangers");
+    const [subtitleFontSize, setSubtitleFontSize] = useState(40);
     const [subtitleMarginBottom, setSubtitleMarginBottom] = useState(150);
     const [subtitleMarginLeft, setSubtitleMarginLeft] = useState(60);
     const [subtitleMarginRight, setSubtitleMarginRight] = useState(60);
@@ -519,7 +519,7 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
     const [subtitleBackgroundColor, setSubtitleBackgroundColor] =
         useState("#000000");
     const [subtitleBackgroundOpacity, setSubtitleBackgroundOpacity] =
-        useState(50);
+        useState(0);
     const [subtitleBackgroundPaddingY, setSubtitleBackgroundPaddingY] =
         useState(8);
     const [subtitleSampleWidthPercent, setSubtitleSampleWidthPercent] =
@@ -625,14 +625,14 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
 
     const applyDefaultSubtitleSetup = useCallback(() => {
         setSubtitleFontFamily("Arial");
-        setSubtitleFontSize(35);
+        setSubtitleFontSize(40);
         setSubtitleMarginBottom(150);
         setSubtitleMarginLeft(60);
         setSubtitleMarginRight(60);
         setSubtitleAlignment(2);
         setSubtitleBackgroundEnabled(true);
         setSubtitleBackgroundColor("#000000");
-        setSubtitleBackgroundOpacity(50);
+        setSubtitleBackgroundOpacity(0);
         setSubtitleBackgroundPaddingY(8);
         setSubtitleSampleWidthPercent(100);
         setSubtitlePreviewPlacement(null);
@@ -642,9 +642,12 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
         setTextOverlay({ ...DEFAULT_TEXT_OVERLAY });
     }, []);
 
-    const updateTextOverlay = useCallback((patch: Partial<TextOverlayDraft>) => {
-        setTextOverlay((current) => ({ ...current, ...patch }));
-    }, []);
+    const updateTextOverlay = useCallback(
+        (patch: Partial<TextOverlayDraft>) => {
+            setTextOverlay((current) => ({ ...current, ...patch }));
+        },
+        [],
+    );
 
     const getCurrentSubtitlePreviewPlacement = useCallback(() => {
         const frame = previewFrameRef.current;
@@ -1022,8 +1025,8 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                     ...region,
                 })),
             );
-            setSubtitleFontFamily(setup.subtitleFontFamily || "Arial");
-            setSubtitleFontSize(setup.subtitleFontSize ?? 35);
+            setSubtitleFontFamily(setup.subtitleFontFamily || "Bangers");
+            setSubtitleFontSize(setup.subtitleFontSize ?? 40);
             setSubtitleMarginBottom(setup.subtitleMarginBottom ?? 150);
             setSubtitleMarginLeft(setup.subtitleMarginLeft ?? 60);
             setSubtitleMarginRight(setup.subtitleMarginRight ?? 60);
@@ -1034,8 +1037,10 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
             setSubtitleBackgroundColor(
                 normalizeSubtitleBackgroundColor(setup.subtitleBackgroundColor),
             );
-            setSubtitleBackgroundOpacity(setup.subtitleBackgroundOpacity ?? 50);
-            setSubtitleBackgroundPaddingY(setup.subtitleBackgroundPaddingY ?? 8);
+            setSubtitleBackgroundOpacity(setup.subtitleBackgroundOpacity ?? 0);
+            setSubtitleBackgroundPaddingY(
+                setup.subtitleBackgroundPaddingY ?? 8,
+            );
             setSubtitleSampleWidthPercent(
                 setup.subtitleSampleWidthPercent ?? 100,
             );
@@ -1400,10 +1405,7 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
             formData.set("blurRegionsJson", JSON.stringify(blurRegions));
             formData.set("coverBoxesJson", JSON.stringify(blurRegions));
             formData.set("coverBoxColor", subtitleBackgroundColor);
-            formData.set(
-                "coverBoxOpacity",
-                String(subtitleBackgroundOpacity),
-            );
+            formData.set("coverBoxOpacity", String(subtitleBackgroundOpacity));
             formData.set("subtitleFontFamily", subtitleFontFamily);
             formData.set("subtitleFontSize", String(subtitleFontSize));
             formData.set(
@@ -1681,7 +1683,8 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                                                                     />
                                                                     {hasSetup ? (
                                                                         <span className="border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-700">
-                                                                            Saved setup
+                                                                            Saved
+                                                                            setup
                                                                         </span>
                                                                     ) : null}
                                                                 </div>
@@ -1967,8 +1970,7 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                                             max={60}
                                             value={regionStrength}
                                             disabled={
-                                                isRunningEdit ||
-                                                !blurEnabled
+                                                isRunningEdit || !blurEnabled
                                             }
                                             onChange={(event) =>
                                                 setRegionStrength(
@@ -2810,8 +2812,7 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                                                 drawCurrent.y - drawStart.y,
                                             );
                                             if (width >= 1 && height >= 1) {
-                                                const id =
-                                                    buildDraftId("mask");
+                                                const id = buildDraftId("mask");
                                                 const next: BlurRegionDraft = {
                                                     id,
                                                     x: Math.max(
@@ -2996,7 +2997,7 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                                                     backgroundColor:
                                                         subtitleBackgroundEnabled
                                                             ? hexToRgba(
-                                                                subtitleBackgroundColor,
+                                                                  subtitleBackgroundColor,
                                                                   subtitleBackgroundOpacity,
                                                               )
                                                             : "transparent",
@@ -3005,8 +3006,8 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                                                 }}
                                             >
                                                 <span ref={subtitleTextRef}>
-                                                    Phụ đề tiếng Việt mẫu để căn
-                                                    vị trí
+                                                    PHỤ ĐỀ TIẾNG VIỆT MẪU ĐỂ CĂN
+                                                    VỊ TRÍ
                                                 </span>
                                             </div>
                                         ) : null}

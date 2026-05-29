@@ -35,7 +35,7 @@ describe("Video Tools Lab source preview controls", () => {
 
     it("shows and immediately reapplies saved setup for selected assets", () => {
         expect(source).toContain("hasSavedVideoEditSetup");
-        expect(source).toContain("Saved setup");
+        expect(source).toContain("Đã lưu setup vào video asset.");
         expect(source).toContain("applyVideoEditSetup(videoEditSetup)");
         expect(source).toContain("/api/storage/assets/save-video-setup");
         expect(source).toContain("!selectedAssetId && !videoFile");
@@ -81,9 +81,9 @@ describe("Video Tools Lab source preview controls", () => {
     });
 
     it("uses compact subtitle defaults and richer font choices with preview styling", () => {
-        expect(source).toContain("useState(35)");
+        expect(source).toContain("useState(40)");
         expect(source).toContain("useState(8)");
-        expect(source).toContain("setSubtitleFontSize(35)");
+        expect(source).toContain("setSubtitleFontSize(40)");
         expect(source).toContain("setSubtitleBackgroundPaddingY(8)");
         expect(source).toContain("VIDEO_TEXT_FONT_OPTIONS.map");
         expect(source).toContain("Braah One");
@@ -104,7 +104,7 @@ describe("Video Tools Lab source preview controls", () => {
             boxHeight: 30,
             videoWidth: 1920,
             videoHeight: 1080,
-            subtitleFontSize: 35,
+            subtitleFontSize: 40,
             subtitleBackgroundPaddingY: 8,
             lineCount: 1,
         });

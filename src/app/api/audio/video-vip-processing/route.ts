@@ -790,13 +790,13 @@ export async function POST(request: Request) {
                 fontFamily: readFormStringWithSetupFallback({
                     formData,
                     key: "subtitleFontFamily",
-                    defaultValue: "Arial",
+                    defaultValue: "Bangers",
                     setup: sourceSetupForRender,
                 }),
                 fontSize: readFormNumberWithSetupFallback({
                     formData,
                     key: "subtitleFontSize",
-                    defaultValue: 35,
+                    defaultValue: 40,
                     setup: sourceSetupForRender,
                 }),
                 marginBottom: readFormNumberWithSetupFallback({
@@ -839,7 +839,7 @@ export async function POST(request: Request) {
                 backgroundOpacity: readFormNumberWithSetupFallback({
                     formData,
                     key: "subtitleBackgroundOpacity",
-                    defaultValue: 65,
+                    defaultValue: 0,
                     setup: sourceSetupForRender,
                 }),
                 backgroundPaddingY: readFormNumberWithSetupFallback({

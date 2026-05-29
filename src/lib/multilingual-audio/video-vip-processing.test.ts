@@ -197,6 +197,28 @@ describe("VIP final render filter order", () => {
 
         expect(args).toEqual(expect.arrayContaining(["-preset", "superfast"]));
     });
+
+    it("passes fontsdir to ass filters when subtitle fonts dir is provided", () => {
+        const args = buildVipFinalRenderArgs({
+            videoPath: "/tmp/source.mp4",
+            voicePath: "/tmp/voice.wav",
+            subtitleAssPath: "/tmp/subtitles.ass",
+            subtitleFontsDir: "/tmp/fonts",
+            textOverlayAssPath: "/tmp/text-overlays.ass",
+            outputPath: "/tmp/output.mp4",
+            speedFactor: 1,
+            mirrorEnabled: false,
+            blurRegions: [],
+            originalAudioVolume: 0.2,
+            voiceVolume: 1,
+        });
+        const filter = args[args.indexOf("-filter_complex") + 1] ?? "";
+
+        expect(filter).toContain("ass='/tmp/subtitles.ass':fontsdir='/tmp/fonts'[subv]");
+        expect(filter).toContain(
+            "ass='/tmp/text-overlays.ass':fontsdir='/tmp/fonts'[vout]",
+        );
+    });
 });
 
 describe("VIP processing stage checkpoints", () => {
@@ -382,5 +404,68 @@ describe("VIP processing stage checkpoints", () => {
             }),
         });
         expect(runners.translate).not.toHaveBeenCalled();
+    });
+
+    it("normalizes subtitle timing to avoid segment overlap in final render", async () => {
+        const runners = createStageRunners();
+        runners.transcribe = vi.fn(async () => ({
+            text: "你好 世界",
+            language: "zh",
+            model: "whisper-large-v3-turbo",
+            segments: [
+                { id: 1, start: 0, end: 3, text: "你好" },
+                { id: 2, start: 2, end: 4, text: "世界" },
+            ],
+            words: [],
+            source: { fileName: "source.mp4", fileSizeBytes: 3 },
+            audio: {
+                format: "mp3",
+                sampleRate: 16000,
+                channels: 1,
+                bitrateKbps: 64,
+                fileSizeBytes: 3,
+            },
+            steps: [],
+            provider: { name: "groq" as const },
+        }));
+        runners.translate = vi.fn(async () => ({
+            sourceLanguage: "zh",
+            targetLanguage: "vi",
+            model: "test-model",
+            translatedSegments: [
+                {
+                    id: 1,
+                    start: 0,
+                    end: 3,
+                    sourceText: "你好",
+                    translatedText: "xin chào",
+                },
+                {
+                    id: 2,
+                    start: 2,
+                    end: 4,
+                    sourceText: "世界",
+                    translatedText: "thế giới",
+                },
+            ],
+            generationDurationMs: 1,
+            chunks: [],
+            provider: { name: "test" },
+        }));
+
+        await runVideoVipProcessing({
+            fileName: "source.mp4",
+            fileSizeBytes: 3,
+            fileBytes: new Uint8Array([1, 2, 3]),
+            stageRunners: runners,
+            omitVideoBase64: true,
+        });
+
+        expect(runners.render).toHaveBeenCalledTimes(1);
+        const renderInput = vi.mocked(runners.render).mock.calls[0][0];
+        expect(renderInput.translatedSegments).toHaveLength(2);
+        expect(renderInput.translatedSegments[1].start).toBeGreaterThanOrEqual(
+            renderInput.translatedSegments[0].end,
+        );
     });
 });

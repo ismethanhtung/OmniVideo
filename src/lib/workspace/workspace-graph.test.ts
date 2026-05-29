@@ -289,7 +289,7 @@ describe("workspace graph helpers", () => {
         expect(template?.configFields).toContainEqual(
             expect.objectContaining({
                 key: "subtitleFontSize",
-                defaultValue: 35,
+                defaultValue: 40,
             }),
         );
     });

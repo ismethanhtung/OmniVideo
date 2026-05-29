@@ -2201,7 +2201,7 @@ export function ChineseTranscriptionPanel({
                                                 event.currentTarget.value,
                                             )
                                         }
-                                        placeholder="cx/gpt-5.3-codex-low"
+                                        placeholder="cx/gpt-5.5"
                                         className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main placeholder:text-muted/60"
                                     />
                                 )}
