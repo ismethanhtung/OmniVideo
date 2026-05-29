@@ -24,7 +24,20 @@ import {
     startProgressTask,
     updateProgressTask,
 } from "@/lib/ui/progress-center";
-import { saveLocalVideoEditSetup } from "@/lib/video-processing/local-video-edit-setup";
+import {
+    loadLocalVideoEditSetup,
+    saveLocalVideoEditSetup,
+} from "@/lib/video-processing/local-video-edit-setup";
+
+import {
+    ASS_SUBTITLE_OUTLINE,
+    ASS_TO_CSS_FONT_DPI_RATIO,
+    SUBTITLE_PREVIEW_LINE_HEIGHT,
+    buildSubtitleAssPlacementFromPreview,
+    buildSubtitlePlacementRegionFromPreview,
+    type SubtitleAssPlacement,
+    type SubtitlePlacementRegion,
+} from "./subtitle-preview-placement";
 
 type VideoEditApiPayload =
     | {
@@ -94,6 +107,14 @@ type StoredVideoAsset = {
             subtitlePreviewPlacement?: {
                 leftPercent?: number;
                 topPercent?: number;
+                widthPercent?: number;
+                heightPercent?: number;
+            } | null;
+            subtitlePlacementRegion?: {
+                x?: number;
+                y?: number;
+                width?: number;
+                height?: number;
             } | null;
             textOverlayEnabled?: boolean;
             textOverlay?: {
@@ -334,7 +355,6 @@ const sampleTranslatedSegmentsJson = JSON.stringify(
     2,
 );
 
-const ASS_SUBTITLE_OUTLINE = 2;
 const SUBTITLE_BACKGROUND_COLOR_OPTIONS = [
     { value: "#000000", label: "Đen" },
     { value: "#FFFFFF", label: "Trắng" },
@@ -348,6 +368,12 @@ const VIDEO_TEXT_FONT_OPTIONS: Array<{
     fallbackFamily: string;
 }> = [
     {
+        value: "Arial",
+        label: "Arial",
+        cssVariable: "--font-sans",
+        fallbackFamily: "Arial, sans-serif",
+    },
+    {
         value: "Montserrat",
         label: "Montserrat",
         cssVariable: "--font-thumb-montserrat",
@@ -360,10 +386,34 @@ const VIDEO_TEXT_FONT_OPTIONS: Array<{
         fallbackFamily: '"Baloo 2", sans-serif',
     },
     {
+        value: "Braah One",
+        label: "Braah One",
+        cssVariable: "--font-thumb-braah-one",
+        fallbackFamily: '"Braah One", sans-serif',
+    },
+    {
         value: "Bangers",
         label: "Bangers",
         cssVariable: "--font-thumb-bangers",
         fallbackFamily: '"Bangers", sans-serif',
+    },
+    {
+        value: "Lobster",
+        label: "Lobster",
+        cssVariable: "--font-thumb-lobster",
+        fallbackFamily: '"Lobster", cursive',
+    },
+    {
+        value: "Mitr",
+        label: "Mitr",
+        cssVariable: "--font-thumb-mitr",
+        fallbackFamily: '"Mitr", sans-serif',
+    },
+    {
+        value: "Paytone One",
+        label: "Paytone One",
+        cssVariable: "--font-thumb-paytone-one",
+        fallbackFamily: '"Paytone One", sans-serif',
     },
     {
         value: "Prompt",
@@ -376,6 +426,12 @@ const VIDEO_TEXT_FONT_OPTIONS: Array<{
         label: "Sriracha",
         cssVariable: "--font-thumb-sriracha",
         fallbackFamily: '"Sriracha", cursive',
+    },
+    {
+        value: "Agbalumo",
+        label: "Agbalumo",
+        cssVariable: "--font-thumb-agbalumo",
+        fallbackFamily: '"Agbalumo", cursive',
     },
 ];
 
@@ -419,6 +475,11 @@ function getVideoTextFontOption(fontFamily: string) {
     );
 }
 
+function getVideoTextFontFamily(fontFamily: string) {
+    const option = getVideoTextFontOption(fontFamily);
+    return `var(${option.cssVariable}), ${option.fallbackFamily}`;
+}
+
 function hasSavedVideoEditSetup(asset: StoredVideoAsset | null) {
     return Boolean(asset?.metadata?.videoEditSetup);
 }
@@ -448,7 +509,7 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
     const [regionTimeEnd, setRegionTimeEnd] = useState(36000);
     const [regionStrength, setRegionStrength] = useState(50);
     const [subtitleFontFamily, setSubtitleFontFamily] = useState("Arial");
-    const [subtitleFontSize, setSubtitleFontSize] = useState(55);
+    const [subtitleFontSize, setSubtitleFontSize] = useState(35);
     const [subtitleMarginBottom, setSubtitleMarginBottom] = useState(150);
     const [subtitleMarginLeft, setSubtitleMarginLeft] = useState(60);
     const [subtitleMarginRight, setSubtitleMarginRight] = useState(60);
@@ -460,12 +521,14 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
     const [subtitleBackgroundOpacity, setSubtitleBackgroundOpacity] =
         useState(50);
     const [subtitleBackgroundPaddingY, setSubtitleBackgroundPaddingY] =
-        useState(2);
+        useState(8);
     const [subtitleSampleWidthPercent, setSubtitleSampleWidthPercent] =
         useState(100);
     const [subtitlePreviewPlacement, setSubtitlePreviewPlacement] = useState<{
         leftPercent: number;
         topPercent: number;
+        widthPercent?: number;
+        heightPercent?: number;
     } | null>(null);
     const [textOverlayEnabled, setTextOverlayEnabled] = useState(false);
     const [textOverlay, setTextOverlay] = useState<TextOverlayDraft>({
@@ -505,6 +568,7 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
     );
     const previewFrameRef = useRef<HTMLDivElement | null>(null);
     const subtitleBoxRef = useRef<HTMLDivElement | null>(null);
+    const subtitleTextRef = useRef<HTMLSpanElement | null>(null);
     const textOverlayBoxRef = useRef<HTMLDivElement | null>(null);
     const sourceVideoRef = useRef<HTMLVideoElement | null>(null);
     const subtitlePreviewPosRef = useRef({ left: 120, top: 320 });
@@ -561,7 +625,7 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
 
     const applyDefaultSubtitleSetup = useCallback(() => {
         setSubtitleFontFamily("Arial");
-        setSubtitleFontSize(55);
+        setSubtitleFontSize(35);
         setSubtitleMarginBottom(150);
         setSubtitleMarginLeft(60);
         setSubtitleMarginRight(60);
@@ -569,7 +633,7 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
         setSubtitleBackgroundEnabled(true);
         setSubtitleBackgroundColor("#000000");
         setSubtitleBackgroundOpacity(50);
-        setSubtitleBackgroundPaddingY(2);
+        setSubtitleBackgroundPaddingY(8);
         setSubtitleSampleWidthPercent(100);
         setSubtitlePreviewPlacement(null);
     }, []);
@@ -584,6 +648,7 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
 
     const getCurrentSubtitlePreviewPlacement = useCallback(() => {
         const frame = previewFrameRef.current;
+        const subtitleBox = subtitleBoxRef.current;
         if (!frame || frame.clientWidth <= 0 || frame.clientHeight <= 0) {
             return subtitlePreviewPlacement;
         }
@@ -598,8 +663,44 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                 0,
                 100,
             ),
+            widthPercent: subtitleBox
+                ? clampNumber(
+                      (subtitleBox.clientWidth / frame.clientWidth) * 100,
+                      0,
+                      100,
+                  )
+                : subtitleSampleWidthPercent,
+            heightPercent: subtitleBox
+                ? clampNumber(
+                      (subtitleBox.clientHeight / frame.clientHeight) * 100,
+                      0,
+                      100,
+                  )
+                : undefined,
         };
-    }, [subtitlePreviewPlacement]);
+    }, [subtitlePreviewPlacement, subtitleSampleWidthPercent]);
+
+    const getCurrentSubtitlePlacementRegion =
+        useCallback((): SubtitlePlacementRegion | null => {
+            const frame = previewFrameRef.current;
+            const subtitleBox = subtitleBoxRef.current;
+            if (!frame || !subtitleBox) return null;
+            if (frame.clientWidth <= 0 || frame.clientHeight <= 0) return null;
+            return buildSubtitlePlacementRegionFromPreview({
+                leftPx: subtitlePreviewPosRef.current.left,
+                topPx: subtitlePreviewPosRef.current.top,
+                frameWidth: frame.clientWidth,
+                frameHeight: frame.clientHeight,
+                boxWidth: subtitleBox.clientWidth,
+                boxHeight: subtitleBox.clientHeight,
+            });
+        }, []);
+
+    const getCurrentSubtitlePreviewLineCount = useCallback(() => {
+        const textElement = subtitleTextRef.current;
+        if (!textElement) return 1;
+        return Math.max(1, textElement.getClientRects().length);
+    }, []);
 
     const commitSubtitlePositionToAssStyle = useCallback(
         (leftPx: number, topPx: number) => {
@@ -612,52 +713,82 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
             const boxHeight = subtitleBox.clientHeight;
             if (frameWidth <= 0 || frameHeight <= 0) return;
 
-            const centerX = leftPx + boxWidth / 2;
-            const centerY = topPx + boxHeight / 2;
-            const horizontalZone =
-                centerX < frameWidth * 0.33
-                    ? "left"
-                    : centerX > frameWidth * 0.67
-                      ? "right"
-                      : "center";
-            const verticalZone = centerY < frameHeight * 0.5 ? "top" : "bottom";
+            const nextPlacement = buildSubtitleAssPlacementFromPreview({
+                leftPx,
+                topPx,
+                frameWidth,
+                frameHeight,
+                boxWidth,
+                boxHeight,
+                videoWidth: videoNaturalSize.width,
+                videoHeight: videoNaturalSize.height,
+                subtitleFontSize,
+                subtitleBackgroundPaddingY,
+                lineCount: getCurrentSubtitlePreviewLineCount(),
+            });
 
-            const leftMarginPx = Math.max(0, leftPx);
-            const rightMarginPx = Math.max(0, frameWidth - leftPx - boxWidth);
-            const topMarginPx = Math.max(0, topPx);
-            const bottomMarginPx = Math.max(0, frameHeight - topPx - boxHeight);
-            const scaleX = videoNaturalSize.width / frameWidth;
-            const scaleY = videoNaturalSize.height / frameHeight;
-
-            let nextAlignment = 2;
-            if (verticalZone === "top") {
-                nextAlignment =
-                    horizontalZone === "left"
-                        ? 7
-                        : horizontalZone === "right"
-                          ? 9
-                          : 8;
-            } else {
-                nextAlignment =
-                    horizontalZone === "left"
-                        ? 1
-                        : horizontalZone === "right"
-                          ? 3
-                          : 2;
-            }
-
-            setSubtitleAlignment(nextAlignment);
-            setSubtitleMarginLeft(Math.round(leftMarginPx * scaleX));
-            setSubtitleMarginRight(Math.round(rightMarginPx * scaleX));
-            setSubtitleMarginBottom(
-                Math.round(
-                    (verticalZone === "top" ? topMarginPx : bottomMarginPx) *
-                        scaleY,
-                ),
-            );
+            setSubtitleAlignment(nextPlacement.subtitleAlignment);
+            setSubtitleMarginLeft(nextPlacement.subtitleMarginLeft);
+            setSubtitleMarginRight(nextPlacement.subtitleMarginRight);
+            setSubtitleMarginBottom(nextPlacement.subtitleMarginBottom);
         },
-        [videoNaturalSize.height, videoNaturalSize.width],
+        [
+            subtitleBackgroundPaddingY,
+            subtitleFontSize,
+            getCurrentSubtitlePreviewLineCount,
+            videoNaturalSize.height,
+            videoNaturalSize.width,
+        ],
     );
+
+    const getCurrentSubtitleAssPlacement =
+        useCallback((): SubtitleAssPlacement => {
+            const frame = previewFrameRef.current;
+            const subtitleBox = subtitleBoxRef.current;
+            if (!frame || !subtitleBox) {
+                return {
+                    subtitleAlignment,
+                    subtitleMarginLeft,
+                    subtitleMarginRight,
+                    subtitleMarginBottom,
+                };
+            }
+            const frameWidth = frame.clientWidth;
+            const frameHeight = frame.clientHeight;
+            const boxWidth = subtitleBox.clientWidth;
+            const boxHeight = subtitleBox.clientHeight;
+            if (frameWidth <= 0 || frameHeight <= 0) {
+                return {
+                    subtitleAlignment,
+                    subtitleMarginLeft,
+                    subtitleMarginRight,
+                    subtitleMarginBottom,
+                };
+            }
+            return buildSubtitleAssPlacementFromPreview({
+                leftPx: subtitlePreviewPosRef.current.left,
+                topPx: subtitlePreviewPosRef.current.top,
+                frameWidth,
+                frameHeight,
+                boxWidth,
+                boxHeight,
+                videoWidth: videoNaturalSize.width,
+                videoHeight: videoNaturalSize.height,
+                subtitleFontSize,
+                subtitleBackgroundPaddingY,
+                lineCount: getCurrentSubtitlePreviewLineCount(),
+            });
+        }, [
+            subtitleBackgroundPaddingY,
+            subtitleAlignment,
+            subtitleFontSize,
+            getCurrentSubtitlePreviewLineCount,
+            subtitleMarginBottom,
+            subtitleMarginLeft,
+            subtitleMarginRight,
+            videoNaturalSize.height,
+            videoNaturalSize.width,
+        ]);
 
     useEffect(() => {
         if (!isDraggingSubtitle) return;
@@ -812,6 +943,8 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
         subtitleMarginBottom,
         subtitleSampleWidthPercent,
         subtitlePreviewPlacement,
+        subtitleBackgroundPaddingY,
+        subtitleFontFamily,
         subtitleFontSize,
         previewLayoutVersion,
         videoNaturalSize.width,
@@ -890,7 +1023,7 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                 })),
             );
             setSubtitleFontFamily(setup.subtitleFontFamily || "Arial");
-            setSubtitleFontSize(setup.subtitleFontSize ?? 55);
+            setSubtitleFontSize(setup.subtitleFontSize ?? 35);
             setSubtitleMarginBottom(setup.subtitleMarginBottom ?? 150);
             setSubtitleMarginLeft(setup.subtitleMarginLeft ?? 60);
             setSubtitleMarginRight(setup.subtitleMarginRight ?? 60);
@@ -902,11 +1035,22 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                 normalizeSubtitleBackgroundColor(setup.subtitleBackgroundColor),
             );
             setSubtitleBackgroundOpacity(setup.subtitleBackgroundOpacity ?? 50);
-            setSubtitleBackgroundPaddingY(setup.subtitleBackgroundPaddingY ?? 2);
+            setSubtitleBackgroundPaddingY(setup.subtitleBackgroundPaddingY ?? 8);
             setSubtitleSampleWidthPercent(
                 setup.subtitleSampleWidthPercent ?? 100,
             );
-            const placement = setup.subtitlePreviewPlacement;
+            const savedRegion = setup.subtitlePlacementRegion;
+            const placement =
+                savedRegion &&
+                Number.isFinite(savedRegion.x) &&
+                Number.isFinite(savedRegion.y)
+                    ? {
+                          leftPercent: Number(savedRegion.x),
+                          topPercent: Number(savedRegion.y),
+                          widthPercent: Number(savedRegion.width),
+                          heightPercent: Number(savedRegion.height),
+                      }
+                    : setup.subtitlePreviewPlacement;
             setSubtitlePreviewPlacement(
                 placement &&
                     Number.isFinite(placement.leftPercent) &&
@@ -922,6 +1066,22 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                               0,
                               100,
                           ),
+                          widthPercent: Number.isFinite(placement.widthPercent)
+                              ? clampNumber(
+                                    Number(placement.widthPercent),
+                                    0,
+                                    100,
+                                )
+                              : undefined,
+                          heightPercent: Number.isFinite(
+                              placement.heightPercent,
+                          )
+                              ? clampNumber(
+                                    Number(placement.heightPercent),
+                                    0,
+                                    100,
+                                )
+                              : undefined,
                       }
                     : null,
             );
@@ -1013,6 +1173,8 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
         setError(null);
         setSaveMessage("Đang lưu setup...");
         try {
+            const subtitleAssPlacement = getCurrentSubtitleAssPlacement();
+            const subtitlePlacementRegion = getCurrentSubtitlePlacementRegion();
             const videoEditSetup: VideoEditSetup = {
                 mirrorEnabled,
                 blurEnabled,
@@ -1029,16 +1191,17 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                 })),
                 subtitleFontFamily,
                 subtitleFontSize,
-                subtitleMarginBottom,
-                subtitleMarginLeft,
-                subtitleMarginRight,
-                subtitleAlignment,
+                subtitleMarginBottom: subtitleAssPlacement.subtitleMarginBottom,
+                subtitleMarginLeft: subtitleAssPlacement.subtitleMarginLeft,
+                subtitleMarginRight: subtitleAssPlacement.subtitleMarginRight,
+                subtitleAlignment: subtitleAssPlacement.subtitleAlignment,
                 subtitleBackgroundEnabled,
                 subtitleBackgroundColor,
                 subtitleBackgroundOpacity,
                 subtitleBackgroundPaddingY,
                 subtitleSampleWidthPercent,
                 subtitlePreviewPlacement: getCurrentSubtitlePreviewPlacement(),
+                subtitlePlacementRegion,
                 textOverlayEnabled,
                 textOverlay: { ...textOverlay },
             };
@@ -1223,6 +1386,8 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
             if (!inputFile) {
                 throw new Error("Thiếu input video.");
             }
+            const subtitleAssPlacement = getCurrentSubtitleAssPlacement();
+            const subtitlePlacementRegion = getCurrentSubtitlePlacementRegion();
             const formData = new FormData();
             formData.set("videoFile", inputFile);
             formData.set("mirrorEnabled", String(mirrorEnabled));
@@ -1241,10 +1406,22 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
             );
             formData.set("subtitleFontFamily", subtitleFontFamily);
             formData.set("subtitleFontSize", String(subtitleFontSize));
-            formData.set("subtitleMarginBottom", String(subtitleMarginBottom));
-            formData.set("subtitleMarginLeft", String(subtitleMarginLeft));
-            formData.set("subtitleMarginRight", String(subtitleMarginRight));
-            formData.set("subtitleAlignment", String(subtitleAlignment));
+            formData.set(
+                "subtitleMarginBottom",
+                String(subtitleAssPlacement.subtitleMarginBottom),
+            );
+            formData.set(
+                "subtitleMarginLeft",
+                String(subtitleAssPlacement.subtitleMarginLeft),
+            );
+            formData.set(
+                "subtitleMarginRight",
+                String(subtitleAssPlacement.subtitleMarginRight),
+            );
+            formData.set(
+                "subtitleAlignment",
+                String(subtitleAssPlacement.subtitleAlignment),
+            );
             formData.set(
                 "subtitleBackgroundEnabled",
                 String(subtitleBackgroundEnabled),
@@ -1258,6 +1435,24 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                 "subtitleBackgroundPaddingY",
                 String(subtitleBackgroundPaddingY),
             );
+            if (subtitlePlacementRegion) {
+                formData.set(
+                    "subtitleRegionX",
+                    String(subtitlePlacementRegion.x),
+                );
+                formData.set(
+                    "subtitleRegionY",
+                    String(subtitlePlacementRegion.y),
+                );
+                formData.set(
+                    "subtitleRegionWidth",
+                    String(subtitlePlacementRegion.width),
+                );
+                formData.set(
+                    "subtitleRegionHeight",
+                    String(subtitlePlacementRegion.height),
+                );
+            }
             formData.set("subtitlePlayResX", String(videoNaturalSize.width));
             formData.set("subtitlePlayResY", String(videoNaturalSize.height));
             formData.set("textOverlayEnabled", String(textOverlayEnabled));
@@ -1334,10 +1529,23 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                                 onChange={(event) => {
                                     const nextFile =
                                         event.currentTarget.files?.[0] ?? null;
+                                    const localSetup =
+                                        loadLocalVideoEditSetup(nextFile);
                                     setVideoFile(nextFile);
                                     setSelectedAssetId("");
                                     setResult(null);
                                     setError(null);
+                                    if (localSetup?.videoEditSetup) {
+                                        applyVideoEditSetup(
+                                            localSetup.videoEditSetup,
+                                        );
+                                        setSaveMessage(
+                                            "Đã áp dụng setup local đã lưu cho file này.",
+                                        );
+                                    } else {
+                                        applyVideoEditSetup(null);
+                                        setSaveMessage(null);
+                                    }
                                 }}
                                 className="block w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main file:mr-2 file:border-0 file:bg-secondary file:px-2 file:py-1 file:text-[10px] file:font-semibold file:text-main"
                             />
@@ -2215,7 +2423,7 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                                         <span className="mb-1 block text-[10px] font-semibold text-muted">
                                             Font
                                         </span>
-                                        <input
+                                        <select
                                             value={subtitleFontFamily}
                                             disabled={isRunningEdit}
                                             onChange={(event) =>
@@ -2223,8 +2431,28 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                                                     event.currentTarget.value,
                                                 )
                                             }
+                                            style={{
+                                                fontFamily:
+                                                    getVideoTextFontFamily(
+                                                        subtitleFontFamily,
+                                                    ),
+                                            }}
                                             className="w-full border border-main bg-secondary/30 px-2 py-1.5 text-[11px] text-main"
-                                        />
+                                        >
+                                            {VIDEO_TEXT_FONT_OPTIONS.map(
+                                                (option) => (
+                                                    <option
+                                                        key={option.value}
+                                                        value={option.value}
+                                                        style={{
+                                                            fontFamily: `var(${option.cssVariable}), ${option.fallbackFamily}`,
+                                                        }}
+                                                    >
+                                                        {option.label}
+                                                    </option>
+                                                ),
+                                            )}
+                                        </select>
                                     </label>
                                     <label className="block">
                                         <span className="mb-1 block text-[10px] font-semibold text-muted">
@@ -2253,7 +2481,7 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                                         </span>
                                         <input
                                             type="number"
-                                            min={20}
+                                            min={0}
                                             max={520}
                                             value={subtitleMarginBottom}
                                             disabled={isRunningEdit}
@@ -2706,7 +2934,9 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                                                     top: subtitlePreviewTopPx,
                                                     width: `${subtitleSampleWidthPercent}%`,
                                                     fontFamily:
-                                                        subtitleFontFamily,
+                                                        getVideoTextFontFamily(
+                                                            subtitleFontFamily,
+                                                        ),
                                                     // ASS uses 72dpi typography while CSS uses 96dpi.
                                                     // Convert so preview fontsize matches rendered subtitle.
                                                     fontSize: `${Math.max(
@@ -2717,9 +2947,10 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                                                                 ?.clientHeight ??
                                                                 420)) /
                                                             videoNaturalSize.height) *
-                                                            (72 / 96),
+                                                            ASS_TO_CSS_FONT_DPI_RATIO,
                                                     )}px`,
-                                                    lineHeight: 1.25,
+                                                    lineHeight:
+                                                        SUBTITLE_PREVIEW_LINE_HEIGHT,
                                                     paddingLeft: `${Math.max(
                                                         1,
                                                         ((previewFrameRef
@@ -2773,8 +3004,10 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                                                         "1px 0 0 #000, -1px 0 0 #000, 0 1px 0 #000, 0 -1px 0 #000",
                                                 }}
                                             >
-                                                Phụ đề tiếng Việt mẫu để căn vị
-                                                trí
+                                                <span ref={subtitleTextRef}>
+                                                    Phụ đề tiếng Việt mẫu để căn
+                                                    vị trí
+                                                </span>
                                             </div>
                                         ) : null}
                                         {blurRegions.map((region) => (

@@ -2,6 +2,7 @@ import {
     createAssetVipProcessingSampleGraph,
     createAssetTranscriptFullProcessingSampleGraph,
     createAssetPreprocessDubbingSampleGraph,
+    createUploadVipSaveLocalSampleGraph,
     createUploadVietnameseMaskPublishSampleGraph,
     type WorkspaceGraph,
 } from "./workspace-graph";
@@ -34,6 +35,13 @@ export const WORKSPACE_SEED_TEMPLATES: WorkspaceSeedTemplate[] = [
         description:
             "Storage Asset -> VIP Processing -> Save to Storage.",
         buildGraph: createAssetVipProcessingSampleGraph,
+    },
+    {
+        id: "asset-vip-processing-2",
+        label: "Seed Asset VIP Processing 2",
+        description:
+            "Upload Video -> VIP Processing -> Save to Local.",
+        buildGraph: createUploadVipSaveLocalSampleGraph,
     },
     {
         id: "asset-transcript-full-processing",

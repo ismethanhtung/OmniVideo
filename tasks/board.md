@@ -10,6 +10,8 @@
 
 ## In Progress
 
+- `FAST-WORKSPACE-053` - Prioritize saved Video Tools setup over node defaults in VIP flow.
+- `FAST-WORKSPACE-052` - Add Seed Asset VIP Processing 2 for upload->storage->local flow.
 - `FAST-AUDIO-008` - Align Edge TTS voice to segment timestamps.
 - `FAST-AUDIO-020` - Add asset preview in Audio Transcript Video Asset picker.
 - `FAST-AI-001` - Switch default translation provider/model to 9router.
@@ -23,7 +25,9 @@
 
 ## Review
 
+- `FAST-VIDEO-022` - Persist Video Tools Lab local upload setup across reload.
 - `FAST-WORKSPACE-051` - Add VIP render mode selector (veryfast/superfast).
+- `FAST-VIDEO-021` - Match Video Tools Lab subtitle preview in product render.
 - `FAST-WORKSPACE-050` - Fix VIP transcript network error mapping and stage log clarity.
 - `FAST-WORKSPACE-049` - Add manual translate import mode for VIP node.
 - `FAST-VIDEO-019` - Add Download button near Thumbnail name and right-align upload title hint.

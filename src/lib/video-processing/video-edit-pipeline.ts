@@ -1,6 +1,14 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import {
+    access,
+    copyFile,
+    mkdir,
+    readFile,
+    readdir,
+    rm,
+    writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -12,6 +20,24 @@ type FfmpegSpawn = typeof spawn;
 let videoEditFfmpegSpawnForTest: FfmpegSpawn | null = null;
 let videoEditReadFileForTest: ((filePath: string) => Promise<Buffer>) | null =
     null;
+const BUNDLED_SUBTITLE_FONT_FILES: Record<string, string> = {
+    Lobster: path.join(
+        process.cwd(),
+        "public",
+        "fonts",
+        "Lobster-Regular.ttf",
+    ),
+};
+
+const FALLBACK_BUNDLED_SUBTITLE_FONT_FILES: Record<string, string> = {
+    Lobster: path.join(
+        process.cwd(),
+        "src",
+        "assets",
+        "fonts",
+        "Lobster-Regular.ttf",
+    ),
+};
 
 export type VideoEditRegionPercent = {
     x: number;
@@ -91,6 +117,7 @@ export type VideoEditInput = {
             backgroundOpacity?: number;
             backgroundEnabled?: boolean;
             backgroundPaddingY?: number;
+            placementRegion?: VideoEditRegionPercent;
             playResX?: number;
             playResY?: number;
         };
@@ -508,6 +535,18 @@ function wrapSubtitleTextForAss(text: string, maxCharsPerLine: number) {
     return wrappedLines.join("\n");
 }
 
+function addAssLineGap(input: {
+    escapedText: string;
+    fontSize: number;
+}) {
+    if (!input.escapedText.includes("\\N")) return input.escapedText;
+    const gapFontSize = Math.max(4, Math.round(input.fontSize * 0.18));
+    return input.escapedText.replace(
+        /\\N/gu,
+        `\\N{\\fs${gapFontSize}}\\h\\N{\\fs${input.fontSize}}`,
+    );
+}
+
 function formatAssTimestamp(seconds: number) {
     const safeSeconds = Math.max(0, seconds);
     const centiseconds = Math.round(safeSeconds * 100);
@@ -536,6 +575,7 @@ export function buildSubtitleAssContent(
         backgroundOpacity?: number;
         backgroundEnabled?: boolean;
         backgroundPaddingY?: number;
+        placementRegion?: VideoEditRegionPercent;
         playResX?: number;
         playResY?: number;
     },
@@ -547,7 +587,7 @@ export function buildSubtitleAssContent(
         ? Math.min(160, Math.max(20, Math.round(style?.fontSize ?? 100)))
         : 100;
     const subtitleMarginBottom = Number.isFinite(style?.marginBottom)
-        ? Math.min(520, Math.max(20, Math.round(style?.marginBottom ?? 150)))
+        ? Math.min(520, Math.max(0, Math.round(style?.marginBottom ?? 150)))
         : 150;
     const subtitleMarginLeft = Number.isFinite(style?.marginLeft)
         ? Math.min(520, Math.max(0, Math.round(style?.marginLeft ?? 60)))
@@ -574,13 +614,50 @@ export function buildSubtitleAssContent(
     const playResY = Number.isFinite(style?.playResY)
         ? Math.max(360, Math.round(style?.playResY ?? 1080))
         : 1080;
-    const availableWidth = Math.max(
-        240,
-        playResX - subtitleMarginLeft - subtitleMarginRight,
-    );
+    const placementRegion =
+        style?.placementRegion &&
+        Number.isFinite(style.placementRegion.x) &&
+        Number.isFinite(style.placementRegion.y) &&
+        Number.isFinite(style.placementRegion.width) &&
+        Number.isFinite(style.placementRegion.height)
+            ? {
+                  x: Math.min(100, Math.max(0, style.placementRegion.x)),
+                  y: Math.min(100, Math.max(0, style.placementRegion.y)),
+                  width: Math.min(
+                      100,
+                      Math.max(0.5, style.placementRegion.width),
+                  ),
+                  height: Math.min(
+                      100,
+                      Math.max(0.5, style.placementRegion.height),
+                  ),
+              }
+            : null;
+    const positionedAssPrefix = placementRegion
+        ? `{\\an5\\pos(${Math.round(
+              ((placementRegion.x + placementRegion.width / 2) / 100) *
+                  playResX,
+          )},${Math.round(
+              ((placementRegion.y + placementRegion.height / 2) / 100) *
+                  playResY,
+          )})}`
+        : "";
+    const effectiveSubtitleAlignment = placementRegion ? 5 : subtitleAlignment;
+    const effectiveSubtitleMarginLeft = placementRegion
+        ? 0
+        : subtitleMarginLeft;
+    const effectiveSubtitleMarginRight = placementRegion
+        ? 0
+        : subtitleMarginRight;
+    const effectiveSubtitleMarginBottom = placementRegion
+        ? 0
+        : subtitleMarginBottom;
+    const availableWidth = placementRegion
+        ? Math.max(240, (placementRegion.width / 100) * playResX)
+        : Math.max(240, playResX - subtitleMarginLeft - subtitleMarginRight);
     const autoMaxCharsPerLine = Math.min(
-        72,
-        Math.max(18, Math.floor((availableWidth / subtitleFontSize) * 1.7)),
+        120,
+        Math.max(18, Math.floor((availableWidth / subtitleFontSize) * 2.15)),
     );
     const normalizedSegments = segments
         .filter(
@@ -593,12 +670,15 @@ export function buildSubtitleAssContent(
         .map((segment) => ({
             start: formatAssTimestamp(segment.start),
             end: formatAssTimestamp(segment.end),
-            text: escapeAssText(
-                wrapSubtitleTextForAss(
-                    segment.translatedText,
-                    autoMaxCharsPerLine,
+            text: addAssLineGap({
+                escapedText: escapeAssText(
+                    wrapSubtitleTextForAss(
+                        segment.translatedText,
+                        autoMaxCharsPerLine,
+                    ),
                 ),
-            ),
+                fontSize: subtitleFontSize,
+            }),
         }));
 
     if (normalizedSegments.length === 0) {
@@ -615,22 +695,22 @@ export function buildSubtitleAssContent(
     if (backgroundEnabled) {
         // Layer 1: opaque box only (transparent glyph), Layer 2: visible text with black outline.
         styleLines.push(
-            `Style: BackgroundBox,${subtitleFontFamily || "Arial"},${subtitleFontSize},&HFF000000,&H000000FF,${backgroundAssColor},${backgroundAssColor},-1,0,0,0,100,100,0,0,3,${backgroundPaddingY},0,${subtitleAlignment},${subtitleMarginLeft},${subtitleMarginRight},${subtitleMarginBottom},1`,
-            `Style: ForegroundText,${subtitleFontFamily || "Arial"},${subtitleFontSize},&H00FFFFFF,&H000000FF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,2,0,${subtitleAlignment},${subtitleMarginLeft},${subtitleMarginRight},${subtitleMarginBottom},1`,
+            `Style: BackgroundBox,${subtitleFontFamily || "Arial"},${subtitleFontSize},&HFF000000,&H000000FF,${backgroundAssColor},${backgroundAssColor},-1,0,0,0,100,100,0,0,3,${backgroundPaddingY},0,${effectiveSubtitleAlignment},${effectiveSubtitleMarginLeft},${effectiveSubtitleMarginRight},${effectiveSubtitleMarginBottom},1`,
+            `Style: ForegroundText,${subtitleFontFamily || "Arial"},${subtitleFontSize},&H00FFFFFF,&H000000FF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,2,0,${effectiveSubtitleAlignment},${effectiveSubtitleMarginLeft},${effectiveSubtitleMarginRight},${effectiveSubtitleMarginBottom},1`,
         );
         for (const segment of normalizedSegments) {
             eventLines.push(
-                `Dialogue: 0,${segment.start},${segment.end},BackgroundBox,,0,0,0,,${segment.text}`,
-                `Dialogue: 1,${segment.start},${segment.end},ForegroundText,,0,0,0,,${segment.text}`,
+                `Dialogue: 0,${segment.start},${segment.end},BackgroundBox,,0,0,0,,${positionedAssPrefix}${segment.text}`,
+                `Dialogue: 1,${segment.start},${segment.end},ForegroundText,,0,0,0,,${positionedAssPrefix}${segment.text}`,
             );
         }
     } else {
         styleLines.push(
-            `Style: Default,${subtitleFontFamily || "Arial"},${subtitleFontSize},&H00FFFFFF,&H000000FF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,${borderStyle},2,0,${subtitleAlignment},${subtitleMarginLeft},${subtitleMarginRight},${subtitleMarginBottom},1`,
+            `Style: Default,${subtitleFontFamily || "Arial"},${subtitleFontSize},&H00FFFFFF,&H000000FF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,${borderStyle},2,0,${effectiveSubtitleAlignment},${effectiveSubtitleMarginLeft},${effectiveSubtitleMarginRight},${effectiveSubtitleMarginBottom},1`,
         );
         for (const segment of normalizedSegments) {
             eventLines.push(
-                `Dialogue: 0,${segment.start},${segment.end},Default,,0,0,0,,${segment.text}`,
+                `Dialogue: 0,${segment.start},${segment.end},Default,,0,0,0,,${positionedAssPrefix}${segment.text}`,
             );
         }
     }
@@ -745,6 +825,134 @@ function escapeFfmpegFilterPath(filePath: string) {
     return filePath.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
 }
 
+function escapeRegExp(value: string) {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+async function resolveGoogleFontMediaPathsForFamily(fontFamily: string) {
+    const chunkDirs = [
+        path.join(process.cwd(), ".next-dev", "static", "chunks"),
+        path.join(process.cwd(), ".next", "static", "chunks"),
+    ];
+    const resolvedPaths = new Set<string>();
+
+    for (const chunkDir of chunkDirs) {
+        let entries: string[] = [];
+        try {
+            entries = await readdir(chunkDir);
+        } catch {
+            continue;
+        }
+        for (const entry of entries) {
+            if (
+                !entry.includes("internal_font_google") ||
+                !entry.endsWith(".single.css")
+            ) {
+                continue;
+            }
+            const cssPath = path.join(chunkDir, entry);
+            let css = "";
+            try {
+                css = await readFile(cssPath, "utf8");
+            } catch {
+                continue;
+            }
+            const familyPattern = new RegExp(
+                `font-family:\\s*${escapeRegExp(fontFamily)};`,
+                "u",
+            );
+            if (!familyPattern.test(css)) continue;
+
+            const mediaPathMatches = css.matchAll(
+                /url\("\.\.\/media\/([^"]+)"\)/gu,
+            );
+            for (const match of mediaPathMatches) {
+                const mediaFile = match[1];
+                if (!mediaFile) continue;
+                const mediaPath = path.join(
+                    chunkDir,
+                    "..",
+                    "media",
+                    mediaFile,
+                );
+                resolvedPaths.add(path.resolve(mediaPath));
+            }
+        }
+    }
+
+    return Array.from(resolvedPaths);
+}
+
+async function prepareSubtitleFontsDir(input: {
+    workDir: string;
+    subtitleFontFamily?: string;
+    textOverlayFontFamilies?: string[];
+}) {
+    const fontFamilies = new Set<string>();
+    if (input.subtitleFontFamily && input.subtitleFontFamily.trim()) {
+        fontFamilies.add(input.subtitleFontFamily.trim());
+    }
+    for (const family of input.textOverlayFontFamilies ?? []) {
+        if (family && family.trim()) {
+            fontFamilies.add(family.trim());
+        }
+    }
+    if (fontFamilies.size === 0) return undefined;
+
+    const fontFiles = new Set<string>();
+    const resolvedBundledFamilies = new Set<string>();
+    for (const family of fontFamilies) {
+        const bundledPath = BUNDLED_SUBTITLE_FONT_FILES[family];
+        if (bundledPath) {
+            try {
+                await access(bundledPath);
+                fontFiles.add(bundledPath);
+                resolvedBundledFamilies.add(family);
+                continue;
+            } catch {
+                // Continue to fallback/local discovery.
+            }
+        }
+        const fallbackBundledPath = FALLBACK_BUNDLED_SUBTITLE_FONT_FILES[family];
+        if (fallbackBundledPath) {
+            try {
+                await access(fallbackBundledPath);
+                fontFiles.add(fallbackBundledPath);
+                resolvedBundledFamilies.add(family);
+                continue;
+            } catch {
+                // Continue to dynamic font discovery.
+            }
+        }
+    }
+    for (const family of fontFamilies) {
+        if (resolvedBundledFamilies.has(family)) {
+            // Prefer bundled TTF to avoid libass failures on woff2.
+            continue;
+        }
+        const mediaPaths = await resolveGoogleFontMediaPathsForFamily(family);
+        for (const mediaPath of mediaPaths) {
+            fontFiles.add(mediaPath);
+        }
+    }
+    if (fontFiles.size === 0) return undefined;
+
+    const fontsDir = path.join(input.workDir, "fonts");
+    await mkdir(fontsDir, { recursive: true });
+    let copiedFontCount = 0;
+    for (const fontFile of fontFiles) {
+        const target = path.join(fontsDir, path.basename(fontFile));
+        try {
+            await copyFile(fontFile, target);
+            copiedFontCount += 1;
+        } catch {
+            // ignore invalid/missing file
+        }
+    }
+    if (copiedFontCount === 0) return undefined;
+    return fontsDir;
+}
+
 export function buildVideoEditFilter(input: {
     mirror: boolean;
     blur?: {
@@ -760,6 +968,7 @@ export function buildVideoEditFilter(input: {
     };
     coverBoxes?: VideoEditInput["coverBoxes"];
     subtitleAssPath?: string;
+    subtitleFontsDir?: string;
     textOverlayAssPath?: string;
 }) {
     const filters: string[] = [];
@@ -825,7 +1034,11 @@ export function buildVideoEditFilter(input: {
         filters.push(
             `[${currentLabel}]ass='${escapeFfmpegFilterPath(
                 input.subtitleAssPath,
-            )}'[${nextLabel}]`,
+            )}'${
+                input.subtitleFontsDir
+                    ? `:fontsdir='${escapeFfmpegFilterPath(input.subtitleFontsDir)}'`
+                    : ""
+            }[${nextLabel}]`,
         );
         currentLabel = nextLabel;
     }
@@ -835,7 +1048,11 @@ export function buildVideoEditFilter(input: {
         filters.push(
             `[${currentLabel}]ass='${escapeFfmpegFilterPath(
                 input.textOverlayAssPath,
-            )}'[${nextLabel}]`,
+            )}'${
+                input.subtitleFontsDir
+                    ? `:fontsdir='${escapeFfmpegFilterPath(input.subtitleFontsDir)}'`
+                    : ""
+            }[${nextLabel}]`,
         );
         currentLabel = nextLabel;
     }
@@ -863,6 +1080,7 @@ export function buildVideoEditFfmpegArgs(input: {
     };
     coverBoxes?: VideoEditInput["coverBoxes"];
     subtitleAssPath?: string;
+    subtitleFontsDir?: string;
     textOverlayAssPath?: string;
 }) {
     const { filter, outputLabel } = buildVideoEditFilter(input);
@@ -976,6 +1194,10 @@ export async function runVideoEditPipelineFromPath(
     const subtitleSegments =
         input.subtitles?.enabled === true ? input.subtitles.segments : [];
     const normalizedTextOverlays = normalizeTextOverlays(input.textOverlays);
+    const textOverlayFontFamilies =
+        input.textOverlays?.enabled === true
+            ? input.textOverlays.overlays.map((item) => item.fontFamily || "")
+            : [];
     const workDir = path.join(tmpdir(), `omnivideo-edit-${randomUUID()}`);
     const outputPath = path.join(workDir, "edited.mp4");
     const assPath =
@@ -984,6 +1206,11 @@ export async function runVideoEditPipelineFromPath(
         normalizedTextOverlays.length > 0
             ? path.join(workDir, "text-overlays.ass")
             : "";
+    const subtitleFontsDir = await prepareSubtitleFontsDir({
+        workDir,
+        subtitleFontFamily: input.subtitles?.style?.fontFamily,
+        textOverlayFontFamilies,
+    });
 
     try {
         await mkdir(workDir, { recursive: true });
@@ -1014,6 +1241,7 @@ export async function runVideoEditPipelineFromPath(
                 blur,
                 coverBoxes,
                 subtitleAssPath: assPath || undefined,
+                subtitleFontsDir,
                 textOverlayAssPath: textOverlayAssPath || undefined,
             }),
         );

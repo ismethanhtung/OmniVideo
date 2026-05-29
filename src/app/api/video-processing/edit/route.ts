@@ -57,6 +57,31 @@ function readNumber(formData: FormData, key: string, fallback: number) {
     return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function readOptionalNumber(formData: FormData, key: string) {
+    const value = readFormValue(formData, key);
+    if (!value.trim()) return undefined;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function readSubtitlePlacementRegion(formData: FormData) {
+    const region = {
+        x: readOptionalNumber(formData, "subtitleRegionX"),
+        y: readOptionalNumber(formData, "subtitleRegionY"),
+        width: readOptionalNumber(formData, "subtitleRegionWidth"),
+        height: readOptionalNumber(formData, "subtitleRegionHeight"),
+    };
+    if (
+        region.x === undefined ||
+        region.y === undefined ||
+        region.width === undefined ||
+        region.height === undefined
+    ) {
+        return undefined;
+    }
+    return region as VideoEditRegionPercent;
+}
+
 function readTranslatedSegments(formData: FormData) {
     const raw = readFormValue(formData, "translatedSegmentsJson").trim();
     if (!raw) return [];
@@ -460,7 +485,7 @@ export async function POST(request: Request) {
                           fontSize: readNumber(
                               formData,
                               "subtitleFontSize",
-                              100,
+                              35,
                           ),
                           marginBottom: readNumber(
                               formData,
@@ -492,8 +517,10 @@ export async function POST(request: Request) {
                           backgroundPaddingY: readNumber(
                               formData,
                               "subtitleBackgroundPaddingY",
-                              2,
+                              8,
                           ),
+                          placementRegion:
+                              readSubtitlePlacementRegion(formData),
                           playResX: readNumber(
                               formData,
                               "subtitlePlayResX",

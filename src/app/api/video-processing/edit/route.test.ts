@@ -82,6 +82,10 @@ describe("video edit API", () => {
             blurEnabled: "true",
             subtitleOverlayEnabled: "true",
             subtitleBackgroundPaddingY: "11",
+            subtitleRegionX: "0",
+            subtitleRegionY: "80",
+            subtitleRegionWidth: "100",
+            subtitleRegionHeight: "15",
             regionX: "0",
             regionY: "80",
             regionWidth: "100",
@@ -150,6 +154,12 @@ describe("video edit API", () => {
                     ],
                     style: expect.objectContaining({
                         backgroundPaddingY: 11,
+                        placementRegion: {
+                            x: 0,
+                            y: 80,
+                            width: 100,
+                            height: 15,
+                        },
                     }),
                 }),
             }),

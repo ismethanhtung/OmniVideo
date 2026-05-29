@@ -88,6 +88,11 @@ import type { VideoDubbingResult } from "@/lib/multilingual-audio/video-dubbing"
 import type { VideoVipProcessingResult } from "@/lib/multilingual-audio/video-vip-processing";
 import { buildWordAwareVoiceSegments } from "@/lib/multilingual-audio/voice-segment-timing";
 import { loadLocalVideoEditSetup } from "@/lib/video-processing/local-video-edit-setup";
+import {
+    buildSubtitleAssPlacementFromVideoEditSetup,
+    buildSubtitlePlacementRegionFromVideoEditSetup,
+    type SubtitlePlacementRegion,
+} from "@/lib/video-processing/subtitle-placement";
 
 type WorkspaceCanvasPanelProps = {
     section: LeftbarNavItem;
@@ -155,6 +160,7 @@ type WorkspaceAsset = {
             subtitleBackgroundEnabled?: boolean;
             subtitleBackgroundColor?: string;
             subtitleBackgroundOpacity?: number;
+            subtitleBackgroundPaddingY?: number;
             textOverlayEnabled?: boolean;
             textOverlay?: {
                 text?: string;
@@ -230,7 +236,16 @@ type WorkspaceFileProgress = {
 
 type WorkspaceVideoEditSetup = NonNullable<
     NonNullable<WorkspaceAsset["metadata"]>["videoEditSetup"]
->;
+> & {
+    subtitleSampleWidthPercent?: number;
+    subtitlePreviewPlacement?: {
+        leftPercent?: number;
+        topPercent?: number;
+        widthPercent?: number;
+        heightPercent?: number;
+    } | null;
+    subtitlePlacementRegion?: Partial<SubtitlePlacementRegion> | null;
+};
 
 const DEFAULT_PUBLISH_TYPE_BY_PLATFORM: Record<
     WorkspaceSocialAccount["platform"],
@@ -1382,6 +1397,17 @@ function getNumberConfig(
     return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function getTemplateConfigDefaultValue(
+    node: WorkspaceNodeInstance,
+    key: string,
+): string | number | boolean | undefined {
+    const template = WORKSPACE_NODE_TEMPLATES.find(
+        (entry) => entry.nodeType === node.templateNodeType,
+    );
+    if (!template) return undefined;
+    return template.configFields.find((field) => field.key === key)?.defaultValue;
+}
+
 const MASK_REGION_DEFAULTS = {
     blurRegionsJson: "",
     blurEnabled: true,
@@ -1395,7 +1421,7 @@ const MASK_REGION_DEFAULTS = {
     timelineEnd: 36000,
     blurStrength: 50,
     subtitleFontFamily: "Arial",
-    subtitleFontSize: 55,
+    subtitleFontSize: 35,
     subtitleMarginBottom: 150,
     subtitleMarginLeft: 60,
     subtitleMarginRight: 60,
@@ -1403,6 +1429,7 @@ const MASK_REGION_DEFAULTS = {
     subtitleBackgroundEnabled: true,
     subtitleBackgroundColor: "#000000",
     subtitleBackgroundOpacity: 65,
+    subtitleBackgroundPaddingY: 8,
     mirrorEnabled: false,
     textOverlayEnabled: false,
     textOverlaysJson: "",
@@ -1412,12 +1439,17 @@ function resolveMaskStringConfig(input: {
     node: WorkspaceNodeInstance;
     key: string;
     defaultValue: string;
+    templateDefaultValue?: string;
     setupValue?: string;
 }) {
     const raw = input.node.config[input.key];
     const hasRaw = raw !== undefined && raw !== null;
     const rawValue = hasRaw ? String(raw).trim() : "";
-    if (hasRaw && rawValue && rawValue !== input.defaultValue) {
+    const effectiveDefault =
+        typeof input.templateDefaultValue === "string"
+            ? input.templateDefaultValue
+            : input.defaultValue;
+    if (hasRaw && rawValue && rawValue !== effectiveDefault) {
         return rawValue;
     }
     if (input.setupValue && input.setupValue.trim()) {
@@ -1433,13 +1465,19 @@ function resolveMaskNumberConfig(input: {
     node: WorkspaceNodeInstance;
     key: string;
     defaultValue: number;
+    templateDefaultValue?: number;
     setupValue?: number;
 }) {
     const raw = input.node.config[input.key];
     const parsedRaw = typeof raw === "number" ? raw : Number(raw);
     const hasRaw =
         raw !== undefined && raw !== null && Number.isFinite(parsedRaw);
-    if (hasRaw && parsedRaw !== input.defaultValue) {
+    const effectiveDefault =
+        typeof input.templateDefaultValue === "number" &&
+        Number.isFinite(input.templateDefaultValue)
+            ? input.templateDefaultValue
+            : input.defaultValue;
+    if (hasRaw && parsedRaw !== effectiveDefault) {
         return parsedRaw;
     }
     if (
@@ -1458,6 +1496,7 @@ function resolveMaskBooleanConfig(input: {
     node: WorkspaceNodeInstance;
     key: string;
     defaultValue: boolean;
+    templateDefaultValue?: boolean;
     setupValue?: boolean;
 }) {
     const raw = input.node.config[input.key];
@@ -1468,7 +1507,11 @@ function resolveMaskBooleanConfig(input: {
               ? raw === "true"
               : undefined;
     const hasRaw = parsedRaw !== undefined;
-    if (hasRaw && parsedRaw !== input.defaultValue) {
+    const effectiveDefault =
+        typeof input.templateDefaultValue === "boolean"
+            ? input.templateDefaultValue
+            : input.defaultValue;
+    if (hasRaw && parsedRaw !== effectiveDefault) {
         return parsedRaw;
     }
     if (typeof input.setupValue === "boolean") {
@@ -1484,6 +1527,64 @@ function resolveMaskRegionConfig(
     node: WorkspaceNodeInstance,
     setup: WorkspaceVideoEditSetup | null,
 ) {
+    const mirrorTemplateDefault = getTemplateConfigDefaultValue(
+        node,
+        "mirrorEnabled",
+    );
+    const blurEnabledTemplateDefault = getTemplateConfigDefaultValue(
+        node,
+        "blurEnabled",
+    );
+    const coverBoxEnabledTemplateDefault = getTemplateConfigDefaultValue(
+        node,
+        "coverBoxEnabled",
+    );
+    const subtitleOverlayEnabledTemplateDefault = getTemplateConfigDefaultValue(
+        node,
+        "subtitleOverlayEnabled",
+    );
+    const textOverlayEnabledTemplateDefault = getTemplateConfigDefaultValue(
+        node,
+        "textOverlayEnabled",
+    );
+    const subtitleFontFamilyTemplateDefault = getTemplateConfigDefaultValue(
+        node,
+        "subtitleFontFamily",
+    );
+    const subtitleFontSizeTemplateDefault = getTemplateConfigDefaultValue(
+        node,
+        "subtitleFontSize",
+    );
+    const subtitleMarginBottomTemplateDefault = getTemplateConfigDefaultValue(
+        node,
+        "subtitleMarginBottom",
+    );
+    const subtitleMarginLeftTemplateDefault = getTemplateConfigDefaultValue(
+        node,
+        "subtitleMarginLeft",
+    );
+    const subtitleMarginRightTemplateDefault = getTemplateConfigDefaultValue(
+        node,
+        "subtitleMarginRight",
+    );
+    const subtitleAlignmentTemplateDefault = getTemplateConfigDefaultValue(
+        node,
+        "subtitleAlignment",
+    );
+    const subtitleBackgroundEnabledTemplateDefault =
+        getTemplateConfigDefaultValue(node, "subtitleBackgroundEnabled");
+    const subtitleBackgroundColorTemplateDefault = getTemplateConfigDefaultValue(
+        node,
+        "subtitleBackgroundColor",
+    );
+    const subtitleBackgroundOpacityTemplateDefault =
+        getTemplateConfigDefaultValue(node, "subtitleBackgroundOpacity");
+    const subtitleBackgroundPaddingYTemplateDefault =
+        getTemplateConfigDefaultValue(node, "subtitleBackgroundPaddingY");
+    const previewAssPlacement =
+        buildSubtitleAssPlacementFromVideoEditSetup(setup);
+    const subtitlePlacementRegion =
+        buildSubtitlePlacementRegionFromVideoEditSetup(setup);
     const rawBlurRegionsJson = getStringConfig(node, "blurRegionsJson").trim();
     const setupBlurRegionsJson =
         setup?.blurRegions && setup.blurRegions.length > 0
@@ -1499,24 +1600,40 @@ function resolveMaskRegionConfig(
             node,
             key: "mirrorEnabled",
             defaultValue: MASK_REGION_DEFAULTS.mirrorEnabled,
+            templateDefaultValue:
+                typeof mirrorTemplateDefault === "boolean"
+                    ? mirrorTemplateDefault
+                    : undefined,
             setupValue: setup?.mirrorEnabled,
         }),
         blurEnabled: resolveMaskBooleanConfig({
             node,
             key: "blurEnabled",
             defaultValue: MASK_REGION_DEFAULTS.blurEnabled,
+            templateDefaultValue:
+                typeof blurEnabledTemplateDefault === "boolean"
+                    ? blurEnabledTemplateDefault
+                    : undefined,
             setupValue: setup?.blurEnabled,
         }),
         coverBoxEnabled: resolveMaskBooleanConfig({
             node,
             key: "coverBoxEnabled",
             defaultValue: MASK_REGION_DEFAULTS.coverBoxEnabled,
+            templateDefaultValue:
+                typeof coverBoxEnabledTemplateDefault === "boolean"
+                    ? coverBoxEnabledTemplateDefault
+                    : undefined,
             setupValue: setup?.coverBoxEnabled,
         }),
         subtitleOverlayEnabled: resolveMaskBooleanConfig({
             node,
             key: "subtitleOverlayEnabled",
             defaultValue: MASK_REGION_DEFAULTS.subtitleOverlayEnabled,
+            templateDefaultValue:
+                typeof subtitleOverlayEnabledTemplateDefault === "boolean"
+                    ? subtitleOverlayEnabledTemplateDefault
+                    : undefined,
             setupValue: setup?.subtitleOverlayEnabled,
         }),
         blurRegionsJson: rawBlurRegionsJson || setupBlurRegionsJson,
@@ -1524,6 +1641,10 @@ function resolveMaskRegionConfig(
             node,
             key: "textOverlayEnabled",
             defaultValue: MASK_REGION_DEFAULTS.textOverlayEnabled,
+            templateDefaultValue:
+                typeof textOverlayEnabledTemplateDefault === "boolean"
+                    ? textOverlayEnabledTemplateDefault
+                    : undefined,
             setupValue: setup?.textOverlayEnabled,
         }),
         textOverlaysJson:
@@ -1568,56 +1689,115 @@ function resolveMaskRegionConfig(
             node,
             key: "subtitleFontFamily",
             defaultValue: MASK_REGION_DEFAULTS.subtitleFontFamily,
+            templateDefaultValue:
+                typeof subtitleFontFamilyTemplateDefault === "string"
+                    ? subtitleFontFamilyTemplateDefault
+                    : undefined,
             setupValue: setup?.subtitleFontFamily ?? undefined,
         }),
         subtitleFontSize: resolveMaskNumberConfig({
             node,
             key: "subtitleFontSize",
             defaultValue: MASK_REGION_DEFAULTS.subtitleFontSize,
+            templateDefaultValue:
+                typeof subtitleFontSizeTemplateDefault === "number"
+                    ? subtitleFontSizeTemplateDefault
+                    : undefined,
             setupValue: setup?.subtitleFontSize ?? undefined,
         }),
         subtitleMarginBottom: resolveMaskNumberConfig({
             node,
             key: "subtitleMarginBottom",
             defaultValue: MASK_REGION_DEFAULTS.subtitleMarginBottom,
-            setupValue: setup?.subtitleMarginBottom ?? undefined,
+            templateDefaultValue:
+                typeof subtitleMarginBottomTemplateDefault === "number"
+                    ? subtitleMarginBottomTemplateDefault
+                    : undefined,
+            setupValue:
+                previewAssPlacement?.subtitleMarginBottom ??
+                setup?.subtitleMarginBottom ??
+                undefined,
         }),
         subtitleMarginLeft: resolveMaskNumberConfig({
             node,
             key: "subtitleMarginLeft",
             defaultValue: MASK_REGION_DEFAULTS.subtitleMarginLeft,
-            setupValue: setup?.subtitleMarginLeft ?? undefined,
+            templateDefaultValue:
+                typeof subtitleMarginLeftTemplateDefault === "number"
+                    ? subtitleMarginLeftTemplateDefault
+                    : undefined,
+            setupValue:
+                previewAssPlacement?.subtitleMarginLeft ??
+                setup?.subtitleMarginLeft ??
+                undefined,
         }),
         subtitleMarginRight: resolveMaskNumberConfig({
             node,
             key: "subtitleMarginRight",
             defaultValue: MASK_REGION_DEFAULTS.subtitleMarginRight,
-            setupValue: setup?.subtitleMarginRight ?? undefined,
+            templateDefaultValue:
+                typeof subtitleMarginRightTemplateDefault === "number"
+                    ? subtitleMarginRightTemplateDefault
+                    : undefined,
+            setupValue:
+                previewAssPlacement?.subtitleMarginRight ??
+                setup?.subtitleMarginRight ??
+                undefined,
         }),
         subtitleAlignment: resolveMaskNumberConfig({
             node,
             key: "subtitleAlignment",
             defaultValue: MASK_REGION_DEFAULTS.subtitleAlignment,
-            setupValue: setup?.subtitleAlignment ?? undefined,
+            templateDefaultValue:
+                typeof subtitleAlignmentTemplateDefault === "number"
+                    ? subtitleAlignmentTemplateDefault
+                    : undefined,
+            setupValue:
+                previewAssPlacement?.subtitleAlignment ??
+                setup?.subtitleAlignment ??
+                undefined,
         }),
         subtitleBackgroundEnabled: resolveMaskBooleanConfig({
             node,
             key: "subtitleBackgroundEnabled",
             defaultValue: MASK_REGION_DEFAULTS.subtitleBackgroundEnabled,
+            templateDefaultValue:
+                typeof subtitleBackgroundEnabledTemplateDefault === "boolean"
+                    ? subtitleBackgroundEnabledTemplateDefault
+                    : undefined,
             setupValue: setup?.subtitleBackgroundEnabled ?? undefined,
         }),
         subtitleBackgroundColor: resolveMaskStringConfig({
             node,
             key: "subtitleBackgroundColor",
             defaultValue: MASK_REGION_DEFAULTS.subtitleBackgroundColor,
+            templateDefaultValue:
+                typeof subtitleBackgroundColorTemplateDefault === "string"
+                    ? subtitleBackgroundColorTemplateDefault
+                    : undefined,
             setupValue: setup?.subtitleBackgroundColor ?? undefined,
         }),
         subtitleBackgroundOpacity: resolveMaskNumberConfig({
             node,
             key: "subtitleBackgroundOpacity",
             defaultValue: MASK_REGION_DEFAULTS.subtitleBackgroundOpacity,
+            templateDefaultValue:
+                typeof subtitleBackgroundOpacityTemplateDefault === "number"
+                    ? subtitleBackgroundOpacityTemplateDefault
+                    : undefined,
             setupValue: setup?.subtitleBackgroundOpacity ?? undefined,
         }),
+        subtitleBackgroundPaddingY: resolveMaskNumberConfig({
+            node,
+            key: "subtitleBackgroundPaddingY",
+            defaultValue: MASK_REGION_DEFAULTS.subtitleBackgroundPaddingY,
+            templateDefaultValue:
+                typeof subtitleBackgroundPaddingYTemplateDefault === "number"
+                    ? subtitleBackgroundPaddingYTemplateDefault
+                    : undefined,
+            setupValue: setup?.subtitleBackgroundPaddingY ?? undefined,
+        }),
+        subtitlePlacementRegion,
     };
 }
 
@@ -4021,10 +4201,10 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     );
                     formData.set(
                         "videoSpeedFactor",
-                        String(getNumberConfig(vipNode, "speedFactor", 0.7)),
+                        String(getNumberConfig(vipNode, "speedFactor", 0.8)),
                     );
                     const vipRenderPreset =
-                        getStringConfig(vipNode, "renderPreset", "superfast") ===
+                        getStringConfig(vipNode, "renderPreset", "veryfast") ===
                         "veryfast"
                             ? "veryfast"
                             : "superfast";
@@ -4116,6 +4296,16 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                                   ),
                           )?.metadata?.videoEditSetup ?? null)
                         : null;
+                    const upstreamSourceFileNode =
+                        sourceNode.templateNodeType === "source.file"
+                            ? sourceNode
+                            : findUpstreamSourceFileNode(graph, sourceNode.id);
+                    const upstreamSourceLocalSetup = upstreamSourceFileNode
+                        ? loadLocalVideoEditSetup(
+                              runtimeFilesByNodeId[upstreamSourceFileNode.id] ??
+                                  null,
+                          )
+                        : null;
                     const sourceMirrorParity = upstreamSourceAssetNode
                         ? findMirrorParityToAncestorNode(
                               graph,
@@ -4125,7 +4315,9 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         : null;
                     const sourceAssetSetup = buildEffectiveMaskSetup(
                         vipNode,
-                        sourceAssetSetupRaw,
+                        sourceAssetSetupRaw ??
+                            upstreamSourceLocalSetup?.videoEditSetup ??
+                            null,
                         {
                             mirrorSetupRegions:
                                 (sourceMirrorParity ?? 0) % 2 === 1,
@@ -4210,6 +4402,28 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         "subtitleBackgroundOpacity",
                         String(maskConfig.subtitleBackgroundOpacity),
                     );
+                    formData.set(
+                        "subtitleBackgroundPaddingY",
+                        String(maskConfig.subtitleBackgroundPaddingY),
+                    );
+                    if (maskConfig.subtitlePlacementRegion) {
+                        formData.set(
+                            "subtitleRegionX",
+                            String(maskConfig.subtitlePlacementRegion.x),
+                        );
+                        formData.set(
+                            "subtitleRegionY",
+                            String(maskConfig.subtitlePlacementRegion.y),
+                        );
+                        formData.set(
+                            "subtitleRegionWidth",
+                            String(maskConfig.subtitlePlacementRegion.width),
+                        );
+                        formData.set(
+                            "subtitleRegionHeight",
+                            String(maskConfig.subtitlePlacementRegion.height),
+                        );
+                    }
                     formData.set(
                         "coverBoxColor",
                         maskConfig.subtitleBackgroundColor,
@@ -4523,6 +4737,16 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                                   ),
                           )?.metadata?.videoEditSetup ?? null)
                         : null;
+                    const upstreamSourceFileNode =
+                        sourceNode.templateNodeType === "source.file"
+                            ? sourceNode
+                            : findUpstreamSourceFileNode(graph, sourceNode.id);
+                    const upstreamSourceLocalSetup = upstreamSourceFileNode
+                        ? loadLocalVideoEditSetup(
+                              runtimeFilesByNodeId[upstreamSourceFileNode.id] ??
+                                  null,
+                          )
+                        : null;
                     const sourceMirrorParity = upstreamSourceAssetNode
                         ? findMirrorParityToAncestorNode(
                               graph,
@@ -4532,7 +4756,9 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         : null;
                     const sourceAssetSetup = buildEffectiveMaskSetup(
                         editNode,
-                        sourceAssetSetupRaw,
+                        sourceAssetSetupRaw ??
+                            upstreamSourceLocalSetup?.videoEditSetup ??
+                            null,
                         {
                             mirrorSetupRegions:
                                 (sourceMirrorParity ?? 0) % 2 === 1,
@@ -4627,6 +4853,28 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         "subtitleBackgroundOpacity",
                         String(maskConfig.subtitleBackgroundOpacity),
                     );
+                    formData.set(
+                        "subtitleBackgroundPaddingY",
+                        String(maskConfig.subtitleBackgroundPaddingY),
+                    );
+                    if (maskConfig.subtitlePlacementRegion) {
+                        formData.set(
+                            "subtitleRegionX",
+                            String(maskConfig.subtitlePlacementRegion.x),
+                        );
+                        formData.set(
+                            "subtitleRegionY",
+                            String(maskConfig.subtitlePlacementRegion.y),
+                        );
+                        formData.set(
+                            "subtitleRegionWidth",
+                            String(maskConfig.subtitlePlacementRegion.width),
+                        );
+                        formData.set(
+                            "subtitleRegionHeight",
+                            String(maskConfig.subtitlePlacementRegion.height),
+                        );
+                    }
                     formData.set(
                         "coverBoxColor",
                         maskConfig.subtitleBackgroundColor,
@@ -8713,9 +8961,9 @@ function NodeRuntimeConfig({
                     <div className="grid gap-2 sm:grid-cols-3">
                         <RuntimeTextInput
                             label="Speed factor"
-                            value={String(getNumberConfig(node, "speedFactor", 0.7))}
+                            value={String(getNumberConfig(node, "speedFactor", 0.8))}
                             disabled={isRunningFlow}
-                            placeholder="0.7"
+                            placeholder="0.8"
                             onChange={(value) =>
                                 setConfig({ speedFactor: Number(value) })
                             }
@@ -8726,7 +8974,7 @@ function NodeRuntimeConfig({
                                 getStringConfig(
                                     node,
                                     "renderPreset",
-                                    "superfast",
+                                    "veryfast",
                                 ) === "veryfast"
                                     ? "veryfast"
                                     : "superfast"

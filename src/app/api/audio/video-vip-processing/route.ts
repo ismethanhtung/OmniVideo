@@ -11,6 +11,10 @@ import {
 } from "@/lib/multilingual-audio/types";
 import { runVideoVipProcessing } from "@/lib/multilingual-audio/video-vip-processing";
 import type { VideoEditInput } from "@/lib/video-processing/video-edit-pipeline";
+import {
+    buildSubtitleAssPlacementFromVideoEditSetup,
+    buildSubtitlePlacementRegionFromVideoEditSetup,
+} from "@/lib/video-processing/subtitle-placement";
 import { getIntakeDb, getVideoAssetById } from "@/lib/video-intake/repository";
 import {
     buildWorkspaceMediaPayload,
@@ -127,6 +131,44 @@ function readFormBooleanWithSetupFallback(input: {
         return formValue;
     }
     return setupValue ?? formValue ?? input.defaultValue;
+}
+
+function normalizeVideoEditSetupPreviewPlacement(
+    setup: Record<string, unknown> | null | undefined,
+) {
+    const previewAssPlacement =
+        buildSubtitleAssPlacementFromVideoEditSetup(setup);
+    if (!setup || !previewAssPlacement) return setup;
+
+    return {
+        ...setup,
+        subtitleAlignment: previewAssPlacement.subtitleAlignment,
+        subtitleMarginBottom: previewAssPlacement.subtitleMarginBottom,
+        subtitleMarginLeft: previewAssPlacement.subtitleMarginLeft,
+        subtitleMarginRight: previewAssPlacement.subtitleMarginRight,
+    };
+}
+
+function readSubtitlePlacementRegionConfig(
+    formData: FormData,
+    setup?: Record<string, unknown> | null,
+): { x: number; y: number; width: number; height: number } | undefined {
+    const formRegion = {
+        x: readOptionalNumber(formData, "subtitleRegionX"),
+        y: readOptionalNumber(formData, "subtitleRegionY"),
+        width: readOptionalNumber(formData, "subtitleRegionWidth"),
+        height: readOptionalNumber(formData, "subtitleRegionHeight"),
+    };
+    if (
+        formRegion.x !== undefined &&
+        formRegion.y !== undefined &&
+        formRegion.width !== undefined &&
+        formRegion.height !== undefined
+    ) {
+        return formRegion as { x: number; y: number; width: number; height: number };
+    }
+
+    return buildSubtitlePlacementRegionFromVideoEditSetup(setup) ?? undefined;
 }
 
 function readBlurConfig(
@@ -709,7 +751,9 @@ export async function POST(request: Request) {
         };
 
         const sourceSetupForRender = useSourceAssetVideoEditSetup
-            ? source.sourceVideoEditSetup
+            ? normalizeVideoEditSetupPreviewPlacement(
+                  source.sourceVideoEditSetup,
+              )
             : undefined;
         const result = await runVideoVipProcessing({
             fileName: source.fileName,
@@ -752,7 +796,7 @@ export async function POST(request: Request) {
                 fontSize: readFormNumberWithSetupFallback({
                     formData,
                     key: "subtitleFontSize",
-                    defaultValue: 55,
+                    defaultValue: 35,
                     setup: sourceSetupForRender,
                 }),
                 marginBottom: readFormNumberWithSetupFallback({
@@ -798,6 +842,16 @@ export async function POST(request: Request) {
                     defaultValue: 65,
                     setup: sourceSetupForRender,
                 }),
+                backgroundPaddingY: readFormNumberWithSetupFallback({
+                    formData,
+                    key: "subtitleBackgroundPaddingY",
+                    defaultValue: 8,
+                    setup: sourceSetupForRender,
+                }),
+                placementRegion: readSubtitlePlacementRegionConfig(
+                    formData,
+                    sourceSetupForRender,
+                ),
             },
             textOverlays: readTextOverlayConfig(
                 formData,

@@ -1,10 +1,18 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
+import {
+    buildSubtitleAssPlacementFromPreview,
+    buildSubtitleAssPlacementFromPreviewPercent,
+} from "@/lib/video-processing/subtitle-placement";
+
 const SOURCE_PATH = "src/features/video-processing/video-tools-lab-panel.tsx";
+const HELPER_SOURCE_PATH =
+    "src/lib/video-processing/subtitle-placement.ts";
 
 describe("Video Tools Lab source preview controls", () => {
     const source = readFileSync(SOURCE_PATH, "utf8");
+    const helperSource = readFileSync(HELPER_SOURCE_PATH, "utf8");
 
     it("keeps original preview playback controls outside the blur frame", () => {
         const previewStart = source.indexOf("Original Preview");
@@ -34,6 +42,8 @@ describe("Video Tools Lab source preview controls", () => {
         expect(source).toContain("Đang lưu setup...");
         expect(source).toContain("Saving Setup...");
         expect(source).toContain("saveLocalVideoEditSetup");
+        expect(source).toContain("loadLocalVideoEditSetup");
+        expect(source).toContain("Đã áp dụng setup local đã lưu cho file này.");
         expect(source).toContain("Workspace upload đúng file này");
     });
 
@@ -55,5 +65,68 @@ describe("Video Tools Lab source preview controls", () => {
         expect(source).toContain("textOverlaysJson");
         expect(source).toContain("textOverlayPlayResX");
         expect(source).toContain("getVideoTextFontOption");
+    });
+
+    it("keeps preview placement as the source for exported subtitle margins", () => {
+        expect(source).toContain("buildSubtitleAssPlacementFromPreview");
+        expect(source).toContain("getCurrentSubtitleAssPlacement");
+        expect(source).toContain("subtitleAssPlacement.subtitleMarginBottom");
+        expect(source).toContain("subtitleAssPlacement.subtitleAlignment");
+        expect(source).toContain("getCurrentSubtitlePreviewLineCount");
+        expect(source).toContain("subtitleTextRef");
+        expect(source).toContain("getCurrentSubtitlePlacementRegion");
+        expect(source).toContain("subtitleRegionY");
+        expect(helperSource).toContain("buildSubtitlePlacementRegionFromPreview");
+        expect(helperSource).toContain("resolveBottomAlignedAssAlignment");
+    });
+
+    it("uses compact subtitle defaults and richer font choices with preview styling", () => {
+        expect(source).toContain("useState(35)");
+        expect(source).toContain("useState(8)");
+        expect(source).toContain("setSubtitleFontSize(35)");
+        expect(source).toContain("setSubtitleBackgroundPaddingY(8)");
+        expect(source).toContain("VIDEO_TEXT_FONT_OPTIONS.map");
+        expect(source).toContain("Braah One");
+        expect(source).toContain("Lobster");
+        expect(source).toContain("Mitr");
+        expect(source).toContain("Paytone One");
+        expect(source).toContain("Agbalumo");
+        expect(source).toContain("getVideoTextFontFamily");
+    });
+
+    it("derives fallback subtitle margins from the preview region bottom edge", () => {
+        const placement = buildSubtitleAssPlacementFromPreview({
+            leftPx: 0,
+            topPx: 330,
+            frameWidth: 747,
+            frameHeight: 420,
+            boxWidth: 747,
+            boxHeight: 30,
+            videoWidth: 1920,
+            videoHeight: 1080,
+            subtitleFontSize: 35,
+            subtitleBackgroundPaddingY: 8,
+            lineCount: 1,
+        });
+
+        expect(placement.subtitleAlignment).toBe(2);
+        expect(placement.subtitleMarginBottom).toBe(154);
+    });
+
+    it("rebuilds exported ASS placement from saved preview percentages", () => {
+        const placement = buildSubtitleAssPlacementFromPreviewPercent({
+            leftPercent: 0,
+            topPercent: 78.57,
+            widthPercent: 100,
+            playResX: 1920,
+            playResY: 1080,
+        });
+
+        expect(placement).toEqual({
+            subtitleAlignment: 2,
+            subtitleMarginLeft: 0,
+            subtitleMarginRight: 0,
+            subtitleMarginBottom: 231,
+        });
     });
 });

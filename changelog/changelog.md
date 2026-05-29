@@ -1,5 +1,65 @@
 # OmniVideo Changelog
 
+## FAST-WORKSPACE-053 - Prioritize Saved Video Tools Setup Over Node Defaults
+
+- Fixed Workspace VIP/edit mask config precedence so saved Video Tools Lab setup is applied when node fields remain at template defaults.
+- Added template-default-aware resolution for boolean/number/string mask fields to avoid default node values unintentionally overriding saved setup.
+- Explicit node overrides still take priority when a node config value differs from its template default.
+- Fixed local-upload runtime fallback in VIP/edit branches by merging `source.file` setup when no `source.asset` setup exists.
+- Fixed direct `source.file` path detection so local setup fallback is applied even when VIP/edit consumes the source file node directly.
+- Verification (FAST-WORKSPACE-053):
+  - `npm run test -- --run src/features/workspace/workspace-canvas-panel.test.ts`
+  - `npm run guard:version`
+
+## FAST-WORKSPACE-052 - Add Seed Asset VIP Processing 2
+
+- Added a new Workspace seed `Seed Asset VIP Processing 2`.
+- New seed flow: `Upload Video -> VIP Processing -> Save to Local`.
+- Preserved existing `Seed Asset VIP Processing` flow unchanged (`Storage Asset -> VIP Processing -> Save to Storage`).
+- Verification (FAST-WORKSPACE-052):
+  - `npm run test -- --run src/lib/workspace/workspace-seeds.test.ts src/lib/workspace/workspace-graph.test.ts`
+  - `npm run guard:version`
+
+## FAST-VIDEO-022 - Persist Video Tools Lab Local Upload Setup Across Reload
+
+- Fixed Video Tools Lab local-upload flow to rehydrate saved local setup when the same file is selected again after page reload.
+- Local source picker now loads setup from local registry and applies it immediately, so mirror/blur/subtitle/text settings are restored without requiring a Storage Asset.
+- Kept existing fallback behavior: if no local setup exists for the selected file, panel resets to default setup.
+- Verification (FAST-VIDEO-022):
+  - `npm run test -- --run src/features/video-processing/video-tools-lab-panel.test.ts`
+  - `npm run guard:version`
+
+## FAST-VIDEO-021 - Preserve Video Tools Subtitle Preview in Product Render
+
+- Bumped app version from `0.10.65` to `0.10.73` as a patch release for Video Tools Lab preview/output parity.
+- Fixed Workspace/VIP product render paths to preserve saved `subtitleBackgroundPaddingY` from Video Tools Lab setup.
+- Forwarded `subtitleBackgroundPaddingY` through Workspace edit/VIP form payloads and `/api/audio/video-vip-processing` subtitle style.
+- Updated Video Tools Lab Run/Save to derive output subtitle `alignment` and margins from the currently visible preview box position, so dragged preview placement is no longer separate from render settings.
+- Refined subtitle margin export back to bottom-aligned ASS fallback margins so saved top-margin values cannot push subtitles to the top of the video.
+- Rebuilds Workspace/VIP subtitle margins from saved `subtitlePreviewPlacement` when present, so older saved numeric margins cannot override the preview position the user actually aligned in Video Tools Lab.
+- Added subtitle region placement using the same percentage `x/y/width/height` coordinate model as blur/cover regions; render now positions subtitle text at the region center with ASS `\pos`, and falls back to saved blur regions for older setups.
+- Fixed subtitle wrapping to use placement-region width instead of stale ASS margins, expanded the auto-wrap width budget, and inserted a controlled ASS spacer between multi-line subtitle rows.
+- Fixed subtitle/text-overlay custom font rendering in output video by wiring Next-bundled Google font files into ffmpeg `ass` filters via `fontsdir`, so fonts like `Lobster` no longer fallback to default in render output.
+- Bundled `Lobster-Regular.ttf` locally (`public/fonts`) and mapped `Lobster` to this TTF first, so ffmpeg/libass avoids unsupported `woff2` and uses the configured font reliably with minimal extra size.
+- Changed subtitle defaults to font size `35` and background padding Y `8`.
+- Expanded Video Tools Lab subtitle font selector with styled options using the loaded thumbnail/video font families.
+- Removed the incorrect ASS vertical scale workaround so subtitle text/background scale stays governed by saved setup values.
+- Blur processing remains unchanged.
+- Verification (FAST-VIDEO-021):
+  - `npm run test -- --run src/lib/video-processing/video-edit-pipeline.test.ts src/features/video-processing/video-tools-lab-panel.test.ts src/app/api/video-processing/edit/route.test.ts src/app/api/audio/video-vip-processing/route.test.ts src/features/workspace/workspace-canvas-panel.test.ts src/lib/workspace/workspace-graph.test.ts` pass (6 files / 119 tests).
+  - `npm run build` pass.
+  - `npm run guard:version` pass.
+
+## FAST-WORKSPACE-051 - Update VIP Workspace Defaults to veryfast and 0.8x
+
+- Bumped app version from `0.10.62` to `0.10.63` as a patch release for Workspace VIP default tuning.
+- Changed VIP `Render mode` default in Workspace from `superfast` to `veryfast`.
+- Changed VIP `Speed factor` default in Workspace from `0.7` to `0.8`.
+- Updated Workspace VIP runtime fallbacks so missing config also defaults to `veryfast` and `0.8`.
+- Updated Workspace graph defaults/tests to match new VIP defaults.
+- Verification (FAST-WORKSPACE-051):
+  - `npm run test -- --run src/lib/workspace/workspace-graph.test.ts src/features/workspace/workspace-canvas-panel.test.ts` pass.
+
 ## FAST-WORKSPACE-051 - Add VIP Render Mode Selector (veryfast/superfast)
 
 - Bumped app version from `0.10.60` to `0.10.61` as a patch release for VIP render control.

@@ -82,6 +82,24 @@ describe("video edit pipeline", () => {
         expect(args.at(-1)).toBe("/tmp/out.mp4");
     });
 
+    it("passes fontsdir to ASS filters when bundled subtitle fonts are available", () => {
+        const args = buildVideoEditFfmpegArgs({
+            videoPath: "/tmp/source.mp4",
+            outputPath: "/tmp/out.mp4",
+            mirror: false,
+            subtitleAssPath: "/tmp/subtitles.ass",
+            subtitleFontsDir: "/tmp/sub-fonts",
+            textOverlayAssPath: "/tmp/text-overlays.ass",
+        });
+        const filter = args[args.indexOf("-filter_complex") + 1];
+        expect(filter).toContain(
+            "ass='/tmp/subtitles.ass':fontsdir='/tmp/sub-fonts'",
+        );
+        expect(filter).toContain(
+            "ass='/tmp/text-overlays.ass':fontsdir='/tmp/sub-fonts'",
+        );
+    });
+
     it("generates ASS subtitles from translated segments", () => {
         const ass = buildSubtitleAssContent([
             {
@@ -94,7 +112,7 @@ describe("video edit pipeline", () => {
         ]);
 
         expect(ass).toContain("Dialogue: 0,0:01:02.12,0:01:04.50");
-        expect(ass).toContain("Dong 1\\NDong 2");
+        expect(ass).toContain("Dong 1\\N{\\fs18}\\h\\N{\\fs100}Dong 2");
         expect(ass).toContain("WrapStyle: 0");
         expect(ass).toContain("Style: BackgroundBox,Arial,100");
         expect(ass).toContain("Style: ForegroundText,Arial,100");
@@ -118,6 +136,48 @@ describe("video edit pipeline", () => {
 
         expect(ass).toContain("Dialogue: 0,0:00:00.00,0:00:04.00");
         expect(ass).toContain("\\N");
+    });
+
+    it("uses placement region width for subtitle wrapping instead of stale margins", () => {
+        const ass = buildSubtitleAssContent(
+            [
+                {
+                    id: 9,
+                    start: 0,
+                    end: 4,
+                    sourceText: "source",
+                    translatedText: "Nguoi co muon bai ta lam su phu khong?",
+                },
+            ],
+            {
+                fontSize: 35,
+                marginLeft: 670,
+                marginRight: 672,
+                placementRegion: { x: 0, y: 80, width: 100, height: 15 },
+                playResX: 1920,
+                playResY: 1080,
+            },
+        );
+
+        expect(ass).not.toContain("su phu\\Nkhong");
+        expect(ass).toContain("Nguoi co muon bai ta lam su phu khong?");
+    });
+
+    it("adds a controlled ASS spacer between wrapped subtitle lines", () => {
+        const ass = buildSubtitleAssContent(
+            [
+                {
+                    id: 10,
+                    start: 0,
+                    end: 4,
+                    sourceText: "source",
+                    translatedText: "Dong 1\nDong 2",
+                },
+            ],
+            { fontSize: 35 },
+        );
+
+        expect(ass).toContain("Dong 1\\N{\\fs6}\\h\\N{\\fs35}Dong 2");
     });
 
     it("builds ffmpeg filter with multiple blur regions", () => {
@@ -268,6 +328,28 @@ describe("video edit pipeline", () => {
         expect(ass).toContain("Style: ForegroundText,Arial,42");
     });
 
+    it("positions subtitles by video percent region when provided", () => {
+        const ass = buildSubtitleAssContent(
+            [
+                {
+                    id: 1,
+                    start: 0,
+                    end: 1,
+                    sourceText: "src",
+                    translatedText: "txt",
+                },
+            ],
+            {
+                playResX: 1920,
+                playResY: 1080,
+                placementRegion: { x: 0, y: 80, width: 100, height: 15 },
+            },
+        );
+
+        expect(ass).toContain(",5,0,0,0,1");
+        expect(ass).toContain("{\\an5\\pos(960,945)}txt");
+    });
+
     it("rejects partial blur without translated subtitle overlay", () => {
         expect(() =>
             validateVideoEditInput({
@@ -390,6 +472,30 @@ describe("video edit pipeline", () => {
                 textOverlayCount: 0,
             },
         });
+    });
+
+    it("uses bundled Lobster TTF for ffmpeg ASS rendering", async () => {
+        const spawnMock = createMockFfmpegSpawn(0);
+        setVideoEditFfmpegSpawnForTest(spawnMock as never);
+        setVideoEditReadFileForTest(
+            vi.fn(async () => Buffer.from("edited-video")),
+        );
+
+        await runVideoEditPipelineFromPath({
+            fileName: "source clip.mp4",
+            fileSizeBytes: 3,
+            inputPath: "/tmp/source clip.mp4",
+            subtitles: {
+                enabled: true,
+                segments: translatedSegments,
+                style: { fontFamily: "Lobster" },
+            },
+        });
+
+        const args = spawnMock.mock.calls[0]?.[1] as string[];
+        expect(Array.isArray(args)).toBe(true);
+        const filter = args[args.indexOf("-filter_complex") + 1];
+        expect(filter).toContain("fontsdir=");
     });
 
     it("maps ffmpeg failures to video edit error code", async () => {

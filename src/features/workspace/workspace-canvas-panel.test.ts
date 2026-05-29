@@ -70,6 +70,14 @@ describe("WorkspaceCanvasPanel canvas interactions", () => {
         expect(source).toContain("findMaskUpstreamVideoNode");
         expect(source).toContain("findMirrorParityToAncestorNode");
         expect(source).toContain("buildEffectiveMaskSetup");
+        expect(source).toContain(
+            "buildSubtitleAssPlacementFromVideoEditSetup",
+        );
+        expect(source).toContain(
+            "buildSubtitlePlacementRegionFromVideoEditSetup",
+        );
+        expect(source).toContain("previewAssPlacement?.subtitleMarginBottom");
+        expect(source).toContain("subtitlePlacementRegion");
         expect(source).toMatch(
             /fallback blur regions from this setup are\s+auto mirrored horizontally/,
         );
@@ -85,6 +93,8 @@ describe("WorkspaceCanvasPanel canvas interactions", () => {
         expect(source).toContain('"coverBoxColor"');
         expect(source).toContain('"textOverlayEnabled"');
         expect(source).toContain('"textOverlaysJson"');
+        expect(source).toContain("subtitleBackgroundPaddingY");
+        expect(source).toContain('"subtitleBackgroundPaddingY"');
         expect(source).toContain("textOverlayPlayResX");
         expect(source).toContain("Text overlay");
     });
@@ -284,6 +294,10 @@ describe("WorkspaceCanvasPanel canvas interactions", () => {
         expect(source).toContain("loadLocalVideoEditSetup");
         expect(source).toContain("videoEditSetupJson");
         expect(source).toContain("Video Tools Lab setup found");
+        expect(source).toContain("getTemplateConfigDefaultValue");
+        expect(source).toContain("templateDefaultValue");
+        expect(source).toContain("upstreamSourceLocalSetup?.videoEditSetup");
+        expect(source).toContain('sourceNode.templateNodeType === "source.file"');
     });
 
     it("renders dragged link previews as Bézier curves", () => {

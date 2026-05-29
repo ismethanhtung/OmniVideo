@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
     createAssetVipProcessingSampleGraph,
+    createUploadVipSaveLocalSampleGraph,
     WORKSPACE_NODE_TEMPLATES,
     addWorkspaceNode,
     connectWorkspaceNodes,
@@ -256,7 +257,7 @@ describe("workspace graph helpers", () => {
         }
     });
 
-    it("creates VIP nodes with superfast render preset default", () => {
+    it("creates VIP nodes with veryfast render preset default", () => {
         const template = WORKSPACE_NODE_TEMPLATES.find(
             (entry) => entry.nodeType === "video.vip-processing",
         );
@@ -270,8 +271,27 @@ describe("workspace graph helpers", () => {
         );
 
         expect(graph.nodes[0].config).toMatchObject({
-            renderPreset: "superfast",
+            renderPreset: "veryfast",
         });
+    });
+
+    it("keeps subtitle background padding configurable on mask nodes", () => {
+        const template = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "edit.mask-region",
+        );
+
+        expect(template?.configFields).toContainEqual(
+            expect.objectContaining({
+                key: "subtitleBackgroundPaddingY",
+                defaultValue: 8,
+            }),
+        );
+        expect(template?.configFields).toContainEqual(
+            expect.objectContaining({
+                key: "subtitleFontSize",
+                defaultValue: 35,
+            }),
+        );
     });
 
     it("connects nodes, keeps duplicate edges as no-op, and rejects missing nodes", () => {
@@ -1496,6 +1516,27 @@ describe("workspace graph helpers", () => {
                 artifactNodeId: "video-vip-processing-1",
                 storageNodeId: "storage-upload-1",
                 producerNodeId: "storage-upload-1",
+            },
+        ]);
+    });
+
+    it("plans seeded upload VIP processing save-local flow", () => {
+        const graph = createUploadVipSaveLocalSampleGraph();
+
+        expect(validateWorkspaceGraph(graph)).toEqual({ ok: true, errors: [] });
+        const plan = planWorkspaceFlow(graph);
+
+        expect(plan.ok).toBe(true);
+        expect(plan.steps).toEqual([
+            {
+                kind: "vip-process-video",
+                sourceNodeId: "source-file-1",
+                vipNodeId: "video-vip-processing-1",
+            },
+            {
+                kind: "download-local",
+                downloadNodeId: "output-download-local-1",
+                producerNodeId: "video-vip-processing-1",
             },
         ]);
     });

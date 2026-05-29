@@ -588,7 +588,13 @@ describe("video vip processing API", () => {
           subtitleMarginLeft: 0,
           subtitleMarginRight: 5,
           subtitleAlignment: 2,
+          subtitleSampleWidthPercent: 100,
+          subtitlePreviewPlacement: {
+            leftPercent: 0,
+            topPercent: 78.61111111111111,
+          },
           subtitleBackgroundOpacity: 65,
+          subtitleBackgroundPaddingY: 8,
           blurRegions: [
             {
               x: 34.9,
@@ -625,9 +631,17 @@ describe("video vip processing API", () => {
     expect(mockedRunVideoVipProcessing).toHaveBeenCalledWith(
       expect.objectContaining({
         subtitleStyle: expect.objectContaining({
-          marginBottom: 83,
-          marginLeft: 0,
-          marginRight: 5,
+          marginBottom: 85,
+          marginLeft: 670,
+          marginRight: 672,
+          alignment: 2,
+          backgroundPaddingY: 8,
+          placementRegion: {
+            x: 34.9,
+            y: 87.6,
+            width: 30.1,
+            height: 4.5,
+          },
         }),
         blur: expect.objectContaining({
           regions: [
