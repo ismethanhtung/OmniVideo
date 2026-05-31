@@ -1,5 +1,19 @@
 # OmniVideo Changelog
 
+## FAST-AUDIO-067 - Optimize Transcript Translation Prompt Cost and Quality
+
+- Bumped app version from `0.10.79` to `0.10.80` as a patch release for translation prompt efficiency.
+- Increased transcript translation chunk target from 100 to 150 segments when char budget allows.
+- Replaced repeated full-transcript context in every chunk prompt with a one-time compact translation guide for multi-chunk runs plus small nearby context windows.
+- Switched preferred translation output contract to compact `{"t":{"id":"text"}}` JSON while keeping backward compatibility with existing `segments` and `translations` shapes.
+- Added OpenAI-native `prompt_cache_key` support for chat requests and logs for prompt/completion/cached token usage when returned by the provider.
+- Verification (FAST-AUDIO-067):
+  - `npm run test -- --run src/lib/multilingual-audio/transcript-translation.test.ts` pass (1 file / 18 tests).
+  - `npm run test -- --run src/app/api/audio/transcript-translation/route.test.ts src/lib/multilingual-audio/transcript-translation.test.ts` pass (2 files / 19 tests).
+  - `npm run build` pass.
+  - `npm run guard:version` pass.
+  - `git diff --check` pass.
+
 ## FAST-VIDEO-028 - Prefer Original Source Title for VIP Output Filename
 
 - Bumped app version from `0.10.78` to `0.10.79` as a patch release for VIP naming consistency.

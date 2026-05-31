@@ -140,6 +140,28 @@ describe("transcript translation", () => {
       ],
     });
 
+    expect(
+      parseTranslationModelContent('{"t":{"0":"Xin chào","1":"Tạm biệt"}}'),
+    ).toEqual({
+      segments: [
+        { id: 0, text: "Xin chào" },
+        { id: 1, text: "Tạm biệt" },
+      ],
+    });
+
+    expect(
+      parseTranslationModelContent('{"t":[[0,"Xin chào"],[1,"Tạm biệt"]]}'),
+    ).toEqual({
+      segments: [
+        { id: 0, text: "Xin chào" },
+        { id: 1, text: "Tạm biệt" },
+      ],
+    });
+
+    expect(parseTranslationModelContent('{"0":"Xin chào"}')).toEqual({
+      segments: [{ id: 0, text: "Xin chào" }],
+    });
+
     expect(() =>
       parseTranslationModelContent("sure, here you go -> not-json-response"),
     ).toThrow(/Raw model content:/);
@@ -154,24 +176,10 @@ describe("transcript translation", () => {
             {
               message: {
                 content: JSON.stringify({
-                  segments: [
-                    {
-                      id: 0,
-                      start: 0,
-                      end: 1.34,
-                      sourceText: "寻导人做梦都想不到",
-                      translatedText:
-                        "Người dẫn đường có nằm mơ cũng không ngờ tới",
-                    },
-                    {
-                      id: 1,
-                      start: 1.34,
-                      end: 3.72,
-                      sourceText: "一个被海关滞留许久的集装箱盲盒",
-                      translatedText:
-                        "Một container bí ẩn bị hải quan giữ lại rất lâu",
-                    },
-                  ],
+                  t: {
+                    0: "Người dẫn đường có nằm mơ cũng không ngờ tới",
+                    1: "Một container bí ẩn bị hải quan giữ lại rất lâu",
+                  },
                 }),
               },
             },
@@ -236,25 +244,20 @@ describe("transcript translation", () => {
     const prompt = body.messages[1].content as string;
     expect(body.model).toBe("cx/gpt-5.5");
     expect(body.response_format).toEqual({ type: "json_object" });
-    expect(prompt).toContain("fits the segment duration");
-    expect(prompt).toContain("infer a small cast/gender map");
-    expect(prompt).toContain("do not translate 他 mechanically");
-    expect(prompt).toContain("Female cues:");
-    expect(prompt).toContain("Male cues:");
-    expect(prompt).toContain("prefer a neutral Vietnamese wording");
-    expect(prompt).toContain("Never insert pronouns inside another word");
-    expect(prompt).toContain("Full source transcript context (read-only):");
-    expect(prompt).toContain("Do not translate or output this whole context");
-    expect(prompt).toContain("寻导人做梦都想不到一个被海关滞留许久的集装箱盲盒");
-    expect(prompt).toContain("Do not force Vietnamese to match the source character count exactly");
-    expect(prompt).toContain("short Chinese segments need short Vietnamese");
-    expect(prompt).toContain("20 -> hai mươi");
+    expect(prompt).toContain("fit the source timing");
+    expect(prompt).toContain("Translation guide:");
+    expect(prompt).toContain("Pronouns: resolve Chinese 他/她");
+    expect(prompt).toContain("Female cues include");
+    expect(prompt).toContain("Male cues include");
+    expect(prompt).toContain("avoid gendered Vietnamese pronouns");
+    expect(prompt).not.toContain("Full source transcript context (read-only):");
+    expect(prompt).toContain("Short source lines need short Vietnamese");
     expect(prompt).toContain("wasabi -> wa sa bi");
     expect(prompt).toContain("50cm -> 50 xen ti mét");
     expect(prompt).toContain("isothiocyanate -> ai sô thio xai a nết");
     expect(prompt).toContain("myrosinase -> mai rô si nâyz");
     expect(prompt).toContain("enzyme/enzym -> en zim");
-    expect(prompt).toContain('"translations"');
+    expect(prompt).toContain('"t"');
     expect(prompt).not.toContain("durationSeconds");
   });
 
@@ -276,6 +279,59 @@ describe("transcript translation", () => {
       code: "PRV_GROQ_TRANSLATION_FAILED",
       message: "rate limit",
     });
+  });
+
+  it("sends prompt cache key and logs cached token usage for OpenAI-native chat requests", async () => {
+    const fetchImpl = vi.fn(async () => {
+      return new Response(
+        JSON.stringify({
+          id: "chat_openai",
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  t: {
+                    0: "Người dẫn đường không thể ngờ tới",
+                    1: "Một container bí ẩn bị giữ lại rất lâu",
+                  },
+                }),
+              },
+            },
+          ],
+          usage: {
+            prompt_tokens: 1200,
+            completion_tokens: 80,
+            total_tokens: 1280,
+            prompt_tokens_details: { cached_tokens: 1024 },
+          },
+        }),
+        { status: 200 },
+      );
+    });
+
+    const result = await translateTranscriptSegments({
+      segments: sourceSegments,
+      apiKey: "secret",
+      baseUrl: "https://api.openai.com/v1",
+      providerName: "openai",
+      fetchImpl,
+    });
+
+    const [, init] = fetchImpl.mock.calls[0];
+    const body = JSON.parse(init.body as string);
+    expect(body.prompt_cache_key).toMatch(/^ov-translation-/);
+    expect(result.totalTokensUsed).toBe(1280);
+    expect(result.totalCachedPromptTokens).toBe(1024);
+    expect(console.log).toHaveBeenCalledWith(
+      "[TranscriptTranslation]",
+      expect.objectContaining({
+        event: "provider-body-read",
+        promptTokens: 1200,
+        completionTokens: 80,
+        totalTokens: 1280,
+        cachedPromptTokens: 1024,
+      }),
+    );
   });
 
   it("maps translation provider network failures before response", async () => {
@@ -367,8 +423,8 @@ describe("transcript translation", () => {
     ]);
   });
 
-  it("keeps short provider chunks near one hundred segments per request", async () => {
-    const manySegments = Array.from({ length: 101 }, (_, index) => ({
+  it("keeps short provider chunks near one hundred fifty segments per request without repeating full transcript", async () => {
+    const manySegments = Array.from({ length: 151 }, (_, index) => ({
       id: index,
       start: index,
       end: index + 0.5,
@@ -377,6 +433,26 @@ describe("transcript translation", () => {
     const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
       const body = JSON.parse(init.body as string);
       const content = body.messages[1].content as string;
+      if (content.includes("Transcript:\n")) {
+        return new Response(
+          JSON.stringify({
+            id: "chat_guide",
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    characters: {},
+                    terms: {},
+                    style: "concise Vietnamese voice-over",
+                    warnings: ["keep pronouns consistent"],
+                  }),
+                },
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
       const requestSegments = JSON.parse(
         content.slice(content.indexOf("Segments:\n") + "Segments:\n".length),
       ) as Array<{ id: number; text: string }>;
@@ -408,23 +484,24 @@ describe("transcript translation", () => {
       fetchImpl,
     });
 
-    expect(fetchImpl).toHaveBeenCalledTimes(2);
-    expect(result.chunks.map((chunk) => chunk.segmentCount)).toEqual([100, 1]);
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+    expect(result.provider.requestId).toContain("chat_guide");
+    expect(result.chunks.map((chunk) => chunk.segmentCount)).toEqual([150, 1]);
 
-    const prompts = fetchImpl.mock.calls.map(([, init]) => {
+    const prompts = fetchImpl.mock.calls.slice(1).map(([, init]) => {
       const body = JSON.parse((init as RequestInit).body as string);
       return body.messages[1].content as string;
     });
     expect(prompts[0]).toContain("短句0");
-    expect(prompts[0]).toContain("短句100");
-    expect(prompts[1]).toContain("短句0");
-    expect(prompts[1]).toContain("短句100");
+    expect(prompts[0]).toContain("短句150");
+    expect(prompts[1]).not.toContain("短句0");
+    expect(prompts[1]).toContain("短句150");
 
     const requestSegments = prompts.map((prompt) =>
       JSON.parse(prompt.slice(prompt.indexOf("Segments:\n") + "Segments:\n".length)),
     ) as Array<Array<{ id: number; text: string }>>;
-    expect(requestSegments[0]).toHaveLength(100);
-    expect(requestSegments[1]).toEqual([{ id: 100, text: "短句100" }]);
+    expect(requestSegments[0]).toHaveLength(150);
+    expect(requestSegments[1]).toEqual([{ id: 150, text: "短句150" }]);
   });
 
   it("falls back to plain-text translation for a single segment after invalid JSON retries", async () => {
@@ -465,7 +542,7 @@ describe("transcript translation", () => {
       "Keep gender pronouns consistent with Chinese context cues.",
     );
     expect(fallbackBody.messages[1].content).toContain(
-      "Full source transcript context (read-only):",
+      "Translation guide:",
     );
     expect(fallbackBody.messages[1].content).toContain(
       "YoYo Television Series Exclusive",
@@ -765,13 +842,33 @@ describe("transcript translation", () => {
       text: `${"片段".repeat(1200)} ${index}`,
     }));
     const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(init.body as string);
+      const content = body.messages[1].content as string;
+      if (content.includes("Transcript:\n")) {
+        return new Response(
+          JSON.stringify({
+            id: "chat_guide",
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    characters: {},
+                    terms: {},
+                    style: "concise Vietnamese voice-over",
+                  }),
+                },
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+
       inFlight += 1;
       maxInFlight = Math.max(maxInFlight, inFlight);
       await new Promise((resolve) => setTimeout(resolve, 0));
       inFlight -= 1;
 
-      const body = JSON.parse(init.body as string);
-      const content = body.messages[1].content as string;
       const requestSegments = JSON.parse(
         content.slice(content.indexOf("Segments:\n") + "Segments:\n".length),
       ) as Array<{ id: number; start: number; end: number; text: string }>;

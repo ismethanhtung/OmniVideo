@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import {
     ChineseTranscriptionError,
     DEFAULT_TRANSLATION_MODEL,
@@ -24,13 +26,17 @@ type GroqTranslationSegment = NonNullable<
     GroqTranslationPayload["segments"]
 >[number];
 
-const DEFAULT_MAX_SEGMENTS_PER_CHUNK = 100;
+const DEFAULT_MAX_SEGMENTS_PER_CHUNK = 150;
 const DEFAULT_MAX_SOURCE_CHARS_PER_CHUNK = 10000;
-const LIMITED_PROVIDER_MAX_SEGMENTS_PER_CHUNK = 100;
+const LIMITED_PROVIDER_MAX_SEGMENTS_PER_CHUNK = 150;
 const LIMITED_PROVIDER_MAX_SOURCE_CHARS_PER_CHUNK = 10000;
 const DEFAULT_TRANSLATION_CHUNK_CONCURRENCY = 4;
 const DEFAULT_MAX_QUALITY_RETRIES = 2;
 const INVALID_JSON_SNIPPET_MAX_CHARS = 220;
+const TRANSLATION_PROMPT_VERSION = "transcript-translation-v3-compact-guide";
+const TRANSLATION_GUIDE_SOURCE_MAX_CHARS = 32000;
+const TRANSLATION_GUIDE_MAX_CHARS = 3500;
+const NEARBY_CONTEXT_SEGMENT_COUNT = 8;
 
 function summarizeError(error: unknown) {
     if (error instanceof ChineseTranscriptionError) {
@@ -96,6 +102,31 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
     return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function numericMapToSegments(value: Record<string, unknown>) {
+    const entries = Object.entries(value);
+    if (entries.length === 0) return null;
+    const mapped = entries.map(([id, text]) => ({
+        id: Number(id),
+        text: typeof text === "string" ? text : String(text ?? ""),
+    }));
+    return mapped.every((item) => Number.isFinite(item.id)) ? mapped : null;
+}
+
+function tupleArrayToSegments(value: unknown[]) {
+    const mapped = value.map((item) => {
+        if (!Array.isArray(item) || item.length < 2) return null;
+        const id = Number(item[0]);
+        return {
+            id,
+            text: typeof item[1] === "string" ? item[1] : String(item[1] ?? ""),
+        };
+    });
+    if (mapped.some((item) => item === null || !Number.isFinite(item.id))) {
+        return null;
+    }
+    return mapped as Array<{ id: number; text: string }>;
+}
+
 function findBalancedJsonObject(value: string) {
     const start = value.indexOf("{");
     if (start < 0) return null;
@@ -135,6 +166,14 @@ function normalizeParsedTranslationContent(
         return { segments: parsed as GroqTranslationPayload["segments"] };
     }
     if (!isPlainObject(parsed)) return null;
+    if (Array.isArray(parsed.t)) {
+        const mapped = tupleArrayToSegments(parsed.t);
+        if (mapped) return { segments: mapped };
+    }
+    if (isPlainObject(parsed.t)) {
+        const mapped = numericMapToSegments(parsed.t);
+        if (mapped) return { segments: mapped };
+    }
     if (Array.isArray(parsed.segments)) {
         return parsed as GroqTranslationPayload;
     }
@@ -147,17 +186,18 @@ function normalizeParsedTranslationContent(
         isPlainObject(parsed.translations) &&
         Object.keys(parsed.translations).length > 0
     ) {
-        const mapped = Object.entries(parsed.translations).map(
-            ([id, text]) => ({
-                id: Number(id),
-                text: typeof text === "string" ? text : String(text ?? ""),
-            }),
-        );
-        if (mapped.every((item) => Number.isFinite(item.id))) {
+        const mapped = numericMapToSegments(parsed.translations);
+        if (mapped) {
             return {
                 segments: mapped,
             };
         }
+    }
+    const topLevelMap = numericMapToSegments(parsed);
+    if (topLevelMap) {
+        return {
+            segments: topLevelMap,
+        };
     }
     return null;
 }
@@ -350,41 +390,212 @@ function splitSegmentsForTranslation(
     return chunks;
 }
 
+function transcriptHash(input: {
+    segments: AudioTranscriptSegment[];
+    sourceLanguage: string;
+    targetLanguage: string;
+    model: string;
+}) {
+    const hash = createHash("sha256");
+    hash.update(TRANSLATION_PROMPT_VERSION);
+    hash.update("\n");
+    hash.update(input.sourceLanguage);
+    hash.update(">");
+    hash.update(input.targetLanguage);
+    hash.update("\n");
+    hash.update(input.model);
+    for (const segment of input.segments) {
+        hash.update(`\n${segment.id}:${segment.text}`);
+    }
+    return hash.digest("hex").slice(0, 32);
+}
+
+function supportsPromptCacheKey(input: {
+    baseUrl: string;
+    providerName: string;
+}) {
+    const host = getUrlHost(input.baseUrl);
+    return (
+        /(^|\.)api\.openai\.com$/iu.test(host) ||
+        input.providerName.toLowerCase() === "openai"
+    );
+}
+
+function formatTranscriptLines(segments: AudioTranscriptSegment[]) {
+    return segments
+        .map((segment) => `${segment.id}:${segment.text.trim()}`)
+        .filter((line) => !line.endsWith(":"))
+        .join("\n");
+}
+
+function compactTranscriptForGuide(segments: AudioTranscriptSegment[]) {
+    const full = formatTranscriptLines(segments);
+    if (full.length <= TRANSLATION_GUIDE_SOURCE_MAX_CHARS) return full;
+
+    const headBudget = Math.floor(TRANSLATION_GUIDE_SOURCE_MAX_CHARS * 0.4);
+    const middleBudget = Math.floor(TRANSLATION_GUIDE_SOURCE_MAX_CHARS * 0.2);
+    const tailBudget =
+        TRANSLATION_GUIDE_SOURCE_MAX_CHARS - headBudget - middleBudget;
+    const midpoint = Math.floor(segments.length / 2);
+    const head = compactLinesFromStart(segments, headBudget);
+    const middle = compactLinesAround(segments, midpoint, middleBudget);
+    const tail = compactLinesFromEnd(segments, tailBudget);
+    return [
+        head,
+        "[...middle transcript omitted for guide budget...]",
+        middle,
+        "[...tail transcript follows...]",
+        tail,
+    ]
+        .filter(Boolean)
+        .join("\n");
+}
+
+function compactLinesFromStart(
+    segments: AudioTranscriptSegment[],
+    maxChars: number,
+) {
+    const lines: string[] = [];
+    let size = 0;
+    for (const segment of segments) {
+        const line = `${segment.id}:${segment.text.trim()}`;
+        if (size > 0 && size + line.length + 1 > maxChars) break;
+        lines.push(line);
+        size += line.length + 1;
+    }
+    return lines.join("\n");
+}
+
+function compactLinesFromEnd(
+    segments: AudioTranscriptSegment[],
+    maxChars: number,
+) {
+    const lines: string[] = [];
+    let size = 0;
+    for (let index = segments.length - 1; index >= 0; index -= 1) {
+        const line = `${segments[index].id}:${segments[index].text.trim()}`;
+        if (size > 0 && size + line.length + 1 > maxChars) break;
+        lines.unshift(line);
+        size += line.length + 1;
+    }
+    return lines.join("\n");
+}
+
+function compactLinesAround(
+    segments: AudioTranscriptSegment[],
+    centerIndex: number,
+    maxChars: number,
+) {
+    const lines: string[] = [];
+    let size = 0;
+    let left = Math.max(0, centerIndex);
+    let right = left + 1;
+    while ((left >= 0 || right < segments.length) && size < maxChars) {
+        const next =
+            left >= 0
+                ? segments[left--]
+                : right < segments.length
+                  ? segments[right++]
+                  : null;
+        if (!next) break;
+        const line = `${next.id}:${next.text.trim()}`;
+        if (size > 0 && size + line.length + 1 > maxChars) break;
+        lines.push(line);
+        size += line.length + 1;
+    }
+    return lines
+        .sort((a, b) => Number(a.split(":")[0]) - Number(b.split(":")[0]))
+        .join("\n");
+}
+
+function trimTranslationGuide(value: string) {
+    const normalized = value.replace(/\s+/gu, " ").trim();
+    if (!normalized) {
+        return "No stable guide was available; resolve names and pronouns from nearby context.";
+    }
+    return normalized.length <= TRANSLATION_GUIDE_MAX_CHARS
+        ? normalized
+        : `${normalized.slice(0, TRANSLATION_GUIDE_MAX_CHARS)}...`;
+}
+
+function parseTranslationGuideContent(content: string) {
+    const candidates = [
+        content.trim(),
+        content
+            .trim()
+            .replace(/^```(?:json)?\s*/iu, "")
+            .replace(/\s*```$/u, "")
+            .trim(),
+    ];
+    const balancedObject = findBalancedJsonObject(content);
+    if (balancedObject) candidates.push(balancedObject);
+
+    for (const candidate of candidates) {
+        if (!candidate) continue;
+        try {
+            return trimTranslationGuide(JSON.stringify(JSON.parse(candidate)));
+        } catch {
+            // Try the next provider output candidate.
+        }
+    }
+
+    return trimTranslationGuide(content);
+}
+
+function buildNearbyContext(input: {
+    allSegments: AudioTranscriptSegment[];
+    segments: AudioTranscriptSegment[];
+}) {
+    if (input.allSegments.length === input.segments.length) {
+        return "";
+    }
+    const first = input.segments[0];
+    const last = input.segments[input.segments.length - 1];
+    const firstIndex = input.allSegments.findIndex(
+        (segment) => segment.id === first?.id,
+    );
+    const lastIndex = input.allSegments.findIndex(
+        (segment) => segment.id === last?.id,
+    );
+    if (firstIndex < 0 || lastIndex < 0) return "";
+
+    const before = input.allSegments
+        .slice(Math.max(0, firstIndex - NEARBY_CONTEXT_SEGMENT_COUNT), firstIndex)
+        .map((segment) => ({ id: segment.id, text: segment.text }));
+    const after = input.allSegments
+        .slice(lastIndex + 1, lastIndex + 1 + NEARBY_CONTEXT_SEGMENT_COUNT)
+        .map((segment) => ({ id: segment.id, text: segment.text }));
+    if (before.length === 0 && after.length === 0) return "";
+    return JSON.stringify({ before, after });
+}
+
 function buildTranslationPrompt(input: {
     segments: AudioTranscriptSegment[];
-    fullTranscriptContext: string;
+    translationGuide: string;
+    nearbyContext: string;
     sourceLanguage: string;
     targetLanguage: string;
     retryMode?: boolean;
 }) {
     return [
-        "Translate the transcript segments into natural Vietnamese while preserving meaning, context, names, and continuity across segments.",
-        "Before translating, infer a small cast/gender map from the whole chunk, then apply that map consistently to every segment.",
-        "Chinese pronouns are context-sensitive: do not translate 他 mechanically as 'hắn/anh ấy' when the current referent is female. Resolve the referent from the nearest named character, titles, actions, and surrounding segments.",
-        "Female cues: 她, 师妹, 师姐, 圣女, 姑娘, 小姐, 女子, 女修, 仙子, 美人, 绝美, 师尊 if the context describes a female master. Use Vietnamese female references such as 'nàng' or 'cô ấy' consistently.",
-        "Male cues: 他, 师兄, 师弟, 公子, 少年, 男子, 男修. Use Vietnamese male references such as 'hắn', 'anh ấy', or 'chàng' only when the referent is clearly male.",
-        "When a name/title establishes gender in one segment, keep that gender for later pronouns that refer to the same person, even if later Chinese uses 他 ambiguously.",
-        "If gender is ambiguous, prefer a neutral Vietnamese wording that avoids gendered pronouns instead of guessing.",
-        "Never insert pronouns inside another word; pronouns must remain separate Vietnamese words only when they are actually needed.",
-        "Keep each segment aligned to its original timing. Do not merge, split, reorder, or drop segments.",
-        "This translation will be synthesized as Vietnamese voice-over. Prefer concise spoken Vietnamese that fits the segment duration at a natural speaking pace.",
-        "Do not force Vietnamese to match the source character count exactly; Chinese and Vietnamese have different written length and spoken duration. Use source length only as a compression signal: short Chinese segments need short Vietnamese, long Chinese segments can use fuller wording if timing allows.",
-        "For very short segments, use the shortest natural equivalent. Avoid explanatory additions, filler words, and verbose literal phrasing that would force the TTS to speak too fast.",
-        "If a literal translation is too long for the duration, compress the wording while preserving the core meaning and tone.",
-        "Normalize standalone Arabic numerals into spoken Vietnamese words in translatedText (example: 20 -> hai mươi, 125 -> một trăm hai mươi lăm). Keep numbers as digits only for codes/IDs/measurements where spelling out is unnatural.",
-        "Make translatedText friendly for Vietnamese TTS pronunciation. Spell foreign food/brand-like terms phonetically when they are likely to be misread (example: wasabi -> wa sa bi). Expand compact measurement abbreviations into spoken Vietnamese units while preserving the number when useful (examples: 50cm -> 50 xen ti mét, 12kg -> 12 ki lô gam, 5ml -> 5 mi li lít).",
-        "For scientific/biochemical terms that sound unnatural if read as raw English, use a Vietnamese phonetic rendering (examples: isothiocyanate -> ai sô thio xai a nết, myrosinase -> mai rô si nâyz, enzyme/enzym -> en zim).",
-        'If a segment is only a production/channel bumper (example: "YoYo Television Series Exclusive"), rewrite it to a short neutral phrase like "Phim ngắn." instead of literal branding copy.',
-        "Every translatedText must be in the target language. Do not copy the source text unless it is a proper noun, code, or number.",
+        `Prompt version: ${TRANSLATION_PROMPT_VERSION}.`,
+        "Task: translate only the requested transcript segments into natural Vietnamese for voice-over.",
+        "Rules: preserve meaning, names, tone, timeline alignment, and segment IDs. Do not merge, split, reorder, or drop segments.",
+        "Use the Translation guide as the main continuity source. Use Nearby context only for pronouns, names, relationships, and tone; do not output nearby context unless its IDs appear in Segments.",
+        "Pronouns: resolve Chinese 他/她 from names, titles, actions, and guide. Female cues include 她/师妹/师姐/圣女/姑娘/小姐/女子/女修/仙子/美人/绝美. Male cues include 他/师兄/师弟/公子/少年/男子/男修. If unclear, avoid gendered Vietnamese pronouns.",
+        "Vietnamese style: concise spoken language that can fit the source timing. Short source lines need short Vietnamese. Avoid explanations and filler.",
+        "TTS normalization: spell standalone numbers as Vietnamese words unless codes/measurements; expand units like 50cm -> 50 xen ti mét, 12kg -> 12 ki lô gam, 5ml -> 5 mi li lít; render wasabi -> wa sa bi, isothiocyanate -> ai sô thio xai a nết, myrosinase -> mai rô si nâyz, enzyme/enzym -> en zim.",
+        'Production/channel bumper text like "YoYo Television Series Exclusive" should become a short neutral phrase such as "Phim ngắn."',
+        "Every value must be Vietnamese. Do not copy Chinese source text unless it is a proper noun/code.",
         input.retryMode
-            ? "This is a retry for segments that were missing or left untranslated. Be extra strict: translate all non-name Chinese text into Vietnamese."
+            ? "Retry mode: fix missing/untranslated/CJK-contaminated values. Translate all non-name Chinese text into Vietnamese."
             : "",
-        'Return JSON only. Do not wrap it in markdown. Do not add explanations before or after JSON. The first character must be "{" and the last character must be "}".',
-        'Required shape: {"translations":[{"id":0,"text":"..."}]}. You may use key "translatedText" instead of "text".',
+        'Return JSON only. Required compact shape: {"t":{"1700":"Cẩn thận!","1701":"Đây là cấm thuật..."}}.',
         `Source language: ${input.sourceLanguage}. Target language: ${input.targetLanguage}.`,
-        "Full source transcript context (read-only):",
-        "Use this only to resolve continuity, names, referents, relationships, and tone across the entire transcript. Do not translate or output this whole context. Return translations only for the requested Segments below.",
-        input.fullTranscriptContext,
+        "Translation guide:",
+        input.translationGuide,
+        input.nearbyContext ? "Nearby context:" : "",
+        input.nearbyContext,
         "Segments:",
         JSON.stringify(
             input.segments.map((segment) => ({
@@ -427,9 +638,124 @@ async function fetchTranslationProvider(input: {
     }
 }
 
+async function requestTranslationGuide(input: {
+    segments: AudioTranscriptSegment[];
+    sourceLanguage: string;
+    targetLanguage: string;
+    model: string;
+    apiKey: string;
+    baseUrl: string;
+    fetcher: typeof fetch;
+    promptCacheKey?: string;
+}) {
+    const url = `${input.baseUrl}/chat/completions`;
+    const guideSource = compactTranscriptForGuide(input.segments);
+    const bodyPayload: Record<string, unknown> = {
+        model: input.model,
+        temperature: 0.1,
+        response_format: { type: "json_object" },
+        messages: [
+            {
+                role: "system",
+                content:
+                    "You create compact translation guides for audiovisual transcript translation. Return JSON only.",
+            },
+            {
+                role: "user",
+                content: [
+                    `Prompt version: ${TRANSLATION_PROMPT_VERSION}.`,
+                    `Source language: ${input.sourceLanguage}. Target language: ${input.targetLanguage}.`,
+                    "Analyze this transcript once. Return a compact JSON guide under 1200 words with keys:",
+                    '{"characters":{"sourceName":{"gender":"male|female|unknown","viRef":"...","notes":"..."}},"terms":{"sourceTerm":"Vietnamese rendering"},"style":"...","warnings":["..."]}',
+                    "Focus on names, gender/pronoun continuity, titles/sects/skills, repeated terms, and tone. Do not translate the full transcript.",
+                    "Transcript:",
+                    guideSource,
+                ].join("\n"),
+            },
+        ],
+    };
+    if (input.promptCacheKey) {
+        bodyPayload.prompt_cache_key = input.promptCacheKey;
+    }
+    const requestBody = JSON.stringify(bodyPayload);
+    const requestContext = {
+        mode: "guide-json",
+        providerHost: getUrlHost(url),
+        model: input.model,
+        segmentCount: input.segments.length,
+        requestBytes: Buffer.byteLength(requestBody),
+        guideSourceChars: guideSource.length,
+        promptCacheKeyEnabled: Boolean(input.promptCacheKey),
+    };
+    logTranslationEvent("guide-request", requestContext);
+
+    const response = await fetchTranslationProvider({
+        fetcher: input.fetcher,
+        url,
+        context: requestContext,
+        init: {
+            method: "POST",
+            headers: {
+                Authorization: `Bearer ${input.apiKey}`,
+                "Content-Type": "application/json",
+            },
+            body: requestBody,
+        },
+    });
+    const rawResponseBody = await response.text();
+    const payload = (() => {
+        try {
+            return JSON.parse(rawResponseBody || "{}");
+        } catch {
+            return {};
+        }
+    })() as {
+        id?: string;
+        error?: { message?: string };
+        choices?: Array<{ message?: { content?: string } }>;
+        usage?: {
+            prompt_tokens?: number;
+            completion_tokens?: number;
+            total_tokens?: number;
+            prompt_tokens_details?: { cached_tokens?: number };
+        };
+    };
+    const content = payload.choices?.[0]?.message?.content ?? "";
+    const guide = parseTranslationGuideContent(content);
+    logTranslationEvent("guide-body-read", {
+        ...requestContext,
+        status: response.status,
+        requestId: payload.id,
+        responseBytes: Buffer.byteLength(rawResponseBody),
+        responsePreview: rawResponseBody.slice(0, 500),
+        promptTokens: payload.usage?.prompt_tokens,
+        completionTokens: payload.usage?.completion_tokens,
+        totalTokens: payload.usage?.total_tokens,
+        cachedPromptTokens: payload.usage?.prompt_tokens_details?.cached_tokens,
+        guideChars: guide.length,
+    });
+
+    if (!response.ok) {
+        throw new ChineseTranscriptionError(
+            "PRV_GROQ_TRANSLATION_FAILED",
+            payload.error?.message ?? "Translation guide request failed.",
+            response.status >= 400 && response.status < 500 ? 422 : 502,
+        );
+    }
+
+    return {
+        requestId: payload.id,
+        totalTokens: payload.usage?.total_tokens ?? 0,
+        cachedPromptTokens:
+            payload.usage?.prompt_tokens_details?.cached_tokens ?? 0,
+        guide,
+    };
+}
+
 async function requestTranslationChunk(input: {
     segments: AudioTranscriptSegment[];
-    fullTranscriptContext: string;
+    allSegments: AudioTranscriptSegment[];
+    translationGuide: string;
     sourceLanguage: string;
     targetLanguage: string;
     model: string;
@@ -438,9 +764,15 @@ async function requestTranslationChunk(input: {
     fetcher: typeof fetch;
     retryMode?: boolean;
     chunkLabel?: string;
+    promptCacheKey?: string;
+    fullTranscriptChars: number;
 }) {
     const url = `${input.baseUrl}/chat/completions`;
-    const requestBody = JSON.stringify({
+    const nearbyContext = buildNearbyContext({
+        allSegments: input.allSegments,
+        segments: input.segments,
+    });
+    const bodyPayload: Record<string, unknown> = {
         model: input.model,
         temperature: input.retryMode ? 0.1 : 0.2,
         response_format: { type: "json_object" },
@@ -454,14 +786,19 @@ async function requestTranslationChunk(input: {
                 role: "user",
                 content: buildTranslationPrompt({
                     segments: input.segments,
-                    fullTranscriptContext: input.fullTranscriptContext,
+                    translationGuide: input.translationGuide,
+                    nearbyContext,
                     sourceLanguage: input.sourceLanguage,
                     targetLanguage: input.targetLanguage,
                     retryMode: input.retryMode,
                 }),
             },
         ],
-    });
+    };
+    if (input.promptCacheKey) {
+        bodyPayload.prompt_cache_key = input.promptCacheKey;
+    }
+    const requestBody = JSON.stringify(bodyPayload);
 
     const requestContext = {
         mode: "chunk-json",
@@ -472,7 +809,10 @@ async function requestTranslationChunk(input: {
         segmentCount: input.segments.length,
         ...segmentRange(input.segments),
         requestBytes: Buffer.byteLength(requestBody),
-        fullTranscriptChars: input.fullTranscriptContext.length,
+        fullTranscriptChars: input.fullTranscriptChars,
+        translationGuideChars: input.translationGuide.length,
+        nearbyContextChars: nearbyContext.length,
+        promptCacheKeyEnabled: Boolean(input.promptCacheKey),
     };
     logTranslationEvent("provider-request", requestContext);
 
@@ -505,6 +845,7 @@ async function requestTranslationChunk(input: {
             prompt_tokens?: number;
             completion_tokens?: number;
             total_tokens?: number;
+            prompt_tokens_details?: { cached_tokens?: number };
         };
     };
 
@@ -514,6 +855,10 @@ async function requestTranslationChunk(input: {
         requestId: payload.id,
         responseBytes: Buffer.byteLength(rawResponseBody),
         responsePreview: rawResponseBody.slice(0, 500),
+        promptTokens: payload.usage?.prompt_tokens,
+        completionTokens: payload.usage?.completion_tokens,
+        totalTokens: payload.usage?.total_tokens,
+        cachedPromptTokens: payload.usage?.prompt_tokens_details?.cached_tokens,
     });
 
     if (!response.ok) {
@@ -530,22 +875,31 @@ async function requestTranslationChunk(input: {
     return {
         requestId: payload.id,
         totalTokens: payload.usage?.total_tokens ?? 0,
+        cachedPromptTokens:
+            payload.usage?.prompt_tokens_details?.cached_tokens ?? 0,
         segments: normalizeTranslationPayload(parsed, input.segments),
     };
 }
 
 async function requestSingleSegmentPlainTextFallback(input: {
     segment: AudioTranscriptSegment;
-    fullTranscriptContext: string;
+    allSegments: AudioTranscriptSegment[];
+    translationGuide: string;
     sourceLanguage: string;
     targetLanguage: string;
     model: string;
     apiKey: string;
     baseUrl: string;
     fetcher: typeof fetch;
+    promptCacheKey?: string;
+    fullTranscriptChars: number;
 }) {
     const url = `${input.baseUrl}/chat/completions`;
-    const requestBody = JSON.stringify({
+    const nearbyContext = buildNearbyContext({
+        allSegments: input.allSegments,
+        segments: [input.segment],
+    });
+    const bodyPayload: Record<string, unknown> = {
         model: input.model,
         temperature: 0.15,
         messages: [
@@ -558,15 +912,20 @@ async function requestSingleSegmentPlainTextFallback(input: {
                 role: "user",
                 content: [
                     `Source language: ${input.sourceLanguage}. Target language: ${input.targetLanguage}.`,
-                    "Full source transcript context (read-only):",
-                    "Use this only to resolve continuity, names, referents, relationships, and tone. Return only the translation for the single target segment below.",
-                    input.fullTranscriptContext,
+                    "Translation guide:",
+                    input.translationGuide,
+                    nearbyContext ? "Nearby context:" : "",
+                    nearbyContext,
                     "Translate this one transcript segment into concise natural Vietnamese for TTS.",
                     `Source text: ${input.segment.text}`,
                 ].join("\n"),
             },
         ],
-    });
+    };
+    if (input.promptCacheKey) {
+        bodyPayload.prompt_cache_key = input.promptCacheKey;
+    }
+    const requestBody = JSON.stringify(bodyPayload);
     const requestContext = {
         mode: "single-fallback",
         providerHost: getUrlHost(url),
@@ -575,7 +934,10 @@ async function requestSingleSegmentPlainTextFallback(input: {
         start: input.segment.start,
         end: input.segment.end,
         requestBytes: Buffer.byteLength(requestBody),
-        fullTranscriptChars: input.fullTranscriptContext.length,
+        fullTranscriptChars: input.fullTranscriptChars,
+        translationGuideChars: input.translationGuide.length,
+        nearbyContextChars: nearbyContext.length,
+        promptCacheKeyEnabled: Boolean(input.promptCacheKey),
     };
     logTranslationEvent("provider-request", requestContext);
 
@@ -604,7 +966,12 @@ async function requestSingleSegmentPlainTextFallback(input: {
         id?: string;
         error?: { message?: string };
         choices?: Array<{ message?: { content?: string } }>;
-        usage?: { total_tokens?: number };
+        usage?: {
+            prompt_tokens?: number;
+            completion_tokens?: number;
+            total_tokens?: number;
+            prompt_tokens_details?: { cached_tokens?: number };
+        };
     };
 
     logTranslationEvent("provider-body-read", {
@@ -613,6 +980,10 @@ async function requestSingleSegmentPlainTextFallback(input: {
         requestId: payload.id,
         responseBytes: Buffer.byteLength(rawResponseBody),
         responsePreview: rawResponseBody.slice(0, 500),
+        promptTokens: payload.usage?.prompt_tokens,
+        completionTokens: payload.usage?.completion_tokens,
+        totalTokens: payload.usage?.total_tokens,
+        cachedPromptTokens: payload.usage?.prompt_tokens_details?.cached_tokens,
     });
     if (!response.ok) {
         throw new ChineseTranscriptionError(
@@ -637,6 +1008,8 @@ async function requestSingleSegmentPlainTextFallback(input: {
     return {
         requestId: payload.id,
         totalTokens: payload.usage?.total_tokens ?? 0,
+        cachedPromptTokens:
+            payload.usage?.prompt_tokens_details?.cached_tokens ?? 0,
         segment: {
             id: input.segment.id,
             start: input.segment.start,
@@ -666,7 +1039,8 @@ function isInvalidJsonError(error: unknown) {
 
 async function translateChunkAdaptive(input: {
     segments: AudioTranscriptSegment[];
-    fullTranscriptContext: string;
+    allSegments: AudioTranscriptSegment[];
+    translationGuide: string;
     sourceLanguage: string;
     targetLanguage: string;
     model: string;
@@ -677,9 +1051,12 @@ async function translateChunkAdaptive(input: {
     qualityRetryDepth?: number;
     plainTextFallbackTried?: boolean;
     chunkLabel?: string;
+    promptCacheKey?: string;
+    fullTranscriptChars: number;
 }): Promise<{
     requestIds: string[];
     totalTokens: number;
+    cachedPromptTokens: number;
     segments: TranscriptTranslationSegment[];
     chunkCount: number;
 }> {
@@ -700,6 +1077,7 @@ async function translateChunkAdaptive(input: {
             unresolvedCount: unresolved.length,
             requestId: result.requestId,
             totalTokens: result.totalTokens,
+            cachedPromptTokens: result.cachedPromptTokens,
         });
 
         if (
@@ -728,6 +1106,8 @@ async function translateChunkAdaptive(input: {
                     ...retry.requestIds,
                 ],
                 totalTokens: result.totalTokens + retry.totalTokens,
+                cachedPromptTokens:
+                    result.cachedPromptTokens + retry.cachedPromptTokens,
                 segments: result.segments.map(
                     (segment) => retryById.get(segment.id) ?? segment,
                 ),
@@ -738,6 +1118,7 @@ async function translateChunkAdaptive(input: {
         return {
             requestIds: result.requestId ? [result.requestId] : [],
             totalTokens: result.totalTokens,
+            cachedPromptTokens: result.cachedPromptTokens,
             segments: result.segments,
             chunkCount: 1,
         };
@@ -767,6 +1148,8 @@ async function translateChunkAdaptive(input: {
             return {
                 requestIds: [...left.requestIds, ...right.requestIds],
                 totalTokens: left.totalTokens + right.totalTokens,
+                cachedPromptTokens:
+                    left.cachedPromptTokens + right.cachedPromptTokens,
                 segments: [...left.segments, ...right.segments],
                 chunkCount: left.chunkCount + right.chunkCount,
             };
@@ -796,17 +1179,21 @@ async function translateChunkAdaptive(input: {
             });
             const fallback = await requestSingleSegmentPlainTextFallback({
                 segment: input.segments[0],
-                fullTranscriptContext: input.fullTranscriptContext,
+                allSegments: input.allSegments,
+                translationGuide: input.translationGuide,
                 sourceLanguage: input.sourceLanguage,
                 targetLanguage: input.targetLanguage,
                 model: input.model,
                 apiKey: input.apiKey,
                 baseUrl: input.baseUrl,
                 fetcher: input.fetcher,
+                promptCacheKey: input.promptCacheKey,
+                fullTranscriptChars: input.fullTranscriptChars,
             });
             return {
                 requestIds: fallback.requestId ? [fallback.requestId] : [],
                 totalTokens: fallback.totalTokens,
+                cachedPromptTokens: fallback.cachedPromptTokens,
                 segments: [fallback.segment],
                 chunkCount: 1,
             };
@@ -830,7 +1217,12 @@ export async function translateTranscriptSegments(input: {
     baseUrl?: string;
     providerName?: string;
     fetchImpl?: typeof fetch;
-}): Promise<TranscriptTranslationResult & { totalTokensUsed: number }> {
+}): Promise<
+    TranscriptTranslationResult & {
+        totalTokensUsed: number;
+        totalCachedPromptTokens: number;
+    }
+> {
     const startedAt = Date.now();
     validateTranslationSegments(input.segments);
 
@@ -845,6 +1237,14 @@ export async function translateTranscriptSegments(input: {
         .map((segment) => segment.text.trim())
         .filter(Boolean)
         .join("");
+    const promptCacheKey = supportsPromptCacheKey({ baseUrl, providerName })
+        ? `ov-translation-${transcriptHash({
+              segments: input.segments,
+              sourceLanguage,
+              targetLanguage,
+              model,
+          })}`
+        : undefined;
     const isGroqCompatibleDefault = /api\.groq\.com/i.test(baseUrl);
     const chunks = splitSegmentsForTranslation(
         input.segments,
@@ -865,6 +1265,8 @@ export async function translateTranscriptSegments(input: {
         chunkCount: chunks.length,
         concurrency: DEFAULT_TRANSLATION_CHUNK_CONCURRENCY,
         fullTranscriptChars: fullTranscriptContext.length,
+        promptVersion: TRANSLATION_PROMPT_VERSION,
+        promptCacheKeyEnabled: Boolean(promptCacheKey),
         maxSegmentsPerChunk: isGroqCompatibleDefault
             ? DEFAULT_MAX_SEGMENTS_PER_CHUNK
             : LIMITED_PROVIDER_MAX_SEGMENTS_PER_CHUNK,
@@ -872,13 +1274,55 @@ export async function translateTranscriptSegments(input: {
             ? DEFAULT_MAX_SOURCE_CHARS_PER_CHUNK
             : LIMITED_PROVIDER_MAX_SOURCE_CHARS_PER_CHUNK,
     });
+    let translationGuide =
+        "No separate guide was needed; resolve continuity from the requested segments and nearby context.";
+    let guideRequestId: string | undefined;
+    let guideTokensUsed = 0;
+    let guideCachedPromptTokens = 0;
+    if (chunks.length > 1) {
+        try {
+            const guideResult = await requestTranslationGuide({
+                segments: input.segments,
+                sourceLanguage,
+                targetLanguage,
+                model,
+                apiKey,
+                baseUrl,
+                fetcher,
+                promptCacheKey,
+            });
+            translationGuide = guideResult.guide;
+            guideRequestId = guideResult.requestId;
+            guideTokensUsed = guideResult.totalTokens;
+            guideCachedPromptTokens = guideResult.cachedPromptTokens;
+            logTranslationEvent("guide-success", {
+                providerName,
+                providerHost: getUrlHost(baseUrl),
+                model,
+                requestId: guideRequestId,
+                guideChars: translationGuide.length,
+                totalTokens: guideTokensUsed,
+                cachedPromptTokens: guideCachedPromptTokens,
+            });
+        } catch (error) {
+            logTranslationEvent("guide-fallback", {
+                providerName,
+                providerHost: getUrlHost(baseUrl),
+                model,
+                error: summarizeError(error),
+            });
+            translationGuide =
+                "Guide preflight failed. Translate with local chunk context; keep names/pronouns consistent when evidence is available.";
+        }
+    }
     const translatedChunks = await mapWithConcurrency(
         chunks,
         DEFAULT_TRANSLATION_CHUNK_CONCURRENCY,
         (chunk, index) =>
             translateChunkAdaptive({
                 segments: chunk,
-                fullTranscriptContext,
+                allSegments: input.segments,
+                translationGuide,
                 sourceLanguage,
                 targetLanguage,
                 model,
@@ -886,13 +1330,26 @@ export async function translateTranscriptSegments(input: {
                 baseUrl,
                 fetcher,
                 chunkLabel: `${index + 1}/${chunks.length}`,
+                promptCacheKey,
+                fullTranscriptChars: fullTranscriptContext.length,
             }),
     );
-    const requestIds = translatedChunks.flatMap((chunk) => chunk.requestIds);
-    const totalTokensUsed = translatedChunks.reduce(
-        (sum, chunk) => sum + chunk.totalTokens,
-        0,
-    );
+    const requestIds = [
+        ...(guideRequestId ? [guideRequestId] : []),
+        ...translatedChunks.flatMap((chunk) => chunk.requestIds),
+    ];
+    const totalTokensUsed =
+        guideTokensUsed +
+        translatedChunks.reduce(
+            (sum, chunk) => sum + chunk.totalTokens,
+            0,
+        );
+    const totalCachedPromptTokens =
+        guideCachedPromptTokens +
+        translatedChunks.reduce(
+            (sum, chunk) => sum + chunk.cachedPromptTokens,
+            0,
+        );
     logTranslationEvent("run-success", {
         providerName,
         providerHost: getUrlHost(baseUrl),
@@ -905,9 +1362,10 @@ export async function translateTranscriptSegments(input: {
         chunkCount: chunks.length,
         actualRequestCount: translatedChunks.reduce(
             (sum, chunk) => sum + chunk.chunkCount,
-            0,
+            chunks.length > 1 ? 1 : 0,
         ),
         totalTokensUsed,
+        totalCachedPromptTokens,
         durationMs: Date.now() - startedAt,
     });
 
@@ -926,5 +1384,6 @@ export async function translateTranscriptSegments(input: {
             requestId: requestIds.join(",") || undefined,
         },
         totalTokensUsed,
+        totalCachedPromptTokens,
     };
 }
