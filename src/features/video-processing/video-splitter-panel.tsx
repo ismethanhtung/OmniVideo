@@ -319,6 +319,7 @@ export function VideoSplitterPanel({ section }: VideoSplitterPanelProps) {
                                     }
                                     className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main"
                                 >
+                                    <option value={3}>3 minutes</option>
                                     <option value={15}>15 minutes</option>
                                     <option value={30}>30 minutes</option>
                                 </select>

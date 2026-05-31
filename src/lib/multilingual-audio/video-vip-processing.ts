@@ -356,14 +356,16 @@ function normalizeRenderPreset(
     return value === "veryfast" ? "veryfast" : "superfast";
 }
 
-function sanitizeOutputName(fileName: string) {
-    const base = fileName.replace(/\.[^.]+$/u, "") || "omnivideo-vip";
+function sanitizeOutputName(fileName: string, sourceTitle?: string) {
+    const preferredBase =
+        sourceTitle?.trim() || fileName.replace(/\.[^.]+$/u, "");
+    const base = preferredBase || "omnivideo-vip";
     return `${
         base
             .replace(/[^a-zA-Z0-9._-]+/g, "-")
             .replace(/^-+|-+$/g, "")
             .slice(0, 90) || "omnivideo-vip"
-    }-vip.mp4`;
+    }-done.mp4`;
 }
 
 function hashText(value: string) {
@@ -1566,7 +1568,7 @@ export async function runVideoVipProcessing(
         checkpointState = {
             ...checkpointState,
             renderedVideo: {
-                fileName: sanitizeOutputName(input.fileName),
+                fileName: sanitizeOutputName(input.fileName, input.sourceTitle),
                 mimeType: "video/mp4",
                 extension: "mp4",
                 byteLength: videoBytes.byteLength,
@@ -1668,7 +1670,7 @@ export async function runVideoVipProcessing(
             : { videoBase64: videoBytes.toString("base64") }),
         mimeType: "video/mp4",
         extension: "mp4",
-        fileName: sanitizeOutputName(input.fileName),
+        fileName: sanitizeOutputName(input.fileName, input.sourceTitle),
         byteLength: videoBytes.byteLength,
         generationDurationMs: Date.now() - startedAt,
         transcript,

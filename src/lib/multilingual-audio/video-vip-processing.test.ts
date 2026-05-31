@@ -374,6 +374,7 @@ describe("VIP processing stage checkpoints", () => {
 
         expect(runners.transcribe).toHaveBeenCalledTimes(1);
         expect(runners.translate).not.toHaveBeenCalled();
+        expect(result.fileName).toBe("source-done.mp4");
         expect(result.translation.provider.name).toBe("manual-import");
         expect(result.translation.translatedSegments).toEqual([
             expect.objectContaining({
@@ -381,6 +382,20 @@ describe("VIP processing stage checkpoints", () => {
                 translatedText: "Xin chào",
             }),
         ]);
+    });
+
+    it("prefers sourceTitle over technical fileName for output naming", async () => {
+        const runners = createStageRunners();
+        const result = await runVideoVipProcessing({
+            fileName: "part-001.mp4",
+            sourceTitle: "My Original Video",
+            fileSizeBytes: 3,
+            fileBytes: new Uint8Array([1, 2, 3]),
+            stageRunners: runners,
+            omitVideoBase64: true,
+        });
+
+        expect(result.fileName).toBe("My-Original-Video-done.mp4");
     });
 
     it("fails import mode when line count does not match transcript segment count", async () => {

@@ -1,6 +1,7 @@
 import { getAppEnv } from "@/lib/config/env";
 import { getStorageProviderAccountById } from "@/lib/storage-providers/repository";
 import type { StorageProviderDocument } from "@/lib/storage-providers/types";
+import { resolveDownloadFilenameForAsset } from "@/lib/storage/download-filename";
 import {
   buildTelegramTooBigDownloadMessage,
   isTelegramBotDownloadTooBig,
@@ -40,16 +41,6 @@ type TelegramFileResponse = {
 
 function stringValue(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
-}
-
-function safeFilename(value: string | null | undefined) {
-  const fallback = "omnivideo-asset";
-  const base = (value || fallback)
-    .replace(/[^a-zA-Z0-9._-]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 100);
-
-  return `${base || fallback}.mp4`;
 }
 
 async function getProviderForAsset({
@@ -242,7 +233,11 @@ export async function resolveAssetDownload({
   );
   headers.set(
     "content-disposition",
-    `${disposition}; filename="${safeFilename(asset.metadata?.title)}"`,
+    `${disposition}; filename="${resolveDownloadFilenameForAsset({
+      title: asset.metadata?.title,
+      mimeType:
+        result.response.headers.get("content-type") ?? asset.mimeType ?? null,
+    })}"`,
   );
 
   const contentLength = result.response.headers.get("content-length");

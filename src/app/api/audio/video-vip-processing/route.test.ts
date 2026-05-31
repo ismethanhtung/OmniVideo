@@ -178,6 +178,7 @@ describe("video vip processing API", () => {
     expect(mockedRunVideoVipProcessing).toHaveBeenCalledWith(
       expect.objectContaining({
         fileName: "source.mp4",
+        sourceTitle: "source",
         mimeType: "video/mp4",
         language: "zh",
         targetLanguage: "vi",

@@ -1,5 +1,34 @@
 # OmniVideo Changelog
 
+## FAST-VIDEO-028 - Prefer Original Source Title for VIP Output Filename
+
+- Bumped app version from `0.10.78` to `0.10.79` as a patch release for VIP naming consistency.
+- Updated VIP API source resolution to pass `sourceTitle` (original title stem) into runtime processing for file/asset/artifact inputs.
+- Updated VIP output naming to prioritize `sourceTitle` before technical `fileName`, while keeping `-done.mp4` suffix.
+- This prevents intermediate names like `part-001` from dominating output names when original source title is available.
+- Verification (FAST-VIDEO-028):
+  - `npm run test -- --run src/lib/multilingual-audio/video-vip-processing.test.ts src/app/api/audio/video-vip-processing/route.test.ts` pass (2 files / 21 tests).
+  - `npm run guard:version` pass.
+
+## FAST-VIDEO-027 - Fix Thumbnail Download Filename and VIP Output Naming
+
+- Bumped app version from `0.10.77` to `0.10.78` as a patch release for output naming correctness.
+- Fixed storage download filename generation to infer extension from actual mime type instead of hardcoding `.mp4`.
+- Thumbnail/image download now keeps image extensions (for example `.png`, `.jpg`) so `Download image` no longer returns MP4 filenames.
+- Changed VIP output filename suffix from `-vip.mp4` to `-done.mp4`, preserving sanitized source base name.
+- Verification (FAST-VIDEO-027):
+  - `npm run test -- --run src/lib/storage/download-filename.test.ts src/lib/multilingual-audio/video-vip-processing.test.ts` pass (2 files / 13 tests).
+  - `npm run guard:version` pass.
+
+## FAST-VIDEO-026 - Add 3-Minute Head Clip Option in Video Splitter
+
+- Bumped app version from `0.10.76` to `0.10.77` as a patch release for Video Splitter UX.
+- Added `3 minutes` option in `Split Video -> Chỉ cắt đoạn đầu` duration selector.
+- Kept existing `15 minutes` and `30 minutes` options unchanged.
+- Verification (FAST-VIDEO-026):
+  - `npm run test -- --run src/features/video-processing/video-splitter-panel.test.ts` pass (1 file / 3 tests).
+  - `npm run guard:version` pass.
+
 ## FAST-VIDEO-025 - Disable Automatic Subtitle Line Wrapping
 
 - Bumped app version from `0.10.75` to `0.10.76` as a patch release for subtitle stability.

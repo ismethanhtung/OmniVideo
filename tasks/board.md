@@ -25,6 +25,9 @@
 
 ## Review
 
+- `FAST-VIDEO-028` - Prefer original source title for VIP output filename.
+- `FAST-VIDEO-027` - Fix Thumbnail Studio download extension and VIP output naming.
+- `FAST-VIDEO-026` - Add 3-minute head clip option in Video Splitter.
 - `FAST-VIDEO-025` - Disable automatic subtitle line wrapping.
 - `FAST-VIDEO-024` - Relax subtitle auto-wrap threshold to 80% width.
 - `FAST-VIDEO-023` - Update subtitle defaults (size 45, opacity 0) and force uppercase render.

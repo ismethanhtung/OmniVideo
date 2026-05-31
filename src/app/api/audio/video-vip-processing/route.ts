@@ -28,6 +28,10 @@ function readFormValue(formData: FormData, key: string) {
     return typeof value === "string" ? value : "";
 }
 
+function stripExtension(fileName: string) {
+    return fileName.replace(/\.[^.]+$/u, "");
+}
+
 function readOptionalNumber(formData: FormData, key: string) {
     const value = readFormValue(formData, key);
     if (!value.trim()) return undefined;
@@ -610,6 +614,7 @@ async function readStorageAssetVideo(assetId: string) {
 
     return {
         fileName: `${asset.metadata?.title ?? assetId}.mp4`,
+        sourceTitle: asset.metadata?.title?.trim() || undefined,
         mimeType: download.headers.get("content-type") ?? asset.mimeType ?? "video/mp4",
         fileBytes: new Uint8Array(arrayBuffer),
         sourceVideoEditSetup:
@@ -632,6 +637,7 @@ function readWorkspaceArtifactVideo(artifactId: string) {
 
     return {
         fileName: artifact.fileName,
+        sourceTitle: stripExtension(artifact.fileName),
         mimeType: artifact.mimeType,
         fileBytes: new Uint8Array(artifact.bytes),
         sourceVideoEditSetup: null,
@@ -674,6 +680,7 @@ export async function POST(request: Request) {
         let source:
             | {
                   fileName: string;
+                  sourceTitle?: string;
                   mimeType?: string;
                   fileBytes: Uint8Array;
                   sourceVideoEditSetup?: Record<string, unknown> | null;
@@ -683,6 +690,7 @@ export async function POST(request: Request) {
         if (file instanceof File) {
             source = {
                 fileName: file.name || "source.mp4",
+                sourceTitle: stripExtension(file.name || "source.mp4"),
                 mimeType: file.type || undefined,
                 fileBytes: new Uint8Array(await file.arrayBuffer()),
                 sourceVideoEditSetup: null,
@@ -757,6 +765,7 @@ export async function POST(request: Request) {
             : undefined;
         const result = await runVideoVipProcessing({
             fileName: source.fileName,
+            sourceTitle: source.sourceTitle,
             mimeType: source.mimeType,
             fileSizeBytes: source.fileBytes.byteLength,
             fileBytes: source.fileBytes,

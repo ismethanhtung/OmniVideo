@@ -22,6 +22,7 @@ describe("Video Splitter panel", () => {
         expect(source).toContain("30 minutes");
         expect(source).toContain("45 minutes");
         expect(source).toContain("60 minutes");
+        expect(source).toContain("3 minutes");
         expect(source).toContain("15 minutes");
         expect(source).toContain("Number of parts");
         expect(source).toContain('formData.set("splitParts"');
