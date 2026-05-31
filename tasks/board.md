@@ -25,6 +25,8 @@
 
 ## Review
 
+- `FAST-VIDEO-025` - Disable automatic subtitle line wrapping.
+- `FAST-VIDEO-024` - Relax subtitle auto-wrap threshold to 80% width.
 - `FAST-VIDEO-023` - Update subtitle defaults (size 45, opacity 0) and force uppercase render.
 - `FAST-VIDEO-022` - Persist Video Tools Lab local upload setup across reload.
 - `FAST-WORKSPACE-051` - Add VIP render mode selector (veryfast/superfast).

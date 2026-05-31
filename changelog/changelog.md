@@ -1,5 +1,25 @@
 # OmniVideo Changelog
 
+## FAST-VIDEO-025 - Disable Automatic Subtitle Line Wrapping
+
+- Bumped app version from `0.10.75` to `0.10.76` as a patch release for subtitle stability.
+- Disabled automatic subtitle line wrapping in ASS generation.
+- Subtitle text now stays on one line by default, and only becomes multiline when the input segment already contains explicit newline characters.
+- Kept uppercase transform and ASS multiline spacer behavior for explicit multiline input.
+- Verification (FAST-VIDEO-025):
+  - `npm run test -- --run src/lib/video-processing/video-edit-pipeline.test.ts` pass (1 file / 21 tests).
+  - `npm run guard:version` pass.
+
+## FAST-VIDEO-024 - Relax Subtitle Auto-Wrap Threshold to 80% Width
+
+- Bumped app version from `0.10.74` to `0.10.75` as a patch release for subtitle wrapping behavior.
+- Relaxed ASS subtitle auto-wrap width budgeting to target at least 80% of `PlayResX` width (when no explicit placement region is set), preventing premature line breaks when horizontal space is still available.
+- Preserved placement-region-aware wrapping behavior so explicit subtitle region constraints still apply when configured.
+- Added regression coverage to ensure subtitle text under the 80%-width threshold remains on one line.
+- Verification (FAST-VIDEO-024):
+  - `npm run test -- --run src/lib/video-processing/video-edit-pipeline.test.ts` pass (1 file / 21 tests).
+  - `npm run guard:version` pass.
+
 ## FAST-VIDEO-023 - Update Subtitle Defaults and Force Uppercase Render
 
 - Bumped app version from `0.10.73` to `0.10.74` as a patch release for subtitle defaults/style consistency.

@@ -512,33 +512,12 @@ function escapeAssText(text: string) {
         .replace(/\}/g, "\\}");
 }
 
-function wrapSubtitleTextForAss(text: string, maxCharsPerLine: number) {
-    const rawLines = text
+function normalizeSubtitleTextForAss(text: string) {
+    return text
         .split(/\r?\n/gu)
-        .map((line) => line.trim())
-        .filter((line) => line.length > 0);
-    if (rawLines.length === 0) return "";
-    const wrappedLines: string[] = [];
-
-    for (const rawLine of rawLines) {
-        const normalized = rawLine.replace(/\s+/gu, " ").trim();
-        if (!normalized) continue;
-        const words = normalized.split(" ");
-        let current = "";
-
-        for (const word of words) {
-            const candidate = current.length > 0 ? `${current} ${word}` : word;
-            if (candidate.length <= maxCharsPerLine || current.length === 0) {
-                current = candidate;
-                continue;
-            }
-            wrappedLines.push(current);
-            current = word;
-        }
-        if (current.length > 0) wrappedLines.push(current);
-    }
-
-    return wrappedLines.join("\n");
+        .map((line) => line.replace(/\s+/gu, " ").trim())
+        .filter((line) => line.length > 0)
+        .join("\n");
 }
 
 function addAssLineGap(input: {
@@ -658,13 +637,6 @@ export function buildSubtitleAssContent(
     const effectiveSubtitleMarginBottom = placementRegion
         ? 0
         : subtitleMarginBottom;
-    const availableWidth = placementRegion
-        ? Math.max(240, (placementRegion.width / 100) * playResX)
-        : Math.max(240, playResX - subtitleMarginLeft - subtitleMarginRight);
-    const autoMaxCharsPerLine = Math.min(
-        120,
-        Math.max(18, Math.floor((availableWidth / subtitleFontSize) * 2.15)),
-    );
     const normalizedSegments = segments
         .filter(
             (segment) =>
@@ -678,9 +650,8 @@ export function buildSubtitleAssContent(
             end: formatAssTimestamp(segment.end),
             text: addAssLineGap({
                 escapedText: escapeAssText(
-                    wrapSubtitleTextForAss(
+                    normalizeSubtitleTextForAss(
                         segment.translatedText.toLocaleUpperCase("vi-VN"),
-                        autoMaxCharsPerLine,
                     ),
                 ),
                 fontSize: subtitleFontSize,

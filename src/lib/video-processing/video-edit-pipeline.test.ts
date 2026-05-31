@@ -119,7 +119,7 @@ describe("video edit pipeline", () => {
         expect(ass).toContain(",60,60,150,1");
     });
 
-    it("wraps long subtitle lines into ASS line breaks", () => {
+    it("keeps long one-line subtitle text on a single ASS line", () => {
         const ass = buildSubtitleAssContent(
             [
                 {
@@ -135,10 +135,39 @@ describe("video edit pipeline", () => {
         );
 
         expect(ass).toContain("Dialogue: 0,0:00:00.00,0:00:04.00");
-        expect(ass).toContain("\\N");
+        expect(ass).toContain(
+            "KHI AY CON NOI MUON CAM KIEM THEO GIO CHAM TOI TROI DAT GIO TA HOI LAI CHI AY CON DO KHONG",
+        );
+        expect(ass).not.toContain("\\N");
     });
 
-    it("uses placement region width for subtitle wrapping instead of stale margins", () => {
+    it("keeps a single subtitle line when text is below 80% viewport width", () => {
+        const ass = buildSubtitleAssContent(
+            [
+                {
+                    id: 81,
+                    start: 0,
+                    end: 4,
+                    sourceText: "source",
+                    translatedText:
+                        "Hom nay ta se thu no cho toi xem da den luc chua nao",
+                },
+            ],
+            {
+                fontSize: 40,
+                marginLeft: 520,
+                marginRight: 520,
+                playResX: 1920,
+            },
+        );
+
+        expect(ass).toContain(
+            "HOM NAY TA SE THU NO CHO TOI XEM DA DEN LUC CHUA NAO",
+        );
+        expect(ass).not.toContain("\\N");
+    });
+
+    it("does not auto-wrap from stale margins when placement region is present", () => {
         const ass = buildSubtitleAssContent(
             [
                 {
@@ -159,7 +188,7 @@ describe("video edit pipeline", () => {
             },
         );
 
-        expect(ass).not.toContain("su phu\\Nkhong");
+        expect(ass).not.toContain("\\N");
         expect(ass).toContain("NGUOI CO MUON BAI TA LAM SU PHU KHONG?");
     });
 
