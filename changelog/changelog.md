@@ -1,5 +1,16 @@
 # OmniVideo Changelog
 
+## FAST-VIDEO-029 - Default Video Tools Lab to Partial Blur and Keep Bangers Font
+
+- Bumped app version from `0.10.84` to `0.10.85` as a patch release for Video Tools Lab defaults.
+- Changed Video Tools Lab default edit mode to `Partial blur` enabled and `Cover subtitle box` disabled.
+- Fixed default subtitle reset path so selecting a local video file without saved setup keeps `Bangers` instead of resetting to `Arial`.
+- Increased Video Tools Lab default subtitle font size from `40` to `50`.
+- Added compatibility fallback for legacy saved setups without blur/cover flags, defaulting them to the new partial-blur baseline.
+- Verification (FAST-VIDEO-029):
+  - `npm run test -- --run src/features/video-processing/video-tools-lab-panel.test.ts` pass (1 file / 9 tests).
+  - `npm run build` pass.
+
 ## FAST-WORKSPACE-057 - Run VIP Piper Voice on EC2
 
 - Bumped app version from `0.10.83` to `0.10.84` as a patch release for remote VIP voice execution.

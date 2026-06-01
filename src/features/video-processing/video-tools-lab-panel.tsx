@@ -492,8 +492,8 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
     const [showAssetPicker, setShowAssetPicker] = useState(false);
     const [assetSearchQuery, setAssetSearchQuery] = useState("");
     const [mirrorEnabled, setMirrorEnabled] = useState(false);
-    const [blurEnabled, setBlurEnabled] = useState(false);
-    const [coverBoxEnabled, setCoverBoxEnabled] = useState(true);
+    const [blurEnabled, setBlurEnabled] = useState(true);
+    const [coverBoxEnabled, setCoverBoxEnabled] = useState(false);
     const [subtitleOverlayEnabled, setSubtitleOverlayEnabled] = useState(true);
     const [blurRegions, setBlurRegions] = useState<BlurRegionDraft[]>([]);
     const [activeRegionId, setActiveRegionId] = useState<string | null>(null);
@@ -509,7 +509,7 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
     const [regionTimeEnd, setRegionTimeEnd] = useState(36000);
     const [regionStrength, setRegionStrength] = useState(50);
     const [subtitleFontFamily, setSubtitleFontFamily] = useState("Bangers");
-    const [subtitleFontSize, setSubtitleFontSize] = useState(40);
+    const [subtitleFontSize, setSubtitleFontSize] = useState(50);
     const [subtitleMarginBottom, setSubtitleMarginBottom] = useState(150);
     const [subtitleMarginLeft, setSubtitleMarginLeft] = useState(60);
     const [subtitleMarginRight, setSubtitleMarginRight] = useState(60);
@@ -624,8 +624,8 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
         blurRegions.find((item) => item.id === activeRegionId) ?? null;
 
     const applyDefaultSubtitleSetup = useCallback(() => {
-        setSubtitleFontFamily("Arial");
-        setSubtitleFontSize(40);
+        setSubtitleFontFamily("Bangers");
+        setSubtitleFontSize(50);
         setSubtitleMarginBottom(150);
         setSubtitleMarginLeft(60);
         setSubtitleMarginRight(60);
@@ -1005,8 +1005,8 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
         (setup: VideoEditSetup | null) => {
             if (!setup) {
                 setMirrorEnabled(false);
-                setBlurEnabled(false);
-                setCoverBoxEnabled(true);
+                setBlurEnabled(true);
+                setCoverBoxEnabled(false);
                 setSubtitleOverlayEnabled(true);
                 setBlurRegions([]);
                 setActiveRegionId(null);
@@ -1016,8 +1016,15 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                 return;
             }
             setMirrorEnabled(setup.mirrorEnabled === true);
-            setBlurEnabled(setup.blurEnabled === true);
-            setCoverBoxEnabled(setup.coverBoxEnabled !== false);
+            const hasBlurEnabled = typeof setup.blurEnabled === "boolean";
+            const hasCoverBoxEnabled = typeof setup.coverBoxEnabled === "boolean";
+            if (!hasBlurEnabled && !hasCoverBoxEnabled) {
+                setBlurEnabled(true);
+                setCoverBoxEnabled(false);
+            } else {
+                setBlurEnabled(setup.blurEnabled === true);
+                setCoverBoxEnabled(setup.coverBoxEnabled === true);
+            }
             setSubtitleOverlayEnabled(setup.subtitleOverlayEnabled !== false);
             setBlurRegions(
                 (setup.blurRegions ?? []).map((region, index) => ({
@@ -1026,7 +1033,7 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                 })),
             );
             setSubtitleFontFamily(setup.subtitleFontFamily || "Bangers");
-            setSubtitleFontSize(setup.subtitleFontSize ?? 40);
+            setSubtitleFontSize(setup.subtitleFontSize ?? 50);
             setSubtitleMarginBottom(setup.subtitleMarginBottom ?? 150);
             setSubtitleMarginLeft(setup.subtitleMarginLeft ?? 60);
             setSubtitleMarginRight(setup.subtitleMarginRight ?? 60);

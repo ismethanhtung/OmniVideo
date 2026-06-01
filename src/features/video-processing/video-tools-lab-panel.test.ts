@@ -56,6 +56,7 @@ describe("Video Tools Lab source preview controls", () => {
     it("adds no-blur cover box and text overlay controls to the edit request", () => {
         expect(source).toContain("coverBoxEnabled");
         expect(source).toContain("Cover subtitle box");
+        expect(source).toContain("useState(false)");
         expect(source).toContain("Add subtitle box");
         expect(source).toContain("coverBoxesJson");
         expect(source).toContain("coverBoxColor");
@@ -81,10 +82,12 @@ describe("Video Tools Lab source preview controls", () => {
     });
 
     it("uses compact subtitle defaults and richer font choices with preview styling", () => {
-        expect(source).toContain("useState(40)");
+        expect(source).toContain('setSubtitleFontFamily("Bangers")');
+        expect(source).toContain("useState(50)");
         expect(source).toContain("useState(8)");
-        expect(source).toContain("setSubtitleFontSize(40)");
+        expect(source).toContain("setSubtitleFontSize(50)");
         expect(source).toContain("setSubtitleBackgroundPaddingY(8)");
+        expect(source).toContain("if (!hasBlurEnabled && !hasCoverBoxEnabled)");
         expect(source).toContain("VIDEO_TEXT_FONT_OPTIONS.map");
         expect(source).toContain("Braah One");
         expect(source).toContain("Lobster");
