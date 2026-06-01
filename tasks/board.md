@@ -25,6 +25,9 @@
 
 ## Review
 
+- `FAST-WORKSPACE-056` - Switch remote VIP seed to EC2 render only.
+- `FAST-WORKSPACE-055` - Harden remote VIP media transport for long videos.
+- `FAST-WORKSPACE-054` - Add remote EC2 voice/render VIP seed.
 - `FAST-AUDIO-067` - Optimize transcript translation prompt cost and quality.
 - `FAST-VIDEO-028` - Prefer original source title for VIP output filename.
 - `FAST-VIDEO-027` - Fix Thumbnail Studio download extension and VIP output naming.

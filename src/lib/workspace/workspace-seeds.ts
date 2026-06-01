@@ -3,6 +3,7 @@ import {
     createAssetTranscriptFullProcessingSampleGraph,
     createAssetPreprocessDubbingSampleGraph,
     createUploadVipSaveLocalSampleGraph,
+    createUploadRemoteVipSaveLocalSampleGraph,
     createUploadVietnameseMaskPublishSampleGraph,
     type WorkspaceGraph,
 } from "./workspace-graph";
@@ -42,6 +43,13 @@ export const WORKSPACE_SEED_TEMPLATES: WorkspaceSeedTemplate[] = [
         description:
             "Upload Video -> VIP Processing -> Save to Local.",
         buildGraph: createUploadVipSaveLocalSampleGraph,
+    },
+    {
+        id: "remote-vip-voice-render",
+        label: "Seed Remote VIP Voice Render",
+        description:
+            "Upload Video -> VIP Processing with local voice + EC2 render -> Save to Local.",
+        buildGraph: createUploadRemoteVipSaveLocalSampleGraph,
     },
     {
         id: "asset-transcript-full-processing",

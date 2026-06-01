@@ -81,4 +81,32 @@ describe("workspace seed templates", () => {
             ]),
         );
     });
+
+    it("registers remote VIP voice render seed without changing local VIP seed", () => {
+        const localSeed = WORKSPACE_SEED_TEMPLATES.find(
+            (entry) => entry.id === "asset-vip-processing-2",
+        );
+        const remoteSeed = WORKSPACE_SEED_TEMPLATES.find(
+            (entry) => entry.id === "remote-vip-voice-render",
+        );
+
+        expect(remoteSeed).toBeDefined();
+        expect(remoteSeed?.label).toBe("Seed Remote VIP Voice Render");
+        const localVipNode = localSeed
+            ?.buildGraph()
+            .nodes.find((node) => node.templateNodeType === "video.vip-processing");
+        const remoteVipNode = remoteSeed
+            ?.buildGraph()
+            .nodes.find((node) => node.templateNodeType === "video.vip-processing");
+
+        expect(localVipNode?.config.voiceRenderExecutionMode).toBeUndefined();
+        expect(remoteVipNode?.config.voiceRenderExecutionMode).toBe("remote");
+        expect(remoteSeed?.buildGraph().nodes.map((node) => node.templateNodeType)).toEqual(
+            expect.arrayContaining([
+                "source.file",
+                "video.vip-processing",
+                "output.download-local",
+            ]),
+        );
+    });
 });

@@ -63,6 +63,16 @@ describe("WorkspaceCanvasPanel canvas interactions", () => {
         expect(source).toContain("<NodeRuntimeConfig");
     });
 
+    it("forwards remote VIP render mode to the VIP API", () => {
+        expect(source).toContain('"voiceRenderExecutionMode"');
+        expect(source).toContain('"remoteVoiceRenderEndpoint"');
+        expect(source).toContain(
+            "Remote render mode enabled: voice generation runs locally; final render runs on the configured EC2 worker.",
+        );
+        expect(source).toContain("formData.set(");
+        expect(source).toContain("voiceRenderExecutionMode");
+    });
+
     it("hydrates mask setup from source asset metadata in UI and runtime", () => {
         expect(source).toContain("resolveMaskRegionConfig");
         expect(source).toContain("Using saved video setup from Storage Asset");

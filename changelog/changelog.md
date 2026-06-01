@@ -1,5 +1,46 @@
 # OmniVideo Changelog
 
+## FAST-WORKSPACE-056 - Switch Remote VIP Seed to EC2 Render Only
+
+- Bumped app version from `0.10.82` to `0.10.83` as a patch release for remote VIP stability.
+- Changed remote VIP mode so Piper voice generation runs locally with the existing VIP voice/checkpoint path, while only final ffmpeg render is delegated to the EC2 worker.
+- Updated the remote worker client to send both source video and generated voice WAV as multipart files, keeping large media out of JSON payloads.
+- Updated `/api/audio/video-vip-voice-render` to behave as a render-only worker endpoint while preserving the existing endpoint path and token contract for simpler redeploy.
+- Updated Workspace seed labels and progress copy to describe local voice plus remote render instead of EC2 voice/render.
+- Verification (FAST-WORKSPACE-056):
+  - `npm run test -- --run src/lib/multilingual-audio/video-vip-processing.test.ts src/lib/multilingual-audio/remote-vip-worker.test.ts src/app/api/audio/video-vip-voice-render/route.test.ts src/app/api/audio/video-vip-processing/route.test.ts src/lib/workspace/workspace-seeds.test.ts src/lib/workspace/workspace-graph.test.ts src/features/workspace/workspace-canvas-panel.test.ts` pass (7 files / 111 tests).
+  - `npm run build` pass.
+  - `npm run guard:version` pass.
+  - `git diff --check` pass.
+  - `bash -n omnivideo-vip-spot.sh` and `zsh -n omnivideo-vip-spot.sh` pass.
+
+## FAST-WORKSPACE-055 - Harden Remote VIP Media Transport for Long Videos
+
+- Bumped app version from `0.10.81` to `0.10.82` as a patch release for remote VIP long-video reliability.
+- Replaced remote VIP source video transport from base64 JSON with multipart `videoFile` upload, preventing large source videos from hitting JavaScript string limits before worker render.
+- Changed the EC2 worker response to store rendered video as a temporary server artifact and return `artifactId`; the local VIP client now downloads that artifact as binary bytes instead of parsing rendered video base64 JSON.
+- Preserved remote VIP token validation, local transcript/translation/metadata behavior, and the normal VIP result shape consumed by Workspace.
+- Verification (FAST-WORKSPACE-055):
+  - `npm run test -- --run src/lib/multilingual-audio/remote-vip-worker.test.ts src/app/api/audio/video-vip-voice-render/route.test.ts src/app/api/audio/video-vip-processing/route.test.ts` pass (3 files / 17 tests).
+  - `npm run build` pass.
+  - `npm run guard:version` pass.
+  - `git diff --check` pass.
+
+## FAST-WORKSPACE-054 - Add Remote EC2 Voice/Render VIP Seed
+
+- Bumped app version from `0.10.80` to `0.10.81` as a patch release for remote VIP worker support.
+- Added `Seed Remote VIP Voice Render`, preserving existing VIP seeds while enabling a new `Upload Video -> VIP Processing -> Save to Local` flow that delegates only voice generation and final render to a remote worker.
+- Added `/api/audio/video-vip-voice-render` for EC2 workers to run Piper voice generation plus final ffmpeg render with the same repo runtime logic.
+- Added remote worker client support to VIP processing so transcript/translation/metadata stay local while voice/render can run remotely through `OMNIVIDEO_REMOTE_VIP_WORKER_URL` and `OMNIVIDEO_REMOTE_VIP_TOKEN`.
+- Added `omnivideo-vip-spot.sh`, a one-file AWS launcher for a Hong Kong Spot `c8g.xlarge` worker that uploads the current repo, installs Node/Piper/ffmpeg/fonts, supports `PIPER_MODEL_URL` and `PIPER_MODEL_CONFIG_URL`, and starts the worker service.
+- Fixed launcher token generation so `set -o pipefail` cannot exit silently before logging, and added Google Drive sharing-link downloads through `gdown` for Piper model/config files. The launcher passes the parsed Drive file id directly to `gdown` for compatibility with versions that do not support `--fuzzy`.
+- Documented remote VIP worker behavior, Piper model requirements, and the current MVP limitation that video/result payloads are still inline instead of object-storage pointers.
+- Verification (FAST-WORKSPACE-054):
+  - `npm run test -- --run src/app/api/audio/video-vip-voice-render/route.test.ts src/app/api/audio/video-vip-processing/route.test.ts src/lib/workspace/workspace-seeds.test.ts src/lib/workspace/workspace-graph.test.ts src/features/workspace/workspace-canvas-panel.test.ts` pass (5 files / 96 tests).
+  - `npm run build` pass.
+  - `bash -n omnivideo-vip-spot.sh` pass.
+  - `zsh -n omnivideo-vip-spot.sh` pass.
+
 ## FAST-AUDIO-067 - Optimize Transcript Translation Prompt Cost and Quality
 
 - Bumped app version from `0.10.79` to `0.10.80` as a patch release for translation prompt efficiency.

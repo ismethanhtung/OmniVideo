@@ -4209,6 +4209,28 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                             ? "veryfast"
                             : "superfast";
                     formData.set("renderPreset", vipRenderPreset);
+                    const voiceRenderExecutionMode =
+                        getStringConfig(
+                            vipNode,
+                            "voiceRenderExecutionMode",
+                            "local",
+                        ) === "remote"
+                            ? "remote"
+                            : "local";
+                    formData.set(
+                        "voiceRenderExecutionMode",
+                        voiceRenderExecutionMode,
+                    );
+                    const remoteVoiceRenderEndpoint = getStringConfig(
+                        vipNode,
+                        "remoteVoiceRenderEndpoint",
+                    ).trim();
+                    if (remoteVoiceRenderEndpoint) {
+                        formData.set(
+                            "remoteVoiceRenderEndpoint",
+                            remoteVoiceRenderEndpoint,
+                        );
+                    }
                     formData.set(
                         "originalAudioVolume",
                         String(
@@ -4460,6 +4482,11 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     appendVipStageLog(
                         "Running transcript -> translate -> voice -> final render -> metadata...",
                     );
+                    if (voiceRenderExecutionMode === "remote") {
+                        appendVipStageLog(
+                            "Remote render mode enabled: voice generation runs locally; final render runs on the configured EC2 worker.",
+                        );
+                    }
                     if (vipTranslationMode === "import") {
                         appendVipStageLog(
                             "Import mode enabled: VIP will use manual translated lines instead of AI translate API.",

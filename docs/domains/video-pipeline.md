@@ -43,7 +43,40 @@ Page URL như YouTube/TikTok/Facebook/Bilibili không phải direct media URL. O
 7. Speed adjustment (creative use hợp lệ).
 8. Mirror horizontal cho biến thể edit hợp lệ.
 
-### 4.1 Current Workspace preprocess path
+### 4.1 Remote VIP voice/render worker
+
+Workspace có seed riêng `Seed Remote VIP Voice Render` cho flow an toàn:
+
+`Upload Video -> VIP Processing -> Save to Local`
+
+Seed này không thay đổi các seed VIP cũ. Điểm khác biệt là node VIP bật
+`voiceRenderExecutionMode=remote`, nên runtime vẫn chạy transcript, translation
+Piper voice generation và metadata ở Next.js local/control-plane, nhưng ủy quyền
+bước final ffmpeg render sang worker EC2.
+
+Worker endpoint chuẩn:
+
+`/api/audio/video-vip-voice-render`
+
+Launcher `omnivideo-vip-spot.sh` tạo Spot worker mặc định ở Hong Kong
+(`ap-east-1`) với `c8g.xlarge`. Worker render-only chỉ cần app runtime, ffmpeg và
+font subtitle/text overlay. Piper model trên worker không còn bắt buộc cho seed
+remote render-only vì voice được sinh ở local/control-plane trước khi upload WAV
+sang EC2.
+
+Local app cần cấu hình:
+
+1. `OMNIVIDEO_REMOTE_VIP_WORKER_URL`
+2. `OMNIVIDEO_REMOTE_VIP_TOKEN`
+
+Remote mode truyền video nguồn bằng multipart `videoFile` và voice WAV bằng
+multipart `voiceFile`, không base64 JSON cho media lớn. Worker lưu video render
+vào server artifact tạm thời và trả `artifactId`; local control-plane tải
+artifact đó bằng binary download trước khi tiếp tục metadata/save-local. Khi cần
+chịu Spot interruption tốt hơn hoặc lưu bền qua nhiều process, bước tiếp theo là
+chuyển output và checkpoint sang object storage/S3-compatible pointer.
+
+### 4.2 Current Workspace preprocess path
 
 1. Node `video.preprocess` điều chỉnh speed source video bằng ffmpeg và tạo video artifact downstream.
 2. Input hiện hỗ trợ `source.file`, `source.url`, `source.asset`; output artifact có thể đi tiếp sang transcript, dubbing, mirror/edit, hoặc storage.

@@ -40,6 +40,13 @@ Hỗ trợ xử lý audio đa ngôn ngữ cho video linh hoạt: phát hiện ng
   artifact sau `video.preprocess`. Bước translate trong node dubbing dùng cùng AI
   Provider Management với Audio Transcript: có thể chọn provider active, load
   models từ provider đó, hoặc dùng default env `GROQ_API_KEY`.
+- VIP Processing có thêm remote render-only mode dành cho seed riêng
+  `Seed Remote VIP Voice Render`: transcript/translation/metadata vẫn chạy ở
+  local control-plane, Piper voice generation cũng chạy local theo đường VIP cũ,
+  còn final ffmpeg render chạy ở worker EC2 qua
+  `/api/audio/video-vip-voice-render`. Source video và voice WAV được upload lên
+  worker bằng multipart, video render được tải về qua server artifact binary để
+  tránh base64 JSON quá lớn với video dài.
 
 ## 3. Target Workflow
 
@@ -100,3 +107,6 @@ Hỗ trợ xử lý audio đa ngôn ngữ cho video linh hoạt: phát hiện ng
    duck/mux và review thành nhiều node nhỏ.
 8. Tối ưu dubbing tự nhiên nên ưu tiên duration-aware translation/rewrite trước
    khi hậu xử lý tempo mạnh; ffmpeg alignment chỉ nên là bước fine-tune.
+9. Remote voice/render đã tránh payload video inline bằng multipart upload và
+   artifact binary download, nhưng vẫn nên dùng object storage/checkpoint bền
+   trước khi chạy production trên Spot với video lớn.

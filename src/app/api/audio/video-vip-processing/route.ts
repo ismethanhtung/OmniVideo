@@ -656,6 +656,11 @@ export async function POST(request: Request) {
         const providerId = readFormValue(formData, "providerId").trim();
         const metadataProviderId = readFormValue(formData, "metadataProviderId").trim();
         const vipResumeKey = readFormValue(formData, "vipResumeKey").trim();
+        const voiceRenderExecutionMode =
+            readFormValue(formData, "voiceRenderExecutionMode").trim() ===
+            "remote"
+                ? "remote"
+                : "local";
         const translationModeRaw = readFormValue(
             formData,
             "translationMode",
@@ -783,6 +788,13 @@ export async function POST(request: Request) {
             translationMode,
             importedTranslationLines,
             checkpointKey: vipResumeKey || undefined,
+            voiceRenderExecutionMode,
+            remoteVoiceRenderEndpoint:
+                readFormValue(formData, "remoteVoiceRenderEndpoint").trim() ||
+                undefined,
+            remoteVoiceRenderToken:
+                readFormValue(formData, "remoteVoiceRenderToken").trim() ||
+                undefined,
             ttsSettings,
             originalAudioVolume: readOptionalNumber(formData, "originalAudioVolume"),
             voiceVolume: readOptionalNumber(formData, "voiceVolume"),

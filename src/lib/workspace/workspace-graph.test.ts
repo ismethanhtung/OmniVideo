@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
     createAssetVipProcessingSampleGraph,
+    createUploadRemoteVipSaveLocalSampleGraph,
     createUploadVipSaveLocalSampleGraph,
     WORKSPACE_NODE_TEMPLATES,
     addWorkspaceNode,
@@ -1526,6 +1527,31 @@ describe("workspace graph helpers", () => {
         expect(validateWorkspaceGraph(graph)).toEqual({ ok: true, errors: [] });
         const plan = planWorkspaceFlow(graph);
 
+        expect(plan.ok).toBe(true);
+        expect(plan.steps).toEqual([
+            {
+                kind: "vip-process-video",
+                sourceNodeId: "source-file-1",
+                vipNodeId: "video-vip-processing-1",
+            },
+            {
+                kind: "download-local",
+                downloadNodeId: "output-download-local-1",
+                producerNodeId: "video-vip-processing-1",
+            },
+        ]);
+    });
+
+    it("plans seeded remote VIP voice/render save-local flow", () => {
+        const graph = createUploadRemoteVipSaveLocalSampleGraph();
+
+        expect(validateWorkspaceGraph(graph)).toEqual({ ok: true, errors: [] });
+        const vipNode = graph.nodes.find(
+            (node) => node.templateNodeType === "video.vip-processing",
+        );
+        const plan = planWorkspaceFlow(graph);
+
+        expect(vipNode?.config.voiceRenderExecutionMode).toBe("remote");
         expect(plan.ok).toBe(true);
         expect(plan.steps).toEqual([
             {

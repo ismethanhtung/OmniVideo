@@ -928,6 +928,20 @@ export const WORKSPACE_NODE_TEMPLATES: WorkspaceNodeTemplate[] = [
                 defaultValue: "veryfast",
             },
             {
+                key: "voiceRenderExecutionMode",
+                label: "Final render runtime",
+                type: "select",
+                required: false,
+                defaultValue: "local",
+            },
+            {
+                key: "remoteVoiceRenderEndpoint",
+                label: "Remote worker URL",
+                type: "text",
+                required: false,
+                defaultValue: "",
+            },
+            {
                 key: "originalAudioVolume",
                 label: "Original audio volume",
                 type: "number",
@@ -3717,5 +3731,27 @@ export function createUploadVipSaveLocalSampleGraph(): WorkspaceGraph {
                 toPortId: "asset",
             },
         ],
+    };
+}
+
+export function createUploadRemoteVipSaveLocalSampleGraph(): WorkspaceGraph {
+    const graph = createUploadVipSaveLocalSampleGraph();
+    return {
+        ...graph,
+        draftId: "upload-remote-vip-save-local-sample",
+        title: "Upload -> Local Voice + Remote Render -> Save Local",
+        nodes: graph.nodes.map((node) =>
+            node.id === "video-vip-processing-1"
+                ? {
+                      ...node,
+                      label: "VIP remote render",
+                      config: {
+                          ...node.config,
+                          voiceRenderExecutionMode: "remote",
+                          remoteVoiceRenderEndpoint: "",
+                      },
+                  }
+                : node,
+        ),
     };
 }

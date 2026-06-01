@@ -5,10 +5,17 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ChineseTranscriptionError } from "./types";
+import { runRemoteVideoVipRender } from "@/lib/multilingual-audio/remote-vip-worker";
 import {
     buildVipFinalRenderArgs,
     runVideoVipProcessing,
 } from "./video-vip-processing";
+
+vi.mock("@/lib/multilingual-audio/remote-vip-worker", () => ({
+    runRemoteVideoVipRender: vi.fn(),
+}));
+
+const mockedRunRemoteVideoVipRender = vi.mocked(runRemoteVideoVipRender);
 
 const checkpointDirs: string[] = [];
 
@@ -224,6 +231,7 @@ describe("VIP final render filter order", () => {
 describe("VIP processing stage checkpoints", () => {
     beforeEach(() => {
         vi.spyOn(console, "log").mockImplementation(() => {});
+        mockedRunRemoteVideoVipRender.mockReset();
     });
 
     afterEach(async () => {
@@ -482,5 +490,50 @@ describe("VIP processing stage checkpoints", () => {
         expect(renderInput.translatedSegments[1].start).toBeGreaterThanOrEqual(
             renderInput.translatedSegments[0].end,
         );
+    });
+
+    it("generates voice locally and delegates only render in remote mode", async () => {
+        mockedRunRemoteVideoVipRender.mockResolvedValueOnce({
+            videoBytes: Buffer.from("remote-video"),
+            mimeType: "video/mp4",
+            extension: "mp4",
+            fileName: "source-done.mp4",
+            byteLength: 12,
+            generationDurationMs: 9,
+            stages: { finalRenderDurationMs: 8 },
+            mix: { originalAudioVolume: 0, voiceVolume: 1 },
+        });
+        const runners = createStageRunners();
+
+        const result = await runVideoVipProcessing({
+            fileName: "source.mp4",
+            fileSizeBytes: 3,
+            fileBytes: new Uint8Array([1, 2, 3]),
+            voiceRenderExecutionMode: "remote",
+            remoteVoiceRenderEndpoint: "http://worker.example",
+            stageRunners: runners,
+            omitVideoBase64: true,
+        });
+
+        expect(runners.generateVoice).toHaveBeenCalledTimes(1);
+        expect(runners.render).not.toHaveBeenCalled();
+        expect(mockedRunRemoteVideoVipRender).toHaveBeenCalledWith(
+            expect.objectContaining({
+                fileName: "source.mp4",
+                fileBytes: new Uint8Array([1, 2, 3]),
+                voiceAudioBase64: Buffer.from("voice").toString("base64"),
+                translatedSegments: [
+                    expect.objectContaining({
+                        translatedText: "Xin chào",
+                    }),
+                ],
+                omitVideoBase64: true,
+            }),
+            expect.objectContaining({
+                endpoint: "http://worker.example",
+            }),
+        );
+        expect(result.videoBytes?.toString()).toBe("remote-video");
+        expect(result.voice.byteLength).toBe(5);
     });
 });
