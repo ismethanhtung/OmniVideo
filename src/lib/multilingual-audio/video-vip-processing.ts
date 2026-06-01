@@ -47,6 +47,10 @@ type VipStageName =
     | "metadata";
 type VipTranslationMode = "ai" | "import";
 type VipRenderPreset = "superfast" | "veryfast";
+export type VipVoiceRenderExecutionMode =
+    | "local"
+    | "remote"
+    | "remote-voice-render";
 
 type VipCheckpointState = {
     fingerprint: string;
@@ -304,7 +308,7 @@ export type VideoVipProcessingInput = {
     omitVideoBase64?: boolean;
     checkpointKey?: string;
     checkpointDir?: string;
-    voiceRenderExecutionMode?: "local" | "remote";
+    voiceRenderExecutionMode?: VipVoiceRenderExecutionMode;
     remoteVoiceRenderEndpoint?: string;
     remoteVoiceRenderToken?: string;
     stageRunners?: Partial<VipStageRunners>;
@@ -471,6 +475,7 @@ function buildVipCheckpointFingerprint(input: VideoVipProcessingInput) {
             providerName: input.providerName,
             metadataProviderName: input.metadataProviderName,
             ttsSettings: input.ttsSettings,
+            voiceRenderExecutionMode: input.voiceRenderExecutionMode ?? "local",
             originalAudioVolume: input.originalAudioVolume,
             voiceVolume: input.voiceVolume,
             videoSpeedFactor: input.videoSpeedFactor,
@@ -1687,6 +1692,232 @@ export async function runVideoVipProcessing(
                 : undefined,
             durationMs: translationDurationMs,
         });
+    }
+
+    if (input.voiceRenderExecutionMode === "remote-voice-render") {
+        const originalAudioVolume = normalizeVolume(input.originalAudioVolume, 0);
+        const voiceVolume = normalizeVolume(input.voiceVolume, 1);
+        const remoteStartedAt = Date.now();
+        logVipEvent(runId, "stage-start", {
+            stage: "remote-voice-render",
+            endpointConfigured: Boolean(
+                input.remoteVoiceRenderEndpoint ??
+                    process.env.OMNIVIDEO_REMOTE_VIP_WORKER_URL,
+            ),
+            sourceFileSizeBytes: input.fileBytes.byteLength,
+            translatedCount: translation.translatedSegments.length,
+            speedFactor: clampedSpeed,
+            renderPreset,
+            originalAudioVolume,
+            voiceVolume,
+            alignmentMode:
+                input.ttsSettings?.alignmentMode ??
+                DEFAULT_PIPER_TTS_SETTINGS.alignmentMode,
+            binaryPath: input.ttsSettings?.binaryPath ?? DEFAULT_PIPER_TTS_SETTINGS.binaryPath,
+            modelPath: input.ttsSettings?.modelPath ?? DEFAULT_PIPER_TTS_SETTINGS.modelPath,
+        });
+        const { runRemoteVideoVipVoiceRender } = await import(
+            "@/lib/multilingual-audio/remote-vip-worker"
+        );
+        let remoteResult: VideoVipVoiceRenderResult;
+        try {
+            remoteResult = await runRemoteVideoVipVoiceRender(
+                {
+                    fileName: input.fileName,
+                    sourceTitle: input.sourceTitle,
+                    mimeType: input.mimeType,
+                    fileSizeBytes: input.fileSizeBytes,
+                    fileBytes: input.fileBytes,
+                    transcript,
+                    translation,
+                    ttsSettings: input.ttsSettings,
+                    originalAudioVolume,
+                    voiceVolume,
+                    videoSpeedFactor: clampedSpeed,
+                    renderPreset,
+                    mirrorEnabled: input.mirrorEnabled,
+                    blur: input.blur,
+                    coverBoxes: input.coverBoxes,
+                    subtitleStyle: input.subtitleStyle,
+                    textOverlays: input.textOverlays,
+                    omitVideoBase64: true,
+                },
+                {
+                    endpoint: input.remoteVoiceRenderEndpoint,
+                    token: input.remoteVoiceRenderToken,
+                },
+            );
+        } catch (error) {
+            logVipEvent(runId, "stage-failed", {
+                stage: "remote-voice-render",
+                durationMs: Date.now() - remoteStartedAt,
+                error: summarizeVipError(error),
+            });
+            throw toVipCheckpointError({
+                error,
+                paths: checkpointPaths,
+                state: checkpointState,
+                reusedStages,
+                savedStages,
+                failedStage: "render",
+            });
+        }
+        const remoteVideoBytes =
+            remoteResult.videoBytes ??
+            Buffer.from(remoteResult.videoBase64 ?? "", "base64");
+        const voiceDurationMs = remoteResult.stages.voiceDurationMs;
+        const finalRenderDurationMs = remoteResult.stages.finalRenderDurationMs;
+        logVipEvent(runId, "stage-success", {
+            stage: "remote-voice-render",
+            durationMs: Date.now() - remoteStartedAt,
+            voiceDurationMs,
+            finalRenderDurationMs,
+            voiceByteLength: remoteResult.voice.byteLength,
+            byteLength: remoteVideoBytes.byteLength,
+        });
+        if (checkpointPaths) {
+            await mkdir(checkpointPaths.dir, { recursive: true });
+            await writeFile(checkpointPaths.videoPath, remoteVideoBytes);
+            checkpointState = {
+                ...checkpointState,
+                renderedVideo: {
+                    fileName: remoteResult.fileName,
+                    mimeType: "video/mp4",
+                    extension: "mp4",
+                    byteLength: remoteVideoBytes.byteLength,
+                },
+                durations: {
+                    ...checkpointState.durations,
+                    voiceDurationMs,
+                    finalRenderDurationMs,
+                },
+            };
+            await saveCheckpoint("render");
+        }
+
+        const metadataStartedAt = Date.now();
+        logVipEvent(runId, "stage-start", {
+            stage: "metadata",
+            reused: Boolean(checkpointState.metadata),
+            translatedCount: translation.translatedSegments.length,
+            provider: input.metadataProviderName ?? input.providerName ?? "default",
+            providerHost: getVipProviderHost(input.metadataBaseUrl ?? input.baseUrl),
+            model: input.metadataModel ?? input.model ?? DEFAULT_TRANSLATION_MODEL,
+        });
+        const metadata =
+            checkpointState.metadata ??
+            (await (async () => {
+                try {
+                    return await runners.generateMetadata({
+                        translatedSegments: translation.translatedSegments,
+                        sourceTitle: input.sourceTitle,
+                        sourceDescription: input.sourceDescription,
+                        model:
+                            input.metadataModel ??
+                            input.model ??
+                            DEFAULT_TRANSLATION_MODEL,
+                        apiKey: input.metadataApiKey ?? input.apiKey,
+                        baseUrl: input.metadataBaseUrl ?? input.baseUrl,
+                        providerName:
+                            input.metadataProviderName ?? input.providerName,
+                    });
+                } catch (error) {
+                    logVipEvent(runId, "stage-failed", {
+                        stage: "metadata",
+                        durationMs: Date.now() - metadataStartedAt,
+                        provider:
+                            input.metadataProviderName ??
+                            input.providerName ??
+                            "default",
+                        providerHost: getVipProviderHost(
+                            input.metadataBaseUrl ?? input.baseUrl,
+                        ),
+                        model:
+                            input.metadataModel ??
+                            input.model ??
+                            DEFAULT_TRANSLATION_MODEL,
+                        error: summarizeVipError(error),
+                    });
+                    throw toVipCheckpointError({
+                        error,
+                        paths: checkpointPaths,
+                        state: checkpointState,
+                        reusedStages,
+                        savedStages,
+                        failedStage: "metadata",
+                    });
+                }
+            })());
+        const metadataDurationMs =
+            checkpointState.durations?.metadataDurationMs ??
+            Date.now() - metadataStartedAt;
+        if (checkpointState.metadata) {
+            reusedStages.push("metadata");
+            logVipEvent(runId, "stage-reused", {
+                stage: "metadata",
+                title: metadata.title,
+                hashtagCount: metadata.hashtags.length,
+                durationMs: metadataDurationMs,
+            });
+        } else {
+            checkpointState = {
+                ...checkpointState,
+                metadata,
+                durations: {
+                    ...checkpointState.durations,
+                    metadataDurationMs,
+                },
+            };
+            await saveCheckpoint("metadata");
+            logVipEvent(runId, "stage-success", {
+                stage: "metadata",
+                title: metadata.title,
+                hashtagCount: metadata.hashtags.length,
+                durationMs: metadataDurationMs,
+            });
+        }
+
+        logVipEvent(runId, "run-success", {
+            totalDurationMs: Date.now() - startedAt,
+            reusedStages: uniqueStages(reusedStages),
+            savedStages: uniqueStages(savedStages),
+            outputFileName: remoteResult.fileName,
+            outputByteLength: remoteVideoBytes.byteLength,
+            voiceRenderExecutionMode: "remote-voice-render",
+        });
+
+        return {
+            ...(input.omitVideoBase64
+                ? { videoBytes: remoteVideoBytes }
+                : { videoBase64: remoteVideoBytes.toString("base64") }),
+            mimeType: "video/mp4",
+            extension: "mp4",
+            fileName: remoteResult.fileName,
+            byteLength: remoteVideoBytes.byteLength,
+            generationDurationMs: Date.now() - startedAt,
+            transcript,
+            translation,
+            voice: remoteResult.voice,
+            metadata,
+            stages: {
+                preprocessDurationMs,
+                transcriptionDurationMs,
+                translationDurationMs,
+                voiceDurationMs,
+                muxDurationMs: 0,
+                finalRenderDurationMs,
+                metadataDurationMs,
+            },
+            ...(checkpointPaths
+                ? {
+                      checkpoint: {
+                          key: checkpointPaths.key,
+                          reusedStages,
+                          savedStages,
+                      },
+                  }
+                : {}),
+        };
     }
 
     if (input.voiceRenderExecutionMode === "remote") {

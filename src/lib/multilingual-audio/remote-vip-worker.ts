@@ -3,6 +3,8 @@ import {
     type TranscriptTranslationResult,
 } from "@/lib/multilingual-audio/types";
 import type {
+    VideoVipVoiceRenderInput,
+    VideoVipVoiceRenderResult,
     VideoVipRemoteRenderInput,
     VideoVipRemoteRenderResult,
 } from "@/lib/multilingual-audio/video-vip-processing";
@@ -17,10 +19,21 @@ type RemoteVipWorkerPayload = Omit<
     VideoVipRemoteRenderInput,
     "fileBytes" | "voiceAudioBase64" | "stageRunners"
 > & {
+    executionMode: "render-only";
     translatedSegments: TranscriptTranslationResult["translatedSegments"];
 };
 
-type RemoteVipWorkerResponseData = VideoVipRemoteRenderResult & {
+type RemoteVipVoiceRenderWorkerPayload = Omit<
+    VideoVipVoiceRenderInput,
+    "fileBytes" | "stageRunners"
+> & {
+    executionMode: "voice-render";
+};
+
+type RemoteVipWorkerResponseData = (
+    | VideoVipRemoteRenderResult
+    | VideoVipVoiceRenderResult
+) & {
     artifactId?: string;
 };
 
@@ -45,15 +58,6 @@ export async function runRemoteVideoVipRender(
     input: VideoVipRemoteRenderInput,
     options: RemoteVipWorkerOptions = {},
 ): Promise<VideoVipRemoteRenderResult> {
-    const { endpoint, token } = resolveRemoteVipWorkerConfig(options);
-    if (!endpoint) {
-        throw new ChineseTranscriptionError(
-            "SYS_DUBBING_MUX_FAILED",
-            "Remote VIP worker endpoint is not configured.",
-            500,
-        );
-    }
-
     const {
         fileBytes: sourceVideoBytes,
         voiceAudioBase64,
@@ -62,27 +66,90 @@ export async function runRemoteVideoVipRender(
     } = input;
     const payload: RemoteVipWorkerPayload = {
         ...payloadInput,
+        executionMode: "render-only",
         omitVideoBase64: true,
     };
-    const formData = new FormData();
-    formData.set(
-        "payloadJson",
-        JSON.stringify(payload),
+    const formData = createRemoteVipWorkerFormData({
+        payload,
+        sourceVideoBytes,
+        sourceFileName: input.fileName,
+        sourceMimeType: input.mimeType,
+        voiceAudioBase64,
+    });
+
+    return await postRemoteVipWorker<VideoVipRemoteRenderResult>(
+        formData,
+        options,
     );
+}
+
+export async function runRemoteVideoVipVoiceRender(
+    input: VideoVipVoiceRenderInput,
+    options: RemoteVipWorkerOptions = {},
+): Promise<VideoVipVoiceRenderResult> {
+    const {
+        fileBytes: sourceVideoBytes,
+        stageRunners: _stageRunners,
+        ...payloadInput
+    } = input;
+    const payload: RemoteVipVoiceRenderWorkerPayload = {
+        ...payloadInput,
+        executionMode: "voice-render",
+        omitVideoBase64: true,
+    };
+    const formData = createRemoteVipWorkerFormData({
+        payload,
+        sourceVideoBytes,
+        sourceFileName: input.fileName,
+        sourceMimeType: input.mimeType,
+    });
+
+    return await postRemoteVipWorker<VideoVipVoiceRenderResult>(
+        formData,
+        options,
+    );
+}
+
+function createRemoteVipWorkerFormData(input: {
+    payload: RemoteVipWorkerPayload | RemoteVipVoiceRenderWorkerPayload;
+    sourceVideoBytes: Uint8Array;
+    sourceFileName: string;
+    sourceMimeType?: string;
+    voiceAudioBase64?: string;
+}) {
+    const formData = new FormData();
+    formData.set("payloadJson", JSON.stringify(input.payload));
     formData.set(
         "videoFile",
-        new Blob([Buffer.from(sourceVideoBytes)], {
-            type: input.mimeType ?? "video/mp4",
+        new Blob([Buffer.from(input.sourceVideoBytes)], {
+            type: input.sourceMimeType ?? "video/mp4",
         }),
-        input.fileName || "source.mp4",
+        input.sourceFileName || "source.mp4",
     );
-    formData.set(
-        "voiceFile",
-        new Blob([Buffer.from(voiceAudioBase64, "base64")], {
-            type: "audio/wav",
-        }),
-        "voice.wav",
-    );
+    if (input.voiceAudioBase64) {
+        formData.set(
+            "voiceFile",
+            new Blob([Buffer.from(input.voiceAudioBase64, "base64")], {
+                type: "audio/wav",
+            }),
+            "voice.wav",
+        );
+    }
+    return formData;
+}
+
+async function postRemoteVipWorker<Result extends RemoteVipWorkerResponseData>(
+    formData: FormData,
+    options: RemoteVipWorkerOptions,
+): Promise<Result> {
+    const { endpoint, token } = resolveRemoteVipWorkerConfig(options);
+    if (!endpoint) {
+        throw new ChineseTranscriptionError(
+            "SYS_DUBBING_MUX_FAILED",
+            "Remote VIP worker endpoint is not configured.",
+            500,
+        );
+    }
 
     const fetchImpl = options.fetchImpl ?? fetch;
     const response = await fetchImpl(
@@ -135,7 +202,7 @@ export async function runRemoteVideoVipRender(
         return {
             ...body.data,
             videoBytes: Buffer.from(await artifactResponse.arrayBuffer()),
-        };
+        } as Result;
     }
 
     return {
@@ -145,7 +212,5 @@ export async function runRemoteVideoVipRender(
             : body.data.videoBytes
               ? Buffer.from(body.data.videoBytes)
               : undefined,
-    };
+    } as Result;
 }
-
-export const runRemoteVideoVipVoiceRender = runRemoteVideoVipRender;

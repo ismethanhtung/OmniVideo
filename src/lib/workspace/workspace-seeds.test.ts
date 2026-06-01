@@ -100,7 +100,9 @@ describe("workspace seed templates", () => {
             .nodes.find((node) => node.templateNodeType === "video.vip-processing");
 
         expect(localVipNode?.config.voiceRenderExecutionMode).toBeUndefined();
-        expect(remoteVipNode?.config.voiceRenderExecutionMode).toBe("remote");
+        expect(remoteVipNode?.config.voiceRenderExecutionMode).toBe(
+            "remote-voice-render",
+        );
         expect(remoteSeed?.buildGraph().nodes.map((node) => node.templateNodeType)).toEqual(
             expect.arrayContaining([
                 "source.file",

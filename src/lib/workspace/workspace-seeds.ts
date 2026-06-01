@@ -48,7 +48,7 @@ export const WORKSPACE_SEED_TEMPLATES: WorkspaceSeedTemplate[] = [
         id: "remote-vip-voice-render",
         label: "Seed Remote VIP Voice Render",
         description:
-            "Upload Video -> VIP Processing with local voice + EC2 render -> Save to Local.",
+            "Upload Video -> VIP Processing with EC2 voice + render -> Save to Local.",
         buildGraph: createUploadRemoteVipSaveLocalSampleGraph,
     },
     {

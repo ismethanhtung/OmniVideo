@@ -929,7 +929,7 @@ export const WORKSPACE_NODE_TEMPLATES: WorkspaceNodeTemplate[] = [
             },
             {
                 key: "voiceRenderExecutionMode",
-                label: "Final render runtime",
+                label: "VIP runtime",
                 type: "select",
                 required: false,
                 defaultValue: "local",
@@ -3739,15 +3739,15 @@ export function createUploadRemoteVipSaveLocalSampleGraph(): WorkspaceGraph {
     return {
         ...graph,
         draftId: "upload-remote-vip-save-local-sample",
-        title: "Upload -> Local Voice + Remote Render -> Save Local",
+        title: "Upload -> EC2 Voice + Render -> Save Local",
         nodes: graph.nodes.map((node) =>
             node.id === "video-vip-processing-1"
                 ? {
                       ...node,
-                      label: "VIP remote render",
+                      label: "VIP EC2 voice + render",
                       config: {
                           ...node.config,
-                          voiceRenderExecutionMode: "remote",
+                          voiceRenderExecutionMode: "remote-voice-render",
                           remoteVoiceRenderEndpoint: "",
                       },
                   }

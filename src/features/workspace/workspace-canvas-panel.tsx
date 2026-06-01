@@ -4209,14 +4209,20 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                             ? "veryfast"
                             : "superfast";
                     formData.set("renderPreset", vipRenderPreset);
-                    const voiceRenderExecutionMode =
-                        getStringConfig(
+                    const voiceRenderExecutionMode = (() => {
+                        const mode = getStringConfig(
                             vipNode,
                             "voiceRenderExecutionMode",
                             "local",
-                        ) === "remote"
-                            ? "remote"
-                            : "local";
+                        );
+                        if (
+                            mode === "remote" ||
+                            mode === "remote-voice-render"
+                        ) {
+                            return mode;
+                        }
+                        return "local";
+                    })();
                     formData.set(
                         "voiceRenderExecutionMode",
                         voiceRenderExecutionMode,
@@ -4485,6 +4491,11 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     if (voiceRenderExecutionMode === "remote") {
                         appendVipStageLog(
                             "Remote render mode enabled: voice generation runs locally; final render runs on the configured EC2 worker.",
+                        );
+                    }
+                    if (voiceRenderExecutionMode === "remote-voice-render") {
+                        appendVipStageLog(
+                            "Remote voice + render mode enabled: Piper voice generation and final render run on the configured EC2 worker.",
                         );
                     }
                     if (vipTranslationMode === "import") {
@@ -9037,6 +9048,51 @@ function NodeRuntimeConfig({
                             placeholder="1"
                             onChange={(value) =>
                                 setConfig({ voiceVolume: Number(value) })
+                            }
+                        />
+                    </div>
+
+                    <div className="grid gap-2 sm:grid-cols-2">
+                        <RuntimeSelect
+                            label="VIP runtime"
+                            value={(() => {
+                                const mode = getStringConfig(
+                                    node,
+                                    "voiceRenderExecutionMode",
+                                    "local",
+                                );
+                                return mode === "remote" ||
+                                    mode === "remote-voice-render"
+                                    ? mode
+                                    : "local";
+                            })()}
+                            disabled={isRunningFlow}
+                            onChange={(value) =>
+                                setConfig({
+                                    voiceRenderExecutionMode:
+                                        value === "remote" ||
+                                        value === "remote-voice-render"
+                                            ? value
+                                            : "local",
+                                })
+                            }
+                        >
+                            <option value="local">local</option>
+                            <option value="remote">EC2 render</option>
+                            <option value="remote-voice-render">
+                                EC2 voice + render
+                            </option>
+                        </RuntimeSelect>
+                        <RuntimeTextInput
+                            label="Remote worker URL"
+                            value={getStringConfig(
+                                node,
+                                "remoteVoiceRenderEndpoint",
+                            )}
+                            disabled={isRunningFlow}
+                            placeholder="http://host:8787"
+                            onChange={(value) =>
+                                setConfig({ remoteVoiceRenderEndpoint: value })
                             }
                         />
                     </div>

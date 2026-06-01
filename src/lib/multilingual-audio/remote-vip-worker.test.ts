@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { runRemoteVideoVipRender } from "./remote-vip-worker";
+import {
+    runRemoteVideoVipRender,
+    runRemoteVideoVipVoiceRender,
+} from "./remote-vip-worker";
 
 const baseInput = {
     fileName: "source.mp4",
@@ -81,6 +84,9 @@ describe("remote VIP worker client", () => {
         expect(payloadJson).not.toContain("fileBase64");
         expect(payloadJson).not.toContain("fileBytes");
         expect(payloadJson).not.toContain("voiceAudioBase64");
+        expect(JSON.parse(payloadJson as string)).toMatchObject({
+            executionMode: "render-only",
+        });
         const videoFile = formData.get("videoFile") as File;
         expect(videoFile.name).toBe("source.mp4");
         expect(Array.from(new Uint8Array(await videoFile.arrayBuffer()))).toEqual([
@@ -95,6 +101,104 @@ describe("remote VIP worker client", () => {
         );
         expect(result.videoBytes?.toString()).toBe("remote-video");
         expect(result.fileName).toBe("source-done.mp4");
+    });
+
+    it("uploads source video and transcript payload for EC2 voice plus render", async () => {
+        const fetchImpl = vi
+            .fn<typeof fetch>()
+            .mockResolvedValueOnce(
+                Response.json({
+                    ok: true,
+                    data: {
+                        artifactId: "artifact-voice-render",
+                        mimeType: "video/mp4",
+                        extension: "mp4",
+                        fileName: "source-done.mp4",
+                        byteLength: 12,
+                        generationDurationMs: 100,
+                        voice: {
+                            mimeType: "audio/wav",
+                            extension: "wav",
+                            fileName: "voice.wav",
+                            byteLength: 10,
+                            segmentCount: 1,
+                            generationDurationMs: 50,
+                            alignment: { mode: "timeline", chunks: 1 },
+                            settings: { binaryPath: "piper", modelPath: "" },
+                            provider: { name: "piper", mode: "local-cli" },
+                        },
+                        stages: {
+                            voiceDurationMs: 50,
+                            finalRenderDurationMs: 40,
+                        },
+                        mix: { originalAudioVolume: 0, voiceVolume: 1 },
+                    },
+                }),
+            )
+            .mockResolvedValueOnce(
+                new Response(Buffer.from("voice-render-video"), {
+                    status: 200,
+                    headers: { "Content-Type": "video/mp4" },
+                }),
+            );
+
+        const result = await runRemoteVideoVipVoiceRender(
+            {
+                fileName: "source.mp4",
+                mimeType: "video/mp4",
+                fileSizeBytes: 3,
+                fileBytes: new Uint8Array([1, 2, 3]),
+                transcript: {
+                    text: "你好",
+                    language: "zh",
+                    model: "whisper-large-v3-turbo",
+                    segments: [{ id: 0, start: 0, end: 1, text: "你好" }],
+                    words: [],
+                    source: { fileName: "source.mp4", fileSizeBytes: 3 },
+                    audio: {
+                        format: "mp3",
+                        sampleRate: 16000,
+                        channels: 1,
+                        bitrateKbps: 64,
+                        fileSizeBytes: 3,
+                    },
+                    steps: [],
+                    provider: { name: "groq" },
+                },
+                translation: {
+                    sourceLanguage: "zh",
+                    targetLanguage: "vi",
+                    model: "test-model",
+                    translatedSegments: baseInput.translatedSegments,
+                    generationDurationMs: 1,
+                    chunks: [],
+                    provider: { name: "test" },
+                },
+                ttsSettings: { binaryPath: "piper", modelPath: "" },
+            },
+            {
+                endpoint: "http://worker.example/",
+                token: "secret",
+                fetchImpl,
+            },
+        );
+
+        const [, postInit] = fetchImpl.mock.calls[0];
+        const formData = postInit?.body as FormData;
+        const payloadJson = formData.get("payloadJson");
+        expect(JSON.parse(payloadJson as string)).toMatchObject({
+            executionMode: "voice-render",
+            transcript: { text: "你好" },
+            translation: {
+                translatedSegments: [
+                    expect.objectContaining({ translatedText: "Xin chào" }),
+                ],
+            },
+            ttsSettings: { binaryPath: "piper", modelPath: "" },
+        });
+        expect(formData.get("voiceFile")).toBeNull();
+        expect(result.videoBytes?.toString()).toBe("voice-render-video");
+        expect(result.voice.byteLength).toBe(10);
     });
 
     it("maps remote artifact download failures to VIP mux errors", async () => {

@@ -1,12 +1,16 @@
 import { NextResponse } from "next/server";
 
 import {
+    type ChineseTranscriptionResult,
     ChineseTranscriptionError,
     type TranscriptTranslationResult,
+    type VoiceGenerationSettings,
 } from "@/lib/multilingual-audio/types";
 import {
     runVideoVipRemoteRender,
+    runVideoVipVoiceRender,
     type VideoVipRemoteRenderInput,
+    type VideoVipVoiceRenderInput,
 } from "@/lib/multilingual-audio/video-vip-processing";
 import { buildWorkspaceMediaPayload } from "@/lib/workspace/server-artifacts";
 
@@ -33,11 +37,11 @@ function requireWorkerToken(request: Request) {
     );
 }
 
-function parseBase64Bytes(fileBase64: unknown) {
+function parseBase64Bytes(fileBase64: unknown, message: string) {
     if (typeof fileBase64 !== "string" || !fileBase64.trim()) {
         throw new ChineseTranscriptionError(
             "VAL_DUBBING_VIDEO_REQUIRED",
-            "fileBase64 is required for remote VIP voice/render.",
+            message,
             400,
         );
     }
@@ -69,31 +73,106 @@ async function parseWorkerPayload(request: Request) {
                 400,
             );
         }
-        if (!(voiceFile instanceof File)) {
+        const payload = JSON.parse(payloadJson) as Record<string, unknown>;
+        const executionMode = normalizeWorkerExecutionMode(payload.executionMode);
+        if (executionMode === "render-only" && !(voiceFile instanceof File)) {
             throw new ChineseTranscriptionError(
                 "VAL_TTS_SEGMENTS_REQUIRED",
                 "voiceFile is required for remote VIP render.",
                 400,
             );
         }
-        const payload = JSON.parse(payloadJson) as Record<string, unknown>;
         return {
             payload,
             fileBytes: new Uint8Array(await file.arrayBuffer()),
-            voiceBytes: new Uint8Array(await voiceFile.arrayBuffer()),
+            voiceBytes:
+                voiceFile instanceof File
+                    ? new Uint8Array(await voiceFile.arrayBuffer())
+                    : undefined,
             fileName: file.name || undefined,
             mimeType: file.type || undefined,
         };
     }
 
     const payload = (await request.json()) as Record<string, unknown>;
+    const executionMode = normalizeWorkerExecutionMode(payload.executionMode);
     return {
         payload,
-        fileBytes: parseBase64Bytes(payload.fileBase64),
-        voiceBytes: parseBase64Bytes(payload.voiceBase64),
+        fileBytes: parseBase64Bytes(
+            payload.fileBase64,
+            "fileBase64 is required for remote VIP voice/render.",
+        ),
+        voiceBytes:
+            executionMode === "render-only"
+                ? parseBase64Bytes(
+                      payload.voiceBase64,
+                      "voiceBase64 is required for remote VIP render.",
+                  )
+                : undefined,
         fileName: undefined,
         mimeType: undefined,
     };
+}
+
+function normalizeWorkerExecutionMode(value: unknown) {
+    return value === "voice-render" ? "voice-render" : "render-only";
+}
+
+function readTranslatedSegments(payload: Record<string, unknown>) {
+    const translatedSegments = Array.isArray(payload.translatedSegments)
+        ? (payload.translatedSegments as TranscriptTranslationResult["translatedSegments"])
+        : isRecord(payload.translation) &&
+            Array.isArray(payload.translation.translatedSegments)
+          ? (payload.translation
+                .translatedSegments as TranscriptTranslationResult["translatedSegments"])
+          : null;
+    if (!translatedSegments) {
+        throw new ChineseTranscriptionError(
+            "VAL_TRANSLATION_SEGMENTS_REQUIRED",
+            "translatedSegments are required for remote VIP render.",
+            400,
+        );
+    }
+    return translatedSegments;
+}
+
+function readTranscript(payload: Record<string, unknown>) {
+    if (!isRecord(payload.transcript)) {
+        throw new ChineseTranscriptionError(
+            "VAL_TTS_SEGMENTS_REQUIRED",
+            "transcript is required for remote VIP voice/render.",
+            400,
+        );
+    }
+    return payload.transcript as ChineseTranscriptionResult;
+}
+
+function readTranslation(payload: Record<string, unknown>) {
+    if (
+        isRecord(payload.translation) &&
+        Array.isArray(payload.translation.translatedSegments)
+    ) {
+        return payload.translation as TranscriptTranslationResult;
+    }
+    const translatedSegments = readTranslatedSegments(payload);
+    return {
+        sourceLanguage:
+            typeof payload.sourceLanguage === "string"
+                ? payload.sourceLanguage
+                : "zh",
+        targetLanguage:
+            typeof payload.targetLanguage === "string"
+                ? payload.targetLanguage
+                : "vi",
+        model:
+            typeof payload.model === "string"
+                ? payload.model
+                : "remote-worker",
+        translatedSegments,
+        generationDurationMs: 0,
+        chunks: [],
+        provider: { name: "remote-worker" },
+    } satisfies TranscriptTranslationResult;
 }
 
 export function GET() {
@@ -110,22 +189,9 @@ export async function POST(request: Request) {
     try {
         const { payload, fileBytes, voiceBytes, fileName, mimeType } =
             await parseWorkerPayload(request);
-        const translatedSegments = Array.isArray(payload.translatedSegments)
-            ? (payload.translatedSegments as TranscriptTranslationResult["translatedSegments"])
-            : isRecord(payload.translation) &&
-                Array.isArray(payload.translation.translatedSegments)
-              ? (payload.translation
-                    .translatedSegments as TranscriptTranslationResult["translatedSegments"])
-              : null;
-        if (!translatedSegments) {
-            throw new ChineseTranscriptionError(
-                "VAL_TRANSLATION_SEGMENTS_REQUIRED",
-                "translatedSegments are required for remote VIP render.",
-                400,
-            );
-        }
+        const executionMode = normalizeWorkerExecutionMode(payload.executionMode);
 
-        const input: VideoVipRemoteRenderInput = {
+        const baseInput = {
             fileName:
                 typeof payload.fileName === "string" && payload.fileName.trim()
                     ? payload.fileName
@@ -143,8 +209,6 @@ export async function POST(request: Request) {
                     ? payload.fileSizeBytes
                     : fileBytes.byteLength,
             fileBytes,
-            voiceAudioBase64: Buffer.from(voiceBytes).toString("base64"),
-            translatedSegments,
             originalAudioVolume:
                 typeof payload.originalAudioVolume === "number"
                     ? payload.originalAudioVolume
@@ -181,7 +245,29 @@ export async function POST(request: Request) {
             omitVideoBase64: true,
         };
 
-        const result = await runVideoVipRemoteRender(input);
+        const result =
+            executionMode === "voice-render"
+                ? await runVideoVipVoiceRender({
+                      ...(baseInput as Omit<
+                          VideoVipVoiceRenderInput,
+                          "transcript" | "translation"
+                      >),
+                      transcript: readTranscript(payload),
+                      translation: readTranslation(payload),
+                      ttsSettings: isRecord(payload.ttsSettings)
+                          ? (payload.ttsSettings as Partial<VoiceGenerationSettings>)
+                          : undefined,
+                  })
+                : await runVideoVipRemoteRender({
+                      ...(baseInput as Omit<
+                          VideoVipRemoteRenderInput,
+                          "voiceAudioBase64" | "translatedSegments"
+                      >),
+                      voiceAudioBase64: Buffer.from(voiceBytes ?? []).toString(
+                          "base64",
+                      ),
+                      translatedSegments: readTranslatedSegments(payload),
+                  });
         const videoBytes = result.videoBytes ?? Buffer.from(
             result.videoBase64 ?? "",
             "base64",

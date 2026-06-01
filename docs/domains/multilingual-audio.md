@@ -40,13 +40,15 @@ Hỗ trợ xử lý audio đa ngôn ngữ cho video linh hoạt: phát hiện ng
   artifact sau `video.preprocess`. Bước translate trong node dubbing dùng cùng AI
   Provider Management với Audio Transcript: có thể chọn provider active, load
   models từ provider đó, hoặc dùng default env `GROQ_API_KEY`.
-- VIP Processing có thêm remote render-only mode dành cho seed riêng
+- VIP Processing có thêm remote EC2 mode dành cho seed riêng
   `Seed Remote VIP Voice Render`: transcript/translation/metadata vẫn chạy ở
-  local control-plane, Piper voice generation cũng chạy local theo đường VIP cũ,
-  còn final ffmpeg render chạy ở worker EC2 qua
-  `/api/audio/video-vip-voice-render`. Source video và voice WAV được upload lên
-  worker bằng multipart, video render được tải về qua server artifact binary để
-  tránh base64 JSON quá lớn với video dài.
+  local control-plane, còn Piper voice generation và final ffmpeg render chạy ở
+  worker EC2 qua `/api/audio/video-vip-voice-render`. Mode fallback
+  `voiceRenderExecutionMode=remote` vẫn chạy Piper local và chỉ offload final
+  render. Source video luôn upload bằng multipart; voice+render mode gửi
+  transcript/translation/tts settings sang worker thay vì gửi voice WAV, còn
+  render-only mode gửi thêm multipart `voiceFile`. Video render được tải về qua
+  server artifact binary để tránh base64 JSON quá lớn với video dài.
 
 ## 3. Target Workflow
 
@@ -107,6 +109,8 @@ Hỗ trợ xử lý audio đa ngôn ngữ cho video linh hoạt: phát hiện ng
    duck/mux và review thành nhiều node nhỏ.
 8. Tối ưu dubbing tự nhiên nên ưu tiên duration-aware translation/rewrite trước
    khi hậu xử lý tempo mạnh; ffmpeg alignment chỉ nên là bước fine-tune.
-9. Remote voice/render đã tránh payload video inline bằng multipart upload và
+9. Remote EC2 voice/render cần Piper model/config có sẵn trên worker; launcher
+   nhận `PIPER_MODEL_URL` và `PIPER_MODEL_CONFIG_URL` để tải cặp file này. Remote
+   media transport đã tránh payload video inline bằng multipart upload và
    artifact binary download, nhưng vẫn nên dùng object storage/checkpoint bền
    trước khi chạy production trên Spot với video lớn.

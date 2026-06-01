@@ -5,7 +5,10 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ChineseTranscriptionError } from "./types";
-import { runRemoteVideoVipRender } from "@/lib/multilingual-audio/remote-vip-worker";
+import {
+    runRemoteVideoVipRender,
+    runRemoteVideoVipVoiceRender,
+} from "@/lib/multilingual-audio/remote-vip-worker";
 import {
     buildVipFinalRenderArgs,
     runVideoVipProcessing,
@@ -13,9 +16,13 @@ import {
 
 vi.mock("@/lib/multilingual-audio/remote-vip-worker", () => ({
     runRemoteVideoVipRender: vi.fn(),
+    runRemoteVideoVipVoiceRender: vi.fn(),
 }));
 
 const mockedRunRemoteVideoVipRender = vi.mocked(runRemoteVideoVipRender);
+const mockedRunRemoteVideoVipVoiceRender = vi.mocked(
+    runRemoteVideoVipVoiceRender,
+);
 
 const checkpointDirs: string[] = [];
 
@@ -232,6 +239,7 @@ describe("VIP processing stage checkpoints", () => {
     beforeEach(() => {
         vi.spyOn(console, "log").mockImplementation(() => {});
         mockedRunRemoteVideoVipRender.mockReset();
+        mockedRunRemoteVideoVipVoiceRender.mockReset();
     });
 
     afterEach(async () => {
@@ -535,5 +543,70 @@ describe("VIP processing stage checkpoints", () => {
         );
         expect(result.videoBytes?.toString()).toBe("remote-video");
         expect(result.voice.byteLength).toBe(5);
+    });
+
+    it("delegates Piper voice and render to EC2 in remote voice/render mode", async () => {
+        mockedRunRemoteVideoVipVoiceRender.mockResolvedValueOnce({
+            videoBytes: Buffer.from("remote-voice-render-video"),
+            mimeType: "video/mp4",
+            extension: "mp4",
+            fileName: "source-done.mp4",
+            byteLength: 25,
+            generationDurationMs: 20,
+            voice: {
+                mimeType: "audio/wav",
+                extension: "wav",
+                fileName: "voice.wav",
+                byteLength: 11,
+                segmentCount: 1,
+                generationDurationMs: 7,
+                alignment: {
+                    mode: "timeline",
+                    chunks: 1,
+                    targetDurationSeconds: 1,
+                },
+                settings: { binaryPath: "piper", modelPath: "" },
+                provider: { name: "piper", mode: "local-cli" },
+            },
+            stages: { voiceDurationMs: 7, finalRenderDurationMs: 8 },
+            mix: { originalAudioVolume: 0, voiceVolume: 1 },
+        });
+        const runners = createStageRunners();
+
+        const result = await runVideoVipProcessing({
+            fileName: "source.mp4",
+            fileSizeBytes: 3,
+            fileBytes: new Uint8Array([1, 2, 3]),
+            voiceRenderExecutionMode: "remote-voice-render",
+            remoteVoiceRenderEndpoint: "http://worker.example",
+            stageRunners: runners,
+            omitVideoBase64: true,
+        });
+
+        expect(runners.generateVoice).not.toHaveBeenCalled();
+        expect(runners.render).not.toHaveBeenCalled();
+        expect(mockedRunRemoteVideoVipRender).not.toHaveBeenCalled();
+        expect(mockedRunRemoteVideoVipVoiceRender).toHaveBeenCalledWith(
+            expect.objectContaining({
+                fileName: "source.mp4",
+                fileBytes: new Uint8Array([1, 2, 3]),
+                transcript: expect.objectContaining({ text: "你好" }),
+                translation: expect.objectContaining({
+                    translatedSegments: [
+                        expect.objectContaining({
+                            translatedText: "Xin chào",
+                        }),
+                    ],
+                }),
+                omitVideoBase64: true,
+            }),
+            expect.objectContaining({
+                endpoint: "http://worker.example",
+            }),
+        );
+        expect(result.videoBytes?.toString()).toBe("remote-voice-render-video");
+        expect(result.voice.byteLength).toBe(11);
+        expect(result.stages.voiceDurationMs).toBe(7);
+        expect(result.stages.finalRenderDurationMs).toBe(8);
     });
 });

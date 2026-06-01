@@ -656,10 +656,14 @@ export async function POST(request: Request) {
         const providerId = readFormValue(formData, "providerId").trim();
         const metadataProviderId = readFormValue(formData, "metadataProviderId").trim();
         const vipResumeKey = readFormValue(formData, "vipResumeKey").trim();
+        const voiceRenderExecutionModeRaw = readFormValue(
+            formData,
+            "voiceRenderExecutionMode",
+        ).trim();
         const voiceRenderExecutionMode =
-            readFormValue(formData, "voiceRenderExecutionMode").trim() ===
-            "remote"
-                ? "remote"
+            voiceRenderExecutionModeRaw === "remote" ||
+            voiceRenderExecutionModeRaw === "remote-voice-render"
+                ? voiceRenderExecutionModeRaw
                 : "local";
         const translationModeRaw = readFormValue(
             formData,

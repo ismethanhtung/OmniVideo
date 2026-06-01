@@ -16,8 +16,8 @@ INSTANCE_NAME="${INSTANCE_NAME:-omnivideo-vip-worker-spot}"
 WORKER_PORT="${WORKER_PORT:-8787}"
 ROOT_VOLUME_SIZE_GB="${ROOT_VOLUME_SIZE_GB:-80}"
 
-# Provide both URLs when you want the launcher to install the Piper model.
-# Google Drive direct-download URLs work best after you convert sharing links.
+# Provide both URLs to enable EC2 Piper voice generation.
+# Google Drive sharing links and direct-download URLs are supported.
 PIPER_MODEL_URL="${PIPER_MODEL_URL:-}"
 PIPER_MODEL_CONFIG_URL="${PIPER_MODEL_CONFIG_URL:-}"
 
@@ -57,6 +57,11 @@ WORKER_TOKEN="${WORKER_TOKEN:-$(generate_worker_token)}"
 
 if [[ ! -f package.json || ! -d src ]]; then
   echo "Run this script from the OmniVideo repository root."
+  exit 1
+fi
+
+if { [[ -n "$PIPER_MODEL_URL" ]] && [[ -z "$PIPER_MODEL_CONFIG_URL" ]]; } || { [[ -z "$PIPER_MODEL_URL" ]] && [[ -n "$PIPER_MODEL_CONFIG_URL" ]]; }; then
+  echo "PIPER_MODEL_URL and PIPER_MODEL_CONFIG_URL must be provided together."
   exit 1
 fi
 
@@ -261,7 +266,7 @@ download_model_file() {
       echo "Could not parse Google Drive file id from: $url"
       exit 1
     fi
-    ./piper/.venv/bin/gdown "$file_id" -O "$output"
+    ./piper/.venv/bin/gdown "https://drive.google.com/uc?id=$file_id" -O "$output"
     return
   fi
   curl -fL "$url" -o "$output"
@@ -276,7 +281,9 @@ fi
 
 if [ ! -f piper/model.onnx ] || [ ! -f piper/model.onnx.json ]; then
   echo "INFO: piper/model.onnx and piper/model.onnx.json are not present on the worker."
-  echo "Remote VIP now runs Piper voice locally and uses EC2 for final render only, so these files are optional for this worker."
+  echo "EC2 render-only mode can still work, but EC2 voice + render requires both Piper files."
+else
+  echo "Piper model and config are ready for EC2 voice + render."
 fi
 
 cat > .env.production.local <<ENV
@@ -334,8 +341,8 @@ Set these in your local OmniVideo app before using the remote seed:
 export OMNIVIDEO_REMOTE_VIP_WORKER_URL="http://$PUBLIC_IP:$WORKER_PORT"
 export OMNIVIDEO_REMOTE_VIP_TOKEN="$WORKER_TOKEN"
 
-Piper model files are optional for the current remote-render-only VIP worker.
-Only upload them if you later run voice generation on this EC2 instance:
+Piper model files are required for EC2 voice + render.
+If you launched without PIPER_MODEL_URL and PIPER_MODEL_CONFIG_URL, only EC2 render-only mode can work until you upload both files:
 scp -i ${KEY_NAME}.pem model.onnx ubuntu@$PUBLIC_IP:$REMOTE_APP_DIR/piper/model.onnx
 scp -i ${KEY_NAME}.pem model.onnx.json ubuntu@$PUBLIC_IP:$REMOTE_APP_DIR/piper/model.onnx.json
 ssh -i ${KEY_NAME}.pem ubuntu@$PUBLIC_IP 'sudo systemctl restart omnivideo-vip-worker'

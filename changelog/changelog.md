@@ -1,5 +1,19 @@
 # OmniVideo Changelog
 
+## FAST-WORKSPACE-057 - Run VIP Piper Voice on EC2
+
+- Bumped app version from `0.10.83` to `0.10.84` as a patch release for remote VIP voice execution.
+- Added `voiceRenderExecutionMode=remote-voice-render` so VIP transcript, translation, and metadata stay local while Piper voice generation and final ffmpeg render run on the EC2 worker.
+- Preserved `voiceRenderExecutionMode=remote` as the EC2 render-only fallback that sends `videoFile + voiceFile` multipart payloads and never calls Piper on the worker.
+- Updated `/api/audio/video-vip-voice-render` to distinguish render-only vs voice+render requests while keeping the same endpoint, token contract, artifact response, and binary artifact download path.
+- Updated `Seed Remote VIP Voice Render`, Workspace runtime copy/config, and `omnivideo-vip-spot.sh` so provided Google Drive `PIPER_MODEL_URL` / `PIPER_MODEL_CONFIG_URL` install the worker model files required for EC2 voice.
+- Verification (FAST-WORKSPACE-057):
+  - `npm run test -- --run src/lib/multilingual-audio/video-vip-processing.test.ts src/lib/multilingual-audio/remote-vip-worker.test.ts src/app/api/audio/video-vip-voice-render/route.test.ts src/app/api/audio/video-vip-processing/route.test.ts src/lib/workspace/workspace-seeds.test.ts src/lib/workspace/workspace-graph.test.ts src/features/workspace/workspace-canvas-panel.test.ts` pass (7 files / 115 tests).
+  - `npm run build` pass.
+  - `npm run guard:version` pass.
+  - `git diff --check` pass.
+  - `bash -n omnivideo-vip-spot.sh` and `zsh -n omnivideo-vip-spot.sh` pass.
+
 ## FAST-WORKSPACE-056 - Switch Remote VIP Seed to EC2 Render Only
 
 - Bumped app version from `0.10.82` to `0.10.83` as a patch release for remote VIP stability.

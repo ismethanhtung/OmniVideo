@@ -1551,7 +1551,9 @@ describe("workspace graph helpers", () => {
         );
         const plan = planWorkspaceFlow(graph);
 
-        expect(vipNode?.config.voiceRenderExecutionMode).toBe("remote");
+        expect(vipNode?.config.voiceRenderExecutionMode).toBe(
+            "remote-voice-render",
+        );
         expect(plan.ok).toBe(true);
         expect(plan.steps).toEqual([
             {

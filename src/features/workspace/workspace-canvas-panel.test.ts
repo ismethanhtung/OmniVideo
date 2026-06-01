@@ -69,6 +69,10 @@ describe("WorkspaceCanvasPanel canvas interactions", () => {
         expect(source).toContain(
             "Remote render mode enabled: voice generation runs locally; final render runs on the configured EC2 worker.",
         );
+        expect(source).toContain(
+            "Remote voice + render mode enabled: Piper voice generation and final render run on the configured EC2 worker.",
+        );
+        expect(source).toContain("remote-voice-render");
         expect(source).toContain("formData.set(");
         expect(source).toContain("voiceRenderExecutionMode");
     });
