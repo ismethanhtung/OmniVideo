@@ -13,6 +13,8 @@ export type RemoteVipWorkerOptions = {
     endpoint?: string;
     token?: string;
     fetchImpl?: typeof fetch;
+    pollIntervalMs?: number;
+    pollTimeoutMs?: number;
 };
 
 type RemoteVipWorkerPayload = Omit<
@@ -36,6 +38,26 @@ type RemoteVipWorkerResponseData = (
 ) & {
     artifactId?: string;
 };
+
+type RemoteVipWorkerJobResponse = {
+    ok?: boolean;
+    data?: {
+        jobId?: string;
+        status?: "queued" | "running" | "done" | "failed";
+        stage?: string;
+        stageStartedAt?: string;
+        message?: string;
+        metrics?: Record<string, number | string | boolean | undefined>;
+        result?: RemoteVipWorkerResponseData;
+        error?: string;
+        errorCode?: string;
+    };
+    error?: string;
+    errorCode?: string;
+};
+
+const DEFAULT_REMOTE_VIP_POLL_INTERVAL_MS = 5000;
+const DEFAULT_REMOTE_VIP_POLL_TIMEOUT_MS = 6 * 60 * 60 * 1000;
 
 function normalizeEndpoint(endpoint: string) {
     return endpoint.replace(/\/+$/u, "");
@@ -119,6 +141,7 @@ function createRemoteVipWorkerFormData(input: {
 }) {
     const formData = new FormData();
     formData.set("payloadJson", JSON.stringify(input.payload));
+    formData.set("async", "1");
     formData.set(
         "videoFile",
         new Blob([Buffer.from(input.sourceVideoBytes)], {
@@ -164,12 +187,10 @@ async function postRemoteVipWorker<Result extends RemoteVipWorkerResponseData>(
     );
 
     const body = (await response.json().catch(() => null)) as
-        | {
-              ok?: boolean;
-              data?: RemoteVipWorkerResponseData;
-              error?: string;
-              errorCode?: string;
-          }
+        | (RemoteVipWorkerJobResponse & {
+              data?: RemoteVipWorkerResponseData &
+                  NonNullable<RemoteVipWorkerJobResponse["data"]>;
+          })
         | null;
     if (!response.ok || !body?.ok || !body.data) {
         throw new ChineseTranscriptionError(
@@ -180,15 +201,144 @@ async function postRemoteVipWorker<Result extends RemoteVipWorkerResponseData>(
         );
     }
 
-    if (body.data.artifactId) {
-        const artifactResponse = await fetchImpl(
-            `${normalizeEndpoint(endpoint)}/api/workspace/artifacts/${encodeURIComponent(
-                body.data.artifactId,
+    if (body.data.jobId) {
+        const result = await pollRemoteVipWorkerJob<Result>({
+            endpoint,
+            token,
+            fetchImpl,
+            jobId: body.data.jobId,
+            pollIntervalMs: resolvePollIntervalMs(options),
+            pollTimeoutMs: resolvePollTimeoutMs(options),
+        });
+        return await hydrateRemoteVipWorkerResult(result, {
+            endpoint,
+            token,
+            fetchImpl,
+        });
+    }
+
+    return await hydrateRemoteVipWorkerResult(body.data as Result, {
+        endpoint,
+        token,
+        fetchImpl,
+    });
+}
+
+function resolvePollIntervalMs(options: RemoteVipWorkerOptions) {
+    const configured =
+        options.pollIntervalMs ??
+        (Number(process.env.OMNIVIDEO_REMOTE_VIP_POLL_INTERVAL_MS) ||
+            DEFAULT_REMOTE_VIP_POLL_INTERVAL_MS);
+    return Math.max(0, configured);
+}
+
+function resolvePollTimeoutMs(options: RemoteVipWorkerOptions) {
+    const configured =
+        options.pollTimeoutMs ??
+        (Number(process.env.OMNIVIDEO_REMOTE_VIP_POLL_TIMEOUT_MS) ||
+            DEFAULT_REMOTE_VIP_POLL_TIMEOUT_MS);
+    return Math.max(1000, configured);
+}
+
+async function pollRemoteVipWorkerJob<Result extends RemoteVipWorkerResponseData>(
+    input: {
+        endpoint: string;
+        token: string;
+        fetchImpl: typeof fetch;
+        jobId: string;
+        pollIntervalMs: number;
+        pollTimeoutMs: number;
+    },
+): Promise<Result> {
+    const startedAt = Date.now();
+    let attempt = 0;
+    let lastLoggedStage = "";
+    let lastLoggedAt = 0;
+    while (Date.now() - startedAt <= input.pollTimeoutMs) {
+        if (attempt > 0) {
+            await delay(input.pollIntervalMs);
+        }
+        attempt += 1;
+        const response = await input.fetchImpl(
+            `${normalizeEndpoint(input.endpoint)}/api/audio/video-vip-voice-render?jobId=${encodeURIComponent(
+                input.jobId,
+            )}`,
+            {
+                method: "GET",
+                headers: {
+                    ...(input.token ? { Authorization: `Bearer ${input.token}` } : {}),
+                },
+            },
+        );
+        const body = (await response.json().catch(() => null)) as
+            | RemoteVipWorkerJobResponse
+            | null;
+        if (!response.ok || !body?.ok || !body.data) {
+            throw new ChineseTranscriptionError(
+                "SYS_DUBBING_MUX_FAILED",
+                body?.error ??
+                    `Remote VIP worker job poll failed with HTTP ${response.status}.`,
+                response.status >= 400 ? response.status : 500,
+            );
+        }
+        if (body.data.status === "failed") {
+            throw new ChineseTranscriptionError(
+                "SYS_DUBBING_MUX_FAILED",
+                body.data.error ?? "Remote VIP worker job failed.",
+                500,
+            );
+        }
+        if (body.data.status === "running") {
+            const stage = body.data.stage ?? "running";
+            const shouldLog =
+                stage !== lastLoggedStage || Date.now() - lastLoggedAt > 60000;
+            if (shouldLog) {
+                lastLoggedStage = stage;
+                lastLoggedAt = Date.now();
+                console.log("[VIP remote worker]", {
+                    jobId: input.jobId,
+                    status: body.data.status,
+                    stage,
+                    message: body.data.message,
+                    metrics: body.data.metrics,
+                    elapsedMs: Date.now() - startedAt,
+                });
+            }
+        }
+        if (body.data.status === "done" && body.data.result) {
+            console.log("[VIP remote worker]", {
+                jobId: input.jobId,
+                status: "done",
+                elapsedMs: Date.now() - startedAt,
+            });
+            return body.data.result as Result;
+        }
+    }
+
+    throw new ChineseTranscriptionError(
+        "SYS_DUBBING_MUX_FAILED",
+        "Remote VIP worker job timed out while waiting for completion.",
+        504,
+    );
+}
+
+async function hydrateRemoteVipWorkerResult<Result extends RemoteVipWorkerResponseData>(
+    result: Result,
+    input: {
+        endpoint: string;
+        token: string;
+        fetchImpl: typeof fetch;
+    },
+): Promise<Result> {
+    if (result.artifactId) {
+        const artifactResponse = await input.fetchImpl(
+            `${normalizeEndpoint(input.endpoint)}/api/workspace/artifacts/${encodeURIComponent(
+                result.artifactId,
             )}/download`,
             {
                 method: "GET",
                 headers: {
-                    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                    ...(input.token ? { Authorization: `Bearer ${input.token}` } : {}),
                 },
             },
         );
@@ -200,17 +350,22 @@ async function postRemoteVipWorker<Result extends RemoteVipWorkerResponseData>(
             );
         }
         return {
-            ...body.data,
+            ...result,
             videoBytes: Buffer.from(await artifactResponse.arrayBuffer()),
         } as Result;
     }
 
     return {
-        ...body.data,
-        videoBytes: body.data.videoBase64
-            ? Buffer.from(body.data.videoBase64, "base64")
-            : body.data.videoBytes
-              ? Buffer.from(body.data.videoBytes)
+        ...result,
+        videoBytes: result.videoBase64
+            ? Buffer.from(result.videoBase64, "base64")
+            : result.videoBytes
+              ? Buffer.from(result.videoBytes)
               : undefined,
     } as Result;
+}
+
+function delay(ms: number) {
+    if (ms <= 0) return Promise.resolve();
+    return new Promise((resolve) => setTimeout(resolve, ms));
 }

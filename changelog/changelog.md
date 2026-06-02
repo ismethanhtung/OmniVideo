@@ -1,5 +1,17 @@
 # OmniVideo Changelog
 
+## FAST-WORKSPACE-059 - Add Async Polling for Long Remote VIP Jobs
+
+- Bumped app version from `0.10.87` to `0.10.88` as a patch release for long remote VIP worker reliability.
+- Changed the remote VIP worker client to submit multipart worker requests with `async=1`, poll by `jobId`, and download the rendered artifact only after the worker reports `done`.
+- Added in-memory async job support to `/api/audio/video-vip-voice-render` so long EC2 Piper/render work no longer depends on one long-lived POST response.
+- Added remote job stage telemetry for `voice`, `render`, and `artifact` so local polling logs can show whether a long job is stuck in Piper generation or ffmpeg render.
+- Preserved the existing synchronous worker response contract for compatibility with older or direct callers.
+- Documented the async polling contract and remaining durability limitation that worker jobs/artifacts are still process-local.
+- Verification (FAST-WORKSPACE-059):
+  - `npm run test -- --run src/lib/multilingual-audio/remote-vip-worker.test.ts src/app/api/audio/video-vip-voice-render/route.test.ts src/app/api/audio/video-vip-processing/route.test.ts src/lib/multilingual-audio/video-vip-processing.test.ts` pass (4 files / 36 tests).
+  - `npm run build` pass.
+
 ## FAST-VIDEO-030 - Expand Video Tools Lab Previews
 
 - Bumped app version from `0.10.86` to `0.10.87` as a patch release for Video Tools Lab layout polish.

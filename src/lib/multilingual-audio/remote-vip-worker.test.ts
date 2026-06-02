@@ -79,6 +79,7 @@ describe("remote VIP worker client", () => {
         expect(postInit?.body).toBeInstanceOf(FormData);
 
         const formData = postInit?.body as FormData;
+        expect(formData.get("async")).toBe("1");
         const payloadJson = formData.get("payloadJson");
         expect(typeof payloadJson).toBe("string");
         expect(payloadJson).not.toContain("fileBase64");
@@ -101,6 +102,116 @@ describe("remote VIP worker client", () => {
         );
         expect(result.videoBytes?.toString()).toBe("remote-video");
         expect(result.fileName).toBe("source-done.mp4");
+    });
+
+    it("polls async worker jobs before downloading rendered artifact bytes", async () => {
+        const fetchImpl = vi
+            .fn<typeof fetch>()
+            .mockResolvedValueOnce(
+                Response.json(
+                    {
+                        ok: true,
+                        data: {
+                            jobId: "job-1",
+                            status: "running",
+                        },
+                    },
+                    { status: 202 },
+                ),
+            )
+            .mockResolvedValueOnce(
+                Response.json({
+                    ok: true,
+                    data: {
+                        jobId: "job-1",
+                        status: "running",
+                    },
+                }),
+            )
+            .mockResolvedValueOnce(
+                Response.json({
+                    ok: true,
+                    data: {
+                        jobId: "job-1",
+                        status: "done",
+                        result: {
+                            artifactId: "artifact-async",
+                            mimeType: "video/mp4",
+                            extension: "mp4",
+                            fileName: "source-done.mp4",
+                            byteLength: 18,
+                            generationDurationMs: 100,
+                            stages: {
+                                finalRenderDurationMs: 40,
+                            },
+                            mix: { originalAudioVolume: 0, voiceVolume: 1 },
+                        },
+                    },
+                }),
+            )
+            .mockResolvedValueOnce(
+                new Response(Buffer.from("async-remote-video"), {
+                    status: 200,
+                    headers: { "Content-Type": "video/mp4" },
+                }),
+            );
+
+        const result = await runRemoteVideoVipRender(baseInput, {
+            endpoint: "http://worker.example/",
+            token: "secret",
+            fetchImpl,
+            pollIntervalMs: 0,
+        });
+
+        expect(fetchImpl).toHaveBeenCalledTimes(4);
+        expect(fetchImpl.mock.calls[1][0]).toBe(
+            "http://worker.example/api/audio/video-vip-voice-render?jobId=job-1",
+        );
+        expect(fetchImpl.mock.calls[2][0]).toBe(
+            "http://worker.example/api/audio/video-vip-voice-render?jobId=job-1",
+        );
+        expect(fetchImpl.mock.calls[3][0]).toBe(
+            "http://worker.example/api/workspace/artifacts/artifact-async/download",
+        );
+        expect(result.videoBytes?.toString()).toBe("async-remote-video");
+    });
+
+    it("maps async worker job failures to VIP mux errors", async () => {
+        const fetchImpl = vi
+            .fn<typeof fetch>()
+            .mockResolvedValueOnce(
+                Response.json(
+                    {
+                        ok: true,
+                        data: {
+                            jobId: "job-failed",
+                            status: "running",
+                        },
+                    },
+                    { status: 202 },
+                ),
+            )
+            .mockResolvedValueOnce(
+                Response.json({
+                    ok: true,
+                    data: {
+                        jobId: "job-failed",
+                        status: "failed",
+                        error: "piper failed",
+                    },
+                }),
+            );
+
+        await expect(
+            runRemoteVideoVipRender(baseInput, {
+                endpoint: "http://worker.example",
+                fetchImpl,
+                pollIntervalMs: 0,
+            }),
+        ).rejects.toMatchObject({
+            code: "SYS_DUBBING_MUX_FAILED",
+            message: "piper failed",
+        });
     });
 
     it("uploads source video and transcript payload for EC2 voice plus render", async () => {

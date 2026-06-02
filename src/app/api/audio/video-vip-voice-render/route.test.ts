@@ -12,6 +12,7 @@ import {
 import { GET, POST } from "./route";
 
 vi.mock("@/lib/multilingual-audio/video-vip-processing", () => ({
+    renderVipCompositeVideo: vi.fn(),
     runVideoVipRemoteRender: vi.fn(),
     runVideoVipVoiceRender: vi.fn(),
 }));
@@ -31,7 +32,9 @@ describe("video vip voice/render worker API", () => {
     });
 
     it("exposes a lightweight health check", async () => {
-        const response = GET();
+        const response = GET(
+            new Request("http://localhost/api/audio/video-vip-voice-render"),
+        );
         const payload = await response.json();
 
         expect(response.status).toBe(200);
@@ -204,6 +207,91 @@ describe("video vip voice/render worker API", () => {
                 omitVideoBase64: true,
             }),
         );
+    });
+
+    it("starts async worker jobs and exposes completed status by job id", async () => {
+        process.env.OMNIVIDEO_REMOTE_VIP_TOKEN = "secret";
+        mockedRunVideoVipRemoteRender.mockResolvedValueOnce({
+            videoBytes: Buffer.from("async-done"),
+            mimeType: "video/mp4",
+            extension: "mp4",
+            fileName: "source-done.mp4",
+            byteLength: 10,
+            generationDurationMs: 100,
+            stages: {
+                finalRenderDurationMs: 40,
+            },
+            mix: {
+                originalAudioVolume: 0,
+                voiceVolume: 1,
+            },
+        });
+
+        const formData = new FormData();
+        formData.set("async", "1");
+        formData.set(
+            "payloadJson",
+            JSON.stringify({
+                fileName: "source.mp4",
+                translatedSegments: [
+                    {
+                        id: 0,
+                        start: 0,
+                        end: 1,
+                        sourceText: "你好",
+                        translatedText: "Xin chào",
+                    },
+                ],
+            }),
+        );
+        formData.set(
+            "videoFile",
+            new File([new Uint8Array([4, 5, 6])], "source.mp4", {
+                type: "video/mp4",
+            }),
+        );
+        formData.set(
+            "voiceFile",
+            new File([Buffer.from("voice")], "voice.wav", {
+                type: "audio/wav",
+            }),
+        );
+
+        const startResponse = await POST(
+            new Request("http://localhost/api/audio/video-vip-voice-render", {
+                method: "POST",
+                headers: { Authorization: "Bearer secret" },
+                body: formData,
+            }),
+        );
+        const startPayload = await startResponse.json();
+        await Promise.resolve();
+
+        expect(startResponse.status).toBe(202);
+        expect(startPayload.data).toMatchObject({
+            jobId: expect.any(String),
+            status: "running",
+        });
+
+        const statusResponse = GET(
+            new Request(
+                `http://localhost/api/audio/video-vip-voice-render?jobId=${startPayload.data.jobId}`,
+                {
+                    headers: { Authorization: "Bearer secret" },
+                },
+            ),
+        );
+        const statusPayload = await statusResponse.json();
+
+        expect(statusResponse.status).toBe(200);
+        expect(statusPayload.data).toMatchObject({
+            jobId: startPayload.data.jobId,
+            status: "done",
+            result: {
+                artifactId: expect.any(String),
+                byteLength: 10,
+            },
+        });
     });
 
     it("runs EC2 voice plus render with multipart video and transcript payload", async () => {

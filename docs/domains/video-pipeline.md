@@ -76,8 +76,11 @@ bằng multipart `voiceFile`. Remote voice + render truyền `videoFile` kèm
 transcript/translation/tts settings trong `payloadJson`, không gửi voice WAV từ
 local. Cả hai mode đều tránh base64 JSON cho media lớn. Worker lưu video render
 vào server artifact tạm thời và trả `artifactId`; local control-plane tải
-artifact đó bằng binary download trước khi tiếp tục metadata/save-local. Khi cần
-chịu Spot interruption tốt hơn hoặc lưu bền qua nhiều process, bước tiếp theo là
+artifact đó bằng binary download trước khi tiếp tục metadata/save-local. Local
+client gửi worker request ở async mode (`async=1`), worker trả `jobId`, rồi
+client poll `GET /api/audio/video-vip-voice-render?jobId=...` cho tới khi job
+done để tránh giữ một HTTP POST mở trong nhiều phút với video dài. Khi cần chịu
+Spot interruption tốt hơn hoặc lưu bền qua nhiều process, bước tiếp theo là
 chuyển output và checkpoint sang object storage/S3-compatible pointer.
 
 ### 4.2 Current Workspace preprocess path

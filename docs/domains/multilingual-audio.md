@@ -48,7 +48,9 @@ Hỗ trợ xử lý audio đa ngôn ngữ cho video linh hoạt: phát hiện ng
   render. Source video luôn upload bằng multipart; voice+render mode gửi
   transcript/translation/tts settings sang worker thay vì gửi voice WAV, còn
   render-only mode gửi thêm multipart `voiceFile`. Video render được tải về qua
-  server artifact binary để tránh base64 JSON quá lớn với video dài.
+  server artifact binary để tránh base64 JSON quá lớn với video dài. Remote
+  worker request dùng async job + polling để video dài không phụ thuộc vào một
+  kết nối `fetch` mở liên tục trong suốt thời gian Piper/render.
 
 ## 3. Target Workflow
 
@@ -112,5 +114,6 @@ Hỗ trợ xử lý audio đa ngôn ngữ cho video linh hoạt: phát hiện ng
 9. Remote EC2 voice/render cần Piper model/config có sẵn trên worker; launcher
    nhận `PIPER_MODEL_URL` và `PIPER_MODEL_CONFIG_URL` để tải cặp file này. Remote
    media transport đã tránh payload video inline bằng multipart upload và
-   artifact binary download, nhưng vẫn nên dùng object storage/checkpoint bền
-   trước khi chạy production trên Spot với video lớn.
+   artifact binary download; async polling tránh timeout kết nối cho video dài,
+   nhưng vẫn nên dùng object storage/checkpoint bền trước khi chạy production
+   trên Spot với video lớn.

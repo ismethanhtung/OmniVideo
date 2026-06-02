@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import { NextResponse } from "next/server";
 
 import {
@@ -6,7 +8,9 @@ import {
     type TranscriptTranslationResult,
     type VoiceGenerationSettings,
 } from "@/lib/multilingual-audio/types";
+import { generateVoiceFromSegments } from "@/lib/multilingual-audio/piper-tts";
 import {
+    renderVipCompositeVideo,
     runVideoVipRemoteRender,
     runVideoVipVoiceRender,
     type VideoVipRemoteRenderInput,
@@ -15,6 +19,28 @@ import {
 import { buildWorkspaceMediaPayload } from "@/lib/workspace/server-artifacts";
 
 export const runtime = "nodejs";
+
+type RemoteVipWorkerJobStatus = "running" | "done" | "failed";
+type RemoteVipWorkerJob = {
+    id: string;
+    status: RemoteVipWorkerJobStatus;
+    stage?: "queued" | "voice" | "render" | "artifact" | "done";
+    stageStartedAt?: string;
+    message?: string;
+    metrics?: Record<string, number | string | boolean | undefined>;
+    startedAt: string;
+    updatedAt: string;
+    result?: Record<string, unknown>;
+    error?: string;
+    errorCode?: string;
+};
+
+const REMOTE_VIP_JOB_TTL_MS = 6 * 60 * 60 * 1000;
+
+const remoteVipWorkerJobs: Map<string, RemoteVipWorkerJob> =
+    ((globalThis as typeof globalThis & {
+        __omnivideoRemoteVipWorkerJobs?: Map<string, RemoteVipWorkerJob>;
+    }).__omnivideoRemoteVipWorkerJobs ??= new Map());
 
 function readBearerToken(request: Request) {
     const header = request.headers.get("authorization") ?? "";
@@ -59,6 +85,9 @@ async function parseWorkerPayload(request: Request) {
         const payloadJson = formData.get("payloadJson");
         const file = formData.get("videoFile");
         const voiceFile = formData.get("voiceFile");
+        const asyncRequested =
+            formData.get("async") === "1" ||
+            formData.get("async") === "true";
         if (typeof payloadJson !== "string" || !payloadJson.trim()) {
             throw new ChineseTranscriptionError(
                 "VAL_DUBBING_VIDEO_REQUIRED",
@@ -91,6 +120,7 @@ async function parseWorkerPayload(request: Request) {
                     : undefined,
             fileName: file.name || undefined,
             mimeType: file.type || undefined,
+            asyncRequested,
         };
     }
 
@@ -111,6 +141,7 @@ async function parseWorkerPayload(request: Request) {
                 : undefined,
         fileName: undefined,
         mimeType: undefined,
+        asyncRequested: payload.async === true || payload.async === "1",
     };
 }
 
@@ -175,7 +206,42 @@ function readTranslation(payload: Record<string, unknown>) {
     } satisfies TranscriptTranslationResult;
 }
 
-export function GET() {
+export function GET(request: Request) {
+    const url = new URL(request.url);
+    const jobId = url.searchParams.get("jobId")?.trim();
+    if (jobId) {
+        const denied = requireWorkerToken(request);
+        if (denied) return denied;
+
+        const job = remoteVipWorkerJobs.get(jobId);
+        if (!job) {
+            return NextResponse.json(
+                {
+                    ok: false,
+                    errorCode: "SYS_DUBBING_MUX_FAILED",
+                    error: "Remote VIP worker job was not found.",
+                },
+                { status: 404 },
+            );
+        }
+        return NextResponse.json({
+            ok: true,
+            data: {
+                jobId: job.id,
+                status: job.status,
+                stage: job.stage,
+                stageStartedAt: job.stageStartedAt,
+                message: job.message,
+                metrics: job.metrics,
+                startedAt: job.startedAt,
+                updatedAt: job.updatedAt,
+                result: job.result,
+                error: job.error,
+                errorCode: job.errorCode,
+            },
+        });
+    }
+
     return NextResponse.json({
         ok: true,
         service: "omnivideo-vip-voice-render",
@@ -187,112 +253,90 @@ export async function POST(request: Request) {
     if (denied) return denied;
 
     try {
-        const { payload, fileBytes, voiceBytes, fileName, mimeType } =
+        const { payload, fileBytes, voiceBytes, fileName, mimeType, asyncRequested } =
             await parseWorkerPayload(request);
-        const executionMode = normalizeWorkerExecutionMode(payload.executionMode);
-
-        const baseInput = {
-            fileName:
-                typeof payload.fileName === "string" && payload.fileName.trim()
-                    ? payload.fileName
-                    : fileName ?? "source.mp4",
-            sourceTitle:
-                typeof payload.sourceTitle === "string"
-                    ? payload.sourceTitle
-                    : undefined,
-            mimeType:
-                typeof payload.mimeType === "string"
-                    ? payload.mimeType
-                    : mimeType,
-            fileSizeBytes:
-                typeof payload.fileSizeBytes === "number"
-                    ? payload.fileSizeBytes
-                    : fileBytes.byteLength,
+        const workerInput = {
+            payload,
             fileBytes,
-            originalAudioVolume:
-                typeof payload.originalAudioVolume === "number"
-                    ? payload.originalAudioVolume
-                    : undefined,
-            voiceVolume:
-                typeof payload.voiceVolume === "number"
-                    ? payload.voiceVolume
-                    : undefined,
-            videoSpeedFactor:
-                typeof payload.videoSpeedFactor === "number"
-                    ? payload.videoSpeedFactor
-                    : undefined,
-            renderPreset:
-                payload.renderPreset === "veryfast" ||
-                payload.renderPreset === "superfast"
-                    ? payload.renderPreset
-                    : undefined,
-            mirrorEnabled:
-                typeof payload.mirrorEnabled === "boolean"
-                    ? payload.mirrorEnabled
-                    : undefined,
-            blur: isRecord(payload.blur)
-                ? (payload.blur as VideoVipRemoteRenderInput["blur"])
-                : undefined,
-            coverBoxes: isRecord(payload.coverBoxes)
-                ? (payload.coverBoxes as VideoVipRemoteRenderInput["coverBoxes"])
-                : undefined,
-            subtitleStyle: isRecord(payload.subtitleStyle)
-                ? (payload.subtitleStyle as VideoVipRemoteRenderInput["subtitleStyle"])
-                : undefined,
-            textOverlays: isRecord(payload.textOverlays)
-                ? (payload.textOverlays as VideoVipRemoteRenderInput["textOverlays"])
-                : undefined,
-            omitVideoBase64: true,
+            voiceBytes,
+            fileName,
+            mimeType,
         };
 
-        const result =
-            executionMode === "voice-render"
-                ? await runVideoVipVoiceRender({
-                      ...(baseInput as Omit<
-                          VideoVipVoiceRenderInput,
-                          "transcript" | "translation"
-                      >),
-                      transcript: readTranscript(payload),
-                      translation: readTranslation(payload),
-                      ttsSettings: isRecord(payload.ttsSettings)
-                          ? (payload.ttsSettings as Partial<VoiceGenerationSettings>)
-                          : undefined,
-                  })
-                : await runVideoVipRemoteRender({
-                      ...(baseInput as Omit<
-                          VideoVipRemoteRenderInput,
-                          "voiceAudioBase64" | "translatedSegments"
-                      >),
-                      voiceAudioBase64: Buffer.from(voiceBytes ?? []).toString(
-                          "base64",
-                      ),
-                      translatedSegments: readTranslatedSegments(payload),
-                  });
-        const videoBytes = result.videoBytes ?? Buffer.from(
-            result.videoBase64 ?? "",
-            "base64",
-        );
-        const mediaPayload = buildWorkspaceMediaPayload({
-            bytes: videoBytes,
-            fileName: result.fileName,
-            mimeType: result.mimeType,
-            kind: "video",
-            base64Field: "videoBase64",
-            inlineLimitBytes: 0,
-        });
+        if (asyncRequested) {
+            const now = new Date().toISOString();
+            const jobId = randomUUID();
+            const job: RemoteVipWorkerJob = {
+                id: jobId,
+                status: "running",
+                stage: "queued",
+                stageStartedAt: now,
+                message: "Remote VIP worker job queued.",
+                startedAt: now,
+                updatedAt: now,
+            };
+            remoteVipWorkerJobs.set(jobId, job);
+            const updateJob = (patch: Partial<RemoteVipWorkerJob>) => {
+                const current = remoteVipWorkerJobs.get(jobId) ?? job;
+                remoteVipWorkerJobs.set(jobId, {
+                    ...current,
+                    ...patch,
+                    id: jobId,
+                    updatedAt: new Date().toISOString(),
+                });
+            };
+            void executeWorkerJob(workerInput, updateJob)
+                .then((result) => {
+                    const current = remoteVipWorkerJobs.get(jobId) ?? job;
+                    remoteVipWorkerJobs.set(jobId, {
+                        ...current,
+                        status: "done",
+                        stage: "done",
+                        message: "Remote VIP worker job completed.",
+                        updatedAt: new Date().toISOString(),
+                        result,
+                    });
+                })
+                .catch((error) => {
+                    const current = remoteVipWorkerJobs.get(jobId) ?? job;
+                    remoteVipWorkerJobs.set(jobId, {
+                        ...current,
+                        status: "failed",
+                        updatedAt: new Date().toISOString(),
+                        error:
+                            error instanceof Error
+                                ? error.message
+                                : "Remote VIP worker job failed.",
+                        errorCode:
+                            error instanceof ChineseTranscriptionError
+                                ? error.code
+                                : "SYS_DUBBING_MUX_FAILED",
+                    });
+                })
+                .finally(() => {
+                    setTimeout(() => {
+                        remoteVipWorkerJobs.delete(jobId);
+                    }, REMOTE_VIP_JOB_TTL_MS);
+                });
 
-        return NextResponse.json({
-            ok: true,
-            data: {
-                ...result,
-                ...mediaPayload,
-                videoBytes: undefined,
-                videoBase64:
-                    "videoBase64" in mediaPayload
-                        ? mediaPayload.videoBase64
-                        : undefined,
-            },
-        });
+            return NextResponse.json(
+                {
+                    ok: true,
+                    data: {
+                        jobId,
+                        status: "running",
+                        stage: "queued",
+                        message: "Remote VIP worker job queued.",
+                        startedAt: now,
+                        updatedAt: now,
+                    },
+                },
+                { status: 202 },
+            );
+        }
+
+        const data = await executeWorkerJob(workerInput);
+        return NextResponse.json({ ok: true, data });
     } catch (error) {
         if (error instanceof ChineseTranscriptionError) {
             return NextResponse.json(
@@ -318,4 +362,181 @@ export async function POST(request: Request) {
             { status: 500 },
         );
     }
+}
+
+async function executeWorkerJob(input: {
+    payload: Record<string, unknown>;
+    fileBytes: Uint8Array;
+    voiceBytes?: Uint8Array;
+    fileName?: string;
+    mimeType?: string;
+}, updateJob?: (patch: Partial<RemoteVipWorkerJob>) => void) {
+    const { payload, fileBytes, voiceBytes, fileName, mimeType } = input;
+    const executionMode = normalizeWorkerExecutionMode(payload.executionMode);
+
+    const baseInput = {
+        fileName:
+            typeof payload.fileName === "string" && payload.fileName.trim()
+                ? payload.fileName
+                : fileName ?? "source.mp4",
+        sourceTitle:
+            typeof payload.sourceTitle === "string"
+                ? payload.sourceTitle
+                : undefined,
+        mimeType:
+            typeof payload.mimeType === "string" ? payload.mimeType : mimeType,
+        fileSizeBytes:
+            typeof payload.fileSizeBytes === "number"
+                ? payload.fileSizeBytes
+                : fileBytes.byteLength,
+        fileBytes,
+        originalAudioVolume:
+            typeof payload.originalAudioVolume === "number"
+                ? payload.originalAudioVolume
+                : undefined,
+        voiceVolume:
+            typeof payload.voiceVolume === "number"
+                ? payload.voiceVolume
+                : undefined,
+        videoSpeedFactor:
+            typeof payload.videoSpeedFactor === "number"
+                ? payload.videoSpeedFactor
+                : undefined,
+        renderPreset:
+            payload.renderPreset === "veryfast" ||
+            payload.renderPreset === "superfast"
+                ? payload.renderPreset
+                : undefined,
+        mirrorEnabled:
+            typeof payload.mirrorEnabled === "boolean"
+                ? payload.mirrorEnabled
+                : undefined,
+        blur: isRecord(payload.blur)
+            ? (payload.blur as VideoVipRemoteRenderInput["blur"])
+            : undefined,
+        coverBoxes: isRecord(payload.coverBoxes)
+            ? (payload.coverBoxes as VideoVipRemoteRenderInput["coverBoxes"])
+            : undefined,
+        subtitleStyle: isRecord(payload.subtitleStyle)
+            ? (payload.subtitleStyle as VideoVipRemoteRenderInput["subtitleStyle"])
+            : undefined,
+        textOverlays: isRecord(payload.textOverlays)
+            ? (payload.textOverlays as VideoVipRemoteRenderInput["textOverlays"])
+            : undefined,
+        omitVideoBase64: true,
+    };
+
+    const markStage = (input: {
+        stage: NonNullable<RemoteVipWorkerJob["stage"]>;
+        message: string;
+        metrics?: RemoteVipWorkerJob["metrics"];
+    }) => {
+        updateJob?.({
+            stage: input.stage,
+            stageStartedAt: new Date().toISOString(),
+            message: input.message,
+            metrics: input.metrics,
+        });
+    };
+
+    const stageRunners = {
+        generateVoice: async (
+            voiceInput: Parameters<typeof generateVoiceFromSegments>[0],
+        ) => {
+            markStage({
+                stage: "voice",
+                message: "Generating Piper voice on EC2.",
+                metrics: {
+                    segmentCount: voiceInput.segments.length,
+                    sourceFileSizeBytes: fileBytes.byteLength,
+                },
+            });
+            const result = await generateVoiceFromSegments(voiceInput);
+            updateJob?.({
+                message: "Piper voice generation completed on EC2.",
+                metrics: {
+                    segmentCount: result.segmentCount,
+                    voiceByteLength: result.byteLength,
+                },
+            });
+            return result;
+        },
+        render: async (
+            renderInput: Parameters<typeof renderVipCompositeVideo>[0],
+        ) => {
+            markStage({
+                stage: "render",
+                message: "Rendering final VIP video on EC2.",
+                metrics: {
+                    sourceFileSizeBytes: renderInput.sourceVideoBytes.byteLength,
+                    voiceByteLength: renderInput.voiceBytes.byteLength,
+                    translatedCount: renderInput.translatedSegments.length,
+                    speedFactor: renderInput.speedFactor,
+                },
+            });
+            const result = await renderVipCompositeVideo(renderInput);
+            updateJob?.({
+                message: "Final VIP render completed on EC2.",
+                metrics: {
+                    outputByteLength: result.byteLength,
+                },
+            });
+            return result;
+        },
+    };
+
+    const result =
+        executionMode === "voice-render"
+            ? await runVideoVipVoiceRender({
+                  ...(baseInput as Omit<
+                      VideoVipVoiceRenderInput,
+                      "transcript" | "translation"
+                  >),
+                  transcript: readTranscript(payload),
+                  translation: readTranslation(payload),
+                  ttsSettings: isRecord(payload.ttsSettings)
+                      ? (payload.ttsSettings as Partial<VoiceGenerationSettings>)
+                      : undefined,
+                  stageRunners,
+              })
+            : await runVideoVipRemoteRender({
+                  ...(baseInput as Omit<
+                      VideoVipRemoteRenderInput,
+                      "voiceAudioBase64" | "translatedSegments"
+                  >),
+                  voiceAudioBase64: Buffer.from(voiceBytes ?? []).toString(
+                      "base64",
+                  ),
+                  translatedSegments: readTranslatedSegments(payload),
+                  stageRunners: {
+                      render: stageRunners.render,
+                  },
+              });
+    const videoBytes = result.videoBytes ?? Buffer.from(
+        result.videoBase64 ?? "",
+        "base64",
+    );
+    markStage({
+        stage: "artifact",
+        message: "Storing remote VIP rendered artifact.",
+        metrics: {
+            outputByteLength: videoBytes.byteLength,
+        },
+    });
+    const mediaPayload = buildWorkspaceMediaPayload({
+        bytes: videoBytes,
+        fileName: result.fileName,
+        mimeType: result.mimeType,
+        kind: "video",
+        base64Field: "videoBase64",
+        inlineLimitBytes: 0,
+    });
+
+    return {
+        ...result,
+        ...mediaPayload,
+        videoBytes: undefined,
+        videoBase64:
+            "videoBase64" in mediaPayload ? mediaPayload.videoBase64 : undefined,
+    };
 }

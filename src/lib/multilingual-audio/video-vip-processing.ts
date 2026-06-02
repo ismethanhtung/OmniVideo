@@ -1122,7 +1122,7 @@ async function probeVideoDimensions(inputPath: string) {
     );
 }
 
-async function renderVipCompositeVideo(input: {
+export async function renderVipCompositeVideo(input: {
     sourceVideoBytes: Uint8Array;
     sourceFileName: string;
     voiceBytes: Buffer;
