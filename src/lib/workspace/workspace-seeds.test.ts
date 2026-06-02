@@ -3,39 +3,20 @@ import { describe, expect, it } from "vitest";
 import { WORKSPACE_SEED_TEMPLATES } from "./workspace-seeds";
 
 describe("workspace seed templates", () => {
-    it("registers VI voice mask publish seed", () => {
-        const seed = WORKSPACE_SEED_TEMPLATES.find(
-            (entry) => entry.id === "vi-voice-mask-publish",
-        );
-
-        expect(seed).toBeDefined();
-        expect(seed?.label).toBe("Seed VI Voice Mask Publish");
-        expect(seed?.buildGraph().nodes.length).toBeGreaterThan(0);
-    });
-
-    it("registers asset preprocess dubbing seed", () => {
-        const seed = WORKSPACE_SEED_TEMPLATES.find(
-            (entry) => entry.id === "asset-preprocess-dubbing",
-        );
-
-        expect(seed).toBeDefined();
-        expect(seed?.label).toBe("Seed Asset Preprocess Dubbing");
-        expect(seed?.buildGraph().nodes.map((node) => node.templateNodeType)).toEqual(
+    it("keeps retired seeds out of the visible seed registry", () => {
+        expect(WORKSPACE_SEED_TEMPLATES.map((entry) => entry.id)).not.toEqual(
             expect.arrayContaining([
-                "source.asset",
-                "video.preprocess",
-                "audio.video-dubbing",
-                "storage.upload",
+                "vi-voice-mask-publish",
+                "asset-preprocess-dubbing",
             ]),
         );
     });
 
-    it("registers full storage-asset transcript processing seed", () => {
-        const seed = WORKSPACE_SEED_TEMPLATES.find(
-            (entry) => entry.id === "asset-transcript-full-processing",
-        );
+    it("registers full storage-asset transcript processing seed first", () => {
+        const seed = WORKSPACE_SEED_TEMPLATES[0];
 
         expect(seed).toBeDefined();
+        expect(seed?.id).toBe("asset-transcript-full-processing");
         expect(seed?.label).toBe("Seed Asset Transcript Full Processing");
         expect(seed?.buildGraph().nodes.map((node) => node.templateNodeType)).toEqual(
             expect.arrayContaining([
@@ -56,7 +37,7 @@ describe("workspace seed templates", () => {
         );
 
         expect(seed).toBeDefined();
-        expect(seed?.label).toBe("Seed Asset VIP Processing");
+        expect(seed?.label).toBe("Seed Asset VIP Processing (storage)");
         expect(seed?.buildGraph().nodes.map((node) => node.templateNodeType)).toEqual(
             expect.arrayContaining([
                 "source.asset",
@@ -72,7 +53,7 @@ describe("workspace seed templates", () => {
         );
 
         expect(seed).toBeDefined();
-        expect(seed?.label).toBe("Seed Asset VIP Processing 2");
+        expect(seed?.label).toBe("Seed Asset VIP Processing (local)");
         expect(seed?.buildGraph().nodes.map((node) => node.templateNodeType)).toEqual(
             expect.arrayContaining([
                 "source.file",

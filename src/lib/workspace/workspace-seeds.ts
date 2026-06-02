@@ -1,10 +1,8 @@
 import {
     createAssetVipProcessingSampleGraph,
     createAssetTranscriptFullProcessingSampleGraph,
-    createAssetPreprocessDubbingSampleGraph,
     createUploadVipSaveLocalSampleGraph,
     createUploadRemoteVipSaveLocalSampleGraph,
-    createUploadVietnameseMaskPublishSampleGraph,
     type WorkspaceGraph,
 } from "./workspace-graph";
 
@@ -17,29 +15,22 @@ export type WorkspaceSeedTemplate = {
 
 export const WORKSPACE_SEED_TEMPLATES: WorkspaceSeedTemplate[] = [
     {
-        id: "vi-voice-mask-publish",
-        label: "Seed VI Voice Mask Publish",
+        id: "asset-transcript-full-processing",
+        label: "Seed Asset Transcript Full Processing",
         description:
-            "Upload -> VI Voice Dubbing -> Mask/Subtitles -> Save to Storage -> Publish Social.",
-        buildGraph: createUploadVietnameseMaskPublishSampleGraph,
-    },
-    {
-        id: "asset-preprocess-dubbing",
-        label: "Seed Asset Preprocess Dubbing",
-        description:
-            "Storage Asset -> Video Preprocess -> VI Voice Dubbing -> Save to Storage.",
-        buildGraph: createAssetPreprocessDubbingSampleGraph,
+            "Storage Asset -> Preprocess -> VI Voice Dubbing -> Mirror -> Blur -> Save to Storage + Generate VI Metadata.",
+        buildGraph: createAssetTranscriptFullProcessingSampleGraph,
     },
     {
         id: "asset-vip-processing",
-        label: "Seed Asset VIP Processing",
+        label: "Seed Asset VIP Processing (storage)",
         description:
             "Storage Asset -> VIP Processing -> Save to Storage.",
         buildGraph: createAssetVipProcessingSampleGraph,
     },
     {
         id: "asset-vip-processing-2",
-        label: "Seed Asset VIP Processing 2",
+        label: "Seed Asset VIP Processing (local)",
         description:
             "Upload Video -> VIP Processing -> Save to Local.",
         buildGraph: createUploadVipSaveLocalSampleGraph,
@@ -50,12 +41,5 @@ export const WORKSPACE_SEED_TEMPLATES: WorkspaceSeedTemplate[] = [
         description:
             "Upload Video -> VIP Processing with EC2 voice + render -> Save to Local.",
         buildGraph: createUploadRemoteVipSaveLocalSampleGraph,
-    },
-    {
-        id: "asset-transcript-full-processing",
-        label: "Seed Asset Transcript Full Processing",
-        description:
-            "Storage Asset -> Preprocess -> VI Voice Dubbing -> Mirror -> Blur -> Save to Storage + Generate VI Metadata.",
-        buildGraph: createAssetTranscriptFullProcessingSampleGraph,
     },
 ];

@@ -13,7 +13,6 @@ import {
     createAssetToSocialSampleGraph,
     createUploadToStorageSampleGraph,
     createUploadToSocialSampleGraph,
-    createUploadVietnameseMaskPublishSampleGraph,
     deleteWorkspaceEdge,
     getWorkspaceExecutableUploadToSocialPlan,
     moveWorkspaceNode,
@@ -1411,39 +1410,6 @@ describe("workspace graph helpers", () => {
         const plan = planWorkspaceFlow(graph);
         expect(plan.ok).toBe(false);
         expect(plan.errors.join("\n")).toMatch(/Translate Transcript/);
-    });
-
-    it("plans seeded Vietnamese voice mask publish flow end-to-end", () => {
-        const graph = createUploadVietnameseMaskPublishSampleGraph();
-
-        expect(validateWorkspaceGraph(graph)).toEqual({ ok: true, errors: [] });
-        const plan = planWorkspaceFlow(graph);
-
-        expect(plan.ok).toBe(true);
-        expect(plan.steps).toEqual([
-            {
-                kind: "dub-video",
-                sourceNodeId: "source-file-1",
-                dubbingNodeId: "audio-video-dubbing-1",
-            },
-            {
-                kind: "edit-video",
-                sourceNodeId: "audio-video-dubbing-1",
-                editNodeId: "edit-mask-region-1",
-                translationNodeId: "audio-video-dubbing-1",
-            },
-            {
-                kind: "store-artifact",
-                artifactNodeId: "edit-mask-region-1",
-                storageNodeId: "storage-upload-1",
-                producerNodeId: "storage-upload-1",
-            },
-            {
-                kind: "publish",
-                publishNodeId: "social-publish-1",
-                producerNodeId: "storage-upload-1",
-            },
-        ]);
     });
 
     it("plans seeded asset transcript full processing without duplicate transcript/voice branch", () => {

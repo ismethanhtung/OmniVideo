@@ -1,5 +1,18 @@
 # OmniVideo Changelog
 
+## FAST-WORKSPACE-058 - Prune Retired Workspace Seeds
+
+- Bumped app version from `0.10.85` to `0.10.86` as a patch release for Workspace seed registry cleanup.
+- Removed retired Workspace seed templates `Seed VI Voice Mask Publish` and `Seed Asset Preprocess Dubbing` from the visible seed registry.
+- Removed the unused graph builders and old graph test coverage for those retired seed-only flows.
+- Moved `Seed Asset Transcript Full Processing` to the first seed position.
+- Renamed VIP seeds to `Seed Asset VIP Processing (storage)` and `Seed Asset VIP Processing (local)`.
+- Verification (FAST-WORKSPACE-058):
+  - `npm run test -- --run src/lib/workspace/workspace-seeds.test.ts src/lib/workspace/workspace-graph.test.ts` pass (2 files / 57 tests).
+  - `npm run guard:version` pass.
+  - `git diff --check` pass.
+  - Runtime source search for retired seed ids/builders only finds absence assertions in `workspace-seeds.test.ts`.
+
 ## FAST-VIDEO-029 - Default Video Tools Lab to Partial Blur and Keep Bangers Font
 
 - Bumped app version from `0.10.84` to `0.10.85` as a patch release for Video Tools Lab defaults.

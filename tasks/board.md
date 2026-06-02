@@ -25,6 +25,7 @@
 
 ## Review
 
+- `FAST-WORKSPACE-058` - Prune retired Workspace seeds and prioritize full transcript seed.
 - `FAST-VIDEO-029` - Default Video Tools Lab to Partial blur and keep Bangers font.
 - `FAST-WORKSPACE-057` - Run VIP Piper voice on EC2.
 - `FAST-WORKSPACE-056` - Switch remote VIP seed to EC2 render only.
