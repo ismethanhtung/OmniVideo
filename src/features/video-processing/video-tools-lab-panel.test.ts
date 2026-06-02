@@ -22,6 +22,12 @@ describe("Video Tools Lab source preview controls", () => {
         expect(originalPreviewSource).toContain("<SourcePreviewControls");
         expect(originalPreviewSource).toContain("onTogglePlay");
         expect(originalPreviewSource).toContain("onSeek");
+        expect(originalPreviewSource).toContain(
+            'className="relative w-full overflow-hidden border border-main bg-black"',
+        );
+        expect(originalPreviewSource).toContain(
+            'className="block max-h-[720px] w-full bg-black object-contain"',
+        );
         expect(originalPreviewSource).not.toContain("controls");
     });
 
@@ -31,6 +37,21 @@ describe("Video Tools Lab source preview controls", () => {
 
         expect(editedOutputSource).toContain("<video");
         expect(editedOutputSource).toContain("controls");
+        expect(editedOutputSource).toContain(
+            'className="block max-h-[720px] w-full bg-black object-contain"',
+        );
+    });
+
+    it("keeps background padding and subtitle sample width controls on the same grid row", () => {
+        const paddingStart = source.indexOf("Background padding Y");
+        const hintStart = source.indexOf("Kéo thả `Subtitle mẫu`");
+        const gridStart = source.lastIndexOf("grid grid-cols-2 gap-2", paddingStart);
+        const subtitleControlGroup = source.slice(gridStart, hintStart);
+
+        expect(gridStart).toBeGreaterThan(-1);
+        expect(subtitleControlGroup).toContain("Background padding Y");
+        expect(subtitleControlGroup).toContain("Độ rộng Subtitle mẫu (%)");
+        expect(subtitleControlGroup).toContain("grid grid-cols-2 gap-2");
     });
 
     it("shows and immediately reapplies saved setup for selected assets", () => {

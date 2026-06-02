@@ -2689,27 +2689,28 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                                             className="w-full border border-main bg-secondary/30 px-2 py-1.5 text-[11px] text-main"
                                         />
                                     </label>
+                                    <label className="block">
+                                        <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                            Độ rộng Subtitle mẫu (%)
+                                        </span>
+                                        <input
+                                            type="number"
+                                            min={30}
+                                            max={100}
+                                            value={subtitleSampleWidthPercent}
+                                            disabled={isRunningEdit}
+                                            onChange={(event) =>
+                                                setSubtitleSampleWidthPercent(
+                                                    Number(
+                                                        event.currentTarget
+                                                            .value,
+                                                    ),
+                                                )
+                                            }
+                                            className="w-full border border-main bg-secondary/30 px-2 py-1.5 text-[11px] text-main"
+                                        />
+                                    </label>
                                 </div>
-                                <label className="block">
-                                    <span className="mb-1 block text-[10px] font-semibold text-muted">
-                                        Độ rộng Subtitle mẫu (%)
-                                    </span>
-                                    <input
-                                        type="number"
-                                        min={30}
-                                        max={100}
-                                        value={subtitleSampleWidthPercent}
-                                        disabled={isRunningEdit}
-                                        onChange={(event) =>
-                                            setSubtitleSampleWidthPercent(
-                                                Number(
-                                                    event.currentTarget.value,
-                                                ),
-                                            )
-                                        }
-                                        className="w-full border border-main bg-secondary/30 px-2 py-1.5 text-[11px] text-main"
-                                    />
-                                </label>
                                 <p className="text-[10px] leading-4 text-muted">
                                     Kéo thả `Subtitle mẫu` trực tiếp trên
                                     preview để tự động cập nhật alignment và
@@ -2752,10 +2753,10 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                         </div>
                         {sourceVideoUrl ? (
                             <div className="space-y-2">
-                                <div className="flex justify-center">
+                                <div className="w-full">
                                     <div
                                         ref={previewFrameRef}
-                                        className="relative inline-block overflow-hidden border border-main bg-black"
+                                        className="relative w-full overflow-hidden border border-main bg-black"
                                         onMouseDown={(event) => {
                                             if (
                                                 (!blurEnabled &&
@@ -2862,7 +2863,7 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                                         <video
                                             ref={sourceVideoRef}
                                             src={sourceVideoUrl}
-                                            className="block max-h-[420px] w-auto max-w-full bg-black"
+                                            className="block max-h-[720px] w-full bg-black object-contain"
                                             playsInline
                                             muted={sourcePreviewMuted}
                                             onPlay={() =>
@@ -3157,12 +3158,12 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                         </div>
                         {editedVideoUrl ? (
                             <div className="space-y-3">
-                                <div className="flex justify-center">
-                                    <div className="overflow-hidden border border-main bg-black">
+                                <div className="w-full">
+                                    <div className="w-full overflow-hidden border border-main bg-black">
                                         <video
                                             controls
                                             src={editedVideoUrl}
-                                            className="block max-h-[420px] w-auto max-w-full bg-black"
+                                            className="block max-h-[720px] w-full bg-black object-contain"
                                         />
                                     </div>
                                 </div>

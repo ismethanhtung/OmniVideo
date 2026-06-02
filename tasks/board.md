@@ -25,6 +25,7 @@
 
 ## Review
 
+- `FAST-VIDEO-030` - Expand Video Tools Lab previews and align subtitle controls.
 - `FAST-WORKSPACE-058` - Prune retired Workspace seeds and prioritize full transcript seed.
 - `FAST-VIDEO-029` - Default Video Tools Lab to Partial blur and keep Bangers font.
 - `FAST-WORKSPACE-057` - Run VIP Piper voice on EC2.

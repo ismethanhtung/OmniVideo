@@ -1,5 +1,16 @@
 # OmniVideo Changelog
 
+## FAST-VIDEO-030 - Expand Video Tools Lab Previews
+
+- Bumped app version from `0.10.86` to `0.10.87` as a patch release for Video Tools Lab layout polish.
+- Changed Video Tools Lab `Original Preview` and `Edited Output` video frames to occupy the full available preview column width.
+- Increased Video Tools Lab preview/output max height from `420px` to `720px` so the full-width frames are not visually constrained by the old height cap.
+- Placed `Background padding Y` and `Độ rộng Subtitle mẫu (%)` controls on the same two-column row.
+- Verification (FAST-VIDEO-030):
+  - `npm run test -- --run src/features/video-processing/video-tools-lab-panel.test.ts` pass (1 file / 10 tests).
+  - `npm run guard:version` pass.
+  - `git diff --check` pass.
+
 ## FAST-WORKSPACE-058 - Prune Retired Workspace Seeds
 
 - Bumped app version from `0.10.85` to `0.10.86` as a patch release for Workspace seed registry cleanup.
