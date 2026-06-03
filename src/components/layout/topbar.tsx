@@ -278,9 +278,6 @@ export function Topbar({
                     className="inline-flex shrink-0 items-center gap-1.5 border border-main bg-main px-2.5 py-1 text-[11px] font-semibold text-main transition-colors hover:bg-secondary"
                     aria-label="Open background progress"
                 >
-                    <Rocket
-                        className={`h-3.5 w-3.5 ${activeCount > 0 ? "text-accent" : ""}`}
-                    />
                     Progress
                     <span className="text-[10px]">{activeCount}</span>
                 </button>
@@ -290,7 +287,6 @@ export function Topbar({
                     className="inline-flex shrink-0 items-center gap-1.5 border border-main bg-main px-2.5 py-1 text-[11px] font-semibold text-main transition-colors hover:bg-secondary"
                     aria-label="Open server status"
                 >
-                    <Server className="h-3.5 w-3.5" />
                     Server
                 </button>
                 <button
@@ -299,7 +295,6 @@ export function Topbar({
                     className="inline-flex shrink-0 items-center gap-1.5 border border-main bg-main px-2.5 py-1 text-[11px] font-semibold text-main transition-colors hover:bg-secondary"
                     aria-label="Open system snapshot"
                 >
-                    <Gauge className="h-3.5 w-3.5" />
                     System
                 </button>
                 <button
@@ -307,7 +302,6 @@ export function Topbar({
                     onClick={onRefreshView}
                     className="inline-flex shrink-0 items-center gap-1.5 border border-main bg-main px-2.5 py-1 text-[11px] font-semibold text-main transition-colors hover:bg-secondary"
                 >
-                    <Orbit className="h-3.5 w-3.5" />
                     Refresh
                 </button>
                 <button
@@ -547,13 +541,11 @@ function ServerStatusModal({ onClose }: { onClose: () => void }) {
         setError(null);
         try {
             const response = await fetch("/api/audio/remote-vip-worker");
-            const payload = (await response.json().catch(() => null)) as
-                | {
-                      ok?: boolean;
-                      data?: RemoteVipWorkerStatus;
-                      error?: string;
-                  }
-                | null;
+            const payload = (await response.json().catch(() => null)) as {
+                ok?: boolean;
+                data?: RemoteVipWorkerStatus;
+                error?: string;
+            } | null;
             if (!response.ok || payload?.ok === false) {
                 throw new Error(
                     payload?.error ??
@@ -594,13 +586,11 @@ function ServerStatusModal({ onClose }: { onClose: () => void }) {
             const response = await fetch("/api/audio/remote-vip-worker", {
                 method: "DELETE",
             });
-            const payload = (await response.json().catch(() => null)) as
-                | {
-                      ok?: boolean;
-                      data?: RemoteVipWorkerStatus;
-                      error?: string;
-                  }
-                | null;
+            const payload = (await response.json().catch(() => null)) as {
+                ok?: boolean;
+                data?: RemoteVipWorkerStatus;
+                error?: string;
+            } | null;
             if (!response.ok || payload?.ok === false) {
                 throw new Error(
                     payload?.error ??
@@ -638,7 +628,8 @@ function ServerStatusModal({ onClose }: { onClose: () => void }) {
                             Server
                         </p>
                         <p className="mt-1 text-[11px] text-muted">
-                            Remote VIP worker jobs and Piper/ffmpeg subprocesses.
+                            Remote VIP worker jobs and Piper/ffmpeg
+                            subprocesses.
                         </p>
                     </div>
                     <button
@@ -733,7 +724,10 @@ function ServerStatusModal({ onClose }: { onClose: () => void }) {
                                         : "";
                                     return (
                                         <article
-                                            key={job.jobId ?? `${job.stage}-${job.startedAt}`}
+                                            key={
+                                                job.jobId ??
+                                                `${job.stage}-${job.startedAt}`
+                                            }
                                             className="px-3 py-2"
                                         >
                                             <div className="flex flex-wrap items-center gap-2">
@@ -780,7 +774,11 @@ function ServerStatusModal({ onClose }: { onClose: () => void }) {
                             <div className="divide-y divide-soft border border-main">
                                 {processes.map((process) => (
                                     <article
-                                        key={process.id ?? process.pid ?? process.startedAt}
+                                        key={
+                                            process.id ??
+                                            process.pid ??
+                                            process.startedAt
+                                        }
                                         className="px-3 py-2"
                                     >
                                         <div className="flex flex-wrap items-center gap-2">
@@ -799,7 +797,10 @@ function ServerStatusModal({ onClose }: { onClose: () => void }) {
                                             </span>
                                         </div>
                                         <p className="mt-1 break-all font-mono text-[10px] leading-4 text-muted">
-                                            {[process.command, ...(process.argsPreview ?? [])]
+                                            {[
+                                                process.command,
+                                                ...(process.argsPreview ?? []),
+                                            ]
                                                 .filter(Boolean)
                                                 .join(" ")}
                                         </p>
@@ -831,10 +832,15 @@ function ServerStatusModal({ onClose }: { onClose: () => void }) {
                                                 {process.elapsed}
                                             </span>
                                             <span className="text-[10px] font-semibold text-main">
-                                                CPU {process.cpuPercent.toFixed(1)}%
+                                                CPU{" "}
+                                                {process.cpuPercent.toFixed(1)}%
                                             </span>
                                             <span className="text-[10px] text-muted">
-                                                MEM {process.memoryPercent.toFixed(1)}%
+                                                MEM{" "}
+                                                {process.memoryPercent.toFixed(
+                                                    1,
+                                                )}
+                                                %
                                             </span>
                                         </div>
                                         <p className="mt-1 break-all font-mono text-[10px] leading-4 text-muted">
@@ -1334,7 +1340,10 @@ function ProgressModal({
                                             {task.error}
                                         </p>
                                     ) : null}
-                                    <ProgressTaskDetails task={task} now={now} />
+                                    <ProgressTaskDetails
+                                        task={task}
+                                        now={now}
+                                    />
                                 </article>
                             ))}
                         </div>
@@ -1513,7 +1522,9 @@ function ProgressTaskDetails({
     return (
         <div
             className={`mt-3 grid gap-3 ${
-                richStep ? "xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.9fr)]" : ""
+                richStep
+                    ? "xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.9fr)]"
+                    : ""
             }`}
         >
             <div className="border border-main bg-secondary/15">
@@ -1598,7 +1609,9 @@ function ProgressRichStepPanel({
                                 <button
                                     type="button"
                                     onClick={() =>
-                                        setShowFullTimeline((current) => !current)
+                                        setShowFullTimeline(
+                                            (current) => !current,
+                                        )
                                     }
                                     className="border border-main bg-main px-1.5 py-0.5 text-[9px] font-semibold text-main hover:bg-secondary"
                                 >
