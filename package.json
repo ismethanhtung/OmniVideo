@@ -1,6 +1,6 @@
 {
     "name": "omnivideo",
-    "version": "0.10.88",
+    "version": "0.10.90",
     "private": true,
     "scripts": {
         "dev": "next dev --turbopack -p 3000",

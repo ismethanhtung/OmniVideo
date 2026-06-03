@@ -113,7 +113,12 @@ Hỗ trợ xử lý audio đa ngôn ngữ cho video linh hoạt: phát hiện ng
    khi hậu xử lý tempo mạnh; ffmpeg alignment chỉ nên là bước fine-tune.
 9. Remote EC2 voice/render cần Piper model/config có sẵn trên worker; launcher
    nhận `PIPER_MODEL_URL` và `PIPER_MODEL_CONFIG_URL` để tải cặp file này. Remote
-   media transport đã tránh payload video inline bằng multipart upload và
-   artifact binary download; async polling tránh timeout kết nối cho video dài,
-   nhưng vẫn nên dùng object storage/checkpoint bền trước khi chạy production
-   trên Spot với video lớn.
+  media transport đã tránh payload video inline bằng multipart upload và
+  artifact binary download; async polling tránh timeout kết nối cho video dài,
+  nhưng vẫn nên dùng object storage/checkpoint bền trước khi chạy production
+  trên Spot với video lớn.
+10. Final VIP render trên EC2 giữ preset mặc định `veryfast`, dùng toàn bộ CPU
+   threads phát hiện được, và worker launcher ép `OMNIVIDEO_FFMPEG_PATH=/usr/bin/ffmpeg`
+   để dùng system ffmpeg. Khi cần giới hạn tài nguyên local, dùng
+   `OMNIVIDEO_VIP_RENDER_THREADS`, `OMNIVIDEO_VIP_RENDER_PRESET` và
+   `OMNIVIDEO_VIP_RENDER_TIMEOUT_MS` để override theo môi trường chạy.

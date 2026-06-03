@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { execFileSync } from "node:child_process";
 
 import { NextResponse } from "next/server";
 
@@ -8,7 +9,11 @@ import {
     type TranscriptTranslationResult,
     type VoiceGenerationSettings,
 } from "@/lib/multilingual-audio/types";
-import { generateVoiceFromSegments } from "@/lib/multilingual-audio/piper-tts";
+import {
+    generateVoiceFromSegments,
+    killActivePiperChildProcesses,
+    listActivePiperChildProcesses,
+} from "@/lib/multilingual-audio/piper-tts";
 import {
     renderVipCompositeVideo,
     runVideoVipRemoteRender,
@@ -33,6 +38,14 @@ type RemoteVipWorkerJob = {
     result?: Record<string, unknown>;
     error?: string;
     errorCode?: string;
+};
+type RemoteVipWorkerSystemProcess = {
+    pid: number;
+    elapsed: string;
+    cpuPercent: number;
+    memoryPercent: number;
+    kind: "piper" | "ffmpeg";
+    command: string;
 };
 
 const REMOTE_VIP_JOB_TTL_MS = 6 * 60 * 60 * 1000;
@@ -206,6 +219,107 @@ function readTranslation(payload: Record<string, unknown>) {
     } satisfies TranscriptTranslationResult;
 }
 
+function serializeWorkerJob(job: RemoteVipWorkerJob) {
+    return {
+        jobId: job.id,
+        status: job.status,
+        stage: job.stage,
+        stageStartedAt: job.stageStartedAt,
+        message: job.message,
+        metrics: job.metrics,
+        startedAt: job.startedAt,
+        updatedAt: job.updatedAt,
+        result: job.result,
+        error: job.error,
+        errorCode: job.errorCode,
+    };
+}
+
+function listSystemWorkerProcesses(): RemoteVipWorkerSystemProcess[] {
+    let output = "";
+    try {
+        output = execFileSync("ps", [
+            "-eo",
+            "pid=,etime=,pcpu=,pmem=,args=",
+        ]).toString("utf8");
+    } catch {
+        return [];
+    }
+
+    return output
+        .split(/\r?\n/u)
+        .map((line) => {
+            const match =
+                /^\s*(\d+)\s+(\S+)\s+([\d.]+)\s+([\d.]+)\s+(.+)$/u.exec(
+                    line,
+                );
+            if (!match) return null;
+            const command = match[5];
+            const isFfmpeg =
+                command.includes("ffmpeg") &&
+                (command.includes("omnivideo-piper-voice") ||
+                    command.includes("omnivideo-vip-") ||
+                    command.includes("ffmpeg-static"));
+            const isPiper =
+                command.includes("piper") &&
+                command.includes("omnivideo-piper");
+            if (!isFfmpeg && !isPiper) return null;
+            return {
+                pid: Number(match[1]),
+                elapsed: match[2],
+                cpuPercent: Number(match[3]),
+                memoryPercent: Number(match[4]),
+                kind: isFfmpeg ? "ffmpeg" : "piper",
+                command,
+            } satisfies RemoteVipWorkerSystemProcess;
+        })
+        .filter(
+            (
+                process,
+            ): process is RemoteVipWorkerSystemProcess => process !== null,
+        );
+}
+
+function killSystemWorkerProcesses(input: {
+    excludePids?: Array<number | undefined>;
+}) {
+    const excludePids = new Set(input.excludePids?.filter(Boolean));
+    const killed: RemoteVipWorkerSystemProcess[] = [];
+    for (const systemProcess of listSystemWorkerProcesses()) {
+        if (excludePids.has(systemProcess.pid)) continue;
+        try {
+            process.kill(systemProcess.pid, "SIGTERM");
+            killed.push(systemProcess);
+        } catch {
+            // Process may have exited between ps scan and kill.
+        }
+    }
+    return killed;
+}
+
+function cancelWorkerJobs(input: { jobId?: string }) {
+    const now = new Date().toISOString();
+    const cancelledJobs: string[] = [];
+    for (const [jobId, job] of remoteVipWorkerJobs.entries()) {
+        if (input.jobId && jobId !== input.jobId) continue;
+        if (job.status === "done" || job.status === "failed") continue;
+        remoteVipWorkerJobs.set(jobId, {
+            ...job,
+            status: "failed",
+            updatedAt: now,
+            message: "Remote VIP worker job was cancelled.",
+            error: "Remote VIP worker job was cancelled.",
+            errorCode: "SYS_DUBBING_MUX_FAILED",
+        });
+        cancelledJobs.push(jobId);
+    }
+    const killedProcesses = killActivePiperChildProcesses();
+    const killedSystemProcesses = killSystemWorkerProcesses({
+        excludePids: killedProcesses.map((process) => process.pid),
+    });
+    return { cancelledJobs, killedProcesses, killedSystemProcesses };
+}
+
 export function GET(request: Request) {
     const url = new URL(request.url);
     const jobId = url.searchParams.get("jobId")?.trim();
@@ -226,25 +340,31 @@ export function GET(request: Request) {
         }
         return NextResponse.json({
             ok: true,
-            data: {
-                jobId: job.id,
-                status: job.status,
-                stage: job.stage,
-                stageStartedAt: job.stageStartedAt,
-                message: job.message,
-                metrics: job.metrics,
-                startedAt: job.startedAt,
-                updatedAt: job.updatedAt,
-                result: job.result,
-                error: job.error,
-                errorCode: job.errorCode,
-            },
+            data: serializeWorkerJob(job),
         });
     }
 
     return NextResponse.json({
         ok: true,
         service: "omnivideo-vip-voice-render",
+        data: {
+            jobs: Array.from(remoteVipWorkerJobs.values()).map(serializeWorkerJob),
+            activeProcesses: listActivePiperChildProcesses(),
+            systemProcesses: listSystemWorkerProcesses(),
+        },
+    });
+}
+
+export function DELETE(request: Request) {
+    const denied = requireWorkerToken(request);
+    if (denied) return denied;
+
+    const url = new URL(request.url);
+    const jobId = url.searchParams.get("jobId")?.trim() || undefined;
+    const result = cancelWorkerJobs({ jobId });
+    return NextResponse.json({
+        ok: true,
+        data: result,
     });
 }
 

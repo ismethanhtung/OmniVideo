@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import {
   buildSpeechSegmentClipFfmpegArgs,
@@ -9,6 +9,10 @@ import {
 } from "./audio-extraction";
 
 describe("audio extraction command", () => {
+  afterEach(() => {
+    delete process.env.OMNIVIDEO_FFMPEG_PATH;
+  });
+
   it("builds ffmpeg args for compressed speech-ready mono 16k MP3", () => {
     expect(buildSpeechReadyFfmpegArgs("/tmp/in.mp4", "/tmp/out.mp3")).toEqual([
       "-y",
@@ -90,6 +94,19 @@ describe("audio extraction command", () => {
           candidate === "/app/node_modules/ffmpeg-static/ffmpeg",
       }),
     ).toBe("/app/node_modules/ffmpeg-static/ffmpeg");
+  });
+
+  it("honors explicit ffmpeg path override before ffmpeg-static", () => {
+    process.env.OMNIVIDEO_FFMPEG_PATH = "/usr/bin/ffmpeg";
+
+    expect(
+      resolveFfmpegPath({
+        staticPath: "/app/node_modules/ffmpeg-static/ffmpeg",
+        fileExists: (candidate) =>
+          candidate === "/usr/bin/ffmpeg" ||
+          candidate === "/app/node_modules/ffmpeg-static/ffmpeg",
+      }),
+    ).toBe("/usr/bin/ffmpeg");
   });
 
   it("falls back to cwd ffmpeg-static when imported static path is stale", () => {

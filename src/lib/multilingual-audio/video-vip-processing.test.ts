@@ -11,6 +11,8 @@ import {
 } from "@/lib/multilingual-audio/remote-vip-worker";
 import {
     buildVipFinalRenderArgs,
+    resolveVipRenderThreadCount,
+    resolveVipRenderTimeoutMs,
     runVideoVipProcessing,
 } from "./video-vip-processing";
 
@@ -108,6 +110,12 @@ function createStageRunners(overrides?: {
 }
 
 describe("VIP final render filter order", () => {
+    afterEach(() => {
+        delete process.env.OMNIVIDEO_VIP_RENDER_PRESET;
+        delete process.env.OMNIVIDEO_VIP_RENDER_THREADS;
+        delete process.env.OMNIVIDEO_VIP_RENDER_TIMEOUT_MS;
+    });
+
     it("applies blur before mirror and subtitles after mirror", () => {
         const args = buildVipFinalRenderArgs({
             videoPath: "/tmp/source.mp4",
@@ -167,7 +175,7 @@ describe("VIP final render filter order", () => {
         });
         const filter = args[args.indexOf("-filter_complex") + 1] ?? "";
 
-        expect(args).toEqual(expect.arrayContaining(["-preset", "superfast"]));
+        expect(args).toEqual(expect.arrayContaining(["-preset", "veryfast"]));
         expect(filter).toContain("drawbox=x=iw*0.000000:y=ih*0.820000");
         expect(filter).toContain("color=0x000000@0.65:t=fill");
         expect(filter).not.toContain("boxblur");
@@ -179,7 +187,8 @@ describe("VIP final render filter order", () => {
         );
     });
 
-    it("falls back to superfast preset when render preset is not provided", () => {
+    it("defaults to veryfast preset and explicit render threads when render preset is not provided", () => {
+        process.env.OMNIVIDEO_VIP_RENDER_THREADS = "4";
         const args = buildVipFinalRenderArgs({
             videoPath: "/tmp/source.mp4",
             voicePath: "/tmp/voice.wav",
@@ -192,10 +201,19 @@ describe("VIP final render filter order", () => {
             voiceVolume: 1,
         });
 
-        expect(args).toEqual(expect.arrayContaining(["-preset", "superfast"]));
+        expect(args).toEqual(
+            expect.arrayContaining([
+                "-filter_complex_threads",
+                "4",
+                "-preset",
+                "veryfast",
+                "-threads",
+                "4",
+            ]),
+        );
     });
 
-    it("falls back to superfast preset when render preset is invalid", () => {
+    it("falls back to veryfast preset when render preset is invalid", () => {
         const args = buildVipFinalRenderArgs({
             videoPath: "/tmp/source.mp4",
             voicePath: "/tmp/voice.wav",
@@ -206,10 +224,33 @@ describe("VIP final render filter order", () => {
             blurRegions: [],
             originalAudioVolume: 0,
             voiceVolume: 1,
-            renderPreset: "ultrafast" as unknown as "superfast",
+            renderPreset: "not-real" as unknown as "superfast",
+        });
+
+        expect(args).toEqual(expect.arrayContaining(["-preset", "veryfast"]));
+    });
+
+    it("uses env overrides for render preset, threads, and timeout", () => {
+        process.env.OMNIVIDEO_VIP_RENDER_PRESET = "superfast";
+        process.env.OMNIVIDEO_VIP_RENDER_THREADS = "2";
+        process.env.OMNIVIDEO_VIP_RENDER_TIMEOUT_MS = "90000";
+
+        const args = buildVipFinalRenderArgs({
+            videoPath: "/tmp/source.mp4",
+            voicePath: "/tmp/voice.wav",
+            subtitleAssPath: "/tmp/subtitles.ass",
+            outputPath: "/tmp/output.mp4",
+            speedFactor: 1,
+            mirrorEnabled: true,
+            blurRegions: [],
+            originalAudioVolume: 0,
+            voiceVolume: 1,
+            renderPreset: "not-real" as unknown as "superfast",
         });
 
         expect(args).toEqual(expect.arrayContaining(["-preset", "superfast"]));
+        expect(resolveVipRenderThreadCount()).toBe(2);
+        expect(resolveVipRenderTimeoutMs()).toBe(90000);
     });
 
     it("passes fontsdir to ass filters when subtitle fonts dir is provided", () => {

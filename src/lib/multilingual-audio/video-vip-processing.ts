@@ -10,7 +10,7 @@ import {
     rm,
     writeFile,
 } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { cpus, tmpdir } from "node:os";
 import path from "node:path";
 
 import { resolveFfmpegPath } from "@/lib/multilingual-audio/audio-extraction";
@@ -434,10 +434,35 @@ function normalizeVolume(value: number | undefined, fallback: number) {
     return Math.min(2, Math.max(0, value));
 }
 
-function normalizeRenderPreset(
-    value: string | undefined,
-): VipRenderPreset {
-    return value === "veryfast" ? "veryfast" : "superfast";
+const DEFAULT_VIP_RENDER_TIMEOUT_MS = 4 * 60 * 60 * 1000;
+
+function isVipRenderPreset(value: string | undefined): value is VipRenderPreset {
+    return value === "superfast" || value === "veryfast";
+}
+
+function normalizeRenderPreset(value: string | undefined): VipRenderPreset {
+    if (isVipRenderPreset(value)) return value;
+    const envPreset = process.env.OMNIVIDEO_VIP_RENDER_PRESET?.trim();
+    return isVipRenderPreset(envPreset) ? envPreset : "veryfast";
+}
+
+export function resolveVipRenderThreadCount() {
+    const configured = process.env.OMNIVIDEO_VIP_RENDER_THREADS?.trim() ?? "";
+    const detected = Math.max(1, cpus().length || 1);
+    if (!configured || configured === "auto" || configured === "all") {
+        return detected;
+    }
+    const parsed = Number(configured);
+    if (!Number.isFinite(parsed) || parsed <= 0) return detected;
+    return Math.min(64, Math.max(1, Math.floor(parsed)));
+}
+
+export function resolveVipRenderTimeoutMs() {
+    const configured = Number(process.env.OMNIVIDEO_VIP_RENDER_TIMEOUT_MS);
+    if (!Number.isFinite(configured) || configured <= 0) {
+        return DEFAULT_VIP_RENDER_TIMEOUT_MS;
+    }
+    return Math.max(1000, Math.floor(configured));
 }
 
 function sanitizeOutputName(fileName: string, sourceTitle?: string) {
@@ -956,9 +981,14 @@ export function buildVipFinalRenderArgs(input: {
         `[orig][voice]amix=inputs=2:duration=longest:dropout_transition=0[aout]`,
     ];
     const renderPreset = normalizeRenderPreset(input.renderPreset);
+    const renderThreads = resolveVipRenderThreadCount();
 
     return [
         "-y",
+        "-filter_threads",
+        String(renderThreads),
+        "-filter_complex_threads",
+        String(renderThreads),
         "-i",
         input.videoPath,
         "-i",
@@ -973,6 +1003,8 @@ export function buildVipFinalRenderArgs(input: {
         "libx264",
         "-preset",
         renderPreset,
+        "-threads",
+        String(renderThreads),
         "-crf",
         "23",
         "-c:a",
@@ -1036,20 +1068,60 @@ async function prepareVipSubtitleFontsDir(input: {
     return fontsDir;
 }
 
-async function runFfmpeg(args: string[]) {
+async function runFfmpeg(input: { args: string[]; timeoutMs?: number } | string[]) {
+    const args = Array.isArray(input) ? input : input.args;
+    const timeoutMs = Array.isArray(input) ? undefined : input.timeoutMs;
     const ffmpegPath = resolveFfmpegPath();
     await new Promise<void>((resolve, reject) => {
         const child = spawn(ffmpegPath, args, {
             stdio: ["ignore", "ignore", "pipe"],
         });
+        let settled = false;
+        let timedOut = false;
+        let killTimer: ReturnType<typeof setTimeout> | undefined;
+        const timeoutTimer =
+            timeoutMs && timeoutMs > 0
+                ? setTimeout(() => {
+                      timedOut = true;
+                      try {
+                          child.kill("SIGTERM");
+                      } catch {
+                          // Process may already have exited.
+                      }
+                      killTimer = setTimeout(() => {
+                          try {
+                              child.kill("SIGKILL");
+                          } catch {
+                              // Process may already have exited.
+                          }
+                      }, 5000);
+                  }, timeoutMs)
+                : undefined;
+        const finish = (callback: () => void) => {
+            if (settled) return;
+            settled = true;
+            if (timeoutTimer) clearTimeout(timeoutTimer);
+            if (killTimer) clearTimeout(killTimer);
+            callback();
+        };
         let stderr = "";
         child.stderr?.on("data", (chunk) => {
             stderr += chunk.toString();
         });
-        child.on("error", (error) => reject(error));
+        child.on("error", (error) => finish(() => reject(error)));
         child.on("close", (code) => {
             if (code === 0) {
-                resolve();
+                finish(() => resolve());
+                return;
+            }
+            if (timedOut) {
+                finish(() =>
+                    reject(
+                        new Error(
+                            `ffmpeg render timed out after ${timeoutMs}ms`,
+                        ),
+                    ),
+                );
                 return;
             }
             const lines = stderr
@@ -1068,7 +1140,7 @@ async function runFfmpeg(args: string[]) {
                     ) ??
                 lines.at(-1) ??
                 `ffmpeg exited with code ${code}`;
-            reject(new Error(concise));
+            finish(() => reject(new Error(concise)));
         });
     });
 }
@@ -1181,8 +1253,8 @@ export async function renderVipCompositeVideo(input: {
                     : [],
         });
 
-        await runFfmpeg(
-            buildVipFinalRenderArgs({
+        await runFfmpeg({
+            args: buildVipFinalRenderArgs({
                 videoPath: inputPath,
                 voicePath,
                 subtitleAssPath: assPath,
@@ -1197,7 +1269,8 @@ export async function renderVipCompositeVideo(input: {
                 voiceVolume: input.voiceVolume,
                 renderPreset: input.renderPreset,
             }),
-        );
+            timeoutMs: resolveVipRenderTimeoutMs(),
+        });
 
         return await readFile(outputPath);
     } catch (error) {

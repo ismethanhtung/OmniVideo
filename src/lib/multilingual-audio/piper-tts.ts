@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync, readdirSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
@@ -65,12 +66,29 @@ const ALIGNMENT_FFMPEG_CONCURRENCY = Math.max(
 
 type PiperSpawn = typeof spawn;
 
+export type ActivePiperChildProcess = {
+  id: string;
+  pid?: number;
+  kind: "piper" | "ffmpeg";
+  command: string;
+  argsPreview: string[];
+  startedAt: string;
+  elapsedMs: number;
+};
+
 let piperSpawnForTest: PiperSpawn | null = null;
 let piperFileExistsForTest: ((filePath: string) => boolean) | null = null;
 let piperReadFileForTest: ((filePath: string) => Promise<Buffer>) | null = null;
 let piperFfmpegRunnerForTest:
   | ((args: string[]) => Promise<{ stderr: string }>)
   | null = null;
+const activePiperChildProcesses = new Map<
+  string,
+  Omit<ActivePiperChildProcess, "elapsedMs"> & {
+    child: Pick<ChildProcess, "kill">;
+    startedAtMs: number;
+  }
+>();
 
 export type PiperTtsInput = {
   text: string;
@@ -310,6 +328,51 @@ export function setPiperFfmpegRunnerForTest(
   piperFfmpegRunnerForTest = runnerImpl;
 }
 
+function trackPiperChildProcess(input: {
+  child: Pick<ChildProcess, "kill"> & { pid?: number };
+  kind: ActivePiperChildProcess["kind"];
+  command: string;
+  args: string[];
+}) {
+  const id = randomUUID();
+  activePiperChildProcesses.set(id, {
+    id,
+    child: input.child,
+    pid: input.child.pid,
+    kind: input.kind,
+    command: input.command,
+    argsPreview: input.args.slice(0, 12),
+    startedAt: new Date().toISOString(),
+    startedAtMs: Date.now(),
+  });
+  return id;
+}
+
+function untrackPiperChildProcess(id: string) {
+  activePiperChildProcesses.delete(id);
+}
+
+export function listActivePiperChildProcesses(): ActivePiperChildProcess[] {
+  return Array.from(activePiperChildProcesses.values()).map((entry) => ({
+    id: entry.id,
+    pid: entry.pid,
+    kind: entry.kind,
+    command: entry.command,
+    argsPreview: entry.argsPreview,
+    startedAt: entry.startedAt,
+    elapsedMs: Date.now() - entry.startedAtMs,
+  }));
+}
+
+export function killActivePiperChildProcesses() {
+  const processes = listActivePiperChildProcesses();
+  for (const [id, entry] of activePiperChildProcesses.entries()) {
+    entry.child.kill("SIGTERM");
+    untrackPiperChildProcess(id);
+  }
+  return processes;
+}
+
 function normalizeOptionalNumber(value: number | undefined) {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
@@ -485,6 +548,12 @@ async function runPiperCommand(input: {
       stdio: ["pipe", "pipe", "pipe"],
       env: buildPiperEnv(input.binaryPath),
     });
+    const processId = trackPiperChildProcess({
+      child,
+      kind: "piper",
+      command: input.binaryPath,
+      args: input.args,
+    });
     let stderr = "";
     let settled = false;
 
@@ -518,10 +587,12 @@ async function runPiperCommand(input: {
     });
     child.on("error", (error) => {
       clearTimeout(timeout);
+      untrackPiperChildProcess(processId);
       finishReject(error);
     });
     child.on("close", (code) => {
       clearTimeout(timeout);
+      untrackPiperChildProcess(processId);
       if (settled) return;
       settled = true;
 
@@ -650,12 +721,22 @@ function runFfmpeg(args: string[]) {
     const child = spawn(ffmpegPath, args, {
       stdio: ["ignore", "ignore", "pipe"],
     });
+    const processId = trackPiperChildProcess({
+      child,
+      kind: "ffmpeg",
+      command: ffmpegPath,
+      args,
+    });
     let stderr = "";
     child.stderr.on("data", (chunk: Buffer) => {
       stderr += chunk.toString("utf8");
     });
-    child.on("error", (error) => reject(error));
+    child.on("error", (error) => {
+      untrackPiperChildProcess(processId);
+      reject(error);
+    });
     child.on("close", (code) => {
+      untrackPiperChildProcess(processId);
       if (code === 0) {
         resolve({ stderr });
         return;

@@ -4204,11 +4204,11 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         String(getNumberConfig(vipNode, "speedFactor", 0.8)),
                     );
                     const vipRenderPreset =
-                        getStringConfig(vipNode, "renderPreset", "veryfast") ===
-                        "veryfast"
-                            ? "veryfast"
-                            : "superfast";
-                    formData.set("renderPreset", vipRenderPreset);
+                        getStringConfig(vipNode, "renderPreset", "veryfast");
+                    formData.set(
+                        "renderPreset",
+                        vipRenderPreset === "superfast" ? "superfast" : "veryfast",
+                    );
                     const voiceRenderExecutionMode = (() => {
                         const mode = getStringConfig(
                             vipNode,
@@ -7489,6 +7489,9 @@ function NodeRuntimeConfig({
 }) {
     const setConfig = (patch: WorkspaceNodeInstance["config"]) =>
         onUpdateNodeConfig(node.id, patch);
+    const [remoteWorkerStatus, setRemoteWorkerStatus] = useState("");
+    const [isRemoteWorkerRequesting, setIsRemoteWorkerRequesting] =
+        useState(false);
     const upstreamSourceFileNode = findUpstreamSourceFileNode(graph, node.id);
     const upstreamRuntimeFile = upstreamSourceFileNode
         ? (runtimeFilesByNodeId[upstreamSourceFileNode.id] ?? null)
@@ -7500,6 +7503,118 @@ function NodeRuntimeConfig({
     const [vipPromptCopyState, setVipPromptCopyState] = useState<
         "idle" | "success" | "error"
     >("idle");
+
+    const buildRemoteWorkerQuery = () => {
+        const endpoint = getStringConfig(
+            node,
+            "remoteVoiceRenderEndpoint",
+        ).trim();
+        return endpoint ? `?endpoint=${encodeURIComponent(endpoint)}` : "";
+    };
+
+    const formatRemoteWorkerStatus = (payload: {
+        data?: {
+            jobs?: Array<{
+                jobId?: string;
+                status?: string;
+                stage?: string;
+                message?: string;
+                metrics?: Record<string, unknown>;
+            }>;
+            activeProcesses?: Array<{
+                pid?: number;
+                kind?: string;
+                elapsedMs?: number;
+                argsPreview?: string[];
+            }>;
+            cancelledJobs?: string[];
+            killedProcesses?: Array<{
+                pid?: number;
+                kind?: string;
+                elapsedMs?: number;
+            }>;
+        };
+    }) => {
+        const jobs = payload.data?.jobs ?? [];
+        const activeProcesses = payload.data?.activeProcesses ?? [];
+        const cancelledJobs = payload.data?.cancelledJobs ?? [];
+        const killedProcesses = payload.data?.killedProcesses ?? [];
+        const lines: string[] = [];
+        if (cancelledJobs.length > 0 || killedProcesses.length > 0) {
+            lines.push(
+                `Cancelled ${cancelledJobs.length} job(s), killed ${killedProcesses.length} process(es).`,
+            );
+        }
+        if (jobs.length === 0 && activeProcesses.length === 0) {
+            lines.push("No active remote worker jobs or child processes.");
+        }
+        for (const job of jobs.slice(0, 5)) {
+            const metrics = job.metrics
+                ? Object.entries(job.metrics)
+                      .map(([key, value]) => `${key}=${String(value)}`)
+                      .join(", ")
+                : "";
+            lines.push(
+                `Job ${job.jobId ?? "unknown"} · ${job.status ?? "unknown"} · ${job.stage ?? "unknown"}${job.message ? ` · ${job.message}` : ""}${metrics ? ` · ${metrics}` : ""}`,
+            );
+        }
+        for (const process of activeProcesses.slice(0, 8)) {
+            const elapsedSeconds = Math.round((process.elapsedMs ?? 0) / 1000);
+            lines.push(
+                `PID ${process.pid ?? "?"} · ${process.kind ?? "process"} · ${elapsedSeconds}s · ${(process.argsPreview ?? []).join(" ")}`,
+            );
+        }
+        return lines.join("\n");
+    };
+
+    const checkRemoteWorker = async () => {
+        setIsRemoteWorkerRequesting(true);
+        try {
+            const payload = await fetchWorkspaceJson<{
+                ok: true;
+                data?: Parameters<typeof formatRemoteWorkerStatus>[0]["data"];
+            }>({
+                url: `/api/audio/remote-vip-worker${buildRemoteWorkerQuery()}`,
+                actionLabel: "Remote VIP worker status",
+            });
+            setRemoteWorkerStatus(formatRemoteWorkerStatus(payload));
+        } catch (error) {
+            setRemoteWorkerStatus(
+                error instanceof Error
+                    ? error.message
+                    : "Remote VIP worker status failed.",
+            );
+        } finally {
+            setIsRemoteWorkerRequesting(false);
+        }
+    };
+
+    const killRemoteWorker = async () => {
+        const confirmed = window.confirm(
+            "Kill active remote VIP worker jobs and Piper/ffmpeg child processes?",
+        );
+        if (!confirmed) return;
+        setIsRemoteWorkerRequesting(true);
+        try {
+            const payload = await fetchWorkspaceJson<{
+                ok: true;
+                data?: Parameters<typeof formatRemoteWorkerStatus>[0]["data"];
+            }>({
+                url: `/api/audio/remote-vip-worker${buildRemoteWorkerQuery()}`,
+                actionLabel: "Remote VIP worker kill",
+                init: { method: "DELETE" },
+            });
+            setRemoteWorkerStatus(formatRemoteWorkerStatus(payload));
+        } catch (error) {
+            setRemoteWorkerStatus(
+                error instanceof Error
+                    ? error.message
+                    : "Remote VIP worker kill failed.",
+            );
+        } finally {
+            setIsRemoteWorkerRequesting(false);
+        }
+    };
 
     if (node.templateNodeType === "source.file") {
         return (
@@ -9009,21 +9124,24 @@ function NodeRuntimeConfig({
                         <RuntimeSelect
                             label="Render mode"
                             value={
-                                getStringConfig(
-                                    node,
-                                    "renderPreset",
-                                    "veryfast",
-                                ) === "veryfast"
-                                    ? "veryfast"
-                                    : "superfast"
+                                (() => {
+                                    const preset = getStringConfig(
+                                        node,
+                                        "renderPreset",
+                                        "veryfast",
+                                    );
+                                    return preset === "superfast"
+                                        ? "superfast"
+                                        : "veryfast";
+                                })()
                             }
                             disabled={isRunningFlow}
                             onChange={(value) =>
                                 setConfig({
                                     renderPreset:
-                                        value === "veryfast"
-                                            ? "veryfast"
-                                            : "superfast",
+                                        value === "superfast"
+                                            ? "superfast"
+                                            : "veryfast",
                                 })
                             }
                         >
@@ -9095,6 +9213,33 @@ function NodeRuntimeConfig({
                                 setConfig({ remoteVoiceRenderEndpoint: value })
                             }
                         />
+                    </div>
+                    <div className="space-y-2 border border-main bg-main px-3 py-2">
+                        <div className="flex flex-wrap gap-2">
+                            <button
+                                type="button"
+                                disabled={isRemoteWorkerRequesting}
+                                onClick={checkRemoteWorker}
+                                className="inline-flex items-center gap-1 border border-main bg-secondary px-2 py-1 text-[10px] font-semibold text-main hover:bg-accent hover:text-on-accent disabled:opacity-50"
+                            >
+                                <Info className="h-3 w-3" />
+                                Check worker
+                            </button>
+                            <button
+                                type="button"
+                                disabled={isRemoteWorkerRequesting}
+                                onClick={killRemoteWorker}
+                                className="inline-flex items-center gap-1 border border-red-500/50 bg-red-500/10 px-2 py-1 text-[10px] font-semibold text-red-700 hover:bg-red-600 hover:text-white disabled:opacity-50"
+                            >
+                                <X className="h-3 w-3" />
+                                Kill active jobs
+                            </button>
+                        </div>
+                        {remoteWorkerStatus ? (
+                            <pre className="max-h-32 overflow-auto whitespace-pre-wrap border border-main bg-secondary/20 p-2 text-[10px] leading-4 text-muted">
+                                {remoteWorkerStatus}
+                            </pre>
+                        ) : null}
                     </div>
 
                     <RuntimeTextInput

@@ -75,6 +75,9 @@ describe("WorkspaceCanvasPanel canvas interactions", () => {
         expect(source).toContain("remote-voice-render");
         expect(source).toContain("formData.set(");
         expect(source).toContain("voiceRenderExecutionMode");
+        expect(source).toContain("Check worker");
+        expect(source).toContain("Kill active jobs");
+        expect(source).toContain("/api/audio/remote-vip-worker");
     });
 
     it("hydrates mask setup from source asset metadata in UI and runtime", () => {

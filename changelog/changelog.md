@@ -1,5 +1,36 @@
 # OmniVideo Changelog
 
+## FAST-WORKSPACE-061 - Maximize EC2 VIP Render CPU Utilization
+
+- Bumped app version from `0.10.89` to `0.10.90` as a patch release for EC2 VIP render throughput and reliability.
+- Kept final VIP ffmpeg render quality at `veryfast` while adding explicit full-CPU thread settings for filtergraph and libx264 encoder work, with env overrides for preset/thread count.
+- Added a configurable final render timeout so stuck ffmpeg jobs fail with a controlled error instead of hanging indefinitely.
+- Kept Workspace VIP render mode defaults/options on `veryfast`/`superfast` instead of introducing lower-quality `ultrafast`.
+- Added `OMNIVIDEO_FFMPEG_PATH` support and configured the EC2 launcher to use `/usr/bin/ffmpeg`, avoiding accidental priority of `ffmpeg-static` on the worker.
+- Extended remote worker process scanning so `/tmp/omnivideo-vip-*` final ffmpeg render processes are visible and killable even when EC2 uses system `ffmpeg`.
+- Documented EC2 render tuning env vars and local rollback controls.
+- Verification (FAST-WORKSPACE-061):
+  - `npm run test -- --run src/lib/multilingual-audio/video-vip-processing.test.ts src/app/api/audio/video-vip-voice-render/route.test.ts src/app/api/audio/video-vip-processing/route.test.ts src/lib/workspace/workspace-graph.test.ts src/features/workspace/workspace-canvas-panel.test.ts src/lib/multilingual-audio/audio-extraction.test.ts` pass (6 files / 117 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+  - `bash -n omnivideo-vip-spot.sh` and `zsh -n omnivideo-vip-spot.sh` pass.
+
+## FAST-WORKSPACE-060 - Add Remote VIP Worker Status and Kill Controls
+
+- Bumped app version from `0.10.88` to `0.10.89` as a patch release for remote VIP operations.
+- Added active Piper/ffmpeg child-process tracking to Piper voice generation so stuck EC2 subprocesses can be identified and terminated from the worker API.
+- Added OS process-table scanning for untracked OmniVideo ffmpeg/Piper processes so old stuck EC2 subprocesses still appear in the `Server` modal and can be terminated.
+- Extended `/api/audio/video-vip-voice-render` health/status output with active jobs and child processes, and added `DELETE` cancel support for active worker jobs/processes.
+- Added local `/api/audio/remote-vip-worker` proxy so the Workspace UI can check or kill the configured EC2 worker without browser cross-origin calls or exposing the worker token.
+- Added topbar `Server` modal for centralized remote worker status and kill controls, showing active job stage, metrics, PID, process kind, elapsed time, and command preview.
+- Added Workspace VIP inspector controls for direct per-node worker check/kill access.
+- Verification (FAST-WORKSPACE-060):
+  - `npm run test -- --run src/app/api/audio/video-vip-voice-render/route.test.ts src/app/api/audio/remote-vip-worker/route.test.ts src/components/layout/topbar.test.ts src/features/workspace/workspace-canvas-panel.test.ts src/lib/multilingual-audio/piper-tts.test.ts` pass (5 files / 61 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+
 ## FAST-WORKSPACE-059 - Add Async Polling for Long Remote VIP Jobs
 
 - Bumped app version from `0.10.87` to `0.10.88` as a patch release for long remote VIP worker reliability.

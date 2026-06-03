@@ -83,6 +83,17 @@ done để tránh giữ một HTTP POST mở trong nhiều phút với video dà
 Spot interruption tốt hơn hoặc lưu bền qua nhiều process, bước tiếp theo là
 chuyển output và checkpoint sang object storage/S3-compatible pointer.
 
+Final VIP render giữ preset mặc định `veryfast` để bảo toàn chất lượng/size hiện
+có, nhưng ffmpeg filtergraph và encoder được truyền thread count rõ ràng theo
+toàn bộ CPU phát hiện được. Có thể override bằng `OMNIVIDEO_VIP_RENDER_THREADS`
+(`auto`/`all` hoặc số nguyên), `OMNIVIDEO_VIP_RENDER_PRESET`
+(`superfast`/`veryfast`) và `OMNIVIDEO_VIP_RENDER_TIMEOUT_MS`. Trên `c8g.xlarge`
+mặc định sẽ cố dùng đủ 4 vCPU cho final render mà không hạ preset xuống
+`ultrafast`. Worker EC2 cũng set `OMNIVIDEO_FFMPEG_PATH=/usr/bin/ffmpeg` để dùng
+system ffmpeg từ Ubuntu thay vì ưu tiên `ffmpeg-static` trong `node_modules`.
+Worker status/kill nhận diện các process `/tmp/omnivideo-vip-*` ffmpeg final
+render khi cần xử lý job bị kẹt.
+
 ### 4.2 Current Workspace preprocess path
 
 1. Node `video.preprocess` điều chỉnh speed source video bằng ffmpeg và tạo video artifact downstream.

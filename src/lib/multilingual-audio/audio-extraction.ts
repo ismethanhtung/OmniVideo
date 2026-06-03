@@ -101,6 +101,7 @@ function buildAtempoFilters(speedFactor: number) {
 
 export function getFfmpegCandidates(staticPath = ffmpegStaticPath) {
     return [
+        process.env.OMNIVIDEO_FFMPEG_PATH?.trim() || "",
         staticPath || "",
         path.join(process.cwd(), "node_modules", "ffmpeg-static", "ffmpeg"),
         "ffmpeg",

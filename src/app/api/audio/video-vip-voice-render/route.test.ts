@@ -1,3 +1,5 @@
+import { execFileSync } from "node:child_process";
+
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -9,7 +11,11 @@ import {
     getWorkspaceServerArtifact,
 } from "@/lib/workspace/server-artifacts";
 
-import { GET, POST } from "./route";
+import { DELETE, GET, POST } from "./route";
+
+vi.mock("node:child_process", () => ({
+    execFileSync: vi.fn(() => ""),
+}));
 
 vi.mock("@/lib/multilingual-audio/video-vip-processing", () => ({
     renderVipCompositeVideo: vi.fn(),
@@ -17,11 +23,14 @@ vi.mock("@/lib/multilingual-audio/video-vip-processing", () => ({
     runVideoVipVoiceRender: vi.fn(),
 }));
 
+const mockedExecFileSync = vi.mocked(execFileSync);
 const mockedRunVideoVipRemoteRender = vi.mocked(runVideoVipRemoteRender);
 const mockedRunVideoVipVoiceRender = vi.mocked(runVideoVipVoiceRender);
 
 describe("video vip voice/render worker API", () => {
     beforeEach(() => {
+        mockedExecFileSync.mockReset();
+        mockedExecFileSync.mockReturnValue("");
         mockedRunVideoVipRemoteRender.mockReset();
         mockedRunVideoVipVoiceRender.mockReset();
         delete process.env.OMNIVIDEO_REMOTE_VIP_TOKEN;
@@ -41,7 +50,36 @@ describe("video vip voice/render worker API", () => {
         expect(payload).toMatchObject({
             ok: true,
             service: "omnivideo-vip-voice-render",
+            data: {
+                jobs: [],
+                activeProcesses: [],
+                systemProcesses: expect.any(Array),
+            },
         });
+    });
+
+    it("classifies final VIP ffmpeg render processes from system ffmpeg", async () => {
+        mockedExecFileSync.mockReturnValue(
+            Buffer.from(
+                "23211 02:30 100.0 0.8 /usr/bin/ffmpeg -y -i /tmp/omnivideo-vip-abc/source.mp4 -filter_complex [vout] /tmp/omnivideo-vip-abc/vip.mp4\n",
+            ),
+        );
+
+        const response = GET(
+            new Request("http://localhost/api/audio/video-vip-voice-render"),
+        );
+        const payload = await response.json();
+
+        expect(response.status).toBe(200);
+        expect(payload.data.systemProcesses).toEqual([
+            expect.objectContaining({
+                pid: 23211,
+                kind: "ffmpeg",
+                cpuPercent: 100,
+                memoryPercent: 0.8,
+                command: expect.stringContaining("omnivideo-vip-abc"),
+            }),
+        ]);
     });
 
     it("rejects invalid worker tokens when token is configured", async () => {
@@ -291,6 +329,98 @@ describe("video vip voice/render worker API", () => {
                 artifactId: expect.any(String),
                 byteLength: 10,
             },
+        });
+    });
+
+    it("cancels async worker jobs", async () => {
+        process.env.OMNIVIDEO_REMOTE_VIP_TOKEN = "secret";
+        mockedRunVideoVipRemoteRender.mockImplementationOnce(
+            () =>
+                new Promise((resolve) => {
+                    setTimeout(() => {
+                        resolve({
+                            videoBytes: Buffer.from("late-done"),
+                            mimeType: "video/mp4",
+                            extension: "mp4",
+                            fileName: "source-done.mp4",
+                            byteLength: 9,
+                            generationDurationMs: 100,
+                            stages: { finalRenderDurationMs: 40 },
+                            mix: { originalAudioVolume: 0, voiceVolume: 1 },
+                        });
+                    }, 20);
+                }),
+        );
+
+        const formData = new FormData();
+        formData.set("async", "1");
+        formData.set(
+            "payloadJson",
+            JSON.stringify({
+                fileName: "source.mp4",
+                translatedSegments: [
+                    {
+                        id: 0,
+                        start: 0,
+                        end: 1,
+                        sourceText: "你好",
+                        translatedText: "Xin chào",
+                    },
+                ],
+            }),
+        );
+        formData.set(
+            "videoFile",
+            new File([new Uint8Array([4, 5, 6])], "source.mp4", {
+                type: "video/mp4",
+            }),
+        );
+        formData.set(
+            "voiceFile",
+            new File([Buffer.from("voice")], "voice.wav", {
+                type: "audio/wav",
+            }),
+        );
+
+        const startResponse = await POST(
+            new Request("http://localhost/api/audio/video-vip-voice-render", {
+                method: "POST",
+                headers: { Authorization: "Bearer secret" },
+                body: formData,
+            }),
+        );
+        const startPayload = await startResponse.json();
+
+        const cancelResponse = DELETE(
+            new Request(
+                `http://localhost/api/audio/video-vip-voice-render?jobId=${startPayload.data.jobId}`,
+                {
+                    method: "DELETE",
+                    headers: { Authorization: "Bearer secret" },
+                },
+            ),
+        );
+        const cancelPayload = await cancelResponse.json();
+
+        expect(cancelResponse.status).toBe(200);
+        expect(cancelPayload.data).toMatchObject({
+            cancelledJobs: [startPayload.data.jobId],
+            killedProcesses: [],
+            killedSystemProcesses: expect.any(Array),
+        });
+
+        const statusResponse = GET(
+            new Request(
+                `http://localhost/api/audio/video-vip-voice-render?jobId=${startPayload.data.jobId}`,
+                {
+                    headers: { Authorization: "Bearer secret" },
+                },
+            ),
+        );
+        const statusPayload = await statusResponse.json();
+        expect(statusPayload.data).toMatchObject({
+            status: "failed",
+            error: "Remote VIP worker job was cancelled.",
         });
     });
 

@@ -17,6 +17,7 @@ import {
     Orbit,
     RefreshCw,
     Rocket,
+    Server,
     Sun,
     X,
 } from "lucide-react";
@@ -61,6 +62,7 @@ export function Topbar({
 }: TopbarProps) {
     const currentSection = getNavItem(activeSection);
     const [showProgress, setShowProgress] = useState(false);
+    const [showServerStatus, setShowServerStatus] = useState(false);
     const [showSystemSnapshot, setShowSystemSnapshot] = useState(false);
     const [showOwnerAccess, setShowOwnerAccess] = useState(false);
     const [appAccess, setAppAccess] = useState<AppAccessState | null>(null);
@@ -284,6 +286,15 @@ export function Topbar({
                 </button>
                 <button
                     type="button"
+                    onClick={() => setShowServerStatus(true)}
+                    className="inline-flex shrink-0 items-center gap-1.5 border border-main bg-main px-2.5 py-1 text-[11px] font-semibold text-main transition-colors hover:bg-secondary"
+                    aria-label="Open server status"
+                >
+                    <Server className="h-3.5 w-3.5" />
+                    Server
+                </button>
+                <button
+                    type="button"
                     onClick={() => setShowSystemSnapshot(true)}
                     className="inline-flex shrink-0 items-center gap-1.5 border border-main bg-main px-2.5 py-1 text-[11px] font-semibold text-main transition-colors hover:bg-secondary"
                     aria-label="Open system snapshot"
@@ -342,6 +353,9 @@ export function Topbar({
                         });
                     }}
                 />
+            ) : null}
+            {showServerStatus ? (
+                <ServerStatusModal onClose={() => setShowServerStatus(false)} />
             ) : null}
             {showSystemSnapshot ? (
                 <SystemSnapshotModal
@@ -460,6 +474,379 @@ function OwnerAccessModal({
                     </div>
                 )}
             </div>
+        </div>
+    );
+}
+
+type RemoteVipWorkerStatus = {
+    jobs?: Array<{
+        jobId?: string;
+        status?: string;
+        stage?: string;
+        stageStartedAt?: string;
+        message?: string;
+        metrics?: Record<string, unknown>;
+        startedAt?: string;
+        updatedAt?: string;
+        error?: string;
+        errorCode?: string;
+    }>;
+    activeProcesses?: Array<{
+        id?: string;
+        pid?: number;
+        kind?: string;
+        command?: string;
+        argsPreview?: string[];
+        startedAt?: string;
+        elapsedMs?: number;
+    }>;
+    systemProcesses?: Array<{
+        pid: number;
+        elapsed: string;
+        cpuPercent: number;
+        memoryPercent: number;
+        kind: string;
+        command: string;
+    }>;
+    cancelledJobs?: string[];
+    killedProcesses?: Array<{
+        pid?: number;
+        kind?: string;
+        elapsedMs?: number;
+    }>;
+    killedSystemProcesses?: Array<{
+        pid: number;
+        kind: string;
+        elapsed: string;
+    }>;
+};
+
+let cachedServerStatus: RemoteVipWorkerStatus | null = null;
+
+function formatServerMetricValue(value: unknown) {
+    if (typeof value === "number") {
+        return Number.isInteger(value) ? String(value) : value.toFixed(2);
+    }
+    if (typeof value === "string" || typeof value === "boolean") {
+        return String(value);
+    }
+    return "";
+}
+
+function ServerStatusModal({ onClose }: { onClose: () => void }) {
+    const [status, setStatus] = useState<RemoteVipWorkerStatus | null>(
+        cachedServerStatus,
+    );
+    const [loading, setLoading] = useState(false);
+    const [killing, setKilling] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [lastLoadedAt, setLastLoadedAt] = useState<number | null>(null);
+
+    const load = useCallback(async () => {
+        setLoading(true);
+        setError(null);
+        try {
+            const response = await fetch("/api/audio/remote-vip-worker");
+            const payload = (await response.json().catch(() => null)) as
+                | {
+                      ok?: boolean;
+                      data?: RemoteVipWorkerStatus;
+                      error?: string;
+                  }
+                | null;
+            if (!response.ok || payload?.ok === false) {
+                throw new Error(
+                    payload?.error ??
+                        `Remote VIP worker status failed with HTTP ${response.status}.`,
+                );
+            }
+            const nextStatus = payload?.data ?? {};
+            cachedServerStatus = nextStatus;
+            setStatus(nextStatus);
+            setLastLoadedAt(Date.now());
+        } catch (loadError) {
+            setError(
+                loadError instanceof Error
+                    ? loadError.message
+                    : "Remote VIP worker status failed.",
+            );
+        } finally {
+            setLoading(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        void load();
+        const intervalId = window.setInterval(() => {
+            void load();
+        }, 5000);
+        return () => window.clearInterval(intervalId);
+    }, [load]);
+
+    const killActive = async () => {
+        const confirmed = window.confirm(
+            "Kill active remote VIP jobs and Piper/ffmpeg processes?",
+        );
+        if (!confirmed) return;
+        setKilling(true);
+        setError(null);
+        try {
+            const response = await fetch("/api/audio/remote-vip-worker", {
+                method: "DELETE",
+            });
+            const payload = (await response.json().catch(() => null)) as
+                | {
+                      ok?: boolean;
+                      data?: RemoteVipWorkerStatus;
+                      error?: string;
+                  }
+                | null;
+            if (!response.ok || payload?.ok === false) {
+                throw new Error(
+                    payload?.error ??
+                        `Remote VIP worker kill failed with HTTP ${response.status}.`,
+                );
+            }
+            const nextStatus = payload?.data ?? {};
+            cachedServerStatus = nextStatus;
+            setStatus(nextStatus);
+            setLastLoadedAt(Date.now());
+        } catch (killError) {
+            setError(
+                killError instanceof Error
+                    ? killError.message
+                    : "Remote VIP worker kill failed.",
+            );
+        } finally {
+            setKilling(false);
+        }
+    };
+
+    const jobs = status?.jobs ?? [];
+    const processes = status?.activeProcesses ?? [];
+    const systemProcesses = status?.systemProcesses ?? [];
+    const cancelledJobs = status?.cancelledJobs ?? [];
+    const killedProcesses = status?.killedProcesses ?? [];
+    const killedSystemProcesses = status?.killedSystemProcesses ?? [];
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-4 md:p-6">
+            <section className="flex max-h-[90vh] w-full max-w-5xl flex-col border border-main bg-main shadow-xl">
+                <header className="flex items-start justify-between gap-3 border-b border-main bg-secondary/35 px-4 py-3">
+                    <div>
+                        <p className="text-[14px] font-semibold text-main">
+                            Server
+                        </p>
+                        <p className="mt-1 text-[11px] text-muted">
+                            Remote VIP worker jobs and Piper/ffmpeg subprocesses.
+                        </p>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="inline-flex items-center border border-main bg-main p-1.5 text-main hover:bg-secondary"
+                        aria-label="Close server modal"
+                    >
+                        <X className="h-3.5 w-3.5" />
+                    </button>
+                </header>
+
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-main px-4 py-2">
+                    <span className="text-[11px] text-muted">
+                        {jobs.length} job(s) ·{" "}
+                        {processes.length + systemProcesses.length} process(es)
+                        {lastLoadedAt
+                            ? ` · Updated ${formatProgressTime(lastLoadedAt)}`
+                            : ""}
+                    </span>
+                    <div className="flex items-center gap-2">
+                        <button
+                            type="button"
+                            onClick={() => void load()}
+                            disabled={loading}
+                            className="inline-flex items-center gap-1 border border-main bg-main px-2.5 py-1 text-[11px] font-semibold text-main hover:bg-secondary disabled:opacity-50"
+                        >
+                            <RefreshCw className="h-3.5 w-3.5" />
+                            {loading ? "Checking..." : "Refresh"}
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => void killActive()}
+                            disabled={
+                                killing ||
+                                (jobs.length === 0 &&
+                                    processes.length === 0 &&
+                                    systemProcesses.length === 0)
+                            }
+                            className="inline-flex items-center gap-1 border border-red-500/50 bg-red-500/10 px-2.5 py-1 text-[11px] font-semibold text-red-700 hover:bg-red-600 hover:text-white disabled:opacity-50"
+                        >
+                            <X className="h-3.5 w-3.5" />
+                            {killing ? "Killing..." : "Kill active"}
+                        </button>
+                    </div>
+                </div>
+
+                {error ? (
+                    <p className="border-b border-main px-4 py-2 text-[11px] font-semibold text-red-500">
+                        {error}
+                    </p>
+                ) : null}
+                {cancelledJobs.length > 0 ||
+                killedProcesses.length > 0 ||
+                killedSystemProcesses.length > 0 ? (
+                    <p className="border-b border-main px-4 py-2 text-[11px] font-semibold text-emerald-700">
+                        Cancelled {cancelledJobs.length} job(s), killed{" "}
+                        {killedProcesses.length + killedSystemProcesses.length}{" "}
+                        process(es).
+                    </p>
+                ) : null}
+
+                <div className="min-h-0 overflow-y-auto px-4 py-3">
+                    {jobs.length === 0 &&
+                    processes.length === 0 &&
+                    systemProcesses.length === 0 ? (
+                        <p className="py-8 text-[12px] text-muted">
+                            No active remote VIP worker jobs or child processes.
+                        </p>
+                    ) : null}
+
+                    {jobs.length > 0 ? (
+                        <section className="mb-4">
+                            <p className="mb-2 text-[11px] font-semibold uppercase text-muted">
+                                Jobs
+                            </p>
+                            <div className="divide-y divide-soft border border-main">
+                                {jobs.map((job) => {
+                                    const metrics = job.metrics
+                                        ? Object.entries(job.metrics)
+                                              .map(([key, value]) => {
+                                                  const formatted =
+                                                      formatServerMetricValue(
+                                                          value,
+                                                      );
+                                                  return formatted
+                                                      ? `${key}=${formatted}`
+                                                      : "";
+                                              })
+                                              .filter(Boolean)
+                                              .join(", ")
+                                        : "";
+                                    return (
+                                        <article
+                                            key={job.jobId ?? `${job.stage}-${job.startedAt}`}
+                                            className="px-3 py-2"
+                                        >
+                                            <div className="flex flex-wrap items-center gap-2">
+                                                <span className="text-[11px] font-semibold text-main">
+                                                    {job.status ?? "unknown"}
+                                                </span>
+                                                <span className="text-[11px] text-muted">
+                                                    {job.stage ?? "stage?"}
+                                                </span>
+                                                <span className="font-mono text-[10px] text-muted">
+                                                    {job.jobId ?? "unknown-job"}
+                                                </span>
+                                            </div>
+                                            {job.message ? (
+                                                <p className="mt-1 text-[11px] text-muted">
+                                                    {job.message}
+                                                </p>
+                                            ) : null}
+                                            {metrics ? (
+                                                <p className="mt-1 font-mono text-[10px] text-muted">
+                                                    {metrics}
+                                                </p>
+                                            ) : null}
+                                            {job.error ? (
+                                                <p className="mt-1 text-[11px] font-semibold text-red-500">
+                                                    {job.errorCode
+                                                        ? `${job.errorCode}: `
+                                                        : ""}
+                                                    {job.error}
+                                                </p>
+                                            ) : null}
+                                        </article>
+                                    );
+                                })}
+                            </div>
+                        </section>
+                    ) : null}
+
+                    {processes.length > 0 ? (
+                        <section>
+                            <p className="mb-2 text-[11px] font-semibold uppercase text-muted">
+                                Processes
+                            </p>
+                            <div className="divide-y divide-soft border border-main">
+                                {processes.map((process) => (
+                                    <article
+                                        key={process.id ?? process.pid ?? process.startedAt}
+                                        className="px-3 py-2"
+                                    >
+                                        <div className="flex flex-wrap items-center gap-2">
+                                            <span className="text-[11px] font-semibold text-main">
+                                                PID {process.pid ?? "?"}
+                                            </span>
+                                            <span className="text-[11px] text-muted">
+                                                {process.kind ?? "process"}
+                                            </span>
+                                            <span className="text-[10px] text-muted">
+                                                {Math.round(
+                                                    (process.elapsedMs ?? 0) /
+                                                        1000,
+                                                )}
+                                                s
+                                            </span>
+                                        </div>
+                                        <p className="mt-1 break-all font-mono text-[10px] leading-4 text-muted">
+                                            {[process.command, ...(process.argsPreview ?? [])]
+                                                .filter(Boolean)
+                                                .join(" ")}
+                                        </p>
+                                    </article>
+                                ))}
+                            </div>
+                        </section>
+                    ) : null}
+
+                    {systemProcesses.length > 0 ? (
+                        <section className="mt-4">
+                            <p className="mb-2 text-[11px] font-semibold uppercase text-muted">
+                                System Processes
+                            </p>
+                            <div className="divide-y divide-soft border border-main">
+                                {systemProcesses.map((process) => (
+                                    <article
+                                        key={process.pid}
+                                        className="px-3 py-2"
+                                    >
+                                        <div className="flex flex-wrap items-center gap-2">
+                                            <span className="text-[11px] font-semibold text-main">
+                                                PID {process.pid}
+                                            </span>
+                                            <span className="text-[11px] text-muted">
+                                                {process.kind}
+                                            </span>
+                                            <span className="text-[10px] text-muted">
+                                                {process.elapsed}
+                                            </span>
+                                            <span className="text-[10px] font-semibold text-main">
+                                                CPU {process.cpuPercent.toFixed(1)}%
+                                            </span>
+                                            <span className="text-[10px] text-muted">
+                                                MEM {process.memoryPercent.toFixed(1)}%
+                                            </span>
+                                        </div>
+                                        <p className="mt-1 break-all font-mono text-[10px] leading-4 text-muted">
+                                            {process.command}
+                                        </p>
+                                    </article>
+                                ))}
+                            </div>
+                        </section>
+                    ) : null}
+                </div>
+            </section>
         </div>
     );
 }

@@ -33,4 +33,17 @@ describe("Topbar background progress modal", () => {
         expect(source).toContain("onSendTestNotification");
         expect(source).toContain("new Notification(task.title");
     });
+
+    it("exposes server status controls in the topbar", () => {
+        expect(source).toContain("showServerStatus");
+        expect(source).toContain("ServerStatusModal");
+        expect(source).toContain("Open server status");
+        expect(source).toContain("/api/audio/remote-vip-worker");
+        expect(source).toContain("Remote VIP worker jobs and Piper/ffmpeg subprocesses.");
+        expect(source).toContain("Kill active");
+        expect(source).toContain("activeProcesses");
+        expect(source).toContain("systemProcesses");
+        expect(source).toContain("System Processes");
+        expect(source).toContain("CPU {process.cpuPercent.toFixed(1)}%");
+    });
 });

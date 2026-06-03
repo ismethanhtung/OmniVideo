@@ -25,6 +25,8 @@
 
 ## Review
 
+- `FAST-WORKSPACE-061` - Maximize EC2 VIP render CPU utilization.
+- `FAST-WORKSPACE-060` - Add remote VIP worker status and kill controls.
 - `FAST-WORKSPACE-059` - Add async polling for long remote VIP jobs.
 - `FAST-VIDEO-030` - Expand Video Tools Lab previews and align subtitle controls.
 - `FAST-WORKSPACE-058` - Prune retired Workspace seeds and prioritize full transcript seed.
