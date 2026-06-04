@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -33,15 +34,20 @@ describe("video vip voice/render worker API", () => {
         mockedExecFileSync.mockReturnValue("");
         mockedRunVideoVipRemoteRender.mockReset();
         mockedRunVideoVipVoiceRender.mockReset();
+        vi.stubGlobal(
+            "fetch",
+            vi.fn(async () => new Response("", { status: 404 })),
+        );
         delete process.env.OMNIVIDEO_REMOTE_VIP_TOKEN;
     });
 
     afterEach(() => {
+        vi.unstubAllGlobals();
         clearWorkspaceServerArtifactsForTest();
     });
 
     it("exposes a lightweight health check", async () => {
-        const response = GET(
+        const response = await GET(
             new Request("http://localhost/api/audio/video-vip-voice-render"),
         );
         const payload = await response.json();
@@ -54,8 +60,84 @@ describe("video vip voice/render worker API", () => {
                 jobs: [],
                 activeProcesses: [],
                 systemProcesses: expect.any(Array),
+                ec2: null,
+                top: null,
             },
         });
+    });
+
+    it("exposes EC2 metadata and top snapshot when available", async () => {
+        const fetchMock = vi.fn(async (url: string | URL) => {
+            const value = String(url);
+            if (value.endsWith("/latest/api/token")) {
+                return new Response("token");
+            }
+            if (value.endsWith("/meta-data/instance-id")) {
+                return new Response("i-1234567890");
+            }
+            if (value.endsWith("/meta-data/instance-type")) {
+                return new Response("c8g.xlarge");
+            }
+            if (value.endsWith("/meta-data/public-ipv4")) {
+                return new Response("1.2.3.4");
+            }
+            if (value.endsWith("/meta-data/local-ipv4")) {
+                return new Response("10.0.0.12");
+            }
+            if (value.endsWith("/dynamic/instance-identity/document")) {
+                return Response.json({
+                    region: "ap-east-1",
+                    availabilityZone: "ap-east-1a",
+                });
+            }
+            return new Response("", { status: 404 });
+        });
+        vi.stubGlobal("fetch", fetchMock);
+        mockedExecFileSync.mockImplementation((command, args) => {
+            if (command === "top") {
+                expect(args).toEqual(["-b", "-n", "1", "-w", "160"]);
+                return Buffer.from(
+                    "top - 10:00:00 up 1 min, 1 user, load average: 3.00, 2.00, 1.00\n%Cpu(s): 95.0 us, 5.0 sy\n",
+                );
+            }
+            return Buffer.from("");
+        });
+
+        const response = await GET(
+            new Request("http://localhost/api/audio/video-vip-voice-render"),
+        );
+        const payload = await response.json();
+
+        expect(response.status).toBe(200);
+        expect(payload.data.ec2).toMatchObject({
+            instanceId: "i-1234567890",
+            instanceType: "c8g.xlarge",
+            region: "ap-east-1",
+            availabilityZone: "ap-east-1a",
+            publicIp: "1.2.3.4",
+            privateIp: "10.0.0.12",
+        });
+        expect(payload.data.top.lines).toEqual([
+            "top - 10:00:00 up 1 min, 1 user, load average: 3.00, 2.00, 1.00",
+            "%Cpu(s): 95.0 us, 5.0 sy",
+        ]);
+    });
+
+    it("keeps default Piper model URLs in the EC2 launcher while allowing env override", () => {
+        const source = readFileSync("omnivideo-vip-spot.sh", "utf8");
+
+        expect(source).toContain(
+            'DEFAULT_PIPER_MODEL_URL="https://drive.google.com/file/d/1F9rYPsYJ4--fEQ6A7Tv0Wxy1IVvHqzhb/view?usp=sharing"',
+        );
+        expect(source).toContain(
+            'DEFAULT_PIPER_MODEL_CONFIG_URL="https://drive.google.com/file/d/1qDZm60pX3-n6ODYixbTmL_VeAndVtMML/view?usp=sharing"',
+        );
+        expect(source).toContain(
+            'PIPER_MODEL_URL="${PIPER_MODEL_URL:-$DEFAULT_PIPER_MODEL_URL}"',
+        );
+        expect(source).toContain(
+            'PIPER_MODEL_CONFIG_URL="${PIPER_MODEL_CONFIG_URL:-$DEFAULT_PIPER_MODEL_CONFIG_URL}"',
+        );
     });
 
     it("classifies final VIP ffmpeg render processes from system ffmpeg", async () => {
@@ -65,7 +147,7 @@ describe("video vip voice/render worker API", () => {
             ),
         );
 
-        const response = GET(
+        const response = await GET(
             new Request("http://localhost/api/audio/video-vip-voice-render"),
         );
         const payload = await response.json();
@@ -311,7 +393,7 @@ describe("video vip voice/render worker API", () => {
             status: "running",
         });
 
-        const statusResponse = GET(
+        const statusResponse = await GET(
             new Request(
                 `http://localhost/api/audio/video-vip-voice-render?jobId=${startPayload.data.jobId}`,
                 {
@@ -409,7 +491,7 @@ describe("video vip voice/render worker API", () => {
             killedSystemProcesses: expect.any(Array),
         });
 
-        const statusResponse = GET(
+        const statusResponse = await GET(
             new Request(
                 `http://localhost/api/audio/video-vip-voice-render?jobId=${startPayload.data.jobId}`,
                 {

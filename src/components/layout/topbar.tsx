@@ -44,6 +44,11 @@ import {
 } from "@/lib/ui/progress-notifications";
 import { INSPIRATION_VAULT_UPDATED_EVENT } from "@/lib/inspiration-vault/inspiration-vault";
 import { createInspirationVaultItemFromApi } from "@/lib/inspiration-vault/client";
+import {
+    REMOTE_VIP_WORKER_CONFIG_STORAGE_KEY,
+    readRemoteVipWorkerBrowserConfig,
+    writeRemoteVipWorkerBrowserConfig,
+} from "@/lib/workspace/remote-vip-worker-config";
 
 type TopbarProps = {
     activeSection: AppSectionId;
@@ -52,7 +57,7 @@ type TopbarProps = {
     onToggleTheme: () => void;
 };
 
-const PROGRESS_TIMELINE_COLLAPSED_LIMIT = 6;
+const HIGH_PROGRESS_VOICE_SPEED_FACTOR = 1.35;
 
 export function Topbar({
     activeSection,
@@ -502,6 +507,18 @@ type RemoteVipWorkerStatus = {
         kind: string;
         command: string;
     }>;
+    ec2?: {
+        instanceId?: string;
+        instanceType?: string;
+        availabilityZone?: string;
+        region?: string;
+        privateIp?: string;
+        publicIp?: string;
+    } | null;
+    top?: {
+        capturedAt: string;
+        lines: string[];
+    } | null;
     cancelledJobs?: string[];
     killedProcesses?: Array<{
         pid?: number;
@@ -515,7 +532,41 @@ type RemoteVipWorkerStatus = {
     }>;
 };
 
+type ParsedProgressSegment = {
+    id?: number;
+    start?: number;
+    end?: number;
+    sourceText?: string;
+    translatedText: string;
+    speedFactor?: number;
+    rawDurationSeconds?: number;
+    targetDurationSeconds?: number;
+    warningCodes: string[];
+    rawLine: string;
+};
+
 let cachedServerStatus: RemoteVipWorkerStatus | null = null;
+
+function buildServerStatusRequest(input: {
+    endpoint: string;
+    token: string;
+    method?: "GET" | "DELETE";
+}) {
+    const endpoint = input.endpoint.trim();
+    const token = input.token.trim();
+    const url = endpoint
+        ? `/api/audio/remote-vip-worker?endpoint=${encodeURIComponent(endpoint)}`
+        : "/api/audio/remote-vip-worker";
+    return {
+        url,
+        init: {
+            method: input.method ?? "GET",
+            headers: token
+                ? { "X-OmniVideo-Remote-Vip-Token": token }
+                : undefined,
+        } satisfies RequestInit,
+    };
+}
 
 function formatServerMetricValue(value: unknown) {
     if (typeof value === "number") {
@@ -534,13 +585,38 @@ function ServerStatusModal({ onClose }: { onClose: () => void }) {
     const [loading, setLoading] = useState(false);
     const [killing, setKilling] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [autoRefreshPaused, setAutoRefreshPaused] = useState(false);
     const [lastLoadedAt, setLastLoadedAt] = useState<number | null>(null);
+    const [workerEndpoint, setWorkerEndpoint] = useState("");
+    const [workerToken, setWorkerToken] = useState("");
+    const [hasLoadedWorkerConfig, setHasLoadedWorkerConfig] = useState(false);
+
+    useEffect(() => {
+        const config = readRemoteVipWorkerBrowserConfig();
+        setWorkerEndpoint(config.endpoint);
+        setWorkerToken(config.token);
+        setHasLoadedWorkerConfig(true);
+    }, []);
+
+    useEffect(() => {
+        if (!hasLoadedWorkerConfig) {
+            return;
+        }
+        writeRemoteVipWorkerBrowserConfig({
+            endpoint: workerEndpoint,
+            token: workerToken,
+        });
+    }, [hasLoadedWorkerConfig, workerEndpoint, workerToken]);
 
     const load = useCallback(async () => {
         setLoading(true);
         setError(null);
         try {
-            const response = await fetch("/api/audio/remote-vip-worker");
+            const request = buildServerStatusRequest({
+                endpoint: workerEndpoint,
+                token: workerToken,
+            });
+            const response = await fetch(request.url, request.init);
             const payload = (await response.json().catch(() => null)) as {
                 ok?: boolean;
                 data?: RemoteVipWorkerStatus;
@@ -555,6 +631,7 @@ function ServerStatusModal({ onClose }: { onClose: () => void }) {
             const nextStatus = payload?.data ?? {};
             cachedServerStatus = nextStatus;
             setStatus(nextStatus);
+            setAutoRefreshPaused(false);
             setLastLoadedAt(Date.now());
         } catch (loadError) {
             setError(
@@ -562,18 +639,31 @@ function ServerStatusModal({ onClose }: { onClose: () => void }) {
                     ? loadError.message
                     : "Remote VIP worker status failed.",
             );
+            setAutoRefreshPaused(true);
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [workerEndpoint, workerToken]);
 
     useEffect(() => {
+        if (!hasLoadedWorkerConfig) {
+            return;
+        }
         void load();
+    }, [hasLoadedWorkerConfig, load]);
+
+    useEffect(() => {
+        if (!hasLoadedWorkerConfig) {
+            return;
+        }
+        if (autoRefreshPaused) {
+            return;
+        }
         const intervalId = window.setInterval(() => {
             void load();
         }, 5000);
         return () => window.clearInterval(intervalId);
-    }, [load]);
+    }, [autoRefreshPaused, hasLoadedWorkerConfig, load]);
 
     const killActive = async () => {
         const confirmed = window.confirm(
@@ -583,9 +673,12 @@ function ServerStatusModal({ onClose }: { onClose: () => void }) {
         setKilling(true);
         setError(null);
         try {
-            const response = await fetch("/api/audio/remote-vip-worker", {
+            const request = buildServerStatusRequest({
+                endpoint: workerEndpoint,
+                token: workerToken,
                 method: "DELETE",
             });
+            const response = await fetch(request.url, request.init);
             const payload = (await response.json().catch(() => null)) as {
                 ok?: boolean;
                 data?: RemoteVipWorkerStatus;
@@ -615,6 +708,8 @@ function ServerStatusModal({ onClose }: { onClose: () => void }) {
     const jobs = status?.jobs ?? [];
     const processes = status?.activeProcesses ?? [];
     const systemProcesses = status?.systemProcesses ?? [];
+    const ec2 = status?.ec2 ?? null;
+    const top = status?.top ?? null;
     const cancelledJobs = status?.cancelledJobs ?? [];
     const killedProcesses = status?.killedProcesses ?? [];
     const killedSystemProcesses = status?.killedSystemProcesses ?? [];
@@ -646,6 +741,7 @@ function ServerStatusModal({ onClose }: { onClose: () => void }) {
                     <span className="text-[11px] text-muted">
                         {jobs.length} job(s) ·{" "}
                         {processes.length + systemProcesses.length} process(es)
+                        {ec2?.instanceId ? ` · ${ec2.instanceId}` : ""}
                         {lastLoadedAt
                             ? ` · Updated ${formatProgressTime(lastLoadedAt)}`
                             : ""}
@@ -658,7 +754,11 @@ function ServerStatusModal({ onClose }: { onClose: () => void }) {
                             className="inline-flex items-center gap-1 border border-main bg-main px-2.5 py-1 text-[11px] font-semibold text-main hover:bg-secondary disabled:opacity-50"
                         >
                             <RefreshCw className="h-3.5 w-3.5" />
-                            {loading ? "Checking..." : "Refresh"}
+                            {loading
+                                ? "Checking..."
+                                : autoRefreshPaused
+                                  ? "Retry"
+                                  : "Refresh"}
                         </button>
                         <button
                             type="button"
@@ -677,9 +777,47 @@ function ServerStatusModal({ onClose }: { onClose: () => void }) {
                     </div>
                 </div>
 
+                <div className="grid gap-2 border-b border-main px-4 py-3 lg:grid-cols-[minmax(220px,1fr)_minmax(220px,1fr)]">
+                    <label className="block">
+                        <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-muted">
+                            Remote worker URL
+                        </span>
+                        <input
+                            type="url"
+                            value={workerEndpoint}
+                            onChange={(event) =>
+                                setWorkerEndpoint(event.target.value)
+                            }
+                            placeholder="http://16.163.29.17:8787"
+                            className="h-8 w-full border border-main bg-secondary/35 px-2.5 font-mono text-[11px] text-main placeholder:text-muted/60 focus:border-accent/40 focus:outline-none focus:ring-1 focus:ring-accent/25"
+                        />
+                    </label>
+                    <label className="block">
+                        <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-muted">
+                            Worker token
+                        </span>
+                        <input
+                            type="password"
+                            value={workerToken}
+                            onChange={(event) =>
+                                setWorkerToken(event.target.value)
+                            }
+                            placeholder="Paste worker token"
+                            className="h-8 w-full border border-main bg-secondary/35 px-2.5 font-mono text-[11px] text-main placeholder:text-muted/60 focus:border-accent/40 focus:outline-none focus:ring-1 focus:ring-accent/25"
+                        />
+                    </label>
+                    <p className="text-[10px] leading-4 text-muted lg:col-span-2">
+                        Saved in this browser. If empty, the app falls back to
+                        Vercel/server environment variables.
+                    </p>
+                </div>
+
                 {error ? (
                     <p className="border-b border-main px-4 py-2 text-[11px] font-semibold text-red-500">
                         {error}
+                        {autoRefreshPaused
+                            ? " Auto-refresh is paused until you retry."
+                            : ""}
                     </p>
                 ) : null}
                 {cancelledJobs.length > 0 ||
@@ -693,6 +831,56 @@ function ServerStatusModal({ onClose }: { onClose: () => void }) {
                 ) : null}
 
                 <div className="min-h-0 overflow-y-auto px-4 py-3">
+                    {ec2 ? (
+                        <section className="mb-4">
+                            <p className="mb-2 text-[11px] font-semibold uppercase text-muted">
+                                EC2 Instance
+                            </p>
+                            <div className="grid gap-2 border border-main p-3 text-[11px] sm:grid-cols-2 lg:grid-cols-3">
+                                <ServerStatusField
+                                    label="Instance"
+                                    value={ec2.instanceId}
+                                />
+                                <ServerStatusField
+                                    label="Type"
+                                    value={ec2.instanceType}
+                                />
+                                <ServerStatusField
+                                    label="Region / AZ"
+                                    value={[ec2.region, ec2.availabilityZone]
+                                        .filter(Boolean)
+                                        .join(" / ")}
+                                />
+                                <ServerStatusField
+                                    label="Public IP"
+                                    value={ec2.publicIp}
+                                />
+                                <ServerStatusField
+                                    label="Private IP"
+                                    value={ec2.privateIp}
+                                />
+                            </div>
+                        </section>
+                    ) : null}
+
+                    {top?.lines?.length ? (
+                        <section className="mb-4">
+                            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                                <p className="text-[11px] font-semibold uppercase text-muted">
+                                    Top Snapshot
+                                </p>
+                                <span className="text-[10px] text-muted">
+                                    {formatProgressTime(
+                                        new Date(top.capturedAt).getTime(),
+                                    )}
+                                </span>
+                            </div>
+                            <pre className="max-h-80 overflow-auto border border-main bg-secondary/20 p-3 font-mono text-[10px] leading-4 text-main">
+                                {top.lines.join("\n")}
+                            </pre>
+                        </section>
+                    ) : null}
+
                     {jobs.length === 0 &&
                     processes.length === 0 &&
                     systemProcesses.length === 0 ? (
@@ -853,6 +1041,23 @@ function ServerStatusModal({ onClose }: { onClose: () => void }) {
                     ) : null}
                 </div>
             </section>
+        </div>
+    );
+}
+
+function ServerStatusField({
+    label,
+    value,
+}: {
+    label: string;
+    value?: string;
+}) {
+    return (
+        <div className="min-w-0">
+            <p className="text-[10px] uppercase text-muted">{label}</p>
+            <p className="truncate font-mono text-[11px] font-semibold text-main">
+                {value || "-"}
+            </p>
         </div>
     );
 }
@@ -1181,6 +1386,13 @@ function formatDurationMs(from: number, to: number) {
     return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
+function formatSegmentTimestamp(seconds: number) {
+    const totalSeconds = Math.max(0, Math.floor(seconds));
+    const minutes = Math.floor(totalSeconds / 60);
+    const rest = totalSeconds % 60;
+    return `${String(minutes).padStart(2, "0")}:${String(rest).padStart(2, "0")}`;
+}
+
 function ProgressModal({
     tasks,
     onClose,
@@ -1477,7 +1689,7 @@ function parseStepDescription(description: string | null | undefined) {
     const timelineLines: string[] = [];
     const tailLines: string[] = [];
     for (const line of lines.slice(timelineHeaderIndex + 1)) {
-        if (/^\[[^\]]+\]\s+/u.test(line)) {
+        if (/^\[[^\]]+\]\s+/u.test(line) || line.startsWith("SEGMENT_JSON ")) {
             timelineLines.push(line);
             continue;
         }
@@ -1494,6 +1706,67 @@ function parseStepDescription(description: string | null | undefined) {
         timelineHeader,
         timelineLines,
         tail: tailLines.join(" "),
+    };
+}
+
+function parseProgressSegmentLine(line: string): ParsedProgressSegment {
+    if (line.startsWith("SEGMENT_JSON ")) {
+        try {
+            const parsed = JSON.parse(line.slice("SEGMENT_JSON ".length)) as {
+                id?: unknown;
+                start?: unknown;
+                end?: unknown;
+                sourceText?: unknown;
+                translatedText?: unknown;
+                speedFactor?: unknown;
+                rawDurationSeconds?: unknown;
+                targetDurationSeconds?: unknown;
+                warningCodes?: unknown;
+            };
+            return {
+                id: typeof parsed.id === "number" ? parsed.id : undefined,
+                start:
+                    typeof parsed.start === "number"
+                        ? parsed.start
+                        : undefined,
+                end: typeof parsed.end === "number" ? parsed.end : undefined,
+                sourceText:
+                    typeof parsed.sourceText === "string"
+                        ? parsed.sourceText
+                        : undefined,
+                translatedText:
+                    typeof parsed.translatedText === "string"
+                        ? parsed.translatedText
+                        : "",
+                speedFactor:
+                    typeof parsed.speedFactor === "number"
+                        ? parsed.speedFactor
+                        : undefined,
+                rawDurationSeconds:
+                    typeof parsed.rawDurationSeconds === "number"
+                        ? parsed.rawDurationSeconds
+                        : undefined,
+                targetDurationSeconds:
+                    typeof parsed.targetDurationSeconds === "number"
+                        ? parsed.targetDurationSeconds
+                        : undefined,
+                warningCodes: Array.isArray(parsed.warningCodes)
+                    ? parsed.warningCodes.filter(
+                          (entry): entry is string => typeof entry === "string",
+                      )
+                    : [],
+                rawLine: line,
+            };
+        } catch {
+            return { translatedText: line, warningCodes: [], rawLine: line };
+        }
+    }
+
+    const match = /^\[([^\]]+)\]\s+(.+)$/u.exec(line);
+    return {
+        translatedText: match?.[2] ?? line,
+        warningCodes: [],
+        rawLine: line,
     };
 }
 
@@ -1521,32 +1794,47 @@ function ProgressTaskDetails({
 
     return (
         <div
-            className={`mt-3 grid gap-3 ${
+            className={`mt-3 grid min-h-0 gap-3 ${
                 richStep
-                    ? "xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.9fr)]"
+                    ? "xl:grid-cols-[minmax(360px,0.9fr)_minmax(0,1.1fr)]"
                     : ""
             }`}
         >
-            <div className="border border-main bg-secondary/15">
-                <div className="flex items-center justify-between gap-2 border-b border-main px-3 py-2">
-                    <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">
-                        Flow steps
-                    </p>
-                    <p className="text-[10px] text-muted">
-                        {formatStepSummary(task.steps)}
-                    </p>
+            <div className="space-y-3">
+                <div className="border border-main bg-secondary/15">
+                    <div className="flex items-center justify-between gap-2 border-b border-main px-3 py-2">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">
+                            Flow steps
+                        </p>
+                        <p className="text-[10px] text-muted">
+                            {formatStepSummary(task.steps)}
+                        </p>
+                    </div>
+                    <div className="divide-y divide-soft">
+                        {task.steps.map((step) => (
+                            <ProgressStepRow
+                                key={step.id}
+                                step={step}
+                                now={now}
+                            />
+                        ))}
+                    </div>
                 </div>
-                <div className="divide-y divide-soft">
-                    {task.steps.map((step) => (
-                        <ProgressStepRow key={step.id} step={step} now={now} />
-                    ))}
-                </div>
+                {richStep ? (
+                    <ProgressRichStepPanel
+                        step={richStep.step}
+                        detail={richStep.detail}
+                    />
+                ) : null}
             </div>
-            {richStep ? (
-                <ProgressRichStepPanel
-                    step={richStep.step}
-                    detail={richStep.detail}
-                />
+            {richStep?.detail.timelineHeader &&
+            richStep.detail.timelineLines.length > 0 ? (
+                <div className="relative min-h-0">
+                    <ProgressSegmentsPanel
+                        header={richStep.detail.timelineHeader}
+                        lines={richStep.detail.timelineLines}
+                    />
+                </div>
             ) : null}
         </div>
     );
@@ -1559,14 +1847,6 @@ function ProgressRichStepPanel({
     step: ProgressTaskStep;
     detail: ReturnType<typeof parseStepDescription>;
 }) {
-    const [showFullTimeline, setShowFullTimeline] = useState(false);
-    const hasCollapsibleTimeline =
-        detail.timelineLines.length > PROGRESS_TIMELINE_COLLAPSED_LIMIT;
-    const visibleTimelineLines =
-        hasCollapsibleTimeline && !showFullTimeline
-            ? detail.timelineLines.slice(0, PROGRESS_TIMELINE_COLLAPSED_LIMIT)
-            : detail.timelineLines;
-
     return (
         <aside className="border border-main bg-main">
             <div className="border-b border-main bg-secondary/25 px-3 py-2">
@@ -1582,14 +1862,23 @@ function ProgressRichStepPanel({
                     <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
                         {detail.metadataLines.map((line, index) => {
                             const [label, ...valueParts] = line.split(":");
-                            const value = valueParts.join(":").trim();
+                            const normalizedLabel =
+                                label === "Measured stages" ? "Stages" : label;
+                            const value = valueParts
+                                .join(":")
+                                .trim()
+                                .replace(/\bvoice render\b/gu, "voice")
+                                .replace(
+                                    /\bfinal video render\b/gu,
+                                    "render (speed+mix+mirror+blur+sub)",
+                                );
                             return (
                                 <div
                                     key={`${step.id}-metadata-${index}`}
                                     className="border border-main bg-secondary/15 px-2 py-1.5"
                                 >
                                     <p className="text-[9px] font-semibold uppercase tracking-[0.08em] text-muted">
-                                        {value ? label : "Detail"}
+                                        {value ? normalizedLabel : "Detail"}
                                     </p>
                                     <p className="mt-0.5 break-words text-[10px] leading-4 text-main">
                                         {value || line}
@@ -1599,42 +1888,114 @@ function ProgressRichStepPanel({
                         })}
                     </div>
                 ) : null}
-                {detail.timelineHeader && detail.timelineLines.length > 0 ? (
-                    <div className="border border-main bg-secondary/20 px-2 py-1.5">
-                        <div className="flex items-center justify-between gap-2">
-                            <p className="text-[9px] font-semibold uppercase tracking-[0.08em] text-muted">
-                                {detail.timelineHeader}
-                            </p>
-                            {hasCollapsibleTimeline ? (
-                                <button
-                                    type="button"
-                                    onClick={() =>
-                                        setShowFullTimeline(
-                                            (current) => !current,
-                                        )
-                                    }
-                                    className="border border-main bg-main px-1.5 py-0.5 text-[9px] font-semibold text-main hover:bg-secondary"
-                                >
-                                    {showFullTimeline
-                                        ? "Hide"
-                                        : `Show all ${detail.timelineLines.length}`}
-                                </button>
-                            ) : null}
-                        </div>
-                        <div className="mt-1 max-h-80 space-y-1 overflow-y-auto pr-1">
-                            {visibleTimelineLines.map((line, index) => (
-                                <p
-                                    key={`${step.id}-timeline-${index}`}
-                                    className="rounded border border-main bg-main px-1.5 py-0.5 font-mono text-[9px] leading-4 text-main"
-                                >
-                                    {line}
-                                </p>
-                            ))}
-                        </div>
-                    </div>
-                ) : null}
             </div>
         </aside>
+    );
+}
+
+function ProgressSegmentsPanel({
+    header,
+    lines,
+}: {
+    header: string;
+    lines: string[];
+}) {
+    const [showSourceText, setShowSourceText] = useState(false);
+    const segments = lines.map(parseProgressSegmentLine);
+
+    return (
+        <section className="flex max-h-[32rem] min-h-0 flex-col border border-main bg-main xl:absolute xl:inset-0 xl:max-h-none">
+            <div className="flex items-center justify-between gap-2 border-b border-main bg-secondary/25 px-3 py-2">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">
+                    {header}
+                </p>
+                <button
+                    type="button"
+                    onClick={() => setShowSourceText((current) => !current)}
+                    className="border border-main bg-main px-2 py-1 text-[10px] font-semibold text-main hover:bg-secondary"
+                >
+                    {showSourceText ? "Hide source" : "Show source"}
+                </button>
+            </div>
+            <div className="min-h-0 flex-1 divide-y divide-soft overflow-y-auto">
+                {segments.map((segment, index) => {
+                    const isHighSpeed =
+                        typeof segment.speedFactor === "number" &&
+                        segment.speedFactor >= HIGH_PROGRESS_VOICE_SPEED_FACTOR;
+                    const hasWarnings = segment.warningCodes.length > 0;
+                    const tone = hasWarnings
+                        ? "border-l-4 border-l-amber-500 bg-amber-500/10"
+                        : isHighSpeed
+                          ? "border-l-4 border-l-rose-500 bg-rose-500/10"
+                          : "";
+
+                    return (
+                        <article
+                            key={`${segment.id ?? index}-${index}`}
+                            className={`px-2.5 py-1.5 ${tone}`}
+                        >
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                                <span className="font-mono text-[10px] font-semibold text-main">
+                                    #{segment.id ?? index + 1}
+                                </span>
+                                {segment.start !== undefined &&
+                                segment.end !== undefined ? (
+                                    <span className="font-mono text-[10px] text-muted">
+                                        {formatSegmentTimestamp(segment.start)}{" "}
+                                        {"->"}{" "}
+                                        {formatSegmentTimestamp(segment.end)}
+                                    </span>
+                                ) : null}
+                                {typeof segment.speedFactor === "number" ? (
+                                    <span
+                                        className={`border px-1.5 py-0.5 text-[9px] font-bold ${
+                                            isHighSpeed || hasWarnings
+                                                ? "border-rose-500/40 bg-rose-500/10 text-rose-700"
+                                                : "border-emerald-500/30 bg-emerald-500/10 text-emerald-700"
+                                        }`}
+                                    >
+                                        {segment.speedFactor.toFixed(2)}x
+                                    </span>
+                                ) : null}
+                                {hasWarnings ? (
+                                    <span className="text-[9px] font-semibold text-amber-700">
+                                        {segment.warningCodes.join(", ")}
+                                    </span>
+                                ) : null}
+                                {segment.rawDurationSeconds !== undefined &&
+                                segment.targetDurationSeconds !== undefined ? (
+                                    <span className="font-mono text-[9px] text-muted">
+                                        raw{" "}
+                                        {segment.rawDurationSeconds.toFixed(2)}
+                                        s / target{" "}
+                                        {segment.targetDurationSeconds.toFixed(
+                                            2,
+                                        )}
+                                        s
+                                    </span>
+                                ) : null}
+                            </div>
+                            <div
+                                className={`mt-1 grid gap-1 ${
+                                    showSourceText && segment.sourceText
+                                        ? "sm:grid-cols-2"
+                                        : ""
+                                }`}
+                            >
+                                <p className="text-[10px] leading-3.5 text-main">
+                                    {segment.translatedText || segment.rawLine}
+                                </p>
+                                {showSourceText && segment.sourceText ? (
+                                    <p className="border-l border-main pl-2 text-[9px] leading-3.5 text-muted">
+                                        {segment.sourceText}
+                                    </p>
+                                ) : null}
+                            </div>
+                        </article>
+                    );
+                })}
+            </div>
+        </section>
     );
 }
 

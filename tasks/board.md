@@ -25,6 +25,23 @@
 
 ## Review
 
+- `FAST-WORKSPACE-078` - Keep Segments from expanding progress row height.
+- `FAST-WORKSPACE-077` - Match Segments height to left progress column.
+- `FAST-WORKSPACE-076` - Let Progress segments use modal height.
+- `FAST-WORKSPACE-075` - Rebalance progress details and segments layout.
+- `FAST-WORKSPACE-074` - Compact progress segments and restore Stages label.
+- `FAST-WORKSPACE-073` - Use Server modal remote VIP config for Workspace runs.
+- `FAST-WORKSPACE-072` - Clarify remote VIP worker network failures.
+- `FAST-WORKSPACE-071` - Restore original Workspace canvas UI.
+- `FAST-WORKSPACE-070` - Center Workspace node creation coordinates.
+- `FAST-WORKSPACE-069` - Fit canvas view after seed creation.
+- `FAST-WORKSPACE-068` - Move progress segments left and show voice speed.
+- `FAST-WORKSPACE-067` - Clarify VIP stage timing and compact hashtags.
+- `FAST-WORKSPACE-066` - Configure remote VIP worker from Server modal.
+- `FAST-WORKSPACE-065` - Center Workspace empty state and suppress tar xattrs.
+- `FAST-WORKSPACE-064` - Expand Workspace canvas start area.
+- `FAST-WORKSPACE-063` - Stop remote Server status timeout spam.
+- `FAST-WORKSPACE-062` - Default VIP Piper model URLs and enrich Server status.
 - `FAST-WORKSPACE-061` - Maximize EC2 VIP render CPU utilization.
 - `FAST-WORKSPACE-060` - Add remote VIP worker status and kill controls.
 - `FAST-WORKSPACE-059` - Add async polling for long remote VIP jobs.

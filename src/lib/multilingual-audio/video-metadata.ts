@@ -19,6 +19,15 @@ export const PREFERRED_VI_METADATA_TAGS = [
   "hoạt hình trung quốc",
 ] as const;
 
+export function normalizeVietnameseHashtag(value: string) {
+  return value
+    .replace(/^#+/, "")
+    .trim()
+    .replace(/\s+/g, "")
+    .replace(/[^\p{L}\p{N}_-]+/gu, "")
+    .trim();
+}
+
 function normalizeSearchText(value: string) {
   return value
     .normalize("NFD")
@@ -36,7 +45,7 @@ function appendUniqueTags(existing: string[], additions: string[]) {
   const result: string[] = [];
 
   for (const tag of [...existing, ...additions]) {
-    const normalizedTag = tag.replace(/^#+/, "").trim();
+    const normalizedTag = normalizeVietnameseHashtag(tag);
     if (!normalizedTag) continue;
     const dedupeKey = normalizeSearchText(normalizedTag);
     if (seen.has(dedupeKey)) continue;
@@ -196,7 +205,7 @@ export async function generateVietnameseVideoMetadata(input: {
             content: [
               "Generate Vietnamese metadata for social publishing.",
               'Output JSON: {"title":"...","description":"...","hashtags":["tag1","tag2"]}.',
-              "Rules: keep title <= 100 chars, description <= 500 chars, hashtags 5-12 items, no # symbol in array items.",
+              "Rules: keep title <= 100 chars, description <= 500 chars, hashtags 5-12 items, no # symbol in array items, no spaces inside hashtag items.",
               `Preferred tags to include when content matches: ${PREFERRED_VI_METADATA_TAGS.join(", ")}.`,
               "If the content is a film review/recap/summary, include review phim and/or tóm tắt phim. If it is a story/novel/comic review or summary, include review truyện and/or tóm tắt truyện. If it is short-story content, include truyện ngắn. If it is animation/donghua/cartoon, include hoạt hình and add hoạt hình trung quốc when it is Chinese animation. If the content is a full review/recap, include review full.",
               `Source title: ${input.sourceTitle ?? ""}`,
@@ -248,7 +257,7 @@ export async function generateVietnameseVideoMetadata(input: {
   const hashtags = Array.isArray(parsed.hashtags)
     ? parsed.hashtags
         .filter((entry): entry is string => typeof entry === "string")
-        .map((entry) => entry.replace(/^#+/, "").trim())
+        .map(normalizeVietnameseHashtag)
         .filter(Boolean)
         .slice(0, 15)
     : [];

@@ -1,5 +1,209 @@
 # OmniVideo Changelog
 
+## FAST-WORKSPACE-078 - Keep Segments From Expanding Progress Row Height
+
+- Bumped app version from `0.10.106` to `0.10.107` as a patch release for Background Progress segment panel sizing.
+- Removed the JavaScript height-measurement approach for matching Segments height.
+- Wrapped the right column in a relative grid item and rendered Segments as an absolute panel on wide layouts.
+- Kept the segment list internally scrollable so the left Flow steps/Dubbing details column defines the row height.
+- Verification (FAST-WORKSPACE-078):
+  - `npm run test -- --run src/components/layout/topbar.test.ts` pass (1 file / 3 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+
+## FAST-WORKSPACE-077 - Match Segments Height to Left Progress Column
+
+- Bumped app version from `0.10.105` to `0.10.106` as a patch release for Background Progress column alignment.
+- Changed the rich progress grid to stretch columns to the same row height.
+- Made the Segments panel fill that row height on wide layouts instead of using a viewport-relative cap.
+- Kept the segment list internally scrollable.
+- Verification (FAST-WORKSPACE-077):
+  - `npm run test -- --run src/components/layout/topbar.test.ts` pass (1 file / 3 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+
+## FAST-WORKSPACE-076 - Let Progress Segments Use Modal Height
+
+- Bumped app version from `0.10.104` to `0.10.105` as a patch release for Background Progress segment panel height.
+- Removed the old fixed desktop `28rem` segment list cap.
+- Made the Segments panel a flex column with modal-relative max height on wide screens.
+- Kept the segment list internally scrollable while allowing it to use more available modal height.
+- Verification (FAST-WORKSPACE-076):
+  - `npm run test -- --run src/components/layout/topbar.test.ts` pass (1 file / 3 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+
+## FAST-WORKSPACE-075 - Rebalance Progress Details and Segments Layout
+
+- Bumped app version from `0.10.103` to `0.10.104` as a patch release for Background Progress layout.
+- Moved Dubbing details below Flow steps in the left column.
+- Moved Segments into the right progress column by itself.
+- Removed the forced full-width span from the `Stages` metadata card so it can fill the next available grid cell.
+- Verification (FAST-WORKSPACE-075):
+  - `npm run test -- --run src/components/layout/topbar.test.ts` pass (1 file / 3 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+
+## FAST-WORKSPACE-074 - Compact Progress Segments and Restore Stages Label
+
+- Bumped app version from `0.10.102` to `0.10.103` as a patch release for Background Progress readability.
+- Compacted VIP progress segment rows by moving raw/target duration into the header line and reducing row padding.
+- Kept source text available while rendering translated/source text in a two-column compact layout on wider screens.
+- Restored the stage summary presentation by rendering `Measured stages` as `Stages`.
+- Normalized the stage wording back to `render (speed+mix+mirror+blur+sub)` in Dubbing details.
+- Verification (FAST-WORKSPACE-074):
+  - `npm run test -- --run src/components/layout/topbar.test.ts` pass (1 file / 3 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+
+## FAST-WORKSPACE-073 - Use Server Modal Remote VIP Config for Workspace Runs
+
+- Bumped app version from `0.10.101` to `0.10.102` as a patch release for remote VIP worker configuration.
+- Moved browser-stored remote VIP worker URL/token into a shared helper used by both the topbar Server modal and Workspace.
+- Updated Workspace VIP runs to use the Server modal URL/token when the VIP node does not specify its own remote worker URL.
+- Preserved node-level remote worker URL override behavior.
+- Updated Workspace Check/Kill worker controls to include the Server modal token and fallback URL.
+- Added progress detail text showing whether the remote endpoint came from the node, Server modal, or server env fallback.
+- Verification (FAST-WORKSPACE-073):
+  - `npm run test -- --run src/features/workspace/workspace-canvas-panel.test.ts src/components/layout/topbar.test.ts` pass (2 files / 28 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+
+## FAST-WORKSPACE-072 - Clarify Remote VIP Worker Network Failures
+
+- Bumped app version from `0.10.100` to `0.10.101` as a patch release for remote VIP worker diagnostics.
+- Wrapped remote VIP worker network failures with endpoint and request phase context for start request, job poll, and artifact download.
+- Preserved existing worker HTTP/JSON error behavior while mapping connection-level failures to `SYS_DUBBING_MUX_FAILED` with HTTP 502.
+- Added regression coverage for start, poll, and artifact-download `fetch failed` paths.
+- Verification (FAST-WORKSPACE-072):
+  - `npm run test -- --run src/lib/multilingual-audio/remote-vip-worker.test.ts` pass (1 file / 8 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+
+## FAST-WORKSPACE-071 - Restore Original Workspace Canvas UI
+
+- Bumped app version from `0.10.99` to `0.10.100` as a patch release for reverting the Workspace canvas UI changes.
+- Restored Workspace canvas dimensions to the original `2400x1400`.
+- Restored the default canvas view to `{ x: 0, y: 0, scale: 0.6 }`.
+- Restored the empty draft panel to its original top-left placement.
+- Restored manual Add Node and seed application to the original coordinate behavior, removing the recent centered graph translation and viewport-fit helpers.
+- Verification (FAST-WORKSPACE-071):
+  - `npm run test -- --run src/features/workspace/workspace-canvas-panel.test.ts` pass (1 file / 25 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+
+## FAST-WORKSPACE-070 - Center Workspace Node Creation Coordinates
+
+- Bumped app version from `0.10.98` to `0.10.99` as a patch release for Workspace canvas node placement.
+- Added graph translation for Workspace seeds so seeded node coordinates are centered in the expanded canvas instead of remaining near the old top-left origin.
+- Changed manual catalog node creation to place new nodes around the currently visible canvas center with small collision offsets.
+- Removed the first-node auto-fit behavior from manual Add Node so the viewport does not unexpectedly jump after adding a node.
+- Verification (FAST-WORKSPACE-070):
+  - `npm run test -- --run src/features/workspace/workspace-canvas-panel.test.ts` pass (1 file / 26 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+
+## FAST-WORKSPACE-069 - Fit Canvas View After Seed Creation
+
+- Bumped app version from `0.10.97` to `0.10.98` as a patch release for Workspace seed visibility.
+- Added a node-bounds based canvas view fit helper that adjusts viewport transform without changing graph node coordinates.
+- Applied the fit helper after seed graph creation so seeded flows are visible immediately.
+- Applied the fit helper when adding the first catalog node so it appears in the current viewport.
+- Verification (FAST-WORKSPACE-069):
+  - `npm run test -- --run src/features/workspace/workspace-canvas-panel.test.ts` pass (1 file / 25 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+
+## FAST-WORKSPACE-068 - Move Progress Segments Left and Show Voice Speed
+
+- Bumped app version from `0.10.96` to `0.10.97` as a patch release for Workspace progress readability.
+- Moved progress `Segments` out of the right-side Dubbing details panel and into the left column below Flow steps.
+- Removed the old Show all/Hide segment behavior; segments are now always available in a scrollable panel.
+- Added a source-text toggle for progress segments.
+- Used existing VIP `voice.alignment.timeline` data, when present, to show per-segment voice speed, raw/target duration, and warning codes without extra fetches or payload requests.
+- Highlighted high-speed or warning voice segments in the progress segment list.
+- Verification (FAST-WORKSPACE-068):
+  - `npm run test -- --run src/features/workspace/workspace-canvas-panel.test.ts src/components/layout/topbar.test.ts` pass (2 files / 27 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+
+## FAST-WORKSPACE-067 - Clarify VIP Stage Timing and Compact Hashtags
+
+- Bumped app version from `0.10.95` to `0.10.96` as a patch release for VIP progress clarity and metadata quality.
+- Updated VIP Workspace progress details to show explicit `Voice render time`, `Final video render time`, and `Measured stages total` labels.
+- Removed the old VIP stage-log timestamp lines that could be split awkwardly by the progress detail parser.
+- Normalized generated Vietnamese metadata hashtags into compact no-space tokens, including inferred preferred tags such as `reviewfull` and `hoạthìnhtrungquốc`.
+- Verification (FAST-WORKSPACE-067):
+  - `npm run test -- --run src/lib/multilingual-audio/video-metadata.test.ts src/features/workspace/workspace-canvas-panel.test.ts` pass (2 files / 29 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+
+## FAST-WORKSPACE-066 - Configure Remote VIP Worker from Server Modal
+
+- Bumped app version from `0.10.94` to `0.10.95` as a patch release for Vercel remote worker operations.
+- Added remote worker URL and token fields to the topbar Server modal, persisted in browser localStorage for the current operator.
+- Updated Server status refresh and kill requests to use the modal-configured worker URL/token while preserving server environment variable fallback.
+- Added proxy support for a caller-provided `X-OmniVideo-Remote-Vip-Token` header so Vercel deployments can call EC2 workers without storing the token in Vercel env.
+- Added focused regression coverage for browser-provided worker tokens and Server modal config markers.
+- Verification (FAST-WORKSPACE-066):
+  - `npm run test -- --run src/app/api/audio/remote-vip-worker/route.test.ts src/components/layout/topbar.test.ts` pass (2 files / 7 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+
+## FAST-WORKSPACE-065 - Center Workspace Empty State and Suppress Tar Xattrs
+
+- Bumped app version from `0.10.93` to `0.10.94` as a patch release for Workspace first-load and EC2 launcher polish.
+- Moved the `Workspace draft is empty` panel to the center of the expanded canvas plane instead of anchoring it near the top-left origin.
+- Updated the default Workspace canvas view so the centered empty-state panel is visible when entering an empty Workspace.
+- Added `COPYFILE_DISABLE=1` to EC2 worker archive creation so macOS extended attributes are not packed into the tarball, avoiding `LIBARCHIVE.xattr.com.apple.provenance` warnings during remote extract.
+- Verification (FAST-WORKSPACE-065):
+  - `npm run test -- --run src/features/workspace/workspace-canvas-panel.test.ts` pass (1 file / 24 tests).
+  - `bash -n omnivideo-vip-spot.sh` and `zsh -n omnivideo-vip-spot.sh` pass.
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+
+## FAST-WORKSPACE-064 - Expand Workspace Canvas Start Area
+
+- Bumped app version from `0.10.92` to `0.10.93` as a patch release for Workspace canvas usability.
+- Increased the Workspace canvas plane from `2400x1400` to `6400x3600` so drag/drop flows have substantially more room.
+- Changed the initial canvas viewport from the top-left origin to a centered starting offset with a slightly larger default scale.
+- Verification (FAST-WORKSPACE-064):
+  - `npm run test -- --run src/features/workspace/workspace-canvas-panel.test.ts` pass (1 file / 23 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+
+## FAST-WORKSPACE-063 - Stop Remote Server Status Timeout Spam
+
+- Bumped app version from `0.10.91` to `0.10.92` as a patch release for remote Server status reliability.
+- Added controlled timeout/catch handling to the remote VIP worker proxy so unreachable EC2 workers return concise JSON instead of repeated `fetch failed` stack traces.
+- Paused Server modal auto-refresh after a failed worker check and changed the action to `Retry` until a successful manual refresh resumes polling.
+- Added regression coverage for unreachable worker proxy behavior and Server modal auto-refresh pause markers.
+- Verification (FAST-WORKSPACE-063):
+  - `npm run test -- --run src/app/api/audio/remote-vip-worker/route.test.ts src/components/layout/topbar.test.ts` pass (2 files / 6 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+
+## FAST-WORKSPACE-062 - Default VIP Piper Model URLs and Enrich Server Status
+
+- Bumped app version from `0.10.90` to `0.10.91` as a patch release for remote VIP worker operations.
+- Added default Google Drive Piper model/config URLs to `omnivideo-vip-spot.sh`, while preserving `PIPER_MODEL_URL` and `PIPER_MODEL_CONFIG_URL` env overrides.
+- Extended remote VIP worker status with optional EC2 metadata from IMDS, including instance id/type, region/AZ, and public/private IPs.
+- Added a bounded non-interactive `top` snapshot to remote VIP worker status so the topbar Server modal can show current CPU/process load.
+- Updated the topbar Server modal to display EC2 instance details and top output when available.
+- Verification (FAST-WORKSPACE-062):
+  - `npm run test -- --run src/app/api/audio/video-vip-voice-render/route.test.ts src/components/layout/topbar.test.ts` pass (2 files / 13 tests).
+  - `bash -n omnivideo-vip-spot.sh` and `zsh -n omnivideo-vip-spot.sh` pass.
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+
 ## FAST-WORKSPACE-061 - Maximize EC2 VIP Render CPU Utilization
 
 - Bumped app version from `0.10.89` to `0.10.90` as a patch release for EC2 VIP render throughput and reliability.

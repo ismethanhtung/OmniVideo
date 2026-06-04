@@ -40,6 +40,60 @@ describe("remote VIP worker proxy API", () => {
         );
     });
 
+    it("uses caller-provided worker token before env fallback", async () => {
+        process.env.OMNIVIDEO_REMOTE_VIP_TOKEN = "env-secret";
+        const fetchMock = vi.fn(async () =>
+            Response.json({
+                ok: true,
+                data: { jobs: [], activeProcesses: [] },
+            }),
+        );
+        vi.stubGlobal("fetch", fetchMock);
+
+        const response = await GET(
+            new Request(
+                "http://localhost/api/audio/remote-vip-worker?endpoint=http%3A%2F%2Fworker.example",
+                {
+                    headers: {
+                        "X-OmniVideo-Remote-Vip-Token": "browser-secret",
+                    },
+                },
+            ),
+        );
+
+        expect(response.status).toBe(200);
+        expect(fetchMock).toHaveBeenCalledWith(
+            new URL("http://worker.example/api/audio/video-vip-voice-render"),
+            expect.objectContaining({
+                headers: { Authorization: "Bearer browser-secret" },
+            }),
+        );
+    });
+
+    it("returns a controlled unavailable response when the worker cannot be reached", async () => {
+        const fetchMock = vi.fn(async () => {
+            throw new TypeError("fetch failed");
+        });
+        vi.stubGlobal("fetch", fetchMock);
+
+        const response = await GET(
+            new Request(
+                "http://localhost/api/audio/remote-vip-worker?endpoint=http%3A%2F%2F43.198.97.33%3A8787",
+            ),
+        );
+        const payload = await response.json();
+
+        expect(response.status).toBe(502);
+        expect(payload).toMatchObject({
+            ok: false,
+            errorCode: "SYS_DUBBING_MUX_FAILED",
+            error: expect.stringContaining(
+                "Remote VIP worker is unavailable",
+            ),
+        });
+        expect(payload.error).not.toContain("ConnectTimeoutError");
+    });
+
     it("proxies worker kill requests", async () => {
         const fetchMock = vi.fn(async () =>
             Response.json({

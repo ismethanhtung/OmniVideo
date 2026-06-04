@@ -63,6 +63,43 @@ function normalizeEndpoint(endpoint: string) {
     return endpoint.replace(/\/+$/u, "");
 }
 
+function getErrorDetail(error: unknown) {
+    if (!(error instanceof Error)) return String(error);
+    const cause = (error as Error & { cause?: unknown }).cause;
+    if (cause instanceof Error) {
+        const code =
+            "code" in cause && typeof cause.code === "string"
+                ? ` (${cause.code})`
+                : "";
+        return `${error.message}: ${cause.message}${code}`;
+    }
+    if (cause && typeof cause === "object") {
+        const record = cause as Record<string, unknown>;
+        const message =
+            typeof record.message === "string" ? record.message : "";
+        const code = typeof record.code === "string" ? ` (${record.code})` : "";
+        return message ? `${error.message}: ${message}${code}` : error.message;
+    }
+    return error.message;
+}
+
+async function fetchRemoteVipWorker(
+    fetchImpl: typeof fetch,
+    url: string,
+    init: RequestInit,
+    phase: string,
+) {
+    try {
+        return await fetchImpl(url, init);
+    } catch (error) {
+        throw new ChineseTranscriptionError(
+            "SYS_DUBBING_MUX_FAILED",
+            `Remote VIP worker ${phase} failed for ${url}: ${getErrorDetail(error)}`,
+            502,
+        );
+    }
+}
+
 export function resolveRemoteVipWorkerConfig(options: RemoteVipWorkerOptions = {}) {
     const endpoint =
         options.endpoint?.trim() ||
@@ -175,8 +212,10 @@ async function postRemoteVipWorker<Result extends RemoteVipWorkerResponseData>(
     }
 
     const fetchImpl = options.fetchImpl ?? fetch;
-    const response = await fetchImpl(
-        `${normalizeEndpoint(endpoint)}/api/audio/video-vip-voice-render`,
+    const workerUrl = `${normalizeEndpoint(endpoint)}/api/audio/video-vip-voice-render`;
+    const response = await fetchRemoteVipWorker(
+        fetchImpl,
+        workerUrl,
         {
             method: "POST",
             headers: {
@@ -184,6 +223,7 @@ async function postRemoteVipWorker<Result extends RemoteVipWorkerResponseData>(
             },
             body: formData,
         },
+        "start request",
     );
 
     const body = (await response.json().catch(() => null)) as
@@ -259,16 +299,19 @@ async function pollRemoteVipWorkerJob<Result extends RemoteVipWorkerResponseData
             await delay(input.pollIntervalMs);
         }
         attempt += 1;
-        const response = await input.fetchImpl(
-            `${normalizeEndpoint(input.endpoint)}/api/audio/video-vip-voice-render?jobId=${encodeURIComponent(
-                input.jobId,
-            )}`,
+        const workerUrl = `${normalizeEndpoint(input.endpoint)}/api/audio/video-vip-voice-render?jobId=${encodeURIComponent(
+            input.jobId,
+        )}`;
+        const response = await fetchRemoteVipWorker(
+            input.fetchImpl,
+            workerUrl,
             {
                 method: "GET",
                 headers: {
                     ...(input.token ? { Authorization: `Bearer ${input.token}` } : {}),
                 },
             },
+            "job poll",
         );
         const body = (await response.json().catch(() => null)) as
             | RemoteVipWorkerJobResponse
@@ -331,16 +374,19 @@ async function hydrateRemoteVipWorkerResult<Result extends RemoteVipWorkerRespon
     },
 ): Promise<Result> {
     if (result.artifactId) {
-        const artifactResponse = await input.fetchImpl(
-            `${normalizeEndpoint(input.endpoint)}/api/workspace/artifacts/${encodeURIComponent(
-                result.artifactId,
-            )}/download`,
+        const artifactUrl = `${normalizeEndpoint(input.endpoint)}/api/workspace/artifacts/${encodeURIComponent(
+            result.artifactId,
+        )}/download`;
+        const artifactResponse = await fetchRemoteVipWorker(
+            input.fetchImpl,
+            artifactUrl,
             {
                 method: "GET",
                 headers: {
                     ...(input.token ? { Authorization: `Bearer ${input.token}` } : {}),
                 },
             },
+            "artifact download",
         );
         if (!artifactResponse.ok) {
             throw new ChineseTranscriptionError(

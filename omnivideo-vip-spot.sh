@@ -16,10 +16,12 @@ INSTANCE_NAME="${INSTANCE_NAME:-omnivideo-vip-worker-spot}"
 WORKER_PORT="${WORKER_PORT:-8787}"
 ROOT_VOLUME_SIZE_GB="${ROOT_VOLUME_SIZE_GB:-80}"
 
-# Provide both URLs to enable EC2 Piper voice generation.
-# Google Drive sharing links and direct-download URLs are supported.
-PIPER_MODEL_URL="${PIPER_MODEL_URL:-}"
-PIPER_MODEL_CONFIG_URL="${PIPER_MODEL_CONFIG_URL:-}"
+# Default Piper voice model used by the VIP EC2 voice/render worker.
+# Override both env vars when testing another model.
+DEFAULT_PIPER_MODEL_URL="https://drive.google.com/file/d/1F9rYPsYJ4--fEQ6A7Tv0Wxy1IVvHqzhb/view?usp=sharing"
+DEFAULT_PIPER_MODEL_CONFIG_URL="https://drive.google.com/file/d/1qDZm60pX3-n6ODYixbTmL_VeAndVtMML/view?usp=sharing"
+PIPER_MODEL_URL="${PIPER_MODEL_URL:-$DEFAULT_PIPER_MODEL_URL}"
+PIPER_MODEL_CONFIG_URL="${PIPER_MODEL_CONFIG_URL:-$DEFAULT_PIPER_MODEL_CONFIG_URL}"
 
 REMOTE_APP_DIR="/opt/omnivideo/app"
 REMOTE_ARCHIVE="/tmp/omnivideo-worker.tar.gz"
@@ -219,7 +221,7 @@ ssh "${SSH_OPTS[@]}" "ubuntu@$PUBLIC_IP" "sudo cloud-init status --wait"
 
 TMP_ARCHIVE="$(mktemp -t omnivideo-worker.XXXXXX.tar.gz)"
 log "Packing current repo into $TMP_ARCHIVE..."
-tar \
+COPYFILE_DISABLE=1 tar \
   --exclude='.git' \
   --exclude='.next' \
   --exclude='node_modules' \

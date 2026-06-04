@@ -47,6 +47,18 @@ type RemoteVipWorkerSystemProcess = {
     kind: "piper" | "ffmpeg";
     command: string;
 };
+type RemoteVipWorkerEc2Metadata = {
+    instanceId?: string;
+    instanceType?: string;
+    availabilityZone?: string;
+    region?: string;
+    privateIp?: string;
+    publicIp?: string;
+};
+type RemoteVipWorkerTopSnapshot = {
+    capturedAt: string;
+    lines: string[];
+};
 
 const REMOTE_VIP_JOB_TTL_MS = 6 * 60 * 60 * 1000;
 
@@ -297,6 +309,93 @@ function killSystemWorkerProcesses(input: {
     return killed;
 }
 
+async function fetchEc2MetadataText(path: string, token: string | null) {
+    try {
+        const response = await fetch(
+            `http://169.254.169.254/latest/${path.replace(/^\/+/u, "")}`,
+            {
+                headers: token ? { "X-aws-ec2-metadata-token": token } : {},
+                signal: AbortSignal.timeout(700),
+            },
+        );
+        if (!response.ok) return "";
+        return (await response.text()).trim();
+    } catch {
+        return "";
+    }
+}
+
+async function readEc2Metadata(): Promise<RemoteVipWorkerEc2Metadata | null> {
+    let token: string | null = null;
+    try {
+        const tokenResponse = await fetch(
+            "http://169.254.169.254/latest/api/token",
+            {
+                method: "PUT",
+                headers: { "X-aws-ec2-metadata-token-ttl-seconds": "60" },
+                signal: AbortSignal.timeout(700),
+            },
+        );
+        if (tokenResponse.ok) {
+            token = (await tokenResponse.text()).trim();
+        }
+    } catch {
+        token = null;
+    }
+
+    const [instanceId, instanceType, documentJson, publicIp, privateIp] =
+        await Promise.all([
+            fetchEc2MetadataText("meta-data/instance-id", token),
+            fetchEc2MetadataText("meta-data/instance-type", token),
+            fetchEc2MetadataText("dynamic/instance-identity/document", token),
+            fetchEc2MetadataText("meta-data/public-ipv4", token),
+            fetchEc2MetadataText("meta-data/local-ipv4", token),
+        ]);
+
+    let region = "";
+    let availabilityZone = "";
+    try {
+        const document = JSON.parse(documentJson) as {
+            region?: unknown;
+            availabilityZone?: unknown;
+        };
+        region = typeof document.region === "string" ? document.region : "";
+        availabilityZone =
+            typeof document.availabilityZone === "string"
+                ? document.availabilityZone
+                : "";
+    } catch {
+        // Optional EC2 metadata is omitted when unavailable.
+    }
+
+    const metadata = {
+        instanceId,
+        instanceType,
+        availabilityZone,
+        region,
+        privateIp,
+        publicIp,
+    };
+    return Object.values(metadata).some(Boolean) ? metadata : null;
+}
+
+function readTopSnapshot(): RemoteVipWorkerTopSnapshot | null {
+    try {
+        const output = execFileSync("top", ["-b", "-n", "1", "-w", "160"], {
+            timeout: 2500,
+        }).toString("utf8");
+        const lines = output
+            .split(/\r?\n/u)
+            .map((line) => line.trimEnd())
+            .filter(Boolean)
+            .slice(0, 35);
+        if (lines.length === 0) return null;
+        return { capturedAt: new Date().toISOString(), lines };
+    } catch {
+        return null;
+    }
+}
+
 function cancelWorkerJobs(input: { jobId?: string }) {
     const now = new Date().toISOString();
     const cancelledJobs: string[] = [];
@@ -320,7 +419,7 @@ function cancelWorkerJobs(input: { jobId?: string }) {
     return { cancelledJobs, killedProcesses, killedSystemProcesses };
 }
 
-export function GET(request: Request) {
+export async function GET(request: Request) {
     const url = new URL(request.url);
     const jobId = url.searchParams.get("jobId")?.trim();
     if (jobId) {
@@ -344,6 +443,11 @@ export function GET(request: Request) {
         });
     }
 
+    const [ec2, top] = await Promise.all([
+        readEc2Metadata(),
+        Promise.resolve(readTopSnapshot()),
+    ]);
+
     return NextResponse.json({
         ok: true,
         service: "omnivideo-vip-voice-render",
@@ -351,6 +455,8 @@ export function GET(request: Request) {
             jobs: Array.from(remoteVipWorkerJobs.values()).map(serializeWorkerJob),
             activeProcesses: listActivePiperChildProcesses(),
             systemProcesses: listSystemWorkerProcesses(),
+            ec2,
+            top,
         },
     });
 }

@@ -75,6 +75,7 @@ import {
     WORKSPACE_SEED_TEMPLATES,
     type WorkspaceSeedTemplate,
 } from "@/lib/workspace/workspace-seeds";
+import { readRemoteVipWorkerBrowserConfig } from "@/lib/workspace/remote-vip-worker-config";
 import {
     DEFAULT_TRANSLATION_MODEL,
     DEFAULT_PIPER_TTS_SETTINGS,
@@ -456,7 +457,20 @@ function buildVipMetadataTagLine(metadata: VideoVipProcessingResult["metadata"])
     if (!Array.isArray(metadata.hashtags) || metadata.hashtags.length === 0) {
         return "Tags: (none)";
     }
-    return `Tags: ${metadata.hashtags.map((tag) => `#${tag}`).join(" ")}`;
+    return `Tags: ${metadata.hashtags.map((tag) => `#${tag.replace(/\s+/gu, "")}`).join(" ")}`;
+}
+
+function getVipMeasuredStageTotalMs(
+    stage: VideoVipProcessingResult["stages"],
+) {
+    return (
+        stage.preprocessDurationMs +
+        stage.transcriptionDurationMs +
+        stage.translationDurationMs +
+        stage.voiceDurationMs +
+        stage.finalRenderDurationMs +
+        stage.metadataDurationMs
+    );
 }
 
 function buildVipProgressStepDescription(input: {
@@ -475,25 +489,36 @@ function buildVipProgressStepDescription(input: {
         `Transcript: ${input.result.transcript.segments.length} segment(s) · ${input.result.transcript.words.length} word(s)`,
         `Translation: ${segments.length} segment(s) · ${input.result.translation.provider.name} · ${input.result.translation.model}`,
         `Voice: ${input.result.voice.segmentCount} segment(s) · ${formatBytes(input.result.voice.byteLength)} · ${input.result.voice.alignment.mode} alignment`,
+        `Voice render time: ${formatDurationMs(stage.voiceDurationMs)}`,
+        `Final video render time: ${formatDurationMs(stage.finalRenderDurationMs)}`,
+        `Measured stages total: ${formatDurationMs(getVipMeasuredStageTotalMs(stage))}`,
         `Title: ${input.result.metadata.title}`,
         `Description: ${summarizeTextForProgress(input.result.metadata.description, 180)}`,
         buildVipMetadataTagLine(input.result.metadata),
-        `Stages: preprocess ${formatDurationMs(stage.preprocessDurationMs)} · transcript ${formatDurationMs(stage.transcriptionDurationMs)} · translate ${formatDurationMs(stage.translationDurationMs)} · voice ${formatDurationMs(stage.voiceDurationMs)} · render (speed+mix+mirror+blur+sub) ${formatDurationMs(stage.finalRenderDurationMs)} · metadata ${formatDurationMs(stage.metadataDurationMs)}`,
-        "Stage log:",
-        `Completed transcript stage (${formatDurationMs(stage.transcriptionDurationMs)}).`,
-        `Completed translation stage (${formatDurationMs(stage.translationDurationMs)}).`,
-        `Completed voice generation stage (${formatDurationMs(stage.voiceDurationMs)}).`,
-        `Completed final render stage (speed + mirror + blur + subtitles + audio mix) (${formatDurationMs(stage.finalRenderDurationMs)}).`,
-        `Completed metadata generation stage (${formatDurationMs(stage.metadataDurationMs)}).`,
+        `Measured stages: preprocess ${formatDurationMs(stage.preprocessDurationMs)} · transcript ${formatDurationMs(stage.transcriptionDurationMs)} · translate ${formatDurationMs(stage.translationDurationMs)} · voice render ${formatDurationMs(stage.voiceDurationMs)} · final video render ${formatDurationMs(stage.finalRenderDurationMs)} · metadata ${formatDurationMs(stage.metadataDurationMs)}`,
     ];
 
     if (segments.length === 0) return [summary, ...metadataLines].join("\n");
     const header = `Segments (${segments.length} total):`;
+    const voiceTimingBySourceSegmentId = new Map(
+        (input.result.voice.alignment.timeline ?? []).map((chunk) => [
+            chunk.sourceSegmentId ?? chunk.segmentId,
+            chunk,
+        ]),
+    );
     const timelineLines = segments.map((segment) => {
-        const segmentText = summarizeTextForProgress(
-            segment.translatedText || segment.sourceText || "",
-        );
-        return `[${formatTimelineTimestamp(segment.start)} -> ${formatTimelineTimestamp(segment.end)}] ${segmentText}`;
+        const voiceChunk = voiceTimingBySourceSegmentId.get(segment.id);
+        return `SEGMENT_JSON ${JSON.stringify({
+            id: segment.id,
+            start: segment.start,
+            end: segment.end,
+            sourceText: segment.sourceText,
+            translatedText: segment.translatedText,
+            speedFactor: voiceChunk?.speedFactor,
+            rawDurationSeconds: voiceChunk?.rawDurationSeconds,
+            targetDurationSeconds: voiceChunk?.targetDurationSeconds,
+            warningCodes: voiceChunk?.warningCodes ?? [],
+        })}`;
     });
 
     return [summary, ...metadataLines, header, ...timelineLines]
@@ -2398,6 +2423,21 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
         resetRunState(next, true);
     };
 
+    const resolveRemoteVipWorkerRuntimeConfig = (
+        vipNode: WorkspaceNodeInstance,
+    ) => {
+        const browserConfig = readRemoteVipWorkerBrowserConfig();
+        const nodeEndpoint = getStringConfig(
+            vipNode,
+            "remoteVoiceRenderEndpoint",
+        ).trim();
+        return {
+            endpoint: nodeEndpoint || browserConfig.endpoint.trim(),
+            token: browserConfig.token.trim(),
+            source: nodeEndpoint ? "node" : browserConfig.endpoint.trim() ? "server" : "env",
+        };
+    };
+
     const clearDraft = () => {
         if (
             !confirm(
@@ -4227,14 +4267,18 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         "voiceRenderExecutionMode",
                         voiceRenderExecutionMode,
                     );
-                    const remoteVoiceRenderEndpoint = getStringConfig(
-                        vipNode,
-                        "remoteVoiceRenderEndpoint",
-                    ).trim();
-                    if (remoteVoiceRenderEndpoint) {
+                    const remoteVipWorkerConfig =
+                        resolveRemoteVipWorkerRuntimeConfig(vipNode);
+                    if (remoteVipWorkerConfig.endpoint) {
                         formData.set(
                             "remoteVoiceRenderEndpoint",
-                            remoteVoiceRenderEndpoint,
+                            remoteVipWorkerConfig.endpoint,
+                        );
+                    }
+                    if (remoteVipWorkerConfig.token) {
+                        formData.set(
+                            "remoteVoiceRenderToken",
+                            remoteVipWorkerConfig.token,
                         );
                     }
                     formData.set(
@@ -4498,6 +4542,16 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                             "Remote voice + render mode enabled: Piper voice generation and final render run on the configured EC2 worker.",
                         );
                     }
+                    if (
+                        voiceRenderExecutionMode === "remote" ||
+                        voiceRenderExecutionMode === "remote-voice-render"
+                    ) {
+                        appendVipStageLog(
+                            remoteVipWorkerConfig.endpoint
+                                ? `Remote worker endpoint source: ${remoteVipWorkerConfig.source}.`
+                                : "Remote worker endpoint not set in node or Server modal; server env fallback will be used if configured.",
+                        );
+                    }
                     if (vipTranslationMode === "import") {
                         appendVipStageLog(
                             "Import mode enabled: VIP will use manual translated lines instead of AI translate API.",
@@ -4615,19 +4669,13 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         `${formatBytes(vipPayload.data.byteLength)} MP4.`,
                     );
                     appendVipStageLog(
-                        `Completed transcript stage (${formatDurationMs(vipPayload.data.stages.transcriptionDurationMs)}).`,
+                        `Measured stages total: ${formatDurationMs(getVipMeasuredStageTotalMs(vipPayload.data.stages))}`,
                     );
                     appendVipStageLog(
-                        `Completed translation stage (${formatDurationMs(vipPayload.data.stages.translationDurationMs)}).`,
+                        `Voice render time: ${formatDurationMs(vipPayload.data.stages.voiceDurationMs)}`,
                     );
                     appendVipStageLog(
-                        `Completed voice generation stage (${formatDurationMs(vipPayload.data.stages.voiceDurationMs)}).`,
-                    );
-                    appendVipStageLog(
-                        `Completed final render stage (speed + mirror + blur + subtitles + audio mix) (${formatDurationMs(vipPayload.data.stages.finalRenderDurationMs)}).`,
-                    );
-                    appendVipStageLog(
-                        `Completed metadata generation stage (${formatDurationMs(vipPayload.data.stages.metadataDurationMs)}).`,
+                        `Final video render time: ${formatDurationMs(vipPayload.data.stages.finalRenderDurationMs)}`,
                     );
                     appendVipStageLog(
                         `Metadata title: ${vipPayload.data.metadata.title}`,
@@ -7505,11 +7553,23 @@ function NodeRuntimeConfig({
     >("idle");
 
     const buildRemoteWorkerQuery = () => {
-        const endpoint = getStringConfig(
+        const browserConfig = readRemoteVipWorkerBrowserConfig();
+        const nodeEndpoint = getStringConfig(
             node,
             "remoteVoiceRenderEndpoint",
         ).trim();
+        const endpoint = nodeEndpoint || browserConfig.endpoint.trim();
         return endpoint ? `?endpoint=${encodeURIComponent(endpoint)}` : "";
+    };
+
+    const buildRemoteWorkerRequestInit = (method?: "GET" | "DELETE") => {
+        const token = readRemoteVipWorkerBrowserConfig().token.trim();
+        return {
+            method: method ?? "GET",
+            headers: token
+                ? { "X-OmniVideo-Remote-Vip-Token": token }
+                : undefined,
+        } satisfies RequestInit;
     };
 
     const formatRemoteWorkerStatus = (payload: {
@@ -7576,6 +7636,7 @@ function NodeRuntimeConfig({
             }>({
                 url: `/api/audio/remote-vip-worker${buildRemoteWorkerQuery()}`,
                 actionLabel: "Remote VIP worker status",
+                init: buildRemoteWorkerRequestInit(),
             });
             setRemoteWorkerStatus(formatRemoteWorkerStatus(payload));
         } catch (error) {
@@ -7602,7 +7663,7 @@ function NodeRuntimeConfig({
             }>({
                 url: `/api/audio/remote-vip-worker${buildRemoteWorkerQuery()}`,
                 actionLabel: "Remote VIP worker kill",
-                init: { method: "DELETE" },
+                init: buildRemoteWorkerRequestInit("DELETE"),
             });
             setRemoteWorkerStatus(formatRemoteWorkerStatus(payload));
         } catch (error) {

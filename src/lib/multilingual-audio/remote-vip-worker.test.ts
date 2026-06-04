@@ -214,6 +214,61 @@ describe("remote VIP worker client", () => {
         });
     });
 
+    it("maps worker start network failures to endpoint-specific VIP errors", async () => {
+        const cause = new Error("connect ECONNREFUSED 16.163.29.17:8787") as Error & {
+            code?: string;
+        };
+        cause.code = "ECONNREFUSED";
+        const error = new TypeError("fetch failed") as TypeError & {
+            cause?: Error;
+        };
+        error.cause = cause;
+        const fetchImpl = vi.fn<typeof fetch>().mockRejectedValueOnce(error);
+
+        await expect(
+            runRemoteVideoVipRender(baseInput, {
+                endpoint: "http://16.163.29.17:8787",
+                fetchImpl,
+            }),
+        ).rejects.toMatchObject({
+            code: "SYS_DUBBING_MUX_FAILED",
+            status: 502,
+            message:
+                "Remote VIP worker start request failed for http://16.163.29.17:8787/api/audio/video-vip-voice-render: fetch failed: connect ECONNREFUSED 16.163.29.17:8787 (ECONNREFUSED)",
+        });
+    });
+
+    it("maps worker poll network failures to endpoint-specific VIP errors", async () => {
+        const fetchImpl = vi
+            .fn<typeof fetch>()
+            .mockResolvedValueOnce(
+                Response.json(
+                    {
+                        ok: true,
+                        data: {
+                            jobId: "job-network",
+                            status: "running",
+                        },
+                    },
+                    { status: 202 },
+                ),
+            )
+            .mockRejectedValueOnce(new TypeError("fetch failed"));
+
+        await expect(
+            runRemoteVideoVipRender(baseInput, {
+                endpoint: "http://worker.example",
+                fetchImpl,
+                pollIntervalMs: 0,
+            }),
+        ).rejects.toMatchObject({
+            code: "SYS_DUBBING_MUX_FAILED",
+            status: 502,
+            message:
+                "Remote VIP worker job poll failed for http://worker.example/api/audio/video-vip-voice-render?jobId=job-network: fetch failed",
+        });
+    });
+
     it("uploads source video and transcript payload for EC2 voice plus render", async () => {
         const fetchImpl = vi
             .fn<typeof fetch>()
@@ -356,6 +411,53 @@ describe("remote VIP worker client", () => {
         ).rejects.toMatchObject({
             code: "SYS_DUBBING_MUX_FAILED",
             status: 404,
+        });
+    });
+
+    it("maps remote artifact download network failures to endpoint-specific VIP errors", async () => {
+        const fetchImpl = vi
+            .fn<typeof fetch>()
+            .mockResolvedValueOnce(
+                Response.json({
+                    ok: true,
+                    data: {
+                        artifactId: "artifact-network",
+                        mimeType: "video/mp4",
+                        extension: "mp4",
+                        fileName: "source-done.mp4",
+                        byteLength: 12,
+                        generationDurationMs: 100,
+                        voice: {
+                            mimeType: "audio/wav",
+                            extension: "wav",
+                            fileName: "voice.wav",
+                            byteLength: 10,
+                            segmentCount: 1,
+                            generationDurationMs: 50,
+                            alignment: { mode: "timeline", chunks: 1 },
+                            settings: { binaryPath: "piper", modelPath: "" },
+                            provider: { name: "piper", mode: "local-cli" },
+                        },
+                        stages: {
+                            voiceDurationMs: 50,
+                            finalRenderDurationMs: 40,
+                        },
+                        mix: { originalAudioVolume: 0, voiceVolume: 1 },
+                    },
+                }),
+            )
+            .mockRejectedValueOnce(new TypeError("fetch failed"));
+
+        await expect(
+            runRemoteVideoVipRender(baseInput, {
+                endpoint: "http://worker.example",
+                fetchImpl,
+            }),
+        ).rejects.toMatchObject({
+            code: "SYS_DUBBING_MUX_FAILED",
+            status: 502,
+            message:
+                "Remote VIP worker artifact download failed for http://worker.example/api/workspace/artifacts/artifact-network/download: fetch failed",
         });
     });
 });

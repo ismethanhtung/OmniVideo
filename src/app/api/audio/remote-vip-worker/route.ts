@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
+const REMOTE_WORKER_PROXY_TIMEOUT_MS = 3000;
+
 function normalizeEndpoint(endpoint: string) {
     return endpoint.replace(/\/+$/u, "");
 }
@@ -17,6 +19,24 @@ function resolveEndpoint(request: Request) {
 
 function resolveToken() {
     return process.env.OMNIVIDEO_REMOTE_VIP_TOKEN?.trim() || "";
+}
+
+function resolveCallerToken(request: Request) {
+    return (
+        request.headers.get("x-omnivideo-remote-vip-token")?.trim() ||
+        resolveToken()
+    );
+}
+
+function buildUnavailableResponse(input: { endpoint: string; method: string }) {
+    return NextResponse.json(
+        {
+            ok: false,
+            errorCode: "SYS_DUBBING_MUX_FAILED",
+            error: `Remote VIP worker is unavailable at ${input.endpoint}. Check whether the EC2 worker is running, then refresh manually.`,
+        },
+        { status: 502 },
+    );
 }
 
 async function proxyRemoteVipWorker(request: Request, method: "GET" | "DELETE") {
@@ -39,13 +59,22 @@ async function proxyRemoteVipWorker(request: Request, method: "GET" | "DELETE") 
     );
     if (jobId) remoteUrl.searchParams.set("jobId", jobId);
 
-    const token = resolveToken();
-    const response = await fetch(remoteUrl, {
-        method,
-        headers: {
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-    });
+    const token = resolveCallerToken(request);
+    let response: Response;
+    try {
+        response = await fetch(remoteUrl, {
+            method,
+            headers: {
+                ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+            signal: AbortSignal.timeout(REMOTE_WORKER_PROXY_TIMEOUT_MS),
+        });
+    } catch {
+        return buildUnavailableResponse({
+            endpoint: normalizeEndpoint(endpoint),
+            method,
+        });
+    }
     const payload = await response.json().catch(() => null);
     return NextResponse.json(
         payload ?? {

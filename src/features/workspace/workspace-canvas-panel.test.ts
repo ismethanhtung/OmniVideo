@@ -66,6 +66,14 @@ describe("WorkspaceCanvasPanel canvas interactions", () => {
     it("forwards remote VIP render mode to the VIP API", () => {
         expect(source).toContain('"voiceRenderExecutionMode"');
         expect(source).toContain('"remoteVoiceRenderEndpoint"');
+        expect(source).toContain('"remoteVoiceRenderToken"');
+        expect(source).toContain("readRemoteVipWorkerBrowserConfig");
+        expect(source).toContain("resolveRemoteVipWorkerRuntimeConfig");
+        expect(source).toContain("remoteVipWorkerConfig.endpoint");
+        expect(source).toContain("remoteVipWorkerConfig.token");
+        expect(source).toContain("Remote worker endpoint source:");
+        expect(source).toContain("X-OmniVideo-Remote-Vip-Token");
+        expect(source).toContain("buildRemoteWorkerRequestInit");
         expect(source).toContain(
             "Remote render mode enabled: voice generation runs locally; final render runs on the configured EC2 worker.",
         );
@@ -225,8 +233,15 @@ describe("WorkspaceCanvasPanel canvas interactions", () => {
         expect(source).toContain("Metadata:");
         expect(source).toContain("Size:");
         expect(source).toContain("Translation:");
-        expect(source).toContain("Stage log:");
-        expect(source).toContain("Completed transcript stage");
+        expect(source).toContain("Measured stages total:");
+        expect(source).toContain("Voice render time:");
+        expect(source).toContain("Final video render time:");
+        expect(source).toContain("voiceTimingBySourceSegmentId");
+        expect(source).toContain("SEGMENT_JSON");
+        expect(source).toContain("speedFactor: voiceChunk?.speedFactor");
+        expect(source).toContain("warningCodes: voiceChunk?.warningCodes ?? []");
+        expect(source).toContain("voice render");
+        expect(source).toContain("final video render");
         expect(source).toContain("Metadata title:");
         expect(source).toContain("Metadata tags:");
         expect(source).toContain("translationMode");
@@ -276,11 +291,31 @@ describe("WorkspaceCanvasPanel canvas interactions", () => {
         );
     });
 
-    it("starts from a zoomed-out right-shifted canvas view", () => {
+    it("starts from the original zoomed-out top-left canvas view", () => {
+        expect(source).toContain("const CANVAS_WIDTH = 2400;");
+        expect(source).toContain("const CANVAS_HEIGHT = 1400;");
         expect(source).toContain(
             "const DEFAULT_CANVAS_VIEW = { x: 0, y: 0, scale: 0.6 };",
         );
         expect(source).toContain("useState(DEFAULT_CANVAS_VIEW)");
+        expect(source).toContain(
+            'className="absolute left-16 top-16 max-w-md border border-dashed border-main bg-main px-4 py-3"',
+        );
+    });
+
+    it("uses the original catalog node and seed placement behavior", () => {
+        expect(source).toContain("x: 60 + current.nodes.length * 48");
+        expect(source).toContain("y: 80 + (current.nodes.length % 4) * 120");
+        expect(source).toContain("const next = seed.buildGraph();");
+        expect(source).not.toContain("translateWorkspaceGraphNodesToCenter");
+        expect(source).not.toContain("buildCanvasNodeInsertPosition");
+        expect(source).not.toContain("buildCanvasViewForNodes");
+    });
+
+    it("suppresses macOS xattrs when packing the EC2 worker archive", () => {
+        const launcher = readFileSync("omnivideo-vip-spot.sh", "utf8");
+
+        expect(launcher).toContain("COPYFILE_DISABLE=1 tar");
     });
 
     it("supports cleanup assets runtime controls and delete execution", () => {

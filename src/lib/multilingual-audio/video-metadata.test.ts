@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   generateVietnameseVideoMetadata,
   inferPreferredVietnameseMetadataTags,
+  normalizeVietnameseHashtag,
   PREFERRED_VI_METADATA_TAGS,
 } from "./video-metadata";
 
@@ -58,7 +59,7 @@ describe("Vietnamese video metadata preferred tags", () => {
                 content: JSON.stringify({
                   title: "Review full cổ trang",
                   description: "Tóm tắt phim hoạt hình Trung Quốc.",
-                  hashtags: ["ngontinh", "co_trang"],
+                  hashtags: ["ngon tinh", "#cổ trang"],
                 }),
               },
             },
@@ -95,8 +96,20 @@ describe("Vietnamese video metadata preferred tags", () => {
       expect(userPrompt).toContain(tag);
     }
     expect(result.hashtags).toEqual(
-      expect.arrayContaining(["ngontinh", "co_trang", "review full", "hoạt hình trung quốc"]),
+      expect.arrayContaining([
+        "ngontinh",
+        "cổtrang",
+        "reviewfull",
+        "hoạthìnhtrungquốc",
+      ]),
     );
+    expect(result.hashtags.every((tag) => !/\s/u.test(tag))).toBe(true);
+  });
+
+  it("normalizes hashtags into compact no-space tokens", () => {
+    expect(normalizeVietnameseHashtag("#tóm tắt truyện")).toBe("tómtắttruyện");
+    expect(normalizeVietnameseHashtag(" review phim ")).toBe("reviewphim");
+    expect(normalizeVietnameseHashtag("cổ_trang")).toBe("cổ_trang");
   });
 
   it("maps metadata network failures to provider error code", async () => {
