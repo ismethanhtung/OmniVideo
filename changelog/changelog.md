@@ -1,5 +1,43 @@
 # OmniVideo Changelog
 
+## FAST-WORKSPACE-081 - Update VIP Default Speed and Original Volume
+
+- Bumped app version from `0.10.109` to `0.10.110` as a patch release for VIP processing defaults.
+- Changed VIP Processing default `Speed factor` from `0.8` to `0.75`.
+- Changed VIP Processing default `Original volume` from `0` to `0.2`.
+- Updated Workspace VIP node template defaults, VIP seed graph configs, Workspace runtime fallbacks/placeholders, and VIP processing runtime fallbacks to stay aligned.
+- Verification (FAST-WORKSPACE-081):
+  - `npm run test -- --run src/lib/workspace/workspace-graph.test.ts src/features/workspace/workspace-canvas-panel.test.ts src/lib/multilingual-audio/video-vip-processing.test.ts src/app/api/audio/video-vip-processing/route.test.ts` pass (4 files / 108 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+
+## FAST-WORKSPACE-080 - Parallelize EC2 VIP Final Render Chunks
+
+- Bumped app version from `0.10.108` to `0.10.109` as a patch release for EC2 VIP final render throughput.
+- Added optional VIP final render chunking controlled by `OMNIVIDEO_VIP_RENDER_CHUNKS`; each chunk keeps the same `veryfast`/CRF/filter behavior and is concatenated by stream copy.
+- Configured `omnivideo-vip-spot.sh` to set `OMNIVIDEO_VIP_RENDER_CHUNKS=4` for `c8g.xlarge`, so EC2 workers can use multiple ffmpeg processes instead of bottlenecking in one mostly single-core filtergraph.
+- Added per-chunk video/audio input seek, timeline-shifted blur/cover enables, shifted subtitle ASS files, shifted text overlay ASS files, and per-chunk thread allocation.
+- Preserved single-render fallback when chunking is disabled, media is too short, or `OMNIVIDEO_VIP_RENDER_CHUNKS=1`.
+- Verification (FAST-WORKSPACE-080):
+  - `npm run test -- --run src/lib/multilingual-audio/video-vip-processing.test.ts src/app/api/audio/video-vip-voice-render/route.test.ts src/app/api/audio/video-vip-processing/route.test.ts src/lib/multilingual-audio/audio-extraction.test.ts` pass (4 files / 48 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+  - `bash -n omnivideo-vip-spot.sh` and `zsh -n omnivideo-vip-spot.sh` pass.
+
+## FAST-WORKSPACE-079 - Skip Muted Source Audio in VIP Final Render
+
+- Bumped app version from `0.10.107` to `0.10.108` as a patch release for VIP final render performance.
+- Optimized final VIP ffmpeg args so runs with `originalAudioVolume=0` no longer decode source audio, apply source `atempo`, or run `amix`.
+- Preserved the existing source-audio speed/volume/mix path when original audio volume is above zero.
+- Kept final render quality unchanged: `veryfast` remains the default render preset.
+- Verification (FAST-WORKSPACE-079):
+  - `npm run test -- --run src/lib/multilingual-audio/video-vip-processing.test.ts src/app/api/audio/video-vip-voice-render/route.test.ts src/app/api/audio/video-vip-processing/route.test.ts src/lib/multilingual-audio/audio-extraction.test.ts` pass (4 files / 46 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+
 ## FAST-WORKSPACE-078 - Keep Segments From Expanding Progress Row Height
 
 - Bumped app version from `0.10.106` to `0.10.107` as a patch release for Background Progress segment panel sizing.

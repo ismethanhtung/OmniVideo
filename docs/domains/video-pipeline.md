@@ -94,6 +94,17 @@ system ffmpeg từ Ubuntu thay vì ưu tiên `ffmpeg-static` trong `node_modules
 Worker status/kill nhận diện các process `/tmp/omnivideo-vip-*` ffmpeg final
 render khi cần xử lý job bị kẹt.
 
+Trên EC2, worker có thể bật parallel final render bằng
+`OMNIVIDEO_VIP_RENDER_CHUNKS`. Launcher mặc định đặt giá trị `4` cho
+`c8g.xlarge`: runtime chia final render theo timeline, chạy các chunk ffmpeg
+song song, shift subtitle/blur/text overlay timeline cho từng chunk, rồi concat
+MP4 bằng stream copy. Preset/CRF/filter vẫn giữ nguyên (`veryfast` mặc định);
+rollback nhanh là đặt `OMNIVIDEO_VIP_RENDER_CHUNKS=1`.
+
+VIP Processing runtime defaults: `Speed factor=0.75`, `Original volume=0.2`,
+`Voice volume=1`, và render preset `veryfast`. Workspace node template, seed
+graphs và API fallback phải giữ cùng baseline này để run mới không lệch cấu hình.
+
 ### 4.2 Current Workspace preprocess path
 
 1. Node `video.preprocess` điều chỉnh speed source video bằng ffmpeg và tạo video artifact downstream.

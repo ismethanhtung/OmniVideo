@@ -122,3 +122,7 @@ Hỗ trợ xử lý audio đa ngôn ngữ cho video linh hoạt: phát hiện ng
    để dùng system ffmpeg. Khi cần giới hạn tài nguyên local, dùng
    `OMNIVIDEO_VIP_RENDER_THREADS`, `OMNIVIDEO_VIP_RENDER_PRESET` và
    `OMNIVIDEO_VIP_RENDER_TIMEOUT_MS` để override theo môi trường chạy.
+11. Worker EC2 mặc định bật `OMNIVIDEO_VIP_RENDER_CHUNKS=4`, chia final render
+   thành các chunk timeline song song để tận dụng nhiều vCPU khi filtergraph
+   `ass`/`boxblur`/`overlay` không scale tốt trong một ffmpeg process. Chất lượng
+   encode không đổi vì mỗi chunk vẫn dùng preset/CRF/filter như single render.

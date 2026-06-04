@@ -11,6 +11,8 @@ import {
 } from "@/lib/multilingual-audio/remote-vip-worker";
 import {
     buildVipFinalRenderArgs,
+    planVipParallelRenderChunks,
+    resolveVipRenderChunkCount,
     resolveVipRenderThreadCount,
     resolveVipRenderTimeoutMs,
     runVideoVipProcessing,
@@ -112,6 +114,7 @@ function createStageRunners(overrides?: {
 describe("VIP final render filter order", () => {
     afterEach(() => {
         delete process.env.OMNIVIDEO_VIP_RENDER_PRESET;
+        delete process.env.OMNIVIDEO_VIP_RENDER_CHUNKS;
         delete process.env.OMNIVIDEO_VIP_RENDER_THREADS;
         delete process.env.OMNIVIDEO_VIP_RENDER_TIMEOUT_MS;
     });
@@ -233,6 +236,7 @@ describe("VIP final render filter order", () => {
     it("uses env overrides for render preset, threads, and timeout", () => {
         process.env.OMNIVIDEO_VIP_RENDER_PRESET = "superfast";
         process.env.OMNIVIDEO_VIP_RENDER_THREADS = "2";
+        process.env.OMNIVIDEO_VIP_RENDER_CHUNKS = "2";
         process.env.OMNIVIDEO_VIP_RENDER_TIMEOUT_MS = "90000";
 
         const args = buildVipFinalRenderArgs({
@@ -250,7 +254,124 @@ describe("VIP final render filter order", () => {
 
         expect(args).toEqual(expect.arrayContaining(["-preset", "superfast"]));
         expect(resolveVipRenderThreadCount()).toBe(2);
+        expect(resolveVipRenderChunkCount()).toBe(2);
         expect(resolveVipRenderTimeoutMs()).toBe(90000);
+    });
+
+    it("plans parallel render chunks only for long enough media", () => {
+        expect(
+            planVipParallelRenderChunks({
+                durationSeconds: 90,
+                requestedChunks: 4,
+                minChunkDurationSeconds: 30,
+            }),
+        ).toEqual([
+            { index: 0, startSeconds: 0, durationSeconds: 30 },
+            { index: 1, startSeconds: 30, durationSeconds: 30 },
+            { index: 2, startSeconds: 60, durationSeconds: 30 },
+        ]);
+        expect(
+            planVipParallelRenderChunks({
+                durationSeconds: 20,
+                requestedChunks: 4,
+                minChunkDurationSeconds: 30,
+            }),
+        ).toEqual([]);
+    });
+
+    it("builds chunk render args with input seeks and shifted timelines", () => {
+        const args = buildVipFinalRenderArgs({
+            videoPath: "/tmp/source.mp4",
+            voicePath: "/tmp/voice.wav",
+            subtitleAssPath: "/tmp/subtitles-1.ass",
+            outputPath: "/tmp/chunk-1.mp4",
+            speedFactor: 0.8,
+            mirrorEnabled: true,
+            blurRegions: [
+                {
+                    region: { x: 0, y: 84, width: 100, height: 16 },
+                    timeline: { start: 50, end: 120 },
+                    strength: 50,
+                },
+            ],
+            coverBoxes: [
+                {
+                    region: { x: 0, y: 82, width: 100, height: 14 },
+                    timeline: { start: 40, end: 85 },
+                    color: "#000000",
+                    opacity: 65,
+                },
+            ],
+            originalAudioVolume: 0.2,
+            voiceVolume: 1,
+            renderThreads: 1,
+            sourceStartSeconds: 48,
+            sourceDurationSeconds: 24,
+            voiceStartSeconds: 60,
+            voiceDurationSeconds: 30,
+            timelineOffsetSeconds: 60,
+            timelineDurationSeconds: 30,
+        });
+        const filter = args[args.indexOf("-filter_complex") + 1] ?? "";
+
+        expect(args.slice(0, 14)).toEqual([
+            "-y",
+            "-filter_threads",
+            "1",
+            "-filter_complex_threads",
+            "1",
+            "-ss",
+            "48",
+            "-t",
+            "24",
+            "-i",
+            "/tmp/source.mp4",
+            "-ss",
+            "60",
+            "-t",
+        ]);
+        expect(args).toEqual(expect.arrayContaining(["-i", "/tmp/voice.wav"]));
+        expect(filter).toContain("between(t,0.000,30.000)");
+        expect(filter).toContain("between(t,0.000,25.000)");
+    });
+
+    it("skips source audio decode and amix when original audio is muted", () => {
+        const args = buildVipFinalRenderArgs({
+            videoPath: "/tmp/source.mp4",
+            voicePath: "/tmp/voice.wav",
+            subtitleAssPath: "/tmp/subtitles.ass",
+            outputPath: "/tmp/output.mp4",
+            speedFactor: 0.8,
+            mirrorEnabled: true,
+            blurRegions: [],
+            originalAudioVolume: 0,
+            voiceVolume: 1,
+        });
+        const filter = args[args.indexOf("-filter_complex") + 1] ?? "";
+
+        expect(filter).not.toContain("[0:a]");
+        expect(filter).not.toContain("amix=");
+        expect(filter).toContain("[1:a]anull[aout]");
+    });
+
+    it("keeps source audio speed and mix when original audio is audible", () => {
+        const args = buildVipFinalRenderArgs({
+            videoPath: "/tmp/source.mp4",
+            voicePath: "/tmp/voice.wav",
+            subtitleAssPath: "/tmp/subtitles.ass",
+            outputPath: "/tmp/output.mp4",
+            speedFactor: 0.8,
+            mirrorEnabled: true,
+            blurRegions: [],
+            originalAudioVolume: 0.2,
+            voiceVolume: 1,
+        });
+        const filter = args[args.indexOf("-filter_complex") + 1] ?? "";
+
+        expect(filter).toContain("[0:a]atempo=0.8,volume=0.200[orig]");
+        expect(filter).toContain(
+            "[orig][voice]amix=inputs=2:duration=longest:dropout_transition=0[aout]",
+        );
     });
 
     it("passes fontsdir to ass filters when subtitle fonts dir is provided", () => {
@@ -539,6 +660,23 @@ describe("VIP processing stage checkpoints", () => {
         expect(renderInput.translatedSegments[1].start).toBeGreaterThanOrEqual(
             renderInput.translatedSegments[0].end,
         );
+    });
+
+    it("uses current VIP speed and original-volume defaults when omitted", async () => {
+        const runners = createStageRunners();
+
+        await runVideoVipProcessing({
+            fileName: "source.mp4",
+            fileSizeBytes: 3,
+            fileBytes: new Uint8Array([1, 2, 3]),
+            stageRunners: runners,
+            omitVideoBase64: true,
+        });
+
+        const renderInput = vi.mocked(runners.render).mock.calls[0][0];
+        expect(renderInput.speedFactor).toBe(0.75);
+        expect(renderInput.originalAudioVolume).toBe(0.2);
+        expect(renderInput.voiceVolume).toBe(1);
     });
 
     it("generates voice locally and delegates only render in remote mode", async () => {

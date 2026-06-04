@@ -4241,7 +4241,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     );
                     formData.set(
                         "videoSpeedFactor",
-                        String(getNumberConfig(vipNode, "speedFactor", 0.8)),
+                        String(getNumberConfig(vipNode, "speedFactor", 0.75)),
                     );
                     const vipRenderPreset =
                         getStringConfig(vipNode, "renderPreset", "veryfast");
@@ -4284,7 +4284,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     formData.set(
                         "originalAudioVolume",
                         String(
-                            getNumberConfig(vipNode, "originalAudioVolume", 0),
+                            getNumberConfig(vipNode, "originalAudioVolume", 0.2),
                         ),
                     );
                     formData.set(
@@ -9175,9 +9175,9 @@ function NodeRuntimeConfig({
                     <div className="grid gap-2 sm:grid-cols-3">
                         <RuntimeTextInput
                             label="Speed factor"
-                            value={String(getNumberConfig(node, "speedFactor", 0.8))}
+                            value={String(getNumberConfig(node, "speedFactor", 0.75))}
                             disabled={isRunningFlow}
-                            placeholder="0.8"
+                            placeholder="0.75"
                             onChange={(value) =>
                                 setConfig({ speedFactor: Number(value) })
                             }
@@ -9212,10 +9212,10 @@ function NodeRuntimeConfig({
                         <RuntimeTextInput
                             label="Original volume"
                             value={String(
-                                getNumberConfig(node, "originalAudioVolume", 0),
+                                getNumberConfig(node, "originalAudioVolume", 0.2),
                             )}
                             disabled={isRunningFlow}
-                            placeholder="0"
+                            placeholder="0.2"
                             onChange={(value) =>
                                 setConfig({ originalAudioVolume: Number(value) })
                             }

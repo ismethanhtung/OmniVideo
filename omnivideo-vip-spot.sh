@@ -291,6 +291,7 @@ fi
 cat > .env.production.local <<ENV
 OMNIVIDEO_REMOTE_VIP_TOKEN=$WORKER_TOKEN
 OMNIVIDEO_FFMPEG_PATH=/usr/bin/ffmpeg
+OMNIVIDEO_VIP_RENDER_CHUNKS=4
 PATH=$REMOTE_APP_DIR/piper/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 ENV
 
@@ -311,6 +312,7 @@ Environment=NODE_ENV=production
 Environment=PORT=$WORKER_PORT
 Environment=OMNIVIDEO_REMOTE_VIP_TOKEN=$WORKER_TOKEN
 Environment=OMNIVIDEO_FFMPEG_PATH=/usr/bin/ffmpeg
+Environment=OMNIVIDEO_VIP_RENDER_CHUNKS=4
 Environment=PATH=$REMOTE_APP_DIR/piper/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 ExecStart=/usr/bin/npm run start
 Restart=always

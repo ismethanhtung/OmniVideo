@@ -257,7 +257,7 @@ describe("workspace graph helpers", () => {
         }
     });
 
-    it("creates VIP nodes with veryfast render preset default", () => {
+    it("creates VIP nodes with current processing defaults", () => {
         const template = WORKSPACE_NODE_TEMPLATES.find(
             (entry) => entry.nodeType === "video.vip-processing",
         );
@@ -272,6 +272,8 @@ describe("workspace graph helpers", () => {
 
         expect(graph.nodes[0].config).toMatchObject({
             renderPreset: "veryfast",
+            speedFactor: 0.75,
+            originalAudioVolume: 0.2,
         });
     });
 

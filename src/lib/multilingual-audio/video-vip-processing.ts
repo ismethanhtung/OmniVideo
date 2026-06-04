@@ -434,6 +434,8 @@ function normalizeVolume(value: number | undefined, fallback: number) {
     return Math.min(2, Math.max(0, value));
 }
 
+export const DEFAULT_VIP_VIDEO_SPEED_FACTOR = 0.75;
+export const DEFAULT_VIP_ORIGINAL_AUDIO_VOLUME = 0.2;
 const DEFAULT_VIP_RENDER_TIMEOUT_MS = 4 * 60 * 60 * 1000;
 
 function isVipRenderPreset(value: string | undefined): value is VipRenderPreset {
@@ -463,6 +465,55 @@ export function resolveVipRenderTimeoutMs() {
         return DEFAULT_VIP_RENDER_TIMEOUT_MS;
     }
     return Math.max(1000, Math.floor(configured));
+}
+
+export function resolveVipRenderChunkCount() {
+    const configured = process.env.OMNIVIDEO_VIP_RENDER_CHUNKS?.trim() ?? "";
+    if (!configured || configured === "1") return 1;
+    const maxChunks = Math.min(8, Math.max(1, resolveVipRenderThreadCount()));
+    if (configured === "auto" || configured === "all") return maxChunks;
+    const parsed = Number(configured);
+    if (!Number.isFinite(parsed) || parsed <= 1) return 1;
+    return Math.min(maxChunks, Math.max(1, Math.floor(parsed)));
+}
+
+export type VipParallelRenderChunk = {
+    index: number;
+    startSeconds: number;
+    durationSeconds: number;
+};
+
+export function planVipParallelRenderChunks(input: {
+    durationSeconds: number;
+    requestedChunks: number;
+    minChunkDurationSeconds?: number;
+}): VipParallelRenderChunk[] {
+    const durationSeconds = input.durationSeconds;
+    if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) return [];
+    const requestedChunks = Math.max(1, Math.floor(input.requestedChunks));
+    const minChunkDurationSeconds = Math.max(
+        10,
+        input.minChunkDurationSeconds ?? 30,
+    );
+    const chunkCount = Math.min(
+        requestedChunks,
+        Math.max(1, Math.floor(durationSeconds / minChunkDurationSeconds)),
+    );
+    if (chunkCount <= 1) return [];
+
+    const baseDuration = durationSeconds / chunkCount;
+    return Array.from({ length: chunkCount }, (_, index) => {
+        const startSeconds = index * baseDuration;
+        const endSeconds =
+            index === chunkCount - 1
+                ? durationSeconds
+                : (index + 1) * baseDuration;
+        return {
+            index,
+            startSeconds,
+            durationSeconds: Math.max(0, endSeconds - startSeconds),
+        };
+    }).filter((chunk) => chunk.durationSeconds > 0.1);
 }
 
 function sanitizeOutputName(fileName: string, sourceTitle?: string) {
@@ -871,6 +922,150 @@ function normalizeCoverBoxes(
         );
 }
 
+function formatFfmpegSeconds(value: number) {
+    return Math.max(0, value)
+        .toFixed(3)
+        .replace(/\.?0+$/u, "");
+}
+
+function buildFfmpegInputArgs(input: {
+    filePath: string;
+    startSeconds?: number;
+    durationSeconds?: number;
+}) {
+    const args: string[] = [];
+    if (Number.isFinite(input.startSeconds) && (input.startSeconds ?? 0) > 0) {
+        args.push("-ss", formatFfmpegSeconds(input.startSeconds ?? 0));
+    }
+    if (
+        Number.isFinite(input.durationSeconds) &&
+        (input.durationSeconds ?? 0) > 0
+    ) {
+        args.push("-t", formatFfmpegSeconds(input.durationSeconds ?? 0));
+    }
+    args.push("-i", input.filePath);
+    return args;
+}
+
+function shiftTimelineForRender(
+    timeline: { start: number; end: number },
+    input: { offsetSeconds: number; durationSeconds?: number },
+) {
+    const start = timeline.start - input.offsetSeconds;
+    const end = timeline.end - input.offsetSeconds;
+    const maxEnd =
+        Number.isFinite(input.durationSeconds) && (input.durationSeconds ?? 0) > 0
+            ? input.durationSeconds ?? end
+            : end;
+    const clippedStart = Math.max(0, start);
+    const clippedEnd = Math.min(maxEnd, end);
+    if (clippedEnd <= 0 || clippedEnd <= clippedStart) return null;
+    return { start: clippedStart, end: clippedEnd };
+}
+
+function shiftBlurRegionsForRender(
+    regions: ReturnType<typeof normalizeBlurRegions>,
+    input: { offsetSeconds: number; durationSeconds?: number },
+) {
+    if (input.offsetSeconds <= 0 && !input.durationSeconds) return regions;
+    return regions
+        .map((item) => {
+            const timeline = shiftTimelineForRender(item.timeline, input);
+            return timeline ? { ...item, timeline } : null;
+        })
+        .filter((item): item is (typeof regions)[number] => item !== null);
+}
+
+function shiftCoverBoxesForRender(
+    coverBoxes: ReturnType<typeof normalizeCoverBoxes>,
+    input: { offsetSeconds: number; durationSeconds?: number },
+) {
+    if (input.offsetSeconds <= 0 && !input.durationSeconds) return coverBoxes;
+    return coverBoxes
+        .map((item) => {
+            const timeline = shiftTimelineForRender(item.timeline, input);
+            return timeline ? { ...item, timeline } : null;
+        })
+        .filter((item): item is (typeof coverBoxes)[number] => item !== null);
+}
+
+function shiftTranslatedSegmentsForRender(
+    segments: TranscriptTranslationResult["translatedSegments"],
+    input: { offsetSeconds: number; durationSeconds?: number },
+) {
+    if (input.offsetSeconds <= 0 && !input.durationSeconds) return segments;
+    return segments
+        .map((segment) => {
+            const timeline = shiftTimelineForRender(
+                { start: segment.start, end: segment.end },
+                input,
+            );
+            return timeline
+                ? {
+                      ...segment,
+                      start: timeline.start,
+                      end: timeline.end,
+                  }
+                : null;
+        })
+        .filter((segment): segment is (typeof segments)[number] => segment !== null);
+}
+
+function shiftTextOverlaysForRender(
+    textOverlays: VideoEditInput["textOverlays"] | undefined,
+    input: { offsetSeconds: number; durationSeconds?: number },
+): VideoEditInput["textOverlays"] | undefined {
+    if (!textOverlays?.enabled || textOverlays.overlays.length === 0) {
+        return undefined;
+    }
+    if (input.offsetSeconds <= 0 && !input.durationSeconds) return textOverlays;
+    const overlays: typeof textOverlays.overlays = [];
+    for (const overlay of textOverlays.overlays) {
+        const overlayStart = Number.isFinite(overlay.start)
+            ? Number(overlay.start)
+            : 0;
+        const overlayEnd = Number.isFinite(overlay.end)
+            ? Number(overlay.end)
+            : 36000;
+        const timeline = shiftTimelineForRender(
+            { start: overlayStart, end: overlayEnd },
+            input,
+        );
+        if (!timeline) continue;
+        overlays.push({
+            ...overlay,
+            start: timeline.start,
+            end: timeline.end,
+        });
+    }
+    return overlays.length > 0 ? { ...textOverlays, overlays } : undefined;
+}
+
+function buildEmptyAssContent(input: { playResX?: number; playResY?: number }) {
+    const playResX = Number.isFinite(input.playResX)
+        ? Math.max(360, Math.round(input.playResX ?? 1920))
+        : 1920;
+    const playResY = Number.isFinite(input.playResY)
+        ? Math.max(360, Math.round(input.playResY ?? 1080))
+        : 1080;
+    return [
+        "[Script Info]",
+        "ScriptType: v4.00+",
+        "WrapStyle: 0",
+        "ScaledBorderAndShadow: yes",
+        `PlayResX: ${playResX}`,
+        `PlayResY: ${playResY}`,
+        "",
+        "[V4+ Styles]",
+        "Format: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,OutlineColour,BackColour,Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding",
+        "Style: Default,Arial,40,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,0,2,60,60,150,1",
+        "",
+        "[Events]",
+        "Format: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text",
+        "",
+    ].join("\n");
+}
+
 export function buildVipFinalRenderArgs(input: {
     videoPath: string;
     voicePath: string;
@@ -885,8 +1080,17 @@ export function buildVipFinalRenderArgs(input: {
     originalAudioVolume: number;
     voiceVolume: number;
     renderPreset?: VipRenderPreset;
+    renderThreads?: number;
+    sourceStartSeconds?: number;
+    sourceDurationSeconds?: number;
+    voiceStartSeconds?: number;
+    voiceDurationSeconds?: number;
+    timelineOffsetSeconds?: number;
+    timelineDurationSeconds?: number;
 }) {
     const clampedSpeed = Math.min(2, Math.max(0.5, input.speedFactor || 1));
+    const timelineOffsetSeconds = Math.max(0, input.timelineOffsetSeconds ?? 0);
+    const timelineDurationSeconds = input.timelineDurationSeconds;
     const videoFilters: string[] = [];
     if (Math.abs(clampedSpeed - 1) >= 0.0001) {
         videoFilters.push(
@@ -895,7 +1099,10 @@ export function buildVipFinalRenderArgs(input: {
     }
 
     const videoEditChains: string[] = [];
-    const blurRegions = input.blurRegions;
+    const blurRegions = shiftBlurRegionsForRender(input.blurRegions, {
+        offsetSeconds: timelineOffsetSeconds,
+        durationSeconds: timelineDurationSeconds,
+    });
     let currentVideoLabel = "basev";
     blurRegions.forEach((item, index) => {
         const prev = currentVideoLabel;
@@ -918,7 +1125,10 @@ export function buildVipFinalRenderArgs(input: {
         currentVideoLabel = next;
     });
 
-    const coverBoxes = input.coverBoxes ?? [];
+    const coverBoxes = shiftCoverBoxesForRender(input.coverBoxes ?? [], {
+        offsetSeconds: timelineOffsetSeconds,
+        durationSeconds: timelineDurationSeconds,
+    });
     coverBoxes.forEach((item, index) => {
         const next = `vcover${index}`;
         const color = item.color.replace(/^#/u, "0x");
@@ -942,9 +1152,20 @@ export function buildVipFinalRenderArgs(input: {
         : "";
 
     const atempo = buildAtempoFilters(clampedSpeed).join(",");
-    const audioBase = atempo
-        ? `[0:a]${atempo},volume=${input.originalAudioVolume.toFixed(3)}[orig]`
-        : `[0:a]volume=${input.originalAudioVolume.toFixed(3)}[orig]`;
+    const shouldMixOriginalAudio = input.originalAudioVolume > 0.0001;
+    const audioParts = shouldMixOriginalAudio
+        ? [
+              atempo
+                  ? `[0:a]${atempo},volume=${input.originalAudioVolume.toFixed(3)}[orig]`
+                  : `[0:a]volume=${input.originalAudioVolume.toFixed(3)}[orig]`,
+              `[1:a]volume=${input.voiceVolume.toFixed(3)}[voice]`,
+              `[orig][voice]amix=inputs=2:duration=longest:dropout_transition=0[aout]`,
+          ]
+        : [
+              Math.abs(input.voiceVolume - 1) >= 0.0001
+                  ? `[1:a]volume=${input.voiceVolume.toFixed(3)}[aout]`
+                  : `[1:a]anull[aout]`,
+          ];
 
     const videoChain =
         videoFilters.length > 0 ? videoFilters.join(",") : "null";
@@ -976,12 +1197,13 @@ export function buildVipFinalRenderArgs(input: {
     const filterParts = [
         `[0:v]${videoChain}[basev]`,
         ...videoEditChains,
-        audioBase,
-        `[1:a]volume=${input.voiceVolume.toFixed(3)}[voice]`,
-        `[orig][voice]amix=inputs=2:duration=longest:dropout_transition=0[aout]`,
+        ...audioParts,
     ];
     const renderPreset = normalizeRenderPreset(input.renderPreset);
-    const renderThreads = resolveVipRenderThreadCount();
+    const renderThreads = Math.max(
+        1,
+        Math.floor(input.renderThreads ?? resolveVipRenderThreadCount()),
+    );
 
     return [
         "-y",
@@ -989,10 +1211,16 @@ export function buildVipFinalRenderArgs(input: {
         String(renderThreads),
         "-filter_complex_threads",
         String(renderThreads),
-        "-i",
-        input.videoPath,
-        "-i",
-        input.voicePath,
+        ...buildFfmpegInputArgs({
+            filePath: input.videoPath,
+            startSeconds: input.sourceStartSeconds,
+            durationSeconds: input.sourceDurationSeconds,
+        }),
+        ...buildFfmpegInputArgs({
+            filePath: input.voicePath,
+            startSeconds: input.voiceStartSeconds,
+            durationSeconds: input.voiceDurationSeconds,
+        }),
         "-filter_complex",
         filterParts.join(";"),
         "-map",
@@ -1194,6 +1422,71 @@ async function probeVideoDimensions(inputPath: string) {
     );
 }
 
+async function readWavDurationSeconds(filePath: string) {
+    try {
+        const buffer = await readFile(filePath);
+        if (buffer.byteLength < 44) return null;
+        if (buffer.toString("ascii", 0, 4) !== "RIFF") return null;
+        if (buffer.toString("ascii", 8, 12) !== "WAVE") return null;
+
+        let offset = 12;
+        let byteRate: number | null = null;
+        let dataSize: number | null = null;
+        while (offset + 8 <= buffer.byteLength) {
+            const chunkId = buffer.toString("ascii", offset, offset + 4);
+            const chunkSize = buffer.readUInt32LE(offset + 4);
+            const chunkStart = offset + 8;
+            if (chunkId === "fmt " && chunkStart + 12 <= buffer.byteLength) {
+                byteRate = buffer.readUInt32LE(chunkStart + 8);
+            }
+            if (chunkId === "data") {
+                dataSize = chunkSize;
+                break;
+            }
+            offset = chunkStart + chunkSize + (chunkSize % 2);
+        }
+        if (!byteRate || !dataSize) return null;
+        const duration = dataSize / byteRate;
+        return Number.isFinite(duration) && duration > 0 ? duration : null;
+    } catch {
+        return null;
+    }
+}
+
+function escapeConcatFilePath(filePath: string) {
+    return filePath.replace(/'/g, "'\\''");
+}
+
+async function concatRenderedChunks(input: {
+    chunkPaths: string[];
+    concatListPath: string;
+    outputPath: string;
+}) {
+    await writeFile(
+        input.concatListPath,
+        `${input.chunkPaths
+            .map((chunkPath) => `file '${escapeConcatFilePath(chunkPath)}'`)
+            .join("\n")}\n`,
+    );
+    await runFfmpeg({
+        args: [
+            "-y",
+            "-f",
+            "concat",
+            "-safe",
+            "0",
+            "-i",
+            input.concatListPath,
+            "-c",
+            "copy",
+            "-movflags",
+            "+faststart",
+            input.outputPath,
+        ],
+        timeoutMs: resolveVipRenderTimeoutMs(),
+    });
+}
+
 export async function renderVipCompositeVideo(input: {
     sourceVideoBytes: Uint8Array;
     sourceFileName: string;
@@ -1225,23 +1518,6 @@ export async function renderVipCompositeVideo(input: {
         await writeFile(inputPath, input.sourceVideoBytes);
         await writeFile(voicePath, input.voiceBytes);
         const probedDimensions = await probeVideoDimensions(inputPath);
-        await writeFile(
-            assPath,
-            buildSubtitleAssContent(input.translatedSegments, {
-                ...input.subtitleStyle,
-                playResX: probedDimensions?.width,
-                playResY: probedDimensions?.height,
-            }),
-        );
-        if (textOverlayAssPath && input.textOverlays?.enabled === true) {
-            await writeFile(
-                textOverlayAssPath,
-                buildTextOverlayAssContent(input.textOverlays.overlays, {
-                    playResX: probedDimensions?.width,
-                    playResY: probedDimensions?.height,
-                }),
-            );
-        }
         const subtitleFontsDir = await prepareVipSubtitleFontsDir({
             workDir,
             subtitleFontFamily: input.subtitleStyle?.fontFamily,
@@ -1252,25 +1528,150 @@ export async function renderVipCompositeVideo(input: {
                           .filter((family): family is string => Boolean(family))
                     : [],
         });
+        const writeSubtitleAss = async (inputSegments: typeof input.translatedSegments, targetPath: string) => {
+            await writeFile(
+                targetPath,
+                inputSegments.length > 0
+                    ? buildSubtitleAssContent(inputSegments, {
+                          ...input.subtitleStyle,
+                          playResX: probedDimensions?.width,
+                          playResY: probedDimensions?.height,
+                      })
+                    : buildEmptyAssContent({
+                          playResX: probedDimensions?.width,
+                          playResY: probedDimensions?.height,
+                      }),
+            );
+        };
+        const writeTextOverlayAss = async (
+            textOverlays: VideoEditInput["textOverlays"] | undefined,
+            targetPath: string,
+        ) => {
+            if (!textOverlays?.enabled || textOverlays.overlays.length === 0) {
+                return false;
+            }
+            await writeFile(
+                targetPath,
+                buildTextOverlayAssContent(textOverlays.overlays, {
+                    playResX: probedDimensions?.width,
+                    playResY: probedDimensions?.height,
+                }),
+            );
+            return true;
+        };
 
-        await runFfmpeg({
-            args: buildVipFinalRenderArgs({
-                videoPath: inputPath,
-                voicePath,
-                subtitleAssPath: assPath,
-                subtitleFontsDir,
-                textOverlayAssPath: textOverlayAssPath || undefined,
+        const voiceDurationSeconds = await readWavDurationSeconds(voicePath);
+        const renderChunks = voiceDurationSeconds
+            ? planVipParallelRenderChunks({
+                  durationSeconds: voiceDurationSeconds,
+                  requestedChunks: resolveVipRenderChunkCount(),
+              })
+            : [];
+        const normalizedBlurRegions = normalizeBlurRegions(input.blur);
+        const normalizedCoverBoxes = normalizeCoverBoxes(input.coverBoxes);
+
+        if (renderChunks.length > 1) {
+            const totalThreads = resolveVipRenderThreadCount();
+            const perChunkThreads = Math.max(
+                1,
+                Math.floor(totalThreads / renderChunks.length),
+            );
+            const chunkPaths = await Promise.all(
+                renderChunks.map(async (chunk) => {
+                    const chunkAssPath = path.join(
+                        workDir,
+                        `subtitles-${chunk.index}.ass`,
+                    );
+                    const chunkTextOverlayAssPath = path.join(
+                        workDir,
+                        `text-overlays-${chunk.index}.ass`,
+                    );
+                    const chunkOutputPath = path.join(
+                        workDir,
+                        `vip-chunk-${chunk.index}.mp4`,
+                    );
+                    await writeSubtitleAss(
+                        shiftTranslatedSegmentsForRender(input.translatedSegments, {
+                            offsetSeconds: chunk.startSeconds,
+                            durationSeconds: chunk.durationSeconds,
+                        }),
+                        chunkAssPath,
+                    );
+                    const shiftedTextOverlays = shiftTextOverlaysForRender(
+                        input.textOverlays,
+                        {
+                            offsetSeconds: chunk.startSeconds,
+                            durationSeconds: chunk.durationSeconds,
+                        },
+                    );
+                    const hasTextOverlay = await writeTextOverlayAss(
+                        shiftedTextOverlays,
+                        chunkTextOverlayAssPath,
+                    );
+                    await runFfmpeg({
+                        args: buildVipFinalRenderArgs({
+                            videoPath: inputPath,
+                            voicePath,
+                            subtitleAssPath: chunkAssPath,
+                            subtitleFontsDir,
+                            textOverlayAssPath: hasTextOverlay
+                                ? chunkTextOverlayAssPath
+                                : undefined,
+                            outputPath: chunkOutputPath,
+                            speedFactor: input.speedFactor,
+                            mirrorEnabled: input.mirrorEnabled,
+                            blurRegions: normalizedBlurRegions,
+                            coverBoxes: normalizedCoverBoxes,
+                            originalAudioVolume: input.originalAudioVolume,
+                            voiceVolume: input.voiceVolume,
+                            renderPreset: input.renderPreset,
+                            renderThreads: perChunkThreads,
+                            sourceStartSeconds:
+                                chunk.startSeconds * Math.min(2, Math.max(0.5, input.speedFactor || 1)),
+                            sourceDurationSeconds:
+                                chunk.durationSeconds * Math.min(2, Math.max(0.5, input.speedFactor || 1)),
+                            voiceStartSeconds: chunk.startSeconds,
+                            voiceDurationSeconds: chunk.durationSeconds,
+                            timelineOffsetSeconds: chunk.startSeconds,
+                            timelineDurationSeconds: chunk.durationSeconds,
+                        }),
+                        timeoutMs: resolveVipRenderTimeoutMs(),
+                    });
+                    return chunkOutputPath;
+                }),
+            );
+            await concatRenderedChunks({
+                chunkPaths,
+                concatListPath: path.join(workDir, "chunks.txt"),
                 outputPath,
-                speedFactor: input.speedFactor,
-                mirrorEnabled: input.mirrorEnabled,
-                blurRegions: normalizeBlurRegions(input.blur),
-                coverBoxes: normalizeCoverBoxes(input.coverBoxes),
-                originalAudioVolume: input.originalAudioVolume,
-                voiceVolume: input.voiceVolume,
-                renderPreset: input.renderPreset,
-            }),
-            timeoutMs: resolveVipRenderTimeoutMs(),
-        });
+            });
+        } else {
+            await writeSubtitleAss(input.translatedSegments, assPath);
+            const hasTextOverlay = await writeTextOverlayAss(
+                input.textOverlays,
+                textOverlayAssPath,
+            );
+            await runFfmpeg({
+                args: buildVipFinalRenderArgs({
+                    videoPath: inputPath,
+                    voicePath,
+                    subtitleAssPath: assPath,
+                    subtitleFontsDir,
+                    textOverlayAssPath: hasTextOverlay
+                        ? textOverlayAssPath
+                        : undefined,
+                    outputPath,
+                    speedFactor: input.speedFactor,
+                    mirrorEnabled: input.mirrorEnabled,
+                    blurRegions: normalizedBlurRegions,
+                    coverBoxes: normalizedCoverBoxes,
+                    originalAudioVolume: input.originalAudioVolume,
+                    voiceVolume: input.voiceVolume,
+                    renderPreset: input.renderPreset,
+                }),
+                timeoutMs: resolveVipRenderTimeoutMs(),
+            });
+        }
 
         return await readFile(outputPath);
     } catch (error) {
@@ -1299,7 +1700,10 @@ export async function runVideoVipVoiceRender(
         );
     }
 
-    const clampedSpeed = Math.min(2, Math.max(0.5, input.videoSpeedFactor ?? 1));
+    const clampedSpeed = Math.min(
+        2,
+        Math.max(0.5, input.videoSpeedFactor ?? DEFAULT_VIP_VIDEO_SPEED_FACTOR),
+    );
     const renderPreset = normalizeRenderPreset(input.renderPreset);
     const runners = {
         generateVoice: input.stageRunners?.generateVoice ?? generateVoiceFromSegments,
@@ -1351,7 +1755,10 @@ export async function runVideoVipVoiceRender(
         alignmentMode: voice.alignment.mode,
     });
 
-    const originalAudioVolume = normalizeVolume(input.originalAudioVolume, 0);
+    const originalAudioVolume = normalizeVolume(
+        input.originalAudioVolume,
+        DEFAULT_VIP_ORIGINAL_AUDIO_VOLUME,
+    );
     const voiceVolume = normalizeVolume(input.voiceVolume, 1);
     const renderStartedAt = Date.now();
     logVipEvent(runId, "remote-stage-start", {
@@ -1451,9 +1858,15 @@ export async function runVideoVipRemoteRender(
         );
     }
 
-    const clampedSpeed = Math.min(2, Math.max(0.5, input.videoSpeedFactor ?? 1));
+    const clampedSpeed = Math.min(
+        2,
+        Math.max(0.5, input.videoSpeedFactor ?? DEFAULT_VIP_VIDEO_SPEED_FACTOR),
+    );
     const renderPreset = normalizeRenderPreset(input.renderPreset);
-    const originalAudioVolume = normalizeVolume(input.originalAudioVolume, 0);
+    const originalAudioVolume = normalizeVolume(
+        input.originalAudioVolume,
+        DEFAULT_VIP_ORIGINAL_AUDIO_VOLUME,
+    );
     const voiceVolume = normalizeVolume(input.voiceVolume, 1);
     const runners = {
         render: input.stageRunners?.render ?? renderVipCompositeVideo,
@@ -1538,7 +1951,10 @@ export async function runVideoVipProcessing(
     }
 
     const translationMode = input.translationMode ?? "ai";
-    const clampedSpeed = Math.min(2, Math.max(0.5, input.videoSpeedFactor ?? 1));
+    const clampedSpeed = Math.min(
+        2,
+        Math.max(0.5, input.videoSpeedFactor ?? DEFAULT_VIP_VIDEO_SPEED_FACTOR),
+    );
     const renderPreset = normalizeRenderPreset(input.renderPreset);
     logVipEvent(runId, "run-start", {
         fileName: input.fileName,
@@ -1556,7 +1972,10 @@ export async function runVideoVipProcessing(
         metadataModel: input.metadataModel ?? input.model ?? DEFAULT_TRANSLATION_MODEL,
         speedFactor: clampedSpeed,
         renderPreset,
-        originalAudioVolume: normalizeVolume(input.originalAudioVolume, 0),
+        originalAudioVolume: normalizeVolume(
+            input.originalAudioVolume,
+            DEFAULT_VIP_ORIGINAL_AUDIO_VOLUME,
+        ),
         voiceVolume: normalizeVolume(input.voiceVolume, 1),
         checkpointEnabled: Boolean(input.checkpointKey),
     });
@@ -1768,7 +2187,10 @@ export async function runVideoVipProcessing(
     }
 
     if (input.voiceRenderExecutionMode === "remote-voice-render") {
-        const originalAudioVolume = normalizeVolume(input.originalAudioVolume, 0);
+        const originalAudioVolume = normalizeVolume(
+            input.originalAudioVolume,
+            DEFAULT_VIP_ORIGINAL_AUDIO_VOLUME,
+        );
         const voiceVolume = normalizeVolume(input.voiceVolume, 1);
         const remoteStartedAt = Date.now();
         logVipEvent(runId, "stage-start", {
@@ -2075,7 +2497,10 @@ export async function runVideoVipProcessing(
             });
         }
 
-        const originalAudioVolume = normalizeVolume(input.originalAudioVolume, 0);
+        const originalAudioVolume = normalizeVolume(
+            input.originalAudioVolume,
+            DEFAULT_VIP_ORIGINAL_AUDIO_VOLUME,
+        );
         const voiceVolume = normalizeVolume(input.voiceVolume, 1);
         const remoteStartedAt = Date.now();
         logVipEvent(runId, "stage-start", {
@@ -2382,7 +2807,10 @@ export async function runVideoVipProcessing(
         });
     }
 
-    const originalAudioVolume = normalizeVolume(input.originalAudioVolume, 0);
+    const originalAudioVolume = normalizeVolume(
+        input.originalAudioVolume,
+        DEFAULT_VIP_ORIGINAL_AUDIO_VOLUME,
+    );
     const voiceVolume = normalizeVolume(input.voiceVolume, 1);
 
     const finalRenderStartedAt = Date.now();

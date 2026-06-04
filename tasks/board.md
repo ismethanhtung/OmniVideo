@@ -25,6 +25,9 @@
 
 ## Review
 
+- `FAST-WORKSPACE-081` - Update VIP default speed and original volume.
+- `FAST-WORKSPACE-080` - Parallelize EC2 VIP final render chunks.
+- `FAST-WORKSPACE-079` - Skip muted source audio in VIP final render.
 - `FAST-WORKSPACE-078` - Keep Segments from expanding progress row height.
 - `FAST-WORKSPACE-077` - Match Segments height to left progress column.
 - `FAST-WORKSPACE-076` - Let Progress segments use modal height.
