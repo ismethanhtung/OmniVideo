@@ -1,6 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+    useCallback,
+    useEffect,
+    useMemo,
+    useState,
+    type MouseEvent,
+} from "react";
 import { Trash2 } from "lucide-react";
 
 import type { LeftbarNavItem } from "@/components/layout/types";
@@ -54,6 +60,17 @@ function sortVaultItems(items: InspirationVaultItem[]) {
             new Date(left.createdAt).getTime()
         );
     });
+}
+
+function getOpenableUrl(value: string) {
+    try {
+        const url = new URL(value.trim());
+        return url.protocol === "http:" || url.protocol === "https:"
+            ? url.toString()
+            : null;
+    } catch {
+        return null;
+    }
 }
 
 export function InspirationVaultPanel({ section }: InspirationVaultPanelProps) {
@@ -332,6 +349,16 @@ function VaultItemRow({
         }
     };
 
+    const handleContentClick = (event: MouseEvent<HTMLButtonElement>) => {
+        const openableUrl = getOpenableUrl(item.raw);
+        if ((event.metaKey || event.ctrlKey) && openableUrl) {
+            window.open(openableUrl, "_blank", "noopener,noreferrer");
+            return;
+        }
+
+        void handleCopy();
+    };
+
     return (
         <tr
             className={cn(
@@ -346,9 +373,9 @@ function VaultItemRow({
             <td className="max-w-[380px] px-3 py-2">
                 <button
                     type="button"
-                    onClick={() => void handleCopy()}
+                    onClick={handleContentClick}
                     className="block w-full cursor-pointer text-left"
-                    title="Click to copy content"
+                    title="Click to copy content; Command+Click opens URL"
                 >
                     <p className="truncate text-[11px] text-muted hover:text-main">
                         {item.raw}

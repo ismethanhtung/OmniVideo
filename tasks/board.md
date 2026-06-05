@@ -25,6 +25,7 @@
 
 ## Review
 
+- `FAST-UX-028` - Add Command-click open behavior to Inspiration Vault.
 - `FAST-WORKSPACE-081` - Update VIP default speed and original volume.
 - `FAST-WORKSPACE-080` - Parallelize EC2 VIP final render chunks.
 - `FAST-WORKSPACE-079` - Skip muted source audio in VIP final render.

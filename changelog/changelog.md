@@ -1,5 +1,15 @@
 # OmniVideo Changelog
 
+## FAST-UX-028 - Add Command-click Open Behavior to Inspiration Vault
+
+- Bumped app version from `0.10.110` to `0.10.111` as a patch release for Inspiration Vault content interaction.
+- Kept plain content clicks copying the saved value.
+- Added Command+Click and Ctrl+Click support for opening URL content in a new tab.
+- Verification (FAST-UX-028):
+  - `npm run test -- --run src/features/inspiration-vault/inspiration-vault-panel.test.ts` pass (1 file / 3 tests).
+  - `npm run guard:version` pass.
+  - `git diff --check` pass.
+
 ## FAST-WORKSPACE-081 - Update VIP Default Speed and Original Volume
 
 - Bumped app version from `0.10.109` to `0.10.110` as a patch release for VIP processing defaults.
