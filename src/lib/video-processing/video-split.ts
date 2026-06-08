@@ -145,19 +145,14 @@ async function probeDurationSeconds(ffmpegPath: string, inputPath: string) {
 
 export async function runVideoSplit(input: {
     fileName: string;
-    fileBytes: Uint8Array;
+    fileBytes?: Uint8Array;
+    sourceFilePath?: string;
+    workDirOverride?: string;
     mode: VideoSplitMode | "parts";
     intervalMinutes?: number;
     headMinutes?: number;
     splitParts?: number;
 }) {
-    if (!input.fileBytes || input.fileBytes.byteLength === 0) {
-        throw new VideoSplitError(
-            "VAL_VIDEO_REQUIRED",
-            "A source video file is required.",
-            400,
-        );
-    }
     if (
         input.mode !== "interval" &&
         input.mode !== "head" &&
@@ -171,13 +166,22 @@ export async function runVideoSplit(input: {
     }
 
     const baseName = sanitizeBaseName(input.fileName);
-    const workDir = path.join(tmpdir(), `omnivideo-split-${randomUUID()}`);
-    const inputPath = path.join(workDir, "source.mp4");
+    const workDir = input.workDirOverride || path.join(tmpdir(), `omnivideo-split-${randomUUID()}`);
+    const inputPath = input.sourceFilePath || path.join(workDir, "source.mp4");
     const outputDir = path.join(workDir, "outputs");
     const archivePath = path.join(workDir, `${baseName}.zip`);
     try {
         await mkdir(outputDir, { recursive: true });
-        await writeFile(inputPath, input.fileBytes);
+        if (!input.sourceFilePath) {
+            if (!input.fileBytes || input.fileBytes.byteLength === 0) {
+                throw new VideoSplitError(
+                    "VAL_VIDEO_REQUIRED",
+                    "A source video file is required.",
+                    400,
+                );
+            }
+            await writeFile(inputPath, input.fileBytes);
+        }
 
         const ffmpegPath = resolveFfmpegPath();
         if (input.mode === "interval" || input.mode === "parts") {

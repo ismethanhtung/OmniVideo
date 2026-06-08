@@ -175,6 +175,8 @@
 
 ## Done
 
+- `FAST-VIDEO-031` - Support large video files in Video Splitter using streaming multipart parser.
+- `FAST-AUDIO-068` - Lower minimum voice speed floor to 1.25x.
 - `FAST-UX-025` - Align Workspace outer spacing with app pages.
 - `FAST-AUDIO-038` - Repair suspicious word timestamp voice timing.
 - `FAST-AUDIO-037` - Harden Dub preview media playback errors.

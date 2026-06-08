@@ -164,7 +164,7 @@ function formatDurationMs(ms: number) {
 
 function formatSpeedFactor(value: number) {
     if (!Number.isFinite(value)) return "n/a";
-    return `${Math.max(1.3, value).toFixed(2)}x`;
+    return `${Math.max(1.25, value).toFixed(2)}x`;
 }
 
 function clampVideoSpeedFactor(value: number) {

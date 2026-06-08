@@ -1,24 +1,23 @@
 import { NextResponse } from "next/server";
+import { randomUUID } from "node:crypto";
+import { tmpdir } from "node:os";
+import path from "node:path";
 
 import { applyDemoRateLimit } from "@/lib/access-control/route-guards";
 import { putSplitDownloadEntry } from "@/lib/video-processing/split-download-store";
 import { VideoSplitError, runVideoSplit } from "@/lib/video-processing/video-split";
+import { parseMultipartStream } from "@/lib/video-processing/multipart-parser";
 
 export const runtime = "nodejs";
 
-function readStringField(formData: FormData, key: string) {
-    const value = formData.get(key);
-    return typeof value === "string" ? value.trim() : "";
-}
-
 export async function POST(request: Request) {
+    const workDir = path.join(tmpdir(), `omnivideo-split-${randomUUID()}`);
     try {
         const rateLimited = applyDemoRateLimit(request, "video-tools");
         if (rateLimited) return rateLimited;
 
-        const formData = await request.formData();
-        const file = formData.get("videoFile");
-        if (!(file instanceof File)) {
+        const parsed = await parseMultipartStream(request, workDir);
+        if (!parsed.filePath) {
             throw new VideoSplitError(
                 "VAL_VIDEO_REQUIRED",
                 "videoFile is required.",
@@ -26,15 +25,16 @@ export async function POST(request: Request) {
             );
         }
 
-        const modeRaw = readStringField(formData, "mode");
+        const modeRaw = (parsed.fields.mode || "").trim();
         const mode = modeRaw === "head" ? "head" : modeRaw === "parts" ? "parts" : "interval";
-        const intervalMinutes = Number(readStringField(formData, "intervalMinutes"));
-        const headMinutes = Number(readStringField(formData, "headMinutes"));
-        const splitParts = Number(readStringField(formData, "splitParts"));
+        const intervalMinutes = Number((parsed.fields.intervalMinutes || "").trim());
+        const headMinutes = Number((parsed.fields.headMinutes || "").trim());
+        const splitParts = Number((parsed.fields.splitParts || "").trim());
 
         const output = await runVideoSplit({
-            fileName: file.name || "source.mp4",
-            fileBytes: new Uint8Array(await file.arrayBuffer()),
+            fileName: parsed.fileName || "source.mp4",
+            sourceFilePath: parsed.filePath,
+            workDirOverride: workDir,
             mode,
             intervalMinutes: Number.isFinite(intervalMinutes)
                 ? intervalMinutes

@@ -21,5 +21,11 @@ describe("video split runtime", () => {
         expect(source).toContain("probeDurationSeconds(");
         expect(source).toContain("splitParts must be an integer between 2 and 60.");
     });
+
+    it("supports streaming sourceFilePath and bypasses fileBytes write", () => {
+        expect(source).toContain("sourceFilePath?: string;");
+        expect(source).toContain("const inputPath = input.sourceFilePath || path.join(workDir, \"source.mp4\");");
+        expect(source).toContain("if (!input.sourceFilePath) {");
+    });
 });
 

@@ -1,5 +1,26 @@
 # OmniVideo Changelog
 
+## FAST-VIDEO-031 - Support Large Video Files in Video Splitter
+
+- Bumped app version from `0.10.112` to `0.10.113` as a patch release for Video Splitter scalability.
+- Refactored Video Splitter API `/api/video-processing/split` to parse incoming multipart body as a stream using a custom sliding-window parser, writing chunk bytes directly to disk.
+- Prevented "Failed to parse body as FormData" error and V8 heap limits on video file uploads larger than 2GB.
+- Verification (FAST-VIDEO-031):
+  - `npm run test -- --run src/lib/video-processing/multipart-parser.test.ts` pass (1 file / 1 test).
+  - `npm run test -- --run src/lib/video-processing/video-split.test.ts` pass (1 file / 3 tests).
+  - `npm run guard:version` pass.
+
+## FAST-AUDIO-068 - Lower Minimum Voice Speed Floor to 1.25x
+
+- Bumped app version from `0.10.111` to `0.10.112` as a patch release for voice speed timing floor.
+- Lowered the shared Piper timeline minimum speed floor from `1.30x` to `1.25x` (`timelineMinSpeedFactor`).
+- Lowered the Audio Transcript `Voice speed` UI display floor from `1.30x` to `1.25x`.
+- Workspace audio nodes automatically inherit the same `1.25x` runtime floor because they use the shared Piper alignment settings.
+- Verification (FAST-AUDIO-068):
+  - `npm run test -- --run src/lib/multilingual-audio/piper-tts.test.ts` pass (1 file / 26 tests).
+  - `npm run test -- --run src/features/audio/chinese-transcription-panel.test.ts` pass (1 file / 8 tests).
+  - `npm run guard:version` pass.
+
 ## FAST-UX-028 - Add Command-click Open Behavior to Inspiration Vault
 
 - Bumped app version from `0.10.110` to `0.10.111` as a patch release for Inspiration Vault content interaction.
