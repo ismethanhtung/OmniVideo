@@ -599,7 +599,7 @@ describe("VIP processing stage checkpoints", () => {
         expect(runners.translate).not.toHaveBeenCalled();
     });
 
-    it("normalizes subtitle timing to avoid segment overlap in final render", async () => {
+    it("preserves subtitle timing alignment with voice segments without delaying overlapping segments", async () => {
         const runners = createStageRunners();
         runners.transcribe = vi.fn(async () => ({
             text: "你好 世界",
@@ -657,9 +657,7 @@ describe("VIP processing stage checkpoints", () => {
         expect(runners.render).toHaveBeenCalledTimes(1);
         const renderInput = vi.mocked(runners.render).mock.calls[0][0];
         expect(renderInput.translatedSegments).toHaveLength(2);
-        expect(renderInput.translatedSegments[1].start).toBeGreaterThanOrEqual(
-            renderInput.translatedSegments[0].end,
-        );
+        expect(renderInput.translatedSegments[1].start).toBe(2);
     });
 
     it("uses current VIP speed and original-volume defaults when omitted", async () => {

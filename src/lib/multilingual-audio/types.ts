@@ -103,6 +103,7 @@ export type TranscriptTranslationSegment = {
     end: number;
     sourceText: string;
     translatedText: string;
+    speechEnd?: number;
 };
 
 export type TranscriptTranslationResult = {

@@ -23,6 +23,7 @@ import {
     DEFAULT_PIPER_TTS_SETTINGS,
     DEFAULT_TRANSLATION_MODEL,
     type TranscriptTranslationResult,
+    type TranscriptTranslationSegment,
     type VietnameseVideoMetadataResult,
     type VoiceGenerationResult,
     type VoiceGenerationSettings,
@@ -262,15 +263,54 @@ function buildSpeechTimedSubtitleSegments(input: {
     });
 
     const MIN_SUBTITLE_DURATION_SECONDS = 0.01;
-    let previousEnd = 0;
     return timedSegments.map((segment) => {
-        const start = Math.max(segment.start, previousEnd);
+        const start = segment.start;
         const end = Math.max(segment.end, start + MIN_SUBTITLE_DURATION_SECONDS);
-        previousEnd = end;
         return {
             ...segment,
             start,
             end,
+        };
+    });
+}
+
+interface SpeechTimingChunk {
+    segmentId: number;
+    start: number;
+    end: number;
+    rawDurationSeconds: number;
+    speedFactor: number;
+}
+
+export function enrichSubtitlesWithSpeechTimings(
+    segments: TranscriptTranslationSegment[],
+    alignment: {
+        timeline?: SpeechTimingChunk[];
+    } | undefined | null,
+) {
+    if (!alignment?.timeline || !Array.isArray(alignment.timeline) || alignment.timeline.length === 0) {
+        return segments;
+    }
+
+    const chunkMap = new Map<number, SpeechTimingChunk>();
+    for (const chunk of alignment.timeline) {
+        if (chunk && typeof chunk.segmentId === "number") {
+            chunkMap.set(chunk.segmentId, chunk);
+        }
+    }
+
+    return segments.map((segment) => {
+        const chunk = chunkMap.get(segment.id);
+        if (!chunk || typeof chunk.rawDurationSeconds !== "number" || typeof chunk.speedFactor !== "number" || chunk.speedFactor <= 0) {
+            return segment;
+        }
+
+        const speechDuration = chunk.rawDurationSeconds / chunk.speedFactor;
+        const speechEnd = chunk.start + speechDuration;
+
+        return {
+            ...segment,
+            speechEnd,
         };
     });
 }
@@ -1777,11 +1817,15 @@ export async function runVideoVipVoiceRender(
     });
     let videoBytes: Buffer;
     try {
+        const enrichedSubtitleSegments = enrichSubtitlesWithSpeechTimings(
+            subtitleSegments,
+            voice.alignment,
+        );
         videoBytes = await runners.render({
             sourceVideoBytes: input.fileBytes,
             sourceFileName: input.fileName,
             voiceBytes: Buffer.from(voice.audioBase64, "base64"),
-            translatedSegments: subtitleSegments,
+            translatedSegments: enrichedSubtitleSegments,
             speedFactor: clampedSpeed,
             mirrorEnabled: input.mirrorEnabled === true,
             blur: input.blur,
@@ -2521,6 +2565,10 @@ export async function runVideoVipProcessing(
             "@/lib/multilingual-audio/remote-vip-worker"
         );
         let remoteResult: VideoVipRemoteRenderResult;
+        const enrichedSubtitleSegments = enrichSubtitlesWithSpeechTimings(
+            subtitleSegments,
+            voice.alignment,
+        );
         try {
             remoteResult = await runRemoteVideoVipRender(
                 {
@@ -2530,7 +2578,7 @@ export async function runVideoVipProcessing(
                     fileSizeBytes: input.fileSizeBytes,
                     fileBytes: input.fileBytes,
                     voiceAudioBase64: voice.audioBase64,
-                    translatedSegments: subtitleSegments,
+                    translatedSegments: enrichedSubtitleSegments,
                     originalAudioVolume,
                     voiceVolume,
                     videoSpeedFactor: clampedSpeed,
@@ -2814,6 +2862,10 @@ export async function runVideoVipProcessing(
     const voiceVolume = normalizeVolume(input.voiceVolume, 1);
 
     const finalRenderStartedAt = Date.now();
+    const enrichedSubtitleSegments = enrichSubtitlesWithSpeechTimings(
+        subtitleSegments,
+        voice.alignment,
+    );
     let videoBytes: Buffer;
     logVipEvent(runId, "stage-start", {
         stage: "render",
@@ -2855,7 +2907,7 @@ export async function runVideoVipProcessing(
                     sourceVideoBytes: input.fileBytes,
                     sourceFileName: input.fileName,
                     voiceBytes: Buffer.from(voice.audioBase64, "base64"),
-                    translatedSegments: subtitleSegments,
+                    translatedSegments: enrichedSubtitleSegments,
                     speedFactor: clampedSpeed,
                     mirrorEnabled: input.mirrorEnabled === true,
                     blur: input.blur,
@@ -2888,7 +2940,7 @@ export async function runVideoVipProcessing(
                 sourceVideoBytes: input.fileBytes,
                 sourceFileName: input.fileName,
                 voiceBytes: Buffer.from(voice.audioBase64, "base64"),
-                translatedSegments: subtitleSegments,
+                translatedSegments: enrichedSubtitleSegments,
                 speedFactor: clampedSpeed,
                 mirrorEnabled: input.mirrorEnabled === true,
                 blur: input.blur,

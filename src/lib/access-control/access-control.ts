@@ -45,7 +45,8 @@ export type DemoFeature =
   | "video-metadata"
   | "video-vip-processing"
   | "video-mirror"
-  | "video-edit";
+  | "video-edit"
+  | "video-narrator";
 
 export type RateLimitResult =
   | {

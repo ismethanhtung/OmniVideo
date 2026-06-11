@@ -108,6 +108,13 @@ export const LEFTBAR_NAV: LeftbarNavGroup[] = [
                     "Extract audio từ video/audio và gọi Groq Whisper Large v3 Turbo để lấy text + timestamp.",
             },
             {
+                id: "videoNarrator",
+                icon: Mic2,
+                label: "Video Narrator",
+                description:
+                    "Sử dụng AI Video Understanding (Gemini) để thuyết minh tiếng Việt, sinh giọng nói và render video.",
+            },
+            {
                 id: "videoToolsLab",
                 icon: Clapperboard,
                 label: "Video Tools Lab",
@@ -246,6 +253,7 @@ const SECTION_SLUG_BY_ID: Record<AppSectionId, string> = {
     videoIntake: "video-intake",
     localUploadIntake: "local-upload-intake",
     chineseTranscription: "audio-transcript",
+    videoNarrator: "video-narrator",
     piperTtsSandbox: "piper-tts-sandbox",
     videoToolsLab: "video-tools-lab",
     videoSplitter: "video-splitter",
@@ -272,6 +280,7 @@ const LEGACY_SECTION_BY_CAMEL: Record<string, AppSectionId> = {
     videoIntake: "videoIntake",
     localUploadIntake: "localUploadIntake",
     chineseTranscription: "chineseTranscription",
+    videoNarrator: "videoNarrator",
     piperTtsSandbox: "piperTtsSandbox",
     videoToolsLab: "videoToolsLab",
     videoSplitter: "videoSplitter",

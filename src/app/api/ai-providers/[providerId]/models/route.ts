@@ -19,6 +19,34 @@ export async function GET(
     if (accessDenied) return accessDenied;
 
     const { providerId } = await context.params;
+    if (providerId === "env-gemini") {
+      const apiKey = process.env.GEMINI_API_KEY?.trim() || process.env.GOOGLE_API_KEY?.trim() || "";
+      if (!apiKey) {
+        return NextResponse.json({ ok: true, data: [] });
+      }
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch Gemini models from Google AI Studio: HTTP ${response.status}`);
+      }
+      const payload = (await response.json()) as {
+        models?: Array<{
+          name?: string;
+          displayName?: string;
+          supportedGenerationMethods?: string[];
+        }>;
+      };
+      const models = (payload.models || [])
+        .filter((m) => typeof m.name === "string" && m.supportedGenerationMethods?.includes("generateContent"))
+        .map((m) => {
+          const id = m.name!.replace(/^models\//u, "");
+          return {
+            id,
+            name: m.displayName || id,
+          };
+        });
+      return NextResponse.json({ ok: true, data: models });
+    }
+
     const db = await getAiProvidersDb();
     const provider = await getAiProviderById({ db, providerId });
     const models = await fetchProviderModels({

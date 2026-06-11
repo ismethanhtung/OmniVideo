@@ -45,6 +45,12 @@ const FALLBACK_BUNDLED_SUBTITLE_FONT_FILES: Record<string, string> = {
     ),
 };
 
+export type SubtitleDisplayMode =
+    | "standard"
+    | "word-reveal"
+    | "karaoke"
+    | "triple-word-highlight";
+
 export type VideoEditRegionPercent = {
     x: number;
     y: number;
@@ -126,6 +132,7 @@ export type VideoEditInput = {
             placementRegion?: VideoEditRegionPercent;
             playResX?: number;
             playResY?: number;
+            subtitleMode?: SubtitleDisplayMode;
         };
     };
     textOverlays?: {
@@ -547,6 +554,26 @@ function formatAssTimestamp(seconds: number) {
     )}.${String(cs).padStart(2, "0")}`;
 }
 
+function calculateWordWeights(words: string[]): number[] {
+    return words.map((word) => {
+        const clean = word.trim();
+        if (!clean) return 1.0;
+
+        let weight = 1.0;
+        // Strip punctuation for character length count
+        const charCount = clean.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, "").length;
+        weight += Math.min(1.5, charCount * 0.15);
+
+        // Adjust for punctuation pauses
+        if (/[.!?:;]$/u.test(clean) || clean.endsWith(".") || clean.endsWith("?") || clean.endsWith("!")) {
+            weight += 2.5;
+        } else if (/,$/u.test(clean) || clean.endsWith(",") || clean.endsWith("-")) {
+            weight += 1.2;
+        }
+        return weight;
+    });
+}
+
 export function buildSubtitleAssContent(
     segments: TranscriptTranslationSegment[],
     style?: {
@@ -563,17 +590,19 @@ export function buildSubtitleAssContent(
         placementRegion?: VideoEditRegionPercent;
         playResX?: number;
         playResY?: number;
+        subtitleMode?: SubtitleDisplayMode;
+        textColor?: string;
     },
 ) {
     const subtitleFontFamily = (style?.fontFamily || "Bangers")
         .replace(/,/g, "")
         .trim();
     const subtitleFontSize = Number.isFinite(style?.fontSize)
-        ? Math.min(160, Math.max(20, Math.round(style?.fontSize ?? 40)))
-        : 40;
+        ? Math.min(160, Math.max(20, Math.round(style?.fontSize ?? 80)))
+        : 80;
     const subtitleMarginBottom = Number.isFinite(style?.marginBottom)
-        ? Math.min(520, Math.max(0, Math.round(style?.marginBottom ?? 150)))
-        : 150;
+        ? Math.min(520, Math.max(0, Math.round(style?.marginBottom ?? 380)))
+        : 380;
     const subtitleMarginLeft = Number.isFinite(style?.marginLeft)
         ? Math.min(520, Math.max(0, Math.round(style?.marginLeft ?? 60)))
         : 60;
@@ -583,6 +612,7 @@ export function buildSubtitleAssContent(
     const subtitleAlignment = Number.isFinite(style?.alignment)
         ? Math.min(9, Math.max(1, Math.round(style?.alignment ?? 2)))
         : 2;
+    const textColor = (style?.textColor || "#FFFFCC").trim();
     const backgroundEnabled = style?.backgroundEnabled !== false;
     const backgroundOpacity = Number.isFinite(style?.backgroundOpacity)
         ? Math.min(100, Math.max(0, Math.round(style?.backgroundOpacity ?? 0)))
@@ -637,26 +667,167 @@ export function buildSubtitleAssContent(
     const effectiveSubtitleMarginBottom = placementRegion
         ? 0
         : subtitleMarginBottom;
-    const normalizedSegments = segments
-        .filter(
-            (segment) =>
-                Number.isFinite(segment.start) &&
-                Number.isFinite(segment.end) &&
-                segment.end > segment.start &&
-                segment.translatedText.trim().length > 0,
-        )
-        .map((segment) => ({
-            start: formatAssTimestamp(segment.start),
-            end: formatAssTimestamp(segment.end),
-            text: addAssLineGap({
-                escapedText: escapeAssText(
-                    normalizeSubtitleTextForAss(
-                        segment.translatedText.toLocaleUpperCase("vi-VN"),
-                    ),
-                ),
-                fontSize: subtitleFontSize,
-            }),
-        }));
+    const subtitleMode = style?.subtitleMode || "standard";
+    const isTripleWordHighlight = subtitleMode === "triple-word-highlight";
+    const textAssColor = hexToAssColor(
+        isTripleWordHighlight ? "#FFFFCC" : textColor,
+        100,
+    );
+    const secondaryTextAssColor = hexToAssColor("#FF0000", 100);
+    const defaultTextOverrideColor = hexToAssOverrideColor("#FFFFCC");
+    const activeTextOverrideColor = hexToAssOverrideColor(textColor);
+    const normalizedSegments: Array<{
+        start: string;
+        end: string;
+        text: string;
+        backgroundText?: string;
+    }> = [];
+
+    for (const segment of segments) {
+        if (
+            !Number.isFinite(segment.start) ||
+            !Number.isFinite(segment.end) ||
+            segment.end <= segment.start ||
+            !segment.translatedText.trim()
+        ) {
+            continue;
+        }
+
+        const rawText = normalizeSubtitleTextForAss(
+            segment.translatedText.toLocaleUpperCase("vi-VN"),
+        );
+        const words = rawText.split(/\s+/gu).filter((w) => w.length > 0);
+
+        if (words.length === 0) {
+            continue;
+        }
+
+        const segmentSpeechEnd = segment.speechEnd;
+        const hasSpeechEnd = typeof segmentSpeechEnd === "number" && segmentSpeechEnd > segment.start;
+        const effectiveEnd = hasSpeechEnd ? segmentSpeechEnd : segment.end;
+        const segmentEnd = effectiveEnd;
+
+        if (subtitleMode === "word-reveal" && words.length > 1) {
+            const duration = effectiveEnd - segment.start;
+            const weights = calculateWordWeights(words);
+            const totalWeight = weights.reduce((sum, w) => sum + w, 0);
+
+            let currentStart = segment.start;
+            for (let i = 0; i < words.length; i++) {
+                const wDuration = duration * (weights[i] / totalWeight);
+                const wStart = currentStart;
+                const wEnd = i === words.length - 1 ? segmentEnd : wStart + wDuration;
+                const wordText = words[i];
+
+                normalizedSegments.push({
+                    start: formatAssTimestamp(wStart),
+                    end: formatAssTimestamp(wEnd),
+                    text: addAssLineGap({
+                        escapedText: escapeAssText(wordText),
+                        fontSize: subtitleFontSize,
+                    }),
+                });
+                currentStart = wStart + wDuration;
+            }
+        } else if (subtitleMode === "karaoke" && words.length > 1) {
+            const activeDurationCs = Math.round((effectiveEnd - segment.start) * 100);
+            const weights = calculateWordWeights(words);
+            const totalWeight = weights.reduce((sum, w) => sum + w, 0);
+
+            const wordDurationsCs = words.map((_, idx) => {
+                return Math.round(activeDurationCs * (weights[idx] / totalWeight));
+            });
+
+            const sumCs = wordDurationsCs.reduce((sum, d) => sum + d, 0);
+            const diff = activeDurationCs - sumCs;
+            if (diff !== 0 && wordDurationsCs.length > 0) {
+                let maxIdx = 0;
+                for (let i = 1; i < wordDurationsCs.length; i++) {
+                    if (wordDurationsCs[i] > wordDurationsCs[maxIdx]) {
+                        maxIdx = i;
+                    }
+                }
+                wordDurationsCs[maxIdx] = Math.max(1, wordDurationsCs[maxIdx] + diff);
+            }
+
+            const karaokeTextParts = words.map((w, idx) => `{\\k${wordDurationsCs[idx]}}${escapeAssText(w)}`);
+
+            const totalSegmentCs = Math.round((segmentEnd - segment.start) * 100);
+            const remainingCs = totalSegmentCs - activeDurationCs;
+            if (remainingCs > 0) {
+                karaokeTextParts.push(`{\\k${remainingCs}}`);
+            }
+
+            const karaokeText = karaokeTextParts.join(" ");
+
+            normalizedSegments.push({
+                start: formatAssTimestamp(segment.start),
+                end: formatAssTimestamp(segmentEnd),
+                text: addAssLineGap({
+                    escapedText: karaokeText,
+                    fontSize: subtitleFontSize,
+                }),
+            });
+        } else if (
+            subtitleMode === "triple-word-highlight" &&
+            words.length > 1
+        ) {
+            const duration = effectiveEnd - segment.start;
+            const weights = calculateWordWeights(words);
+            const totalWeight = weights.reduce((sum, w) => sum + w, 0);
+            const wordDurations = words.map(
+                (_, idx) => duration * (weights[idx] / totalWeight),
+            );
+
+            let currentStart = segment.start;
+            for (let wordIndex = 0; wordIndex < words.length; wordIndex += 1) {
+                const wordStartSeconds = currentStart;
+                const wordEndSeconds =
+                    wordIndex === words.length - 1
+                        ? segmentEnd
+                        : wordStartSeconds + wordDurations[wordIndex];
+                const windowStart = Math.floor(wordIndex / 3) * 3;
+                const windowWords = words.slice(windowStart, windowStart + 3);
+                const windowText = windowWords
+                    .map((word, idx) => {
+                        const absoluteIndex = windowStart + idx;
+                        const escapedWord = escapeAssText(word);
+                        if (absoluteIndex !== wordIndex) {
+                            return escapedWord;
+                        }
+                        return `{\\c${activeTextOverrideColor}}${escapedWord}{\\c${defaultTextOverrideColor}}`;
+                    })
+                    .join(" ");
+                const backgroundWindowText = windowWords
+                    .map((word) => escapeAssText(word))
+                    .join(" ");
+
+                normalizedSegments.push({
+                    start: formatAssTimestamp(wordStartSeconds),
+                    end: formatAssTimestamp(wordEndSeconds),
+                    text: addAssLineGap({
+                        escapedText: windowText,
+                        fontSize: subtitleFontSize,
+                    }),
+                    backgroundText: addAssLineGap({
+                        escapedText: backgroundWindowText,
+                        fontSize: subtitleFontSize,
+                    }),
+                });
+                currentStart = wordEndSeconds;
+            }
+        } else {
+            // standard mode or single word segment
+            normalizedSegments.push({
+                start: formatAssTimestamp(segment.start),
+                end: formatAssTimestamp(segmentEnd),
+                text: addAssLineGap({
+                    escapedText: escapeAssText(rawText),
+                    fontSize: subtitleFontSize,
+                }),
+            });
+        }
+    }
 
     if (normalizedSegments.length === 0) {
         throw new VideoEditError(
@@ -673,17 +844,17 @@ export function buildSubtitleAssContent(
         // Layer 1: opaque box only (transparent glyph), Layer 2: visible text with black outline.
         styleLines.push(
             `Style: BackgroundBox,${subtitleFontFamily || "Bangers"},${subtitleFontSize},&HFF000000,&H000000FF,${backgroundAssColor},${backgroundAssColor},-1,0,0,0,100,100,0,0,3,${backgroundPaddingY},0,${effectiveSubtitleAlignment},${effectiveSubtitleMarginLeft},${effectiveSubtitleMarginRight},${effectiveSubtitleMarginBottom},1`,
-            `Style: ForegroundText,${subtitleFontFamily || "Bangers"},${subtitleFontSize},&H00FFFFFF,&H000000FF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,2,0,${effectiveSubtitleAlignment},${effectiveSubtitleMarginLeft},${effectiveSubtitleMarginRight},${effectiveSubtitleMarginBottom},1`,
+            `Style: ForegroundText,${subtitleFontFamily || "Bangers"},${subtitleFontSize},${textAssColor},${secondaryTextAssColor},&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,2,0,${effectiveSubtitleAlignment},${effectiveSubtitleMarginLeft},${effectiveSubtitleMarginRight},${effectiveSubtitleMarginBottom},1`,
         );
         for (const segment of normalizedSegments) {
             eventLines.push(
-                `Dialogue: 0,${segment.start},${segment.end},BackgroundBox,,0,0,0,,${positionedAssPrefix}${segment.text}`,
+                `Dialogue: 0,${segment.start},${segment.end},BackgroundBox,,0,0,0,,${positionedAssPrefix}${segment.backgroundText ?? segment.text}`,
                 `Dialogue: 1,${segment.start},${segment.end},ForegroundText,,0,0,0,,${positionedAssPrefix}${segment.text}`,
             );
         }
     } else {
         styleLines.push(
-            `Style: Default,${subtitleFontFamily || "Bangers"},${subtitleFontSize},&H00FFFFFF,&H000000FF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,${borderStyle},2,0,${effectiveSubtitleAlignment},${effectiveSubtitleMarginLeft},${effectiveSubtitleMarginRight},${effectiveSubtitleMarginBottom},1`,
+            `Style: Default,${subtitleFontFamily || "Bangers"},${subtitleFontSize},${textAssColor},${secondaryTextAssColor},&H00000000,&H00000000,-1,0,0,0,100,100,0,0,${borderStyle},2,0,${effectiveSubtitleAlignment},${effectiveSubtitleMarginLeft},${effectiveSubtitleMarginRight},${effectiveSubtitleMarginBottom},1`,
         );
         for (const segment of normalizedSegments) {
             eventLines.push(
@@ -725,6 +896,18 @@ function hexToAssColor(hex: string, opacityPercent: number) {
         .padStart(2, "0")
         .toUpperCase();
     return `&H${alpha}${bb}${gg}${rr}`;
+}
+
+function hexToAssOverrideColor(hex: string) {
+    const normalized = hex.replace(/^#/u, "");
+    const safe =
+        normalized.length === 6 && /^[0-9a-fA-F]{6}$/u.test(normalized)
+            ? normalized
+            : "000000";
+    const rr = safe.slice(0, 2);
+    const gg = safe.slice(2, 4);
+    const bb = safe.slice(4, 6);
+    return `&H${bb}${gg}${rr}&`;
 }
 
 export function buildTextOverlayAssContent(

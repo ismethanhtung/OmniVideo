@@ -112,11 +112,11 @@ describe("video edit pipeline", () => {
         ]);
 
         expect(ass).toContain("Dialogue: 0,0:01:02.12,0:01:04.50");
-        expect(ass).toContain("DONG 1\\N{\\fs7}\\h\\N{\\fs40}DONG 2");
+        expect(ass).toContain("DONG 1\\N{\\fs14}\\h\\N{\\fs80}DONG 2");
         expect(ass).toContain("WrapStyle: 0");
-        expect(ass).toContain("Style: BackgroundBox,Bangers,40");
-        expect(ass).toContain("Style: ForegroundText,Bangers,40");
-        expect(ass).toContain(",60,60,150,1");
+        expect(ass).toContain("Style: BackgroundBox,Bangers,80");
+        expect(ass).toContain("Style: ForegroundText,Bangers,80");
+        expect(ass).toContain(",60,60,380,1");
     });
 
     it("keeps long one-line subtitle text on a single ASS line", () => {
@@ -353,7 +353,7 @@ describe("video edit pipeline", () => {
         );
 
         expect(ass).toContain("Style: BackgroundBox,Bangers,42");
-        expect(ass).toContain(",3,12,0,2,60,60,150,1");
+        expect(ass).toContain(",3,12,0,2,60,60,380,1");
         expect(ass).toContain("Style: ForegroundText,Bangers,42");
     });
 
@@ -377,6 +377,106 @@ describe("video edit pipeline", () => {
 
         expect(ass).toContain(",5,0,0,0,1");
         expect(ass).toContain("{\\an5\\pos(960,945)}TXT");
+    });
+
+    it("generates word-reveal progressive subtitles", () => {
+        const ass = buildSubtitleAssContent(
+            [
+                {
+                    id: 1,
+                    start: 1.0,
+                    end: 3.0,
+                    sourceText: "hello world how are you",
+                    translatedText: "xin chao moi nguoi",
+                },
+            ],
+            { subtitleMode: "word-reveal" },
+        );
+
+        expect(ass).toContain("XIN");
+        expect(ass).toContain("CHAO");
+        expect(ass).toContain("MOI");
+        expect(ass).toContain("NGUOI");
+        expect(ass).not.toContain("XIN CHAO");
+    });
+
+    it("generates karaoke subtitles with highlight tags", () => {
+        const ass = buildSubtitleAssContent(
+            [
+                {
+                    id: 1,
+                    start: 1.0,
+                    end: 3.0,
+                    sourceText: "hello world",
+                    translatedText: "xin chao",
+                },
+            ],
+            { subtitleMode: "karaoke" },
+        );
+
+        expect(ass).toContain("{\\k95}XIN {\\k105}CHAO");
+    });
+
+    it("generates three-word windows with only the current word highlighted", () => {
+        const ass = buildSubtitleAssContent(
+            [
+                {
+                    id: 1,
+                    start: 0,
+                    end: 7,
+                    sourceText: "one two three four five six seven",
+                    translatedText: "mot hai ba bon nam sau bay",
+                },
+            ],
+            { subtitleMode: "triple-word-highlight", textColor: "#FCA5A5" },
+        );
+
+        expect(ass).toContain("ForegroundText,Bangers,80,&H00CCFFFF,&H000000FF");
+        expect(ass).not.toContain("{\\k");
+        expect(ass).toContain("{\\c&HA5A5FC&}MOT{\\c&HCCFFFF&} HAI BA");
+        expect(ass).toContain("MOT {\\c&HA5A5FC&}HAI{\\c&HCCFFFF&} BA");
+        expect(ass).toContain("MOT HAI {\\c&HA5A5FC&}BA{\\c&HCCFFFF&}");
+        expect(ass).toContain("{\\c&HA5A5FC&}BON{\\c&HCCFFFF&} NAM SAU");
+        expect(ass).toContain("BON NAM {\\c&HA5A5FC&}SAU{\\c&HCCFFFF&}");
+        expect(ass).toContain("{\\c&HA5A5FC&}BAY{\\c&HCCFFFF&}");
+        expect(ass).not.toContain("MOT HAI BA BON");
+    });
+
+    it("restricts word timings using speechEnd when provided", () => {
+        const ass = buildSubtitleAssContent(
+            [
+                {
+                    id: 1,
+                    start: 1.0,
+                    end: 3.0,
+                    sourceText: "hello world",
+                    translatedText: "xin chao",
+                    speechEnd: 2.0,
+                },
+            ],
+            { subtitleMode: "word-reveal" },
+        );
+
+        expect(ass).toContain("Dialogue: 1,0:00:01.00,0:00:01.48,ForegroundText,,0,0,0,,XIN");
+        expect(ass).toContain("Dialogue: 1,0:00:01.48,0:00:02.00,ForegroundText,,0,0,0,,CHAO");
+    });
+
+    it("adjusts karaoke highlight duration using speechEnd when provided", () => {
+        const ass = buildSubtitleAssContent(
+            [
+                {
+                    id: 1,
+                    start: 1.0,
+                    end: 3.0,
+                    sourceText: "hello world",
+                    translatedText: "xin chao",
+                    speechEnd: 2.0,
+                },
+            ],
+            { subtitleMode: "karaoke" },
+        );
+
+        expect(ass).toContain("{\\k48}XIN {\\k52}CHAO");
     });
 
     it("rejects partial blur without translated subtitle overlay", () => {

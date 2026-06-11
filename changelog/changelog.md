@@ -1,5 +1,112 @@
 # OmniVideo Changelog
 
+## FAST-VIDEO-038 - Fix Video Narrator 3-word active-only highlight render
+
+- Bumped app version from `0.11.8` to `0.11.9` as a patch release for Video Narrator active word coloring.
+- Replaced `3-word active highlight` ASS karaoke `\k` rendering with per-word timed dialogue events.
+- Applied the selected text color only to the currently active word using explicit ASS color override tags.
+- Kept previous and upcoming words warm white within each 3-word window.
+- Updated the regression test to reject `\k` output for this mode and assert active-only color override text.
+- Verification (FAST-VIDEO-038):
+  - `npm run test -- --run src/lib/video-processing/video-edit-pipeline.test.ts src/app/api/audio/video-narrator/route.test.ts` pass (2 files / 29 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+
+## FAST-VIDEO-037 - Fix Video Narrator 3-word preview and active highlight color
+
+- Bumped app version from `0.11.7` to `0.11.8` as a patch release for Video Narrator subtitle preview/render parity.
+- Made Source Preview follow the current video time and selected subtitle mode instead of showing a static full-sentence sample.
+- Updated `3-word active highlight` preview to show only the active 3-word window, with non-active words in warm white and the active word using the selected text color.
+- Updated 3-word ASS render colors so warm white is the default subtitle color and the selected text color is used as the karaoke active color.
+- Replaced the confusing Bottom/Left/Right primary subtitle controls with `Vertical %` and `Horizontal position` controls.
+- Verification (FAST-VIDEO-037):
+  - `npm run test -- --run src/lib/video-processing/video-edit-pipeline.test.ts src/app/api/audio/video-narrator/route.test.ts` pass (2 files / 29 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+
+## FAST-VIDEO-036 - Keep Video Narrator subtitle render output consistent with preview
+
+- Bumped app version from `0.11.6` to `0.11.7` as a patch release for Video Narrator render consistency.
+- Made Render Output full-bleed like Source Preview, removing padding around the rendered video.
+- Forced `3-word active highlight` Video Narrator renders through the local render path even if EC2 Spot Worker is selected, avoiding stale remote workers that render default full-line subtitles.
+- Updated the 3-word subtitle mode to emit grouped ASS karaoke timing for each 3-word window so the active word highlights within the visible group.
+- Added a regression assertion that remote requests with `3-word active highlight` do not call the remote worker path.
+- Verification (FAST-VIDEO-036):
+  - `npm run test -- --run src/lib/video-processing/video-edit-pipeline.test.ts src/app/api/audio/video-narrator/route.test.ts` pass (2 files / 29 tests).
+  - `npm run build` pass.
+  - `npm run guard:version` pass.
+  - `git diff --check` pass.
+
+## FAST-VIDEO-035 - Refine Video Narrator subtitle controls and timeline segments
+
+- Bumped app version from `0.11.5` to `0.11.6` as a patch release for Video Narrator subtitle preview placement.
+- Moved the subtitle sample out of the Subtitle controls box and into Source Preview as a live overlay that uses the selected font, text color, background, alignment, and vertical offset.
+- Kept the Subtitle controls focused on actual settings instead of showing a fake preview inside the settings card.
+- Verification (FAST-VIDEO-035):
+  - `npm run test -- --run src/app/api/audio/video-narrator/route.test.ts` pass (1 file / 3 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+
+## FAST-VIDEO-034 - Match Video Narrator workbench to tool page pattern
+
+- Bumped app version from `0.11.3` to `0.11.4` as a patch release for Video Narrator UI alignment.
+- Reworked Video Narrator Source Video selection to match Audio Transcript and Video Tools Lab with styled file input, Browse/Close asset picker, asset search, metadata rows, lifecycle badges, and inline Preview/Hide.
+- Normalized Video Narrator sidebar panels, headings, input classes, action buttons, render controls, preview cards, and narration timeline rows to the same workbench visual system as the reference tool pages.
+- Verification (FAST-VIDEO-034):
+  - `npm run test -- --run src/lib/video-processing/video-edit-pipeline.test.ts src/app/api/audio/video-narrator/route.test.ts` pass (2 files / 29 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+
+## FAST-VIDEO-033 - Polish Video Narrator subtitle controls and add three-word highlight mode
+
+- Bumped app version from `0.11.2` to `0.11.3` as a patch release for Video Narrator subtitle controls.
+- Polished `VideoNarratorPanel` into the same bordered tool-shell and sidebar/workbench layout used by Audio Transcript and Video Tools Lab.
+- Added Video Narrator subtitle controls for mode, font family, font size, text color, bottom/left/right margins, alignment, background color, background opacity, and background padding.
+- Passed all Video Narrator subtitle styling fields through `/api/audio/video-narrator` into render `subtitleStyle`.
+- Added `triple-word-highlight` subtitle mode: each active subtitle window shows up to 3 words and highlights the current timed word in yellow.
+- Added tests for the new ASS subtitle mode and backend subtitle style mapping.
+- Verification (FAST-VIDEO-033):
+  - `npm run test -- --run src/lib/video-processing/video-edit-pipeline.test.ts src/app/api/audio/video-narrator/route.test.ts` pass (2 files / 29 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+
+## FAST-VIDEO-032 - Add subtitle display modes (Standard, Word Reveal, Karaoke) to Video Narrator
+
+- Bumped app version from `0.11.0` to `0.11.2` as a patch release for the new subtitle display modes feature and timing sync improvements.
+- Updated `/api/audio/video-narrator` route to read `subtitleMode` from incoming form data and pass it inside the `subtitleStyle` parameter of `VideoVipVoiceRenderInput`.
+- Integrated `subtitleMode` select dropdown under "Dựng & Trộn âm thanh" section in the frontend `VideoNarratorPanel` component, and persisted the selection inside local storage session state.
+- Implemented character-length and punctuation-weighted word duration distribution in `buildSubtitleAssContent` to prevent voice-first desync in "word-reveal" and "karaoke" modes.
+- Fixed timing alignment desync in `buildSpeechTimedSubtitleSegments` by removing the artificial start-time delay from overlapping segments, keeping subtitle starts aligned exactly with voice segment starts.
+- Extended subtitle segments to handle voice spillover gracefully by capping segment duration at `Math.max(segment.end, speechEnd)`.
+- Added/updated unit tests in `src/lib/video-processing/video-edit-pipeline.test.ts` and `src/lib/multilingual-audio/video-vip-processing.test.ts` verifying proportional weighted durations and overlap alignments.
+- Verification (FAST-VIDEO-032):
+  - `npm run test -- --run src/lib/video-processing/video-edit-pipeline.test.ts` pass (1 file / 25 tests).
+  - `npm run test` pass (120 files / 649 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+
+## P2-VIDEO-003 - Implement AI Video Narrator Pipeline
+
+- Bumped app version from `0.10.118` to `0.11.0` as a minor release for the new AI Video Narrator feature under the Video Pipeline.
+- Registered new navigation item `videoNarrator` in `src/components/layout/navigation.ts`, updated layout routing maps in `src/components/layout/content-router.tsx`, and updated `AppSectionId` in `src/components/layout/types.ts`.
+- Implemented Google AI Studio Gemini Video client helper in `src/lib/multilingual-audio/video-narrator.ts` supporting resumable uploads via the Google File API, processing state polling, and structured JSON-mode Vietnamese timed script generation.
+- Implemented backend API router at `src/app/api/audio/video-narrator/route.ts` providing script generation endpoints and media voice synthesis/FFmpeg rendering (supporting local and EC2 worker executions with faked transcript timestamps).
+- Created modern frontend workspace panel `VideoNarratorPanel` in `src/features/video-narrator/video-narrator-panel.tsx` with local file uploads, Storage library selection, narration script generator prompt settings, timed narration segment tables with inline playback previews and manual edits, volume mixers, and rendering options.
+- Added `video-narrator` into the `DemoFeature` rate-limiting access control union type in `src/lib/access-control/access-control.ts`.
+- Fixed Google AI Studio File API resumable upload URL path in `video-narrator.ts` to include the `/upload/` prefix (calling `/upload/v1beta/files`), and updated upload URL checks to support the standard `x-goog-upload-url` header.
+- Implemented backend routing in `/api/ai-providers/[providerId]/models/route.ts` to support the `"env-gemini"` provider ID, enabling model listing requests to fetch directly from Google AI Studio Models API using the environment key.
+- Updated `VideoNarratorPanel` to set default selection to `"env-gemini"` and call provider models listing endpoints to correctly load the supported model list when utilizing environment API keys.
+- Fixed output video player and download link in `VideoNarratorPanel` to correctly resolve local `/api/workspace/artifacts/[artifactId]/download` path when generated video output size exceeds the 8MB base64 inline limit.
+- Verification (P2-VIDEO-003):
+  - `npx vitest run src/lib/multilingual-audio/video-narrator.test.ts` pass (1 file / 6 tests).
+  - `npx vitest run src/app/api/audio/video-narrator/route.test.ts` pass (1 file / 2 tests).
+  - `npm run test` pass (120 files / 645 tests).
+  - `npm run build` pass.
+  - `npm run guard:version` pass.
+
 ## FAST-WORKSPACE-083 - VIP Checkpoint Parameter Dependencies, Sentence Split Optimization, and Clear Checkpoints Button
 
 - Bumped app version from `0.10.117` to `0.10.118` as a patch release for VIP workflow resume reliability and split alignment quality.

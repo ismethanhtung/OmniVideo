@@ -9,6 +9,7 @@
 - (none)
 
 ## In Progress
+- `FAST-VIDEO-032` - Add subtitle display modes (Standard, Word Reveal, Karaoke) to Video Narrator and support alignment customization
 - `FAST-WORKSPACE-053` - Prioritize saved Video Tools setup over node defaults in VIP flow.
 - `FAST-WORKSPACE-052` - Add Seed Asset VIP Processing 2 for upload->storage->local flow.
 - `FAST-AUDIO-008` - Align Edge TTS voice to segment timestamps.
@@ -175,6 +176,20 @@
 - `P2-VIDEO-002` - Partial Blur and Subtitle Overlay Pipeline.
 
 ## Done
+
+- `FAST-VIDEO-038` - Fix Video Narrator 3-word active-only highlight render
+
+- `FAST-VIDEO-037` - Fix Video Narrator 3-word preview and active highlight color
+
+- `FAST-VIDEO-036` - Keep Video Narrator subtitle render output consistent with preview
+
+- `FAST-VIDEO-035` - Refine Video Narrator subtitle controls and timeline segments
+
+- `FAST-VIDEO-034` - Match Video Narrator workbench to tool page pattern
+
+- `FAST-VIDEO-033` - Polish Video Narrator subtitle controls and add three-word highlight mode
+
+- `P2-VIDEO-003` - Implement AI Video Narrator Pipeline
 
 - `FAST-WORKSPACE-083` - VIP Checkpoint Reuse, Segment Cutting Optimization, and Clear Checkpoints Button
 
