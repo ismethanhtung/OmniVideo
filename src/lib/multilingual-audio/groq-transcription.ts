@@ -112,6 +112,8 @@ export function normalizeGroqTranscription(
     };
 }
 
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 export async function transcribeWithGroq(input: {
     apiKey: string;
     audioBytes: Uint8Array;
@@ -143,46 +145,76 @@ export async function transcribeWithGroq(input: {
         "speech.mp3",
     );
 
-    let response: Response;
-    try {
-        response = await fetcher(
-            "https://api.groq.com/openai/v1/audio/transcriptions",
-            {
-                method: "POST",
-                headers: {
-                    Authorization: `Bearer ${input.apiKey}`,
+    const maxAttempts = 6;
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        let response: Response;
+        try {
+            response = await fetcher(
+                "https://api.groq.com/openai/v1/audio/transcriptions",
+                {
+                    method: "POST",
+                    headers: {
+                        Authorization: `Bearer ${input.apiKey}`,
+                    },
+                    body: formData,
                 },
-                body: formData,
-            },
-        );
-    } catch (error) {
-        throw new ChineseTranscriptionError(
-            "PRV_GROQ_TRANSCRIPTION_FAILED",
-            error instanceof Error
-                ? `Groq transcription network request failed: ${error.message}`
-                : "Groq transcription network request failed.",
-            502,
+            );
+        } catch (error) {
+            if (attempt >= maxAttempts) {
+                throw new ChineseTranscriptionError(
+                    "PRV_GROQ_TRANSCRIPTION_FAILED",
+                    error instanceof Error
+                        ? `Groq transcription network request failed: ${error.message}`
+                        : "Groq transcription network request failed.",
+                    502,
+                );
+            }
+            const sleepMs = attempt * 1000;
+            console.warn(`[Groq transcription network error] ${error instanceof Error ? error.message : String(error)}. Retrying in ${sleepMs}ms... (attempt ${attempt}/${maxAttempts})`);
+            await sleep(sleepMs);
+            continue;
+        }
+
+        const payload = (await response.json().catch(() => ({}))) as
+            | GroqVerboseTranscription
+            | { error?: { message?: string } };
+
+        if (!response.ok) {
+            const status = response.status;
+            const message =
+                "error" in payload && payload.error?.message
+                    ? payload.error.message
+                    : "Groq transcription request failed.";
+
+            if (status === 429 && attempt < maxAttempts) {
+                let delaySeconds = 3;
+                const match = message.match(/try again in (\d+(?:\.\d+)?)s/i);
+                if (match && match[1]) {
+                    delaySeconds = parseFloat(match[1]);
+                }
+                const sleepMs = Math.ceil(delaySeconds * 1000) + 500;
+                console.warn(`[Groq rate limit 429] ${message}. Retrying in ${sleepMs}ms... (attempt ${attempt}/${maxAttempts})`);
+                await sleep(sleepMs);
+                continue;
+            }
+
+            throw new ChineseTranscriptionError(
+                "PRV_GROQ_TRANSCRIPTION_FAILED",
+                message,
+                status >= 400 && status < 500 ? 422 : 502,
+            );
+        }
+
+        return normalizeGroqTranscription(
+            payload as GroqVerboseTranscription,
+            input.language,
+            { audioDurationSeconds: input.audioDurationSeconds },
         );
     }
-    const payload = (await response.json().catch(() => ({}))) as
-        | GroqVerboseTranscription
-        | { error?: { message?: string } };
 
-    if (!response.ok) {
-        const message =
-            "error" in payload && payload.error?.message
-                ? payload.error.message
-                : "Groq transcription request failed.";
-        throw new ChineseTranscriptionError(
-            "PRV_GROQ_TRANSCRIPTION_FAILED",
-            message,
-            response.status >= 400 && response.status < 500 ? 422 : 502,
-        );
-    }
-
-    return normalizeGroqTranscription(
-        payload as GroqVerboseTranscription,
-        input.language,
-        { audioDurationSeconds: input.audioDurationSeconds },
+    throw new ChineseTranscriptionError(
+        "PRV_GROQ_TRANSCRIPTION_FAILED",
+        "Groq transcription request failed after maximum retry attempts.",
+        502,
     );
 }

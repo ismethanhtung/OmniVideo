@@ -292,7 +292,7 @@ describe("runChineseVideoTranscription", () => {
     expect(transcribeWithGroq).toHaveBeenCalledTimes(6);
   });
 
-  it("keeps original segment in best-effort mode when retries are exhausted", async () => {
+  it("splits segment programmatically in best-effort mode when retries are exhausted", async () => {
     vi.stubEnv("GROQ_API_KEY", "test-key");
     const longText =
       "你此时的嘴角比AK还要难压没问题以后学姐的头发就交给学弟我来守护吧苏清雪强忍的的效应哈哈";
@@ -321,7 +321,18 @@ describe("runChineseVideoTranscription", () => {
     });
 
     expect(result.segments).toEqual([
-      { id: 0, start: 365.164, end: 378.086, text: longText },
+      {
+        id: 0,
+        start: 365.164,
+        end: 365.164 + 12.922 * (40 / 42),
+        text: "你此时的嘴角比AK还要难压没问题以后学姐的头发就交给学弟我来守护吧苏清雪强忍的的效应",
+      },
+      {
+        id: 1,
+        start: 365.164 + 12.922 * (40 / 42),
+        end: 378.086,
+        text: "哈哈",
+      },
     ]);
     expect(result.steps.at(-1)?.status).toBe("success");
     expect(result.steps.at(-1)?.metrics).toMatchObject({
@@ -380,5 +391,110 @@ describe("runChineseVideoTranscription", () => {
     expect(vi.mocked(transcribeWithGroq).mock.calls[1]?.[0].prompt).toContain(
       "Keep proper names unchanged.",
     );
+  });
+
+  it("splits segment using word timestamps in best-effort mode when retries are exhausted", async () => {
+    vi.stubEnv("GROQ_API_KEY", "test-key");
+    const part1 = "一二三四五六七八九十一二三四五六七八九十，";
+    const part2 = "一二三四五六七八九十一二三四五六七八九十一二三四五";
+    const fullText = part1 + part2;
+
+    vi.mocked(extractSpeechReadyAudio).mockResolvedValue({
+      audioBytes: new Uint8Array([1, 2, 3, 4]),
+      durationSeconds: 400,
+    });
+    vi.mocked(extractSpeechSegmentAudio).mockResolvedValue({
+      audioBytes: new Uint8Array([9, 9]),
+      durationSeconds: 8,
+    });
+    vi.mocked(transcribeWithGroq).mockResolvedValue({
+      text: fullText,
+      language: "zh",
+      requestId: "req_long",
+      segments: [{ id: 1, start: 10, end: 18, text: fullText }],
+      words: [
+        { word: "一二三四五六七八九十", start: 10, end: 12 },
+        { word: "一二三四五六七八九十，", start: 12, end: 14 },
+        { word: "一二三四五六七八九十", start: 14.5, end: 16.5 },
+        { word: "一二三四五", start: 16.5, end: 18 },
+      ],
+    });
+
+    const result = await runChineseVideoTranscription({
+      fileName: "source.mp4",
+      mimeType: "video/mp4",
+      fileSizeBytes: 240 * 1024 * 1024,
+      fileBytes: new Uint8Array([1, 2, 3]),
+      overlongSegmentRetryMode: "best-effort",
+      includeWordTimestamps: true,
+    });
+
+    expect(result.segments).toEqual([
+      {
+        id: 0,
+        start: 10,
+        end: 14.25,
+        text: part1,
+      },
+      {
+        id: 1,
+        start: 14.25,
+        end: 18,
+        text: part2,
+      },
+    ]);
+  });
+
+  it("prefers splitting at punctuation over arbitrary limits", async () => {
+    vi.stubEnv("GROQ_API_KEY", "test-key");
+    const part1 = "一二三四五六七八九十，"; // 11 chars
+    const part2 = "一二三四五六七八九十一二三四五六七八九十一二三四五六七八九十一二三四五六七八九十"; // 40 chars
+    const fullText = part1 + part2;
+
+    vi.mocked(extractSpeechReadyAudio).mockResolvedValue({
+      audioBytes: new Uint8Array([1, 2, 3, 4]),
+      durationSeconds: 100,
+    });
+    vi.mocked(extractSpeechSegmentAudio).mockResolvedValue({
+      audioBytes: new Uint8Array([9, 9]),
+      durationSeconds: 8,
+    });
+    vi.mocked(transcribeWithGroq).mockResolvedValue({
+      text: fullText,
+      language: "zh",
+      requestId: "req_punctuation_split",
+      segments: [{ id: 1, start: 10, end: 18, text: fullText }],
+      words: [
+        { word: "一二三四五六七八九十，", start: 10, end: 12 },
+        { word: "一二三四五六七八九十", start: 12, end: 13.5 },
+        { word: "一二三四五六七八九十", start: 13.5, end: 15 },
+        { word: "一二三四五六七八九十", start: 15, end: 16.5 },
+        { word: "一二三四五六七八九十", start: 16.5, end: 18 },
+      ],
+    });
+
+    const result = await runChineseVideoTranscription({
+      fileName: "source.mp4",
+      mimeType: "video/mp4",
+      fileSizeBytes: 1024,
+      fileBytes: new Uint8Array([1, 2, 3]),
+      overlongSegmentRetryMode: "best-effort",
+      includeWordTimestamps: true,
+    });
+
+    expect(result.segments).toEqual([
+      {
+        id: 0,
+        start: 10,
+        end: 12,
+        text: "一二三四五六七八九十，",
+      },
+      {
+        id: 1,
+        start: 12,
+        end: 18,
+        text: "一二三四五六七八九十一二三四五六七八九十一二三四五六七八九十一二三四五六七八九十",
+      },
+    ]);
   });
 });

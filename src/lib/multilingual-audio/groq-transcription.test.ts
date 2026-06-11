@@ -90,7 +90,7 @@ describe("Groq transcription adapter", () => {
     const fetchImpl = vi.fn(async () => {
       return new Response(
         JSON.stringify({ error: { message: "quota exceeded" } }),
-        { status: 429 },
+        { status: 400 },
       );
     });
 
@@ -109,22 +109,97 @@ describe("Groq transcription adapter", () => {
   });
 
   it("maps Groq network fetch failures to provider transcription error", async () => {
+    vi.useFakeTimers();
     const fetchImpl = vi.fn(async () => {
       throw new TypeError("fetch failed");
     });
 
-    await expect(
-      transcribeWithGroq({
-        apiKey: "secret",
-        audioBytes: new Uint8Array([1]),
-        language: "zh",
-        timestampGranularities: ["segment"],
-        fetchImpl,
-      }),
-    ).rejects.toMatchObject({
+    const promise = transcribeWithGroq({
+      apiKey: "secret",
+      audioBytes: new Uint8Array([1]),
+      language: "zh",
+      timestampGranularities: ["segment"],
+      fetchImpl,
+    });
+
+    const expectPromise = expect(promise).rejects.toMatchObject({
       code: "PRV_GROQ_TRANSCRIPTION_FAILED",
       status: 502,
       message: "Groq transcription network request failed: fetch failed",
     });
+
+    await vi.runAllTimersAsync();
+    await expectPromise;
+    vi.useRealTimers();
+  });
+
+  it("retries on HTTP 429 rate limit errors with parsed delay", async () => {
+    vi.useFakeTimers();
+    let callCount = 0;
+    const fetchImpl = vi.fn(async () => {
+      callCount += 1;
+      if (callCount < 3) {
+        return new Response(
+          JSON.stringify({
+            error: { message: "Rate limit reached. Please try again in 2s." },
+          }),
+          { status: 429 },
+        );
+      }
+      return new Response(
+        JSON.stringify({
+          text: "Hello",
+          language: "zh",
+          segments: [],
+          words: [],
+        }),
+        { status: 200 },
+      );
+    });
+
+    const promise = transcribeWithGroq({
+      apiKey: "secret",
+      audioBytes: new Uint8Array([1]),
+      language: "zh",
+      timestampGranularities: ["segment"],
+      fetchImpl,
+    });
+
+    await vi.runAllTimersAsync();
+
+    const result = await promise;
+    expect(result.text).toBe("Hello");
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+    vi.useRealTimers();
+  });
+
+  it("throws after exhausting all retries on HTTP 429", async () => {
+    vi.useFakeTimers();
+    const fetchImpl = vi.fn(async () => {
+      return new Response(
+        JSON.stringify({
+          error: { message: "Rate limit reached. Please try again in 1s." },
+        }),
+        { status: 429 },
+      );
+    });
+
+    const promise = transcribeWithGroq({
+      apiKey: "secret",
+      audioBytes: new Uint8Array([1]),
+      language: "zh",
+      timestampGranularities: ["segment"],
+      fetchImpl,
+    });
+
+    const expectPromise = expect(promise).rejects.toMatchObject({
+      code: "PRV_GROQ_TRANSCRIPTION_FAILED",
+      message: "Rate limit reached. Please try again in 1s.",
+    });
+
+    await vi.runAllTimersAsync();
+    await expectPromise;
+    expect(fetchImpl).toHaveBeenCalledTimes(6);
+    vi.useRealTimers();
   });
 });

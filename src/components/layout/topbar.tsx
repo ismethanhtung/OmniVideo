@@ -1407,6 +1407,34 @@ function ProgressModal({
     onSendTestNotification: () => void;
 }) {
     const [now, setNow] = useState(() => Date.now());
+    const [isClearingCheckpoints, setIsClearingCheckpoints] = useState(false);
+
+    const handleClearCheckpoints = async () => {
+        const confirmed = window.confirm(
+            "Bạn có chắc chắn muốn xoá toàn bộ checkpoints không? Flow VIP sẽ chạy lại từ đầu thay vì tiếp tục từ checkpoint.",
+        );
+        if (!confirmed) return;
+
+        setIsClearingCheckpoints(true);
+        try {
+            const res = await fetch("/api/audio/video-vip-processing", {
+                method: "DELETE",
+            });
+            if (!res.ok) {
+                throw new Error("HTTP error " + res.status);
+            }
+            const data = await res.json();
+            if (data.ok) {
+                alert("Đã xoá toàn bộ checkpoints thành công!");
+            } else {
+                alert("Xoá checkpoints thất bại: " + (data.error || "Lỗi không xác định"));
+            }
+        } catch (error) {
+            alert("Lỗi khi kết nối tới server: " + (error instanceof Error ? error.message : String(error)));
+        } finally {
+            setIsClearingCheckpoints(false);
+        }
+    };
 
     useEffect(() => {
         const intervalId = window.setInterval(() => {
@@ -1474,6 +1502,14 @@ function ProgressModal({
                             className="border border-main bg-main px-2.5 py-1 text-[11px] font-semibold text-main hover:bg-secondary"
                         >
                             Clear finished
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleClearCheckpoints}
+                            disabled={isClearingCheckpoints}
+                            className="border border-main bg-main px-2.5 py-1 text-[11px] font-semibold text-main hover:bg-secondary disabled:opacity-50"
+                        >
+                            {isClearingCheckpoints ? "Clearing..." : "Clear checkpoints"}
                         </button>
                     </div>
                 </div>

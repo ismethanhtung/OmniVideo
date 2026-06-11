@@ -9,7 +9,6 @@
 - (none)
 
 ## In Progress
-
 - `FAST-WORKSPACE-053` - Prioritize saved Video Tools setup over node defaults in VIP flow.
 - `FAST-WORKSPACE-052` - Add Seed Asset VIP Processing 2 for upload->storage->local flow.
 - `FAST-AUDIO-008` - Align Edge TTS voice to segment timestamps.
@@ -25,6 +24,8 @@
 
 ## Review
 
+- `FAST-AUDIO-069` - Implement HTTP 429 rate limit retries with backoff for Groq Whisper transcription.
+- `FAST-WORKSPACE-082` - Intermediate step-aware progress details for Workspace VIP flow.
 - `FAST-UX-028` - Add Command-click open behavior to Inspiration Vault.
 - `FAST-WORKSPACE-081` - Update VIP default speed and original volume.
 - `FAST-WORKSPACE-080` - Parallelize EC2 VIP final render chunks.
@@ -174,6 +175,10 @@
 - `P2-VIDEO-002` - Partial Blur and Subtitle Overlay Pipeline.
 
 ## Done
+
+- `FAST-WORKSPACE-083` - VIP Checkpoint Reuse, Segment Cutting Optimization, and Clear Checkpoints Button
+
+- `FAST-AUDIO-070` - Programmatic word-level segment splitting fallback for overlong Chinese transcription segments.
 
 - `FAST-VIDEO-031` - Support large video files in Video Splitter using streaming multipart parser.
 - `FAST-AUDIO-068` - Lower minimum voice speed floor to 1.25x.

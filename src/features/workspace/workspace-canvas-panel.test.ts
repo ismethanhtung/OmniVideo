@@ -226,7 +226,7 @@ describe("WorkspaceCanvasPanel canvas interactions", () => {
         expect(source).toContain("metrics:");
         expect(source).toContain("HTTP 413: request body too large");
         expect(source).toContain(
-            "Server-side VIP is running. Live sub-stage status is not streamed in current mode.",
+            "Server-side VIP is running. Live sub-stage status is being tracked...",
         );
         expect(source).toContain('vipStageLogs.join("\\n")');
         expect(source).toContain("progressStepDetailByKey");

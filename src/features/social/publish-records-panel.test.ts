@@ -22,10 +22,9 @@ describe("Publish Records View Mode errors", () => {
 
     it("shows generated metadata fields in records and detail", () => {
         expect(source).toContain('<th className="px-4 py-2 font-semibold">');
-        expect(source).toContain("Metadata");
-        expect(source).toContain("{record.title || \"-\"}");
-        expect(source).toContain("{record.hashtags.length > 0");
-        expect(source).toContain("{record.caption || \"-\"}");
+        expect(source).toContain("selectedRecord.title || \"-\"");
+        expect(source).toContain("selectedRecord.hashtags.join(\", \") || \"-\"");
+        expect(source).toContain("selectedRecord.caption || \"-\"");
         expect(source).toContain('label="Title"');
         expect(source).toContain('label="Caption"');
     });

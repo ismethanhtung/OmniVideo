@@ -1,5 +1,49 @@
 # OmniVideo Changelog
 
+## FAST-WORKSPACE-083 - VIP Checkpoint Parameter Dependencies, Sentence Split Optimization, and Clear Checkpoints Button
+
+- Bumped app version from `0.10.117` to `0.10.118` as a patch release for VIP workflow resume reliability and split alignment quality.
+- Updated `vipResumeKey` generation in `src/features/workspace/workspace-canvas-panel.tsx` to depend on node configuration parameters: `speedFactor`, `translationMode`, `language`, `targetLanguage`, `model`, `originalAudioVolume`, `voiceVolume`, and `mirrorEnabled`. This voids old checkpoints immediately when parameters change, preventing GET API from reading stale logs and steps.
+- Optimized `splitOverlongSegmentByWords` in `src/lib/multilingual-audio/chinese-transcription.ts` to use a scoring-based boundary split model (prioritizing hard/soft punctuation marks and pauses), avoiding sentence cutting mid-phrase.
+- Implemented `DELETE` handler in `/api/audio/video-vip-processing/route.ts` to clear a specific checkpoint folder or clear all checkpoints under `/tmp/omnivideo-vip-stage-checkpoints/`.
+- Added "Clear checkpoints" button next to "Clear finished" in the Background Progress modal in `src/components/layout/topbar.tsx` and connected it to the DELETE API with deletion confirmation/success alerts.
+- Verification (FAST-WORKSPACE-083):
+  - `npx vitest run src/lib/multilingual-audio/chinese-transcription.test.ts` pass (1 file / 9 tests).
+  - `npx vitest run src/app/api/audio/video-vip-processing/route.test.ts` pass (1 file / 17 tests).
+  - `npm run test` pass (118 files / 637 tests).
+  - `npm run guard:version` pass.
+
+## FAST-AUDIO-070 - Programmatic word-level segment splitting fallback for overlong Chinese transcription segments
+
+- Bumped app version from `0.10.116` to `0.10.117` as a patch release for Chinese transcription segment-splitting reliability.
+- Implemented `splitOverlongSegmentByWords` to programmatically partition overlong segments into sub-segments of <= 40 Han characters.
+- Configured programmatic word-level fallback inside `retryOverlongChineseSegments` in `src/lib/multilingual-audio/chinese-transcription.ts` under `best-effort` mode.
+- Handled word timestamps for precise splitting when available, and fell back to proportional text/duration split when word timestamps are empty.
+- Verification (FAST-AUDIO-070):
+  - `npx vitest run src/lib/multilingual-audio/chinese-transcription.test.ts` pass (1 file / 8 tests).
+  - `npm run test` pass (118 files / 634 tests).
+  - `npm run guard:version` pass.
+
+## FAST-AUDIO-069 - Implement HTTP 429 rate limit retries with backoff for Groq Whisper transcription
+
+- Bumped app version from `0.10.115` to `0.10.116` as a patch release for Groq Whisper transcription reliability.
+- Implemented automatic retry loop in `transcribeWithGroq` in `src/lib/multilingual-audio/groq-transcription.ts` to handle HTTP 429 rate limit errors.
+- Parsed the retry delay time dynamically from the API error message and slept for the requested duration plus a 500ms safety buffer.
+- Added test coverage in `groq-transcription.test.ts` to mock rate limit responses and verify the retry behavior.
+- Verification (FAST-AUDIO-069):
+  - `npm run test -- src/lib/multilingual-audio/groq-transcription.test.ts` pass (1 file / 7 tests).
+  - `npm run test -- src/lib/multilingual-audio/chinese-transcription.test.ts` pass (1 file / 7 tests).
+  - `npm run guard:version` pass.
+
+## FAST-WORKSPACE-082 - Intermediate step-aware progress details for Workspace VIP flow
+
+- Bumped app version from `0.10.114` to `0.10.115` as a patch release for intermediate VIP background progress tracking.
+- Added a `GET` handler in `/api/audio/video-vip-processing` to fetch checkpoint state by hashing the provided key with SHA-256 and reading from `/tmp/omnivideo-vip-stage-checkpoints/<hash>/checkpoint.json`.
+- Implemented client-side polling in `workspace-canvas-panel.tsx` during VIP execution. Every 2 seconds, it queries the new GET endpoint and updates the background progress step with intermediate segments and status logs.
+- Verification (FAST-WORKSPACE-082):
+  - `npx vitest run src/app/api/audio/video-vip-processing` pass (1 file / 15 tests).
+  - `npm run guard:version` pass.
+
 ## FAST-VIDEO-031 - Support Large Video Files in Video Splitter
 
 - Bumped app version from `0.10.112` to `0.10.113` as a patch release for Video Splitter scalability.

@@ -197,6 +197,238 @@ async function transcribeWithGroqChunking(input: {
     return { transcript, chunkCount: chunks.length };
 }
 
+function splitTextByHanCounts(text: string, hanCounts: number[]): string[] {
+    const parts: string[] = [];
+    const chars = Array.from(text);
+    let charIndex = 0;
+
+    for (let p = 0; p < hanCounts.length; p++) {
+        const targetHan = hanCounts[p];
+        let currentHan = 0;
+        let partStr = "";
+
+        while (charIndex < chars.length) {
+            const char = chars[charIndex];
+            const isLastPart = p === hanCounts.length - 1;
+
+            if (!isLastPart) {
+                const charHan = countHanCharacters(char);
+                if (currentHan + charHan > targetHan && currentHan > 0) {
+                    break;
+                }
+                currentHan += charHan;
+            }
+
+            partStr += char;
+            charIndex++;
+        }
+        parts.push(partStr);
+    }
+    return parts;
+}
+
+function splitProportionally(
+    segment: AudioTranscriptSegment,
+    maxChars: number,
+): { segments: AudioTranscriptSegment[]; words: AudioTranscriptWord[] } {
+    const text = segment.text;
+    const totalHan = countHanCharacters(text);
+
+    const parts: string[] = [];
+    let currentPart = "";
+    let currentHanCount = 0;
+
+    for (const char of text) {
+        const charHan = countHanCharacters(char);
+        if (currentHanCount + charHan > maxChars && currentPart.length > 0) {
+            parts.push(currentPart);
+            currentPart = char;
+            currentHanCount = charHan;
+        } else {
+            currentPart += char;
+            currentHanCount += charHan;
+        }
+    }
+    if (currentPart.length > 0) {
+        parts.push(currentPart);
+    }
+
+    if (parts.length <= 1) {
+        return {
+            segments: [segment],
+            words: [],
+        };
+    }
+
+    const totalWeight = totalHan > 0 ? totalHan : text.length;
+    let currentStart = segment.start;
+    const subSegments: AudioTranscriptSegment[] = [];
+    const subWords: AudioTranscriptWord[] = [];
+
+    for (let i = 0; i < parts.length; i++) {
+        const part = parts[i];
+        const partWeight = totalHan > 0 ? countHanCharacters(part) : part.length;
+        const duration = totalWeight > 0 ? (segment.end - segment.start) * (partWeight / totalWeight) : 0;
+        const currentEnd = i === parts.length - 1 ? segment.end : currentStart + duration;
+
+        subSegments.push({
+            id: 0,
+            start: currentStart,
+            end: currentEnd,
+            text: part,
+        });
+
+        subWords.push({
+            word: part,
+            start: currentStart,
+            end: currentEnd,
+        });
+
+        currentStart = currentEnd;
+    }
+
+    return {
+        segments: subSegments,
+        words: subWords,
+    };
+}
+
+function splitOverlongSegmentByWords(
+    segment: AudioTranscriptSegment,
+    words: AudioTranscriptWord[],
+    maxChars: number,
+): { segments: AudioTranscriptSegment[]; words: AudioTranscriptWord[] } {
+    const segmentWords = words.filter(
+        (w) => w.start >= segment.start && w.end <= segment.end,
+    );
+
+    const HARD_PUNCTUATION = /[。？！?!.]/;
+    const SOFT_PUNCTUATION = /[，、；：,;:.]/;
+
+    function getBoundaryScore(wA: AudioTranscriptWord, wB: AudioTranscriptWord): number {
+        const hasHard = HARD_PUNCTUATION.test(wA.word) || HARD_PUNCTUATION.test(wB.word);
+        if (hasHard) return 100;
+        const hasSoft = SOFT_PUNCTUATION.test(wA.word) || SOFT_PUNCTUATION.test(wB.word);
+        if (hasSoft) return 80;
+        const pause = wB.start - wA.end;
+        if (pause > 0.5) return 50;
+        if (pause > 0.3) return 30;
+        return 0;
+    }
+
+    const chunks: AudioTranscriptWord[][] = [];
+    let currentChunk: AudioTranscriptWord[] = [];
+    let currentHanCount = 0;
+
+    for (let i = 0; i < segmentWords.length; i++) {
+        const w = segmentWords[i];
+        const wHan = countHanCharacters(w.word);
+
+        if (currentChunk.length === 0) {
+            currentChunk.push(w);
+            currentHanCount = wHan;
+            continue;
+        }
+
+        const wouldExceedHardLimit = currentHanCount + wHan > maxChars;
+
+        if (wouldExceedHardLimit) {
+            let bestSplitIdx = -1;
+            let maxScore = -1;
+
+            for (let j = 0; j < currentChunk.length - 1; j++) {
+                const score = getBoundaryScore(currentChunk[j], currentChunk[j + 1]);
+                if (score > maxScore) {
+                    maxScore = score;
+                    bestSplitIdx = j;
+                } else if (score === maxScore && score > 0) {
+                    bestSplitIdx = j;
+                }
+            }
+
+            if (bestSplitIdx !== -1 && maxScore > 0) {
+                const leftPart = currentChunk.slice(0, bestSplitIdx + 1);
+                const rightPart = currentChunk.slice(bestSplitIdx + 1);
+                chunks.push(leftPart);
+                currentChunk = [...rightPart, w];
+                currentHanCount = currentChunk.reduce((sum, currW) => sum + countHanCharacters(currW.word), 0);
+            } else {
+                chunks.push(currentChunk);
+                currentChunk = [w];
+                currentHanCount = wHan;
+            }
+        } else {
+            const prevW = currentChunk[currentChunk.length - 1];
+            const score = getBoundaryScore(prevW, w);
+            const shouldSplitSoft =
+                (currentHanCount >= 20 && score >= 50) ||
+                (currentHanCount >= 25 && score >= 30);
+
+            if (shouldSplitSoft) {
+                chunks.push(currentChunk);
+                currentChunk = [w];
+                currentHanCount = wHan;
+            } else {
+                currentChunk.push(w);
+                currentHanCount += wHan;
+            }
+        }
+    }
+
+    if (currentChunk.length > 0) {
+        chunks.push(currentChunk);
+    }
+
+    const numChunks = chunks.length;
+    if (numChunks <= 1) {
+        return splitProportionally(segment, maxChars);
+    }
+
+    const chunkHanCounts = chunks.map((chunk) =>
+        countHanCharacters(chunk.map((w) => w.word).join("")),
+    );
+
+    const splitTexts = splitTextByHanCounts(segment.text, chunkHanCounts);
+
+    const subSegments: AudioTranscriptSegment[] = [];
+    const subWords: AudioTranscriptWord[] = [];
+
+    const boundaryTimes: number[] = [segment.start];
+    for (let c = 0; c < numChunks - 1; c++) {
+        const lastWordOfCurrent = chunks[c][chunks[c].length - 1];
+        const firstWordOfNext = chunks[c + 1][0];
+        const midpoint = (lastWordOfCurrent.end + firstWordOfNext.start) / 2;
+        boundaryTimes.push(midpoint);
+    }
+    boundaryTimes.push(segment.end);
+
+    for (let c = 0; c < numChunks; c++) {
+        const start = boundaryTimes[c];
+        const end = boundaryTimes[c + 1];
+        const text = splitTexts[c];
+
+        subSegments.push({
+            id: 0,
+            start,
+            end,
+            text,
+        });
+
+        for (const w of chunks[c]) {
+            subWords.push({
+                word: w.word,
+                start: Math.max(start, w.start),
+                end: Math.min(end, w.end),
+            });
+        }
+    }
+
+    return {
+        segments: subSegments,
+        words: subWords,
+    };
+}
+
 async function retryOverlongChineseSegments(input: {
     transcript: NormalizedGroqTranscription;
     apiKey: string;
@@ -292,6 +524,17 @@ async function retryOverlongChineseSegments(input: {
                     502,
                 );
             }
+            // In best-effort mode, apply programmatic fallback splitting
+            const fallbackSplit = splitOverlongSegmentByWords(
+                segment,
+                input.transcript.words,
+                MAX_CHINESE_SEGMENT_CHARS,
+            );
+            replacements.set(segment.id, {
+                segments: fallbackSplit.segments,
+                words: fallbackSplit.words,
+                requestId: input.transcript.requestId,
+            });
             exhaustedSegments.push(exhausted);
         }
     }

@@ -6,7 +6,7 @@ import { getAiProviderById } from "@/lib/ai-providers/repository";
 import { resolveAssetDownload } from "@/lib/storage/asset-download";
 import { getIntakeDb, getVideoAssetById } from "@/lib/video-intake/repository";
 
-import { POST } from "./route";
+import { GET, POST, DELETE } from "./route";
 
 vi.mock("@/lib/multilingual-audio/video-vip-processing", () => ({
   runVideoVipProcessing: vi.fn(),
@@ -1110,5 +1110,123 @@ describe("video vip processing API", () => {
       error: "Storage asset download failed: fetch failed",
     });
     expect(mockedRunVideoVipProcessing).not.toHaveBeenCalled();
+  });
+
+  describe("GET checkpoint", () => {
+    it("rejects missing key", async () => {
+      const response = await GET(
+        new Request("http://localhost/api/audio/video-vip-processing"),
+      );
+      const payload = await response.json();
+      expect(response.status).toBe(400);
+      expect(payload).toMatchObject({
+        ok: false,
+        error: "key query parameter is required.",
+      });
+    });
+
+    it("returns null if checkpoint does not exist", async () => {
+      const response = await GET(
+        new Request("http://localhost/api/audio/video-vip-processing?key=non-existent-key-123"),
+      );
+      const payload = await response.json();
+      expect(response.status).toBe(200);
+      expect(payload).toEqual({
+        ok: true,
+        data: null,
+      });
+    });
+
+    it("returns parsed checkpoint content if it exists", async () => {
+      const { createHash } = await import("node:crypto");
+      const { mkdir, writeFile, rm } = await import("node:fs/promises");
+      const { tmpdir } = await import("node:os");
+      const path = await import("node:path");
+
+      const key = "test-key-abc";
+      const hash = createHash("sha256").update(key).digest("hex");
+      const dir = path.join(tmpdir(), "omnivideo-vip-stage-checkpoints", hash);
+      const jsonPath = path.join(dir, "checkpoint.json");
+
+      const mockCheckpoint = {
+        fingerprint: "test-fingerprint",
+        transcript: { text: "Hello", segments: [] },
+        updatedAt: new Date().toISOString(),
+      };
+
+      await mkdir(dir, { recursive: true });
+      await writeFile(jsonPath, JSON.stringify(mockCheckpoint));
+
+      try {
+        const response = await GET(
+          new Request(`http://localhost/api/audio/video-vip-processing?key=${key}`),
+        );
+        const payload = await response.json();
+        expect(response.status).toBe(200);
+        expect(payload).toEqual({
+          ok: true,
+          data: mockCheckpoint,
+        });
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    });
+  });
+
+  describe("DELETE checkpoint", () => {
+    it("deletes specific key's checkpoint folder if key is provided", async () => {
+      const { createHash } = await import("node:crypto");
+      const { mkdir, writeFile, access } = await import("node:fs/promises");
+      const { tmpdir } = await import("node:os");
+      const path = await import("node:path");
+
+      const key = "delete-key-xyz";
+      const hash = createHash("sha256").update(key).digest("hex");
+      const dir = path.join(tmpdir(), "omnivideo-vip-stage-checkpoints", hash);
+      const jsonPath = path.join(dir, "checkpoint.json");
+
+      await mkdir(dir, { recursive: true });
+      await writeFile(jsonPath, JSON.stringify({ ok: true }));
+
+      const response = await DELETE(
+        new Request(`http://localhost/api/audio/video-vip-processing?key=${key}`, {
+          method: "DELETE",
+        }),
+      );
+      const payload = await response.json();
+      expect(response.status).toBe(200);
+      expect(payload).toMatchObject({
+        ok: true,
+        message: expect.stringContaining(`Checkpoint for key ${key} deleted.`),
+      });
+
+      await expect(access(jsonPath)).rejects.toThrow();
+    });
+
+    it("clears all checkpoint folders if key is not provided", async () => {
+      const { mkdir, writeFile, access } = await import("node:fs/promises");
+      const { tmpdir } = await import("node:os");
+      const path = await import("node:path");
+
+      const rootDir = path.join(tmpdir(), "omnivideo-vip-stage-checkpoints");
+      const checkPath = path.join(rootDir, "test-file.txt");
+
+      await mkdir(rootDir, { recursive: true });
+      await writeFile(checkPath, "test");
+
+      const response = await DELETE(
+        new Request("http://localhost/api/audio/video-vip-processing", {
+          method: "DELETE",
+        }),
+      );
+      const payload = await response.json();
+      expect(response.status).toBe(200);
+      expect(payload).toMatchObject({
+        ok: true,
+        message: "All checkpoints cleared.",
+      });
+
+      await expect(access(checkPath)).rejects.toThrow();
+    });
   });
 });

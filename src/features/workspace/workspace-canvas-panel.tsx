@@ -84,6 +84,8 @@ import {
     type TranscriptTranslationResult,
     type VietnameseVideoMetadataResult,
     type VoiceGenerationResult,
+    type AudioTranscriptSegment,
+    type TranscriptTranslationSegment,
 } from "@/lib/multilingual-audio/types";
 import type { VideoDubbingResult } from "@/lib/multilingual-audio/video-dubbing";
 import type { VideoVipProcessingResult } from "@/lib/multilingual-audio/video-vip-processing";
@@ -4167,16 +4169,25 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         sourceNode,
                         consumerLabel: `VIP Processing '${vipNode.label}'`,
                     });
+                    const vipResumeKey = [
+                        "workspace-vip",
+                        vipNode.id,
+                        sourceNode.id,
+                        String(formData.get("assetId") ?? ""),
+                        String(formData.get("artifactId") ?? ""),
+                        source.detail,
+                        String(getNumberConfig(vipNode, "speedFactor", 0.75)),
+                        getStringConfig(vipNode, "translationMode", "ai"),
+                        getStringConfig(vipNode, "language", "zh"),
+                        getStringConfig(vipNode, "targetLanguage", "vi"),
+                        getStringConfig(vipNode, "model", DEFAULT_TRANSLATION_MODEL),
+                        String(getNumberConfig(vipNode, "originalAudioVolume", 0.2)),
+                        String(getNumberConfig(vipNode, "voiceVolume", 1)),
+                        String(getBooleanConfig(vipNode, "mirrorEnabled", true)),
+                    ].join(":");
                     formData.set(
                         "vipResumeKey",
-                        [
-                            "workspace-vip",
-                            vipNode.id,
-                            sourceNode.id,
-                            String(formData.get("assetId") ?? ""),
-                            String(formData.get("artifactId") ?? ""),
-                            source.detail,
-                        ].join(":"),
+                        vipResumeKey,
                     );
                     const vipTranslationMode =
                         getStringConfig(vipNode, "translationMode", "ai") ===
@@ -4563,11 +4574,120 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         );
                     }
                     appendVipStageLog(
-                        "Server-side VIP is running. Live sub-stage status is not streamed in current mode.",
+                        "Server-side VIP is running. Live sub-stage status is being tracked...",
                     );
-                    appendVipStageLog(
-                        "When done or failed, detailed stage results will be attached here.",
-                    );
+                    let isPolling = true;
+                    const pollCheckpoint = async () => {
+                        if (!isPolling) return;
+                        try {
+                            const res = await fetch(
+                                `/api/audio/video-vip-processing?key=${encodeURIComponent(vipResumeKey)}`,
+                            );
+                            if (!res.ok) return;
+                            const payload = await res.json();
+                            if (!payload.ok || !payload.data || !isPolling) return;
+
+                            const checkpointState = payload.data;
+                            const currentLogs = [...vipStageLogs];
+
+                            if (checkpointState.transcript) {
+                                if (!currentLogs.some((line) => line.startsWith("[transcript] Complete."))) {
+                                    currentLogs.push(`[transcript] Complete. Segments: ${checkpointState.transcript.segments.length} total.`);
+                                }
+                            } else {
+                                if (!currentLogs.some((line) => line.startsWith("[transcript] Processing..."))) {
+                                    currentLogs.push("[transcript] Processing...");
+                                }
+                            }
+
+                            if (checkpointState.translation) {
+                                if (!currentLogs.some((line) => line.startsWith("[translate] Complete."))) {
+                                    currentLogs.push(`[translate] Complete. Translated segments: ${checkpointState.translation.translatedSegments.length} total.`);
+                                }
+                            } else if (checkpointState.transcript) {
+                                if (!currentLogs.some((line) => line.startsWith("[translate] Processing..."))) {
+                                    currentLogs.push("[translate] Processing...");
+                                }
+                            }
+
+                            if (checkpointState.voice || checkpointState.renderedVideo) {
+                                if (!currentLogs.some((line) => line.startsWith("[voice render] Complete."))) {
+                                    currentLogs.push("[voice render] Complete.");
+                                }
+                            } else if (checkpointState.translation) {
+                                if (!currentLogs.some((line) => line.startsWith("[voice render] Processing"))) {
+                                    currentLogs.push("[voice render] Processing (voice generation + video render)...");
+                                }
+                            }
+
+                            if (checkpointState.metadata) {
+                                if (!currentLogs.some((line) => line.startsWith("[metadata] Complete."))) {
+                                    currentLogs.push("[metadata] Complete.");
+                                }
+                            } else if (checkpointState.voice || checkpointState.renderedVideo) {
+                                if (!currentLogs.some((line) => line.startsWith("[metadata] Generating"))) {
+                                    currentLogs.push("[metadata] Generating VI metadata...");
+                                }
+                            }
+
+                            const description = (() => {
+                                if (checkpointState.translation?.translatedSegments?.length) {
+                                    const segments = checkpointState.translation.translatedSegments;
+                                    const header = `Segments (${segments.length} total):`;
+                                    const voiceTimingBySourceSegmentId = new Map<
+                                        number,
+                                        NonNullable<VoiceGenerationResult["alignment"]["timeline"]>[number]
+                                    >(
+                                        (checkpointState.voice?.alignment?.timeline ?? []).map((chunk: NonNullable<VoiceGenerationResult["alignment"]["timeline"]>[number]) => [
+                                            chunk.sourceSegmentId ?? chunk.segmentId,
+                                            chunk,
+                                        ] as [number, NonNullable<VoiceGenerationResult["alignment"]["timeline"]>[number]]),
+                                    );
+                                    const timelineLines = segments.map((segment: TranscriptTranslationSegment) => {
+                                        const voiceChunk = voiceTimingBySourceSegmentId.get(segment.id);
+                                        return `SEGMENT_JSON ${JSON.stringify({
+                                            id: segment.id,
+                                            start: segment.start,
+                                            end: segment.end,
+                                            sourceText: segment.sourceText,
+                                            translatedText: segment.translatedText,
+                                            speedFactor: voiceChunk?.speedFactor,
+                                            rawDurationSeconds: voiceChunk?.rawDurationSeconds,
+                                            targetDurationSeconds: voiceChunk?.targetDurationSeconds,
+                                            warningCodes: voiceChunk?.warningCodes ?? [],
+                                        })}`;
+                                    });
+                                    return [currentLogs.join("\n"), "Metadata:", header, ...timelineLines].join("\n");
+                                } else if (checkpointState.transcript?.segments?.length) {
+                                    const segments = checkpointState.transcript.segments;
+                                    const header = `Segments (${segments.length} total):`;
+                                    const timelineLines = segments.map((segment: AudioTranscriptSegment) => {
+                                        return `SEGMENT_JSON ${JSON.stringify({
+                                            id: segment.id,
+                                            start: segment.start,
+                                            end: segment.end,
+                                            sourceText: "",
+                                            translatedText: segment.text,
+                                            warningCodes: [],
+                                        })}`;
+                                    });
+                                    return [currentLogs.join("\n"), "Metadata:", header, ...timelineLines].join("\n");
+                                }
+                                return currentLogs.join("\n");
+                            })();
+
+                            updateProgressStepDetail(step, {
+                                progressMode: "indeterminate",
+                                progress: 0,
+                                description,
+                            });
+                        } catch (err) {
+                            console.error("[VIP progress poll error]", err);
+                        }
+                    };
+
+                    const pollInterval = setInterval(pollCheckpoint, 2000);
+
                     let vipPayload: {
                         ok: true;
                         data: VideoVipProcessingResult & {
@@ -4620,6 +4740,9 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                             }
                         }
                         throw error;
+                    } finally {
+                        isPolling = false;
+                        clearInterval(pollInterval);
                     }
                     if (vipPayload.data.checkpoint?.reusedStages.length) {
                         appendVipStageLog(

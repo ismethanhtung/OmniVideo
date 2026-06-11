@@ -1,4 +1,8 @@
 import { NextResponse } from "next/server";
+import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 
 import {
     applyDemoRateLimit,
@@ -939,6 +943,98 @@ export async function POST(request: Request) {
                     error instanceof Error
                         ? error.message
                         : "Video VIP processing API failed.",
+            },
+            { status: 500 },
+        );
+    }
+}
+
+export async function GET(request: Request) {
+    try {
+        const rateLimited = applyDemoRateLimit(request, "video-vip-processing");
+        if (rateLimited) return rateLimited;
+
+        const { searchParams } = new URL(request.url);
+        const key = searchParams.get("key");
+        if (!key?.trim()) {
+            return NextResponse.json(
+                { ok: false, error: "key query parameter is required." },
+                { status: 400 },
+            );
+        }
+
+        const hash = createHash("sha256").update(key.trim()).digest("hex");
+        const jsonPath = path.join(
+            tmpdir(),
+            "omnivideo-vip-stage-checkpoints",
+            hash,
+            "checkpoint.json",
+        );
+
+        try {
+            const raw = await readFile(jsonPath, "utf8");
+            const data = JSON.parse(raw);
+            return NextResponse.json({ ok: true, data });
+        } catch {
+            return NextResponse.json({ ok: true, data: null });
+        }
+    } catch (error) {
+        return NextResponse.json(
+            {
+                ok: false,
+                error:
+                    error instanceof Error
+                        ? error.message
+                        : "Failed to read VIP checkpoint.",
+            },
+            { status: 500 },
+        );
+    }
+}
+
+export async function DELETE(request: Request) {
+    try {
+        const rateLimited = applyDemoRateLimit(request, "video-vip-processing");
+        if (rateLimited) return rateLimited;
+
+        const { searchParams } = new URL(request.url);
+        const key = searchParams.get("key");
+
+        const rootDir = path.join(tmpdir(), "omnivideo-vip-stage-checkpoints");
+
+        if (key?.trim()) {
+            const hash = createHash("sha256").update(key.trim()).digest("hex");
+            const dir = path.join(rootDir, hash);
+            const { rm } = await import("node:fs/promises");
+            try {
+                await rm(dir, { recursive: true, force: true });
+            } catch {
+                // ignore
+            }
+            return NextResponse.json({
+                ok: true,
+                message: `Checkpoint for key ${key} deleted.`,
+            });
+        } else {
+            const { rm } = await import("node:fs/promises");
+            try {
+                await rm(rootDir, { recursive: true, force: true });
+            } catch {
+                // ignore
+            }
+            return NextResponse.json({
+                ok: true,
+                message: "All checkpoints cleared.",
+            });
+        }
+    } catch (error) {
+        return NextResponse.json(
+            {
+                ok: false,
+                error:
+                    error instanceof Error
+                        ? error.message
+                        : "Failed to delete checkpoints.",
             },
             { status: 500 },
         );
