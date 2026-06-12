@@ -1,5 +1,39 @@
 # OmniVideo Changelog
 
+## FAST-VIDEO-040 - Add Vietnamese Video Metadata generation to Video Narrator
+
+- Bumped app version from `0.11.10` to `0.11.11` as a patch release for Video Narrator.
+- Integrated the Vietnamese Video Metadata generator in Video Narrator below the Render Settings section.
+- Fetches Vietnamese title, description, and hashtags based on narration segments from `/api/audio/video-metadata`.
+- Fixed a bug where narration segment texts were passed directly to `/api/audio/video-metadata` (where `translatedText` is expected but segments had only `text` property), leading to empty input data and hallucinated animation titles/descriptions. Narration segments are now mapped correctly.
+- Automatically appends, deduplicates, and formats fixed tags (`xuhuong`, `short`).
+- Exposes selector dropdowns for AI Provider and AI Model in the Video Metadata section, with dynamic model listing via `/api/ai-providers/${providerId}/models` and session storage persistence.
+- Adds metadata editor fields (Title, Description, Hashtags) in a collapsible UI section and persists draft values in localStorage.
+- Supports saving generated metadata directly to the selected storage asset.
+- Created regression unit tests in `src/features/video-narrator/video-narrator-panel.test.ts`.
+- Verification (FAST-VIDEO-040):
+  - `npm run test` pass (121 files / 659 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+
+## FAST-VIDEO-039 - Add missing Piper Voice settings to Video Narrator
+
+- Bumped app version from `0.11.9` to `0.11.10` as a patch release for Video Narrator.
+- Added 5 missing Piper Voice settings to the Video Narrator UI to match the level of control on the Audio Transcript page:
+  - Config JSON path (input text)
+  - Noise scale (input number, step 0.01)
+  - Noise W (input number, step 0.01)
+  - Sentence silence (input number, step 0.05)
+  - Balanced timing (checkbox)
+- Added localStorage load and save persistence for all 9 Piper settings inside the Video Narrator panel.
+- Disabled input controls when script generation or rendering is in progress.
+- Verification (FAST-VIDEO-039):
+  - `npm run test` pass (120 files / 651 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+
 ## FAST-VIDEO-038 - Fix Video Narrator 3-word active-only highlight render
 
 - Bumped app version from `0.11.8` to `0.11.9` as a patch release for Video Narrator active word coloring.

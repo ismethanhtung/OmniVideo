@@ -20,7 +20,11 @@ import {
 
 import type { LeftbarNavItem } from "@/components/layout/types";
 import { AssetLifecycleBadges } from "@/components/ui/asset-lifecycle-badges";
-import { resolveDefaultAiProviderId } from "@/lib/ai-providers/default-provider";
+import {
+    DEFAULT_OPENAI_COMPATIBLE_PROVIDER_LABEL,
+    DEFAULT_OPENAI_COMPATIBLE_PROVIDER_TYPE,
+    resolveDefaultAiProviderId,
+} from "@/lib/ai-providers/default-provider";
 import {
     getAssetFolderName,
     matchesVideoAssetSearch,
@@ -32,6 +36,8 @@ import {
     updateProgressTask,
 } from "@/lib/ui/progress-center";
 import type { SubtitleDisplayMode } from "@/lib/video-processing/video-edit-pipeline";
+import type { VietnameseVideoMetadataResult } from "@/lib/multilingual-audio/types";
+import { DEFAULT_TRANSLATION_MODEL } from "@/lib/multilingual-audio/types";
 
 const VIDEO_TEXT_FONT_OPTIONS: Array<{
     value: string;
@@ -125,7 +131,7 @@ const SUBTITLE_BACKGROUND_COLOR_OPTIONS = [
 
 const SUBTITLE_STYLE_SESSION_VERSION = 2;
 const SUBTITLE_PLAY_RES_Y = 1080;
-const DEFAULT_SUBTITLE_FONT_SIZE = 80;
+const DEFAULT_SUBTITLE_FONT_SIZE = 70;
 const DEFAULT_SUBTITLE_VERTICAL_PERCENT_FROM_BOTTOM = 35;
 const DEFAULT_SUBTITLE_TEXT_COLOR = "#FFFFCC";
 const DEFAULT_SUBTITLE_MARGIN_BOTTOM = Math.round(
@@ -181,7 +187,9 @@ function hexToPreviewRgba(hex: string, opacityPercent: number) {
 }
 
 function calculatePreviewWordWeights(words: string[]) {
-    return words.map((word) => Math.max(1, word.replace(/[^\p{L}\p{N}]/gu, "").length));
+    return words.map((word) =>
+        Math.max(1, word.replace(/[^\p{L}\p{N}]/gu, "").length),
+    );
 }
 
 type AiProviderOption = {
@@ -270,7 +278,7 @@ export function VideoNarratorPanel({ section }: VideoNarratorPanelProps) {
         useState(true);
 
     // Audio mixing
-    const [originalAudioVolume, setOriginalAudioVolume] = useState(0.1);
+    const [originalAudioVolume, setOriginalAudioVolume] = useState(0.3);
     const [voiceVolume, setVoiceVolume] = useState(1.0);
     const [subtitleMode, setSubtitleMode] =
         useState<SubtitleDisplayMode>("standard");
@@ -316,6 +324,28 @@ export function VideoNarratorPanel({ section }: VideoNarratorPanelProps) {
     const [showAudioSettings, setShowAudioSettings] = useState(true);
     const [isLoadingModels, setIsLoadingModels] = useState(false);
     const [isHydrated, setIsHydrated] = useState(false);
+    // Video Metadata states
+    const [videoMetadata, setVideoMetadata] = useState<VietnameseVideoMetadataResult | null>(null);
+    const [isGeneratingMetadata, setIsGeneratingMetadata] = useState(false);
+    const [isSavingMetadata, setIsSavingMetadata] = useState(false);
+    const [metadataError, setMetadataError] = useState<string | null>(null);
+    const [metadataSaveMessage, setMetadataSaveMessage] = useState<string | null>(null);
+    const [metadataTitleDraft, setMetadataTitleDraft] = useState("");
+    const [metadataDescriptionDraft, setMetadataDescriptionDraft] = useState("");
+    const [metadataHashtagsDraft, setMetadataHashtagsDraft] = useState("");
+    const [metadataGenerationDurationMs, setMetadataGenerationDurationMs] = useState<number | null>(null);
+    const [showMetadataSettings, setShowMetadataSettings] = useState(false);
+    const [metadataProviderId, setMetadataProviderId] = useState("");
+    const [metadataModel, setMetadataModel] = useState(DEFAULT_TRANSLATION_MODEL);
+    const [metadataAiModels, setMetadataAiModels] = useState<AiModelOption[]>([]);
+    const [isMetadataLoadingModels, setIsMetadataLoadingModels] = useState(false);
+
+    const parseHashtagInput = (value: string) => {
+        return value
+            .split(/[,\s]+/u)
+            .map((token) => token.trim().replace(/^#/u, ""))
+            .filter(Boolean);
+    };
 
     const videoPreviewRef = useRef<HTMLVideoElement | null>(null);
 
@@ -396,6 +426,46 @@ export function VideoNarratorPanel({ section }: VideoNarratorPanelProps) {
                     setSubtitleBackgroundPaddingY(
                         parsed.subtitleBackgroundPaddingY,
                     );
+
+                // Piper settings
+                if (parsed.ttsBinaryPath !== undefined)
+                    setTtsBinaryPath(parsed.ttsBinaryPath);
+                if (parsed.ttsModelPath !== undefined)
+                    setTtsModelPath(parsed.ttsModelPath);
+                if (parsed.ttsConfigPath !== undefined)
+                    setTtsConfigPath(parsed.ttsConfigPath);
+                if (parsed.ttsSpeaker !== undefined)
+                    setTtsSpeaker(parsed.ttsSpeaker);
+                if (parsed.ttsLengthScale !== undefined)
+                    setTtsLengthScale(parsed.ttsLengthScale);
+                if (parsed.ttsNoiseScale !== undefined)
+                    setTtsNoiseScale(parsed.ttsNoiseScale);
+                if (parsed.ttsNoiseW !== undefined)
+                    setTtsNoiseW(parsed.ttsNoiseW);
+                if (parsed.ttsSentenceSilence !== undefined)
+                    setTtsSentenceSilence(parsed.ttsSentenceSilence);
+                if (parsed.ttsPreserveTimestampGaps !== undefined)
+                    setTtsPreserveTimestampGaps(
+                        parsed.ttsPreserveTimestampGaps,
+                    );
+
+                // Video Metadata settings
+                if (parsed.videoMetadata !== undefined)
+                    setVideoMetadata(parsed.videoMetadata);
+                if (parsed.metadataTitleDraft !== undefined)
+                    setMetadataTitleDraft(parsed.metadataTitleDraft);
+                if (parsed.metadataDescriptionDraft !== undefined)
+                    setMetadataDescriptionDraft(parsed.metadataDescriptionDraft);
+                if (parsed.metadataHashtagsDraft !== undefined)
+                    setMetadataHashtagsDraft(parsed.metadataHashtagsDraft);
+                if (parsed.showMetadataSettings !== undefined)
+                    setShowMetadataSettings(parsed.showMetadataSettings);
+                if (parsed.metadataProviderId !== undefined) {
+                    setMetadataProviderId(parsed.metadataProviderId);
+                    fetchModelsForMetadata(parsed.metadataProviderId);
+                }
+                if (parsed.metadataModel !== undefined)
+                    setMetadataModel(parsed.metadataModel);
             } catch {}
         }
         setIsHydrated(true);
@@ -427,6 +497,22 @@ export function VideoNarratorPanel({ section }: VideoNarratorPanelProps) {
                 subtitleBackgroundColor,
                 subtitleBackgroundOpacity,
                 subtitleBackgroundPaddingY,
+                ttsBinaryPath,
+                ttsModelPath,
+                ttsConfigPath,
+                ttsSpeaker,
+                ttsLengthScale,
+                ttsNoiseScale,
+                ttsNoiseW,
+                ttsSentenceSilence,
+                ttsPreserveTimestampGaps,
+                videoMetadata,
+                metadataTitleDraft,
+                metadataDescriptionDraft,
+                metadataHashtagsDraft,
+                showMetadataSettings,
+                metadataProviderId,
+                metadataModel,
             }),
         );
     }, [
@@ -451,6 +537,22 @@ export function VideoNarratorPanel({ section }: VideoNarratorPanelProps) {
         subtitleBackgroundColor,
         subtitleBackgroundOpacity,
         subtitleBackgroundPaddingY,
+        ttsBinaryPath,
+        ttsModelPath,
+        ttsConfigPath,
+        ttsSpeaker,
+        ttsLengthScale,
+        ttsNoiseScale,
+        ttsNoiseW,
+        ttsSentenceSilence,
+        ttsPreserveTimestampGaps,
+        videoMetadata,
+        metadataTitleDraft,
+        metadataDescriptionDraft,
+        metadataHashtagsDraft,
+        showMetadataSettings,
+        metadataProviderId,
+        metadataModel,
     ]);
 
     // Fetch models on provider change
@@ -481,6 +583,37 @@ export function VideoNarratorPanel({ section }: VideoNarratorPanelProps) {
             setAiModels([]);
         } finally {
             setIsLoadingModels(false);
+        }
+    };
+
+    // Fetch models for metadata on provider change
+    const fetchModelsForMetadata = async (providerId: string) => {
+        if (!providerId) {
+            setMetadataAiModels([]);
+            return;
+        }
+        setIsMetadataLoadingModels(true);
+        try {
+            const res = await fetch(`/api/ai-providers/${providerId}/models`);
+            const payload = (await res.json()) as {
+                ok: boolean;
+                data?: AiModelOption[];
+            };
+            if (payload.ok && payload.data) {
+                setMetadataAiModels(payload.data);
+                if (payload.data.length > 0) {
+                    const hasDefault = payload.data.find(
+                        (m) => m.id === "gemini-1.5-flash",
+                    );
+                    setMetadataModel(
+                        hasDefault ? hasDefault.id : payload.data[0].id,
+                    );
+                }
+            }
+        } catch {
+            setMetadataAiModels([]);
+        } finally {
+            setIsMetadataLoadingModels(false);
         }
     };
 
@@ -566,7 +699,10 @@ export function VideoNarratorPanel({ section }: VideoNarratorPanelProps) {
             return [{ text: words.join(" "), active: false }];
         }
 
-        const duration = Math.max(0.01, activeSegment.end - activeSegment.start);
+        const duration = Math.max(
+            0.01,
+            activeSegment.end - activeSegment.start,
+        );
         const elapsed = Math.min(
             duration,
             Math.max(0, previewCurrentTime - activeSegment.start),
@@ -577,7 +713,10 @@ export function VideoNarratorPanel({ section }: VideoNarratorPanelProps) {
         let activeIndex = words.length - 1;
         for (let index = 0; index < words.length; index += 1) {
             const wordDuration = duration * (weights[index] / totalWeight);
-            if (elapsed <= cursor + wordDuration || index === words.length - 1) {
+            if (
+                elapsed <= cursor + wordDuration ||
+                index === words.length - 1
+            ) {
                 activeIndex = index;
                 break;
             }
@@ -633,6 +772,13 @@ export function VideoNarratorPanel({ section }: VideoNarratorPanelProps) {
         setIsGeneratingScript(true);
         setError(null);
         setSegments([]);
+        setVideoMetadata(null);
+        setMetadataError(null);
+        setMetadataSaveMessage(null);
+        setMetadataTitleDraft("");
+        setMetadataDescriptionDraft("");
+        setMetadataHashtagsDraft("");
+        setMetadataGenerationDurationMs(null);
 
         const progressTaskId = startProgressTask({
             title: "Gemini Video Understanding",
@@ -816,6 +962,125 @@ export function VideoNarratorPanel({ section }: VideoNarratorPanelProps) {
         } finally {
             setIsRendering(false);
             setRenderProgress("");
+        }
+    };
+
+    const runVideoMetadata = async () => {
+        if (segments.length === 0) {
+            setMetadataError("Chưa có kịch bản thuyết minh để tạo metadata.");
+            return;
+        }
+
+        setIsGeneratingMetadata(true);
+        setMetadataError(null);
+        setMetadataSaveMessage(null);
+
+        try {
+            const startedAt = Date.now();
+            const response = await fetch("/api/audio/video-metadata", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    translatedSegments: segments.map((s) => ({
+                        id: s.id,
+                        start: s.start,
+                        end: s.end,
+                        sourceText: "",
+                        translatedText: s.text,
+                    })),
+                    sourceTitle:
+                        selectedAsset?.metadata?.title ?? file?.name ?? "",
+                    sourceDescription:
+                        selectedAsset?.metadata?.description ?? "",
+                    providerId: metadataProviderId || undefined,
+                    model: metadataModel,
+                }),
+            });
+            const payload = (await response.json()) as
+                | { ok: true; data: VietnameseVideoMetadataResult }
+                | { ok: false; errorCode?: string; error?: string };
+
+            if (!payload.ok) {
+                throw new Error(
+                    payload.errorCode
+                        ? `${payload.errorCode}: ${payload.error ?? "Metadata generation failed."}`
+                        : (payload.error ?? "Metadata generation failed."),
+                );
+            }
+
+            const rawHashtags = payload.data.hashtags ?? [];
+            const fixedTags = ["xuhuong", "short"];
+            const uniqueTags = Array.from(
+                new Set([
+                    ...rawHashtags.map((tag) =>
+                        tag.trim().toLowerCase().replace(/^#+/u, ""),
+                    ),
+                    ...fixedTags,
+                ]),
+            ).filter(Boolean);
+
+            setVideoMetadata(payload.data);
+            setMetadataTitleDraft(payload.data.title ?? "");
+            setMetadataDescriptionDraft(payload.data.description ?? "");
+            setMetadataHashtagsDraft(
+                uniqueTags.map((tag) => `#${tag}`).join(" "),
+            );
+            setMetadataGenerationDurationMs(Date.now() - startedAt);
+        } catch (requestError) {
+            setMetadataError(
+                requestError instanceof Error
+                    ? requestError.message
+                    : "Metadata generation failed.",
+            );
+        } finally {
+            setIsGeneratingMetadata(false);
+        }
+    };
+
+    const saveVideoMetadata = async () => {
+        if (!selectedAssetId || !videoMetadata) {
+            setMetadataSaveMessage(
+                "Chưa chọn Storage Asset hoặc chưa có metadata để lưu.",
+            );
+            return;
+        }
+
+        setIsSavingMetadata(true);
+        setMetadataSaveMessage(null);
+        try {
+            const response = await fetch(
+                `/api/storage/assets/${selectedAssetId}`,
+                {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        metadata: {
+                            vietnameseTitle: metadataTitleDraft.trim(),
+                            vietnameseDescription:
+                                metadataDescriptionDraft.trim(),
+                            vietnameseHashtags: parseHashtagInput(
+                                metadataHashtagsDraft,
+                            ),
+                        },
+                    }),
+                },
+            );
+            const payload = (await response.json()) as {
+                ok: boolean;
+                error?: string;
+            };
+            if (!response.ok || !payload.ok) {
+                throw new Error(payload.error ?? "Lưu metadata thất bại.");
+            }
+            setMetadataSaveMessage("Đã lưu metadata tiếng Việt vào asset.");
+        } catch (requestError) {
+            setMetadataSaveMessage(
+                requestError instanceof Error
+                    ? requestError.message
+                    : "Lưu metadata thất bại.",
+            );
+        } finally {
+            setIsSavingMetadata(false);
         }
     };
 
@@ -1242,59 +1507,136 @@ export function VideoNarratorPanel({ section }: VideoNarratorPanelProps) {
                                     <input
                                         type="text"
                                         value={ttsBinaryPath}
+                                        disabled={
+                                            isGeneratingScript || isRendering
+                                        }
                                         onChange={(e) =>
                                             setTtsBinaryPath(e.target.value)
                                         }
                                         className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main"
                                     />
                                 </label>
-                                <label className="block">
-                                    <span className="mb-1 block text-[10px] font-semibold text-muted">
-                                        Model ONNX path (trống = auto)
-                                    </span>
-                                    <input
-                                        type="text"
-                                        value={ttsModelPath}
-                                        onChange={(e) =>
-                                            setTtsModelPath(e.target.value)
-                                        }
-                                        className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main"
-                                        placeholder="auto: model.onnx"
-                                    />
-                                </label>
-                                <div className="grid grid-cols-2 gap-3">
+                                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                                     <label className="block">
                                         <span className="mb-1 block text-[10px] font-semibold text-muted">
-                                            Speaker ID
+                                            Model ONNX path
                                         </span>
                                         <input
-                                            type="number"
-                                            value={ttsSpeaker}
+                                            type="text"
+                                            value={ttsModelPath}
+                                            disabled={
+                                                isGeneratingScript ||
+                                                isRendering
+                                            }
                                             onChange={(e) =>
-                                                setTtsSpeaker(
-                                                    Number(e.target.value),
-                                                )
+                                                setTtsModelPath(e.target.value)
                                             }
                                             className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main"
+                                            placeholder="auto: model.onnx"
                                         />
                                     </label>
                                     <label className="block">
                                         <span className="mb-1 block text-[10px] font-semibold text-muted">
-                                            Speed (Length scale)
+                                            Config JSON path
                                         </span>
                                         <input
-                                            type="number"
-                                            step="0.05"
-                                            value={ttsLengthScale}
+                                            type="text"
+                                            value={ttsConfigPath}
+                                            disabled={
+                                                isGeneratingScript ||
+                                                isRendering
+                                            }
                                             onChange={(e) =>
-                                                setTtsLengthScale(
-                                                    Number(e.target.value),
-                                                )
+                                                setTtsConfigPath(e.target.value)
                                             }
                                             className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main"
+                                            placeholder="auto: model.onnx.json"
                                         />
                                     </label>
                                 </div>
+                                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                                    {[
+                                        {
+                                            label: "Speaker ID",
+                                            value: ttsSpeaker,
+                                            setter: setTtsSpeaker,
+                                            step: 1,
+                                        },
+                                        {
+                                            label: "Speed",
+                                            value: ttsLengthScale,
+                                            setter: setTtsLengthScale,
+                                            step: 0.05,
+                                        },
+                                        {
+                                            label: "Noise scale",
+                                            value: ttsNoiseScale,
+                                            setter: setTtsNoiseScale,
+                                            step: 0.01,
+                                        },
+                                        {
+                                            label: "Noise W",
+                                            value: ttsNoiseW,
+                                            setter: setTtsNoiseW,
+                                            step: 0.01,
+                                        },
+                                        {
+                                            label: "Sentence silence",
+                                            value: ttsSentenceSilence,
+                                            setter: setTtsSentenceSilence,
+                                            step: 0.05,
+                                        },
+                                    ].map((control) => (
+                                        <label
+                                            key={control.label}
+                                            className="block"
+                                        >
+                                            <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                                {control.label}
+                                            </span>
+                                            <input
+                                                type="number"
+                                                step={control.step}
+                                                value={control.value}
+                                                disabled={
+                                                    isGeneratingScript ||
+                                                    isRendering
+                                                }
+                                                onChange={(e) =>
+                                                    control.setter(
+                                                        Number(e.target.value),
+                                                    )
+                                                }
+                                                className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main"
+                                            />
+                                        </label>
+                                    ))}
+                                </div>
+                                <label className="flex items-center justify-between gap-3 border border-main bg-main px-3 py-2">
+                                    <span>
+                                        <span className="block text-[11px] font-semibold text-main">
+                                            Balanced timing
+                                        </span>
+                                        <span className="block text-[10px] text-muted">
+                                            Giữ thứ tự/timeline tương đối, nhưng
+                                            giới hạn pause dài và speed-up quá
+                                            mạnh.
+                                        </span>
+                                    </span>
+                                    <input
+                                        type="checkbox"
+                                        checked={ttsPreserveTimestampGaps}
+                                        disabled={
+                                            isGeneratingScript || isRendering
+                                        }
+                                        onChange={(e) =>
+                                            setTtsPreserveTimestampGaps(
+                                                e.target.checked,
+                                            )
+                                        }
+                                        className="h-4 w-4 border border-main bg-main text-accent focus:ring-accent"
+                                    />
+                                </label>
                             </div>
                         ) : null}
                     </div>
@@ -1614,32 +1956,32 @@ export function VideoNarratorPanel({ section }: VideoNarratorPanelProps) {
                                     {/* Row 4: Background Enable Toggle */}
                                     <div>
                                         <label className="flex items-center justify-between gap-3 border border-main bg-secondary/20 px-3 py-2 rounded-sm cursor-pointer hover:bg-secondary/30 transition-colors">
-                                                <span className="text-[10px] font-semibold text-muted">
-                                                    Background
-                                                </span>
-                                                <input
-                                                    type="checkbox"
-                                                    checked={
-                                                        subtitleBackgroundEnabled
-                                                    }
-                                                    disabled={
-                                                        isGeneratingScript ||
-                                                        isRendering
-                                                    }
-                                                    onChange={(event) =>
-                                                        setSubtitleBackgroundEnabled(
-                                                            event.currentTarget
-                                                                .checked,
-                                                        )
-                                                    }
-                                                    className="h-4 w-4 accent-[var(--color-accent)] cursor-pointer"
-                                                />
-                                            </label>
+                                            <span className="text-[10px] font-semibold text-muted">
+                                                Background
+                                            </span>
+                                            <input
+                                                type="checkbox"
+                                                checked={
+                                                    subtitleBackgroundEnabled
+                                                }
+                                                disabled={
+                                                    isGeneratingScript ||
+                                                    isRendering
+                                                }
+                                                onChange={(event) =>
+                                                    setSubtitleBackgroundEnabled(
+                                                        event.currentTarget
+                                                            .checked,
+                                                    )
+                                                }
+                                                className="h-4 w-4 accent-[var(--color-accent)] cursor-pointer"
+                                            />
+                                        </label>
                                     </div>
 
                                     {/* Conditional Row 5: Background configurations */}
                                     {subtitleBackgroundEnabled && (
-                                        <div className="grid grid-cols-3 gap-2 border-t border-main/30 pt-3 mt-1 animate-fadeIn">
+                                        <div className="grid grid-cols-3 gap-2 border-t border-main pt-3 mt-1 animate-fadeIn">
                                             <label className="block">
                                                 <span className="mb-1 block text-[10px] font-semibold text-muted">
                                                     BG color
@@ -1806,6 +2148,195 @@ export function VideoNarratorPanel({ section }: VideoNarratorPanelProps) {
                             </div>
                         ) : null}
                     </div>
+
+                    {/* Video Metadata settings */}
+                    <div className="border border-main bg-secondary/20">
+                        <button
+                            type="button"
+                            onClick={() =>
+                                setShowMetadataSettings(!showMetadataSettings)
+                            }
+                            className="flex w-full items-center justify-between px-4 py-3 text-left"
+                        >
+                            <span className="text-[12px] font-semibold text-main">
+                                Video Metadata
+                            </span>
+                            {showMetadataSettings ? (
+                                <ChevronUp className="h-4 w-4 text-muted" />
+                            ) : (
+                                <ChevronDown className="h-4 w-4 text-muted" />
+                            )}
+                        </button>
+
+                        {showMetadataSettings ? (
+                            <div className="border-t border-main p-4 space-y-3">
+                                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                    <label className="block">
+                                        <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                            AI Provider
+                                        </span>
+                                        <select
+                                            value={metadataProviderId}
+                                            disabled={isGeneratingMetadata}
+                                            onChange={(event) => {
+                                                const val = event.currentTarget.value;
+                                                setMetadataProviderId(val);
+                                                fetchModelsForMetadata(val);
+                                            }}
+                                            className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main"
+                                        >
+                                            <option value="">
+                                                {DEFAULT_OPENAI_COMPATIBLE_PROVIDER_LABEL} (
+                                                {
+                                                    DEFAULT_OPENAI_COMPATIBLE_PROVIDER_TYPE
+                                                }
+                                                )
+                                            </option>
+                                            {aiProviders.map((prov) => (
+                                                <option key={prov._id} value={prov._id}>
+                                                    {prov.label} ({prov.providerType})
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </label>
+
+                                    <label className="block">
+                                        <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                            AI Model
+                                            {isMetadataLoadingModels ? " (loading...)" : ""}
+                                        </span>
+                                        {metadataProviderId && metadataAiModels.length > 0 ? (
+                                            <select
+                                                value={metadataModel}
+                                                disabled={
+                                                    isGeneratingMetadata || isMetadataLoadingModels
+                                                }
+                                                onChange={(event) =>
+                                                    setMetadataModel(
+                                                        event.currentTarget.value,
+                                                    )
+                                                }
+                                                className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main"
+                                            >
+                                                {metadataAiModels.map((m) => (
+                                                    <option key={m.id} value={m.id}>
+                                                        {m.name} ({m.id})
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        ) : (
+                                            <input
+                                                value={metadataModel}
+                                                disabled={isGeneratingMetadata}
+                                                onChange={(event) =>
+                                                    setMetadataModel(
+                                                        event.currentTarget.value,
+                                                    )
+                                                }
+                                                className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main focus:outline-none"
+                                            />
+                                        )}
+                                    </label>
+                                </div>
+
+                                <div className="flex flex-wrap gap-2">
+                                    <button
+                                        type="button"
+                                        disabled={isGeneratingMetadata || segments.length === 0}
+                                        onClick={runVideoMetadata}
+                                        className="inline-flex items-center gap-2 border border-accent/35 bg-accent/10 px-3 py-1.5 text-[11px] font-semibold text-accent transition-colors hover:bg-accent/15 disabled:cursor-not-allowed disabled:opacity-60"
+                                    >
+                                        {isGeneratingMetadata
+                                            ? "Generating metadata..."
+                                            : "Generate VI Metadata"}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        disabled={
+                                            isSavingMetadata ||
+                                            !videoMetadata ||
+                                            !selectedAssetId
+                                        }
+                                        onClick={saveVideoMetadata}
+                                        className="inline-flex items-center gap-2 border border-main bg-secondary px-3 py-1.5 text-[11px] font-semibold text-main transition-colors hover:bg-secondary/80 disabled:cursor-not-allowed disabled:opacity-60"
+                                    >
+                                        {isSavingMetadata ? (
+                                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                        ) : null}
+                                        Save to Asset
+                                    </button>
+                                </div>
+                                {metadataError ? (
+                                    <p className="border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-[11px] leading-5 text-rose-700">
+                                        {metadataError}
+                                    </p>
+                                ) : null}
+                                {metadataSaveMessage ? (
+                                    <p className="border border-main bg-secondary/20 px-3 py-2 text-[11px] text-main">
+                                        {metadataSaveMessage}
+                                    </p>
+                                ) : null}
+                                {videoMetadata ? (
+                                    <div className="space-y-2 border border-emerald-500/30 bg-emerald-500/10 px-3 py-2">
+                                        <label className="block">
+                                            <span className="mb-1 block text-[10px] font-semibold text-emerald-700">
+                                                VI Title
+                                            </span>
+                                            <input
+                                                value={metadataTitleDraft}
+                                                disabled={isSavingMetadata}
+                                                onChange={(event) =>
+                                                    setMetadataTitleDraft(
+                                                        event.currentTarget
+                                                            .value,
+                                                    )
+                                                }
+                                                className="w-full border border-emerald-500/30 bg-white/75 px-2 py-1.5 text-[11px] text-main focus:outline-none"
+                                            />
+                                        </label>
+                                        <label className="block">
+                                            <span className="mb-1 block text-[10px] font-semibold text-emerald-700">
+                                                VI Description
+                                            </span>
+                                            <textarea
+                                                rows={3}
+                                                value={
+                                                    metadataDescriptionDraft
+                                                }
+                                                disabled={isSavingMetadata}
+                                                onChange={(event) =>
+                                                    setMetadataDescriptionDraft(
+                                                        event.currentTarget
+                                                            .value,
+                                                    )
+                                                }
+                                                className="w-full resize-y border border-emerald-500/30 bg-white/75 px-2 py-1.5 text-[11px] leading-5 text-main focus:outline-none"
+                                            />
+                                        </label>
+                                        <label className="block">
+                                            <span className="mb-1 block text-[10px] font-semibold text-emerald-700">
+                                                VI Hashtags (Deduplicated with #xuhuong #short)
+                                            </span>
+                                            <input
+                                                value={
+                                                    metadataHashtagsDraft
+                                                }
+                                                disabled={isSavingMetadata}
+                                                onChange={(event) =>
+                                                    setMetadataHashtagsDraft(
+                                                        event.currentTarget
+                                                            .value,
+                                                    )
+                                                }
+                                                placeholder="#tag1 #tag2"
+                                                className="w-full border border-emerald-500/30 bg-white/75 px-2 py-1.5 text-[11px] text-main focus:outline-none"
+                                            />
+                                        </label>
+                                    </div>
+                                ) : null}
+                            </div>
+                        ) : null}
+                    </div>
                 </aside>
 
                 {/* Right Workspace (Editor + Previews) */}
@@ -1915,7 +2446,6 @@ export function VideoNarratorPanel({ section }: VideoNarratorPanelProps) {
 
                         {segments.length === 0 ? (
                             <div className="flex flex-col items-center justify-center border border-dashed border-main bg-main py-10 text-[11px] text-muted">
-                                <Mic2 className="h-8 w-8 text-muted/50" />
                                 <span className="mt-2">
                                     No narration segments yet.
                                 </span>

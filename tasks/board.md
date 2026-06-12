@@ -177,6 +177,10 @@
 
 ## Done
 
+- `FAST-VIDEO-040` - Add Vietnamese Video Metadata generation to Video Narrator
+
+- `FAST-VIDEO-039` - Add missing Piper Voice settings to Video Narrator
+
 - `FAST-VIDEO-038` - Fix Video Narrator 3-word active-only highlight render
 
 - `FAST-VIDEO-037` - Fix Video Narrator 3-word preview and active highlight color
