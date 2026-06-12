@@ -1,5 +1,19 @@
 # OmniVideo Changelog
 
+## FAST-WORKSPACE-084 - Harden Vercel remote VIP worker status proxy
+
+- Bumped app version from `0.11.11` to `0.11.12` as a patch release for deployed remote VIP worker status checks.
+- Increased `/api/audio/remote-vip-worker` proxy timeout from a hard-coded `3000ms` to a Vercel-safer `8000ms` default.
+- Added `OMNIVIDEO_REMOTE_WORKER_PROXY_TIMEOUT_MS` override with min/max clamping for deployments that need a different EC2 status timeout.
+- Returned safe unavailable diagnostics with `detail` and `timeoutMs` so Vercel-to-EC2 timeout/connect failures are visible instead of being collapsed into a generic unavailable message.
+- Surfaced those diagnostics in the Server modal and Workspace remote worker error messages.
+- Preserved browser-provided worker token forwarding through `X-OmniVideo-Remote-Vip-Token`.
+- Verification (FAST-WORKSPACE-084):
+  - `npm run test -- --run src/app/api/audio/remote-vip-worker/route.test.ts src/components/layout/topbar.test.ts src/features/workspace/workspace-canvas-panel.test.ts` pass (3 files / 33 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+
 ## FAST-VIDEO-040 - Add Vietnamese Video Metadata generation to Video Narrator
 
 - Bumped app version from `0.11.10` to `0.11.11` as a patch release for Video Narrator.

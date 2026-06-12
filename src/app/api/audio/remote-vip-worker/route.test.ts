@@ -7,6 +7,7 @@ describe("remote VIP worker proxy API", () => {
         vi.unstubAllGlobals();
         delete process.env.OMNIVIDEO_REMOTE_VIP_TOKEN;
         delete process.env.OMNIVIDEO_REMOTE_VIP_WORKER_URL;
+        delete process.env.OMNIVIDEO_REMOTE_WORKER_PROXY_TIMEOUT_MS;
     });
 
     it("proxies worker status with the configured token", async () => {
@@ -90,8 +91,31 @@ describe("remote VIP worker proxy API", () => {
             error: expect.stringContaining(
                 "Remote VIP worker is unavailable",
             ),
+            detail: "fetch failed",
+            timeoutMs: 8000,
         });
-        expect(payload.error).not.toContain("ConnectTimeoutError");
+    });
+
+    it("uses the configured proxy timeout in unavailable diagnostics", async () => {
+        process.env.OMNIVIDEO_REMOTE_WORKER_PROXY_TIMEOUT_MS = "12000";
+        const fetchMock = vi.fn(async () => {
+            throw new TypeError("fetch failed");
+        });
+        vi.stubGlobal("fetch", fetchMock);
+
+        const response = await GET(
+            new Request(
+                "http://localhost/api/audio/remote-vip-worker?endpoint=http%3A%2F%2F43.198.97.33%3A8787",
+            ),
+        );
+        const payload = await response.json();
+
+        expect(response.status).toBe(502);
+        expect(payload).toMatchObject({
+            ok: false,
+            detail: "fetch failed",
+            timeoutMs: 12000,
+        });
     });
 
     it("proxies worker kill requests", async () => {

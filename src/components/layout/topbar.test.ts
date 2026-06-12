@@ -74,6 +74,8 @@ describe("Topbar background progress modal", () => {
         expect(source).toContain("readRemoteVipWorkerBrowserConfig");
         expect(source).toContain("writeRemoteVipWorkerBrowserConfig");
         expect(source).toContain("buildServerStatusRequest");
+        expect(source).toContain("formatRemoteWorkerProxyError");
+        expect(source).toContain("timeoutMs");
         expect(source).toContain("Remote worker URL");
         expect(source).toContain("Worker token");
         expect(source).toContain("http://16.163.29.17:8787");

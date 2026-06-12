@@ -177,6 +177,8 @@
 
 ## Done
 
+- `FAST-WORKSPACE-084` - Harden Vercel remote VIP worker status proxy
+
 - `FAST-VIDEO-040` - Add Vietnamese Video Metadata generation to Video Narrator
 
 - `FAST-VIDEO-039` - Add missing Piper Voice settings to Video Narrator

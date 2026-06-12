@@ -578,6 +578,25 @@ function formatServerMetricValue(value: unknown) {
     return "";
 }
 
+function formatRemoteWorkerProxyError(
+    payload: {
+        error?: string;
+        detail?: string;
+        timeoutMs?: number;
+    } | null,
+    fallback: string,
+) {
+    const base = payload?.error ?? fallback;
+    const suffixParts: string[] = [];
+    if (payload?.detail?.trim()) {
+        suffixParts.push(`detail: ${payload.detail.trim()}`);
+    }
+    if (typeof payload?.timeoutMs === "number" && payload.timeoutMs > 0) {
+        suffixParts.push(`timeout: ${payload.timeoutMs}ms`);
+    }
+    return suffixParts.length ? `${base} (${suffixParts.join("; ")})` : base;
+}
+
 function ServerStatusModal({ onClose }: { onClose: () => void }) {
     const [status, setStatus] = useState<RemoteVipWorkerStatus | null>(
         cachedServerStatus,
@@ -621,11 +640,15 @@ function ServerStatusModal({ onClose }: { onClose: () => void }) {
                 ok?: boolean;
                 data?: RemoteVipWorkerStatus;
                 error?: string;
+                detail?: string;
+                timeoutMs?: number;
             } | null;
             if (!response.ok || payload?.ok === false) {
                 throw new Error(
-                    payload?.error ??
+                    formatRemoteWorkerProxyError(
+                        payload,
                         `Remote VIP worker status failed with HTTP ${response.status}.`,
+                    ),
                 );
             }
             const nextStatus = payload?.data ?? {};
@@ -683,11 +706,15 @@ function ServerStatusModal({ onClose }: { onClose: () => void }) {
                 ok?: boolean;
                 data?: RemoteVipWorkerStatus;
                 error?: string;
+                detail?: string;
+                timeoutMs?: number;
             } | null;
             if (!response.ok || payload?.ok === false) {
                 throw new Error(
-                    payload?.error ??
+                    formatRemoteWorkerProxyError(
+                        payload,
                         `Remote VIP worker kill failed with HTTP ${response.status}.`,
+                    ),
                 );
             }
             const nextStatus = payload?.data ?? {};

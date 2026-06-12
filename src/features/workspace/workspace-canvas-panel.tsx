@@ -883,12 +883,25 @@ function getWorkspaceApiErrorMessage(
     status?: number,
 ) {
     if (payload && typeof payload === "object") {
-        const data = payload as { error?: unknown; errorCode?: unknown };
+        const data = payload as {
+            error?: unknown;
+            errorCode?: unknown;
+            detail?: unknown;
+            timeoutMs?: unknown;
+        };
+        const suffixParts: string[] = [];
+        if (typeof data.detail === "string" && data.detail.trim()) {
+            suffixParts.push(`detail: ${data.detail.trim()}`);
+        }
+        if (typeof data.timeoutMs === "number" && data.timeoutMs > 0) {
+            suffixParts.push(`timeout: ${data.timeoutMs}ms`);
+        }
+        const suffix = suffixParts.length ? ` (${suffixParts.join("; ")})` : "";
         if (typeof data.error === "string" && data.error.trim()) {
-            return data.error;
+            return `${data.error}${suffix}`;
         }
         if (typeof data.errorCode === "string" && data.errorCode.trim()) {
-            return data.errorCode;
+            return `${data.errorCode}${suffix}`;
         }
     }
     if (typeof status === "number" && status >= 400) {
