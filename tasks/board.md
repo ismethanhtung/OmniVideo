@@ -177,6 +177,7 @@
 
 ## Done
 
+- `FAST-WORKSPACE-085` - Fix VIP parallel render subtitle speechEnd chunk drift
 - `FAST-WORKSPACE-084` - Harden Vercel remote VIP worker status proxy
 
 - `FAST-VIDEO-040` - Add Vietnamese Video Metadata generation to Video Narrator

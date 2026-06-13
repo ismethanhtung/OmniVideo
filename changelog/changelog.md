@@ -1,5 +1,18 @@
 # OmniVideo Changelog
 
+## FAST-WORKSPACE-085 - Fix VIP parallel render subtitle speechEnd chunk drift
+
+- Bumped app version from `0.11.12` to `0.11.13` as a patch release for VIP EC2 parallel render correctness.
+- Fixed parallel render chunk subtitle shifting so `speechEnd` is converted from full-video timestamps into chunk-local timestamps.
+- Preserved speech-tail subtitles that cross a chunk boundary by clipping them to the active chunk instead of dropping or overextending them.
+- Prevented generated chunk ASS files from inheriting absolute `speechEnd` values such as `0:00:42.00`, which caused old subtitles to remain on screen and stack over later subtitles.
+- Added regression coverage for chunk-local `speechEnd` shifting and ASS output.
+- Verification (FAST-WORKSPACE-085):
+  - `npm run test -- --run src/lib/multilingual-audio/video-vip-processing.test.ts src/lib/video-processing/video-edit-pipeline.test.ts` pass (2 files / 46 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+
 ## FAST-WORKSPACE-084 - Harden Vercel remote VIP worker status proxy
 
 - Bumped app version from `0.11.11` to `0.11.12` as a patch release for deployed remote VIP worker status checks.

@@ -1029,22 +1029,44 @@ function shiftCoverBoxesForRender(
         .filter((item): item is (typeof coverBoxes)[number] => item !== null);
 }
 
-function shiftTranslatedSegmentsForRender(
+export function shiftTranslatedSegmentsForRender(
     segments: TranscriptTranslationResult["translatedSegments"],
     input: { offsetSeconds: number; durationSeconds?: number },
 ) {
     if (input.offsetSeconds <= 0 && !input.durationSeconds) return segments;
     return segments
         .map((segment) => {
+            const speechEnd =
+                typeof segment.speechEnd === "number" &&
+                Number.isFinite(segment.speechEnd) &&
+                segment.speechEnd > segment.start
+                    ? segment.speechEnd
+                    : undefined;
+            const effectiveEnd = speechEnd ?? segment.end;
             const timeline = shiftTimelineForRender(
+                { start: segment.start, end: effectiveEnd },
+                input,
+            );
+            const segmentTimeline = shiftTimelineForRender(
                 { start: segment.start, end: segment.end },
                 input,
             );
+            const speechTimeline =
+                speechEnd === undefined
+                    ? null
+                    : shiftTimelineForRender(
+                          { start: segment.start, end: speechEnd },
+                          input,
+                      );
+            const { speechEnd: _speechEnd, ...segmentWithoutSpeechEnd } = segment;
             return timeline
                 ? {
-                      ...segment,
+                      ...segmentWithoutSpeechEnd,
                       start: timeline.start,
-                      end: timeline.end,
+                      end: segmentTimeline?.end ?? timeline.end,
+                      ...(speechTimeline?.end === undefined
+                          ? {}
+                          : { speechEnd: speechTimeline.end }),
                   }
                 : null;
         })

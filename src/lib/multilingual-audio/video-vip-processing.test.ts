@@ -16,7 +16,9 @@ import {
     resolveVipRenderThreadCount,
     resolveVipRenderTimeoutMs,
     runVideoVipProcessing,
+    shiftTranslatedSegmentsForRender,
 } from "./video-vip-processing";
+import { buildSubtitleAssContent } from "@/lib/video-processing/video-edit-pipeline";
 
 vi.mock("@/lib/multilingual-audio/remote-vip-worker", () => ({
     runRemoteVideoVipRender: vi.fn(),
@@ -333,6 +335,54 @@ describe("VIP final render filter order", () => {
         expect(args).toEqual(expect.arrayContaining(["-i", "/tmp/voice.wav"]));
         expect(filter).toContain("between(t,0.000,30.000)");
         expect(filter).toContain("between(t,0.000,25.000)");
+    });
+
+    it("shifts speechEnd to chunk-local time for parallel subtitle renders", () => {
+        const shifted = shiftTranslatedSegmentsForRender(
+            [
+                {
+                    id: 1,
+                    start: 30,
+                    end: 35,
+                    sourceText: "source",
+                    translatedText: "mot hai",
+                    speechEnd: 42,
+                },
+                {
+                    id: 2,
+                    start: 25,
+                    end: 28,
+                    sourceText: "tail",
+                    translatedText: "ba bon",
+                    speechEnd: 33,
+                },
+            ],
+            { offsetSeconds: 30, durationSeconds: 30 },
+        );
+
+        expect(shifted).toEqual([
+            expect.objectContaining({
+                id: 1,
+                start: 0,
+                end: 5,
+                speechEnd: 12,
+            }),
+            expect.objectContaining({
+                id: 2,
+                start: 0,
+                end: 3,
+                speechEnd: 3,
+            }),
+        ]);
+
+        const ass = buildSubtitleAssContent(shifted, {
+            subtitleMode: "standard",
+        });
+
+        expect(ass).toContain("Dialogue: 1,0:00:00.00,0:00:12.00");
+        expect(ass).toContain("Dialogue: 1,0:00:00.00,0:00:03.00");
+        expect(ass).not.toContain("0:00:42.00");
+        expect(ass).not.toContain("0:00:33.00");
     });
 
     it("skips source audio decode and amix when original audio is muted", () => {
