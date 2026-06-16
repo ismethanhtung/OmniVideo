@@ -4594,7 +4594,12 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         if (!isPolling) return;
                         try {
                             const res = await fetch(
-                                `/api/audio/video-vip-processing?key=${encodeURIComponent(vipResumeKey)}`,
+                                "/api/audio/video-vip-processing/checkpoint",
+                                {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({ key: vipResumeKey }),
+                                },
                             );
                             if (!res.ok) return;
                             const payload = await res.json();

@@ -159,6 +159,13 @@ function findBalancedJsonObject(value: string) {
     return null;
 }
 
+function findFencedJsonBlocks(value: string) {
+    return Array.from(
+        value.matchAll(/```(?:json)?\s*([\s\S]*?)\s*```/giu),
+        (match) => match[1]?.trim() ?? "",
+    ).filter(Boolean);
+}
+
 function normalizeParsedTranslationContent(
     parsed: unknown,
 ): GroqTranslationPayload | null {
@@ -212,6 +219,7 @@ export function parseTranslationModelContent(
             .replace(/^```(?:json)?\s*/iu, "")
             .replace(/\s*```$/u, "")
             .trim(),
+        ...findFencedJsonBlocks(content),
     ];
     const balancedObject = findBalancedJsonObject(content);
     if (balancedObject) candidates.push(balancedObject);

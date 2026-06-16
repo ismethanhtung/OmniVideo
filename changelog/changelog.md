@@ -1,5 +1,19 @@
 # OmniVideo Changelog
 
+## FAST-WORKSPACE-086 - Quiet VIP checkpoint polling and parse fenced think JSON
+
+- Bumped app version from `0.11.13` to `0.11.14` as a patch release for Workspace VIP translation and progress polling.
+- Added `POST /api/audio/video-vip-processing/checkpoint` so Workspace live progress polling sends the VIP resume key in the request body instead of a very long query string.
+- Updated Workspace VIP polling to use the short checkpoint endpoint, avoiding repeated terminal/browser access logs that expose the full long `key=` URL.
+- Kept the existing `GET /api/audio/video-vip-processing?key=...` checkpoint endpoint for compatibility.
+- Extended translation JSON parsing to accept valid fenced JSON blocks that appear after provider reasoning tags such as `<think></think>`.
+- Added regression tests for checkpoint POST polling and fenced think JSON parsing.
+- Verification (FAST-WORKSPACE-086):
+  - `npm run test -- --run src/lib/multilingual-audio/transcript-translation.test.ts src/app/api/audio/video-vip-processing/route.test.ts src/app/api/audio/video-vip-processing/checkpoint/route.test.ts` pass (3 files / 37 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+
 ## FAST-WORKSPACE-085 - Fix VIP parallel render subtitle speechEnd chunk drift
 
 - Bumped app version from `0.11.12` to `0.11.13` as a patch release for VIP EC2 parallel render correctness.

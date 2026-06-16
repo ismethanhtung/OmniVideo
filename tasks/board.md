@@ -177,6 +177,7 @@
 
 ## Done
 
+- `FAST-WORKSPACE-086` - Quiet VIP checkpoint polling and parse fenced think JSON
 - `FAST-WORKSPACE-085` - Fix VIP parallel render subtitle speechEnd chunk drift
 - `FAST-WORKSPACE-084` - Harden Vercel remote VIP worker status proxy
 

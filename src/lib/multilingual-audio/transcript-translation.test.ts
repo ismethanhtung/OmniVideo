@@ -150,6 +150,17 @@ describe("transcript translation", () => {
     });
 
     expect(
+      parseTranslationModelContent(
+        '<think></think>```json\n{"t":{"0":"Ngọc Toái","1":"Theo dõi hắn"}}\n```',
+      ),
+    ).toEqual({
+      segments: [
+        { id: 0, text: "Ngọc Toái" },
+        { id: 1, text: "Theo dõi hắn" },
+      ],
+    });
+
+    expect(
       parseTranslationModelContent('{"t":[[0,"Xin chào"],[1,"Tạm biệt"]]}'),
     ).toEqual({
       segments: [
