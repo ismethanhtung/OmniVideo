@@ -507,7 +507,7 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
     } | null>(null);
     const [regionTimeStart, setRegionTimeStart] = useState(0);
     const [regionTimeEnd, setRegionTimeEnd] = useState(36000);
-    const [regionStrength, setRegionStrength] = useState(50);
+    const [regionStrength, setRegionStrength] = useState(35);
     const [subtitleFontFamily, setSubtitleFontFamily] = useState("Bangers");
     const [subtitleFontSize, setSubtitleFontSize] = useState(50);
     const [subtitleMarginBottom, setSubtitleMarginBottom] = useState(150);

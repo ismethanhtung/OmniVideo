@@ -15,6 +15,7 @@ import {
     Clapperboard,
     Scissors,
     Image,
+    ImagePlus,
     ListVideo,
     Mic2,
     RadioTower,
@@ -115,6 +116,13 @@ export const LEFTBAR_NAV: LeftbarNavGroup[] = [
                     "Sử dụng AI Video Understanding (Gemini) để thuyết minh tiếng Việt, sinh giọng nói và render video.",
             },
             {
+                id: "aiImageStudio",
+                icon: ImagePlus,
+                label: "AI Image Studio",
+                description:
+                    "Tạo ảnh AI bằng Hugging Face/free image APIs để chuẩn bị storyboard và video tự tạo.",
+            },
+            {
                 id: "videoToolsLab",
                 icon: Clapperboard,
                 label: "Video Tools Lab",
@@ -197,7 +205,7 @@ export const LEFTBAR_NAV: LeftbarNavGroup[] = [
                 icon: PackageOpen,
                 label: "Feature Sandbox",
                 description:
-                    "Test nhanh các tính năng audio/video runtime (transcript retry, Piper TTS, segment inspection).",
+                    "Test nhanh Replicate models, transcript retry, Piper TTS và segment inspection.",
             },
             {
                 id: "videoSplitter",
@@ -254,6 +262,7 @@ const SECTION_SLUG_BY_ID: Record<AppSectionId, string> = {
     localUploadIntake: "local-upload-intake",
     chineseTranscription: "audio-transcript",
     videoNarrator: "video-narrator",
+    aiImageStudio: "ai-image-studio",
     piperTtsSandbox: "piper-tts-sandbox",
     videoToolsLab: "video-tools-lab",
     videoSplitter: "video-splitter",
@@ -281,6 +290,7 @@ const LEGACY_SECTION_BY_CAMEL: Record<string, AppSectionId> = {
     localUploadIntake: "localUploadIntake",
     chineseTranscription: "chineseTranscription",
     videoNarrator: "videoNarrator",
+    aiImageStudio: "aiImageStudio",
     piperTtsSandbox: "piperTtsSandbox",
     videoToolsLab: "videoToolsLab",
     videoSplitter: "videoSplitter",

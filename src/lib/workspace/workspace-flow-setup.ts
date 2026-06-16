@@ -1,3 +1,5 @@
+import { DEFAULT_GEMINI_IMAGE_MODEL } from "@/lib/thumbnails/gemini-defaults";
+
 import {
     getWorkspaceNodeTemplate,
     type WorkspaceFlowPlan,
@@ -49,6 +51,8 @@ function getStepNodeIds(step: WorkspaceFlowStep): string[] {
             return [step.sourceNodeId, step.dubbingNodeId];
         case "vip-process-video":
             return [step.sourceNodeId, step.vipNodeId];
+        case "generate-thumbnail":
+            return [step.vipNodeId, step.thumbnailNodeId];
         case "mirror-video":
             return [step.sourceNodeId, step.mirrorNodeId];
         case "edit-video":
@@ -241,6 +245,43 @@ export function getWorkspaceNodeSetupIssues(input: {
             !context.thumbnailAssetIds.has(thumbnailAssetId)
         ) {
             addIssue(issues, "Choose an available thumbnail.");
+        }
+    }
+
+    if (node.templateNodeType === "thumbnail.gemini-generate") {
+        const title = getStringConfig(node, "title").trim();
+        if (!title) {
+            addIssue(issues, "Enter a manual thumbnail title.");
+        }
+
+        const model = getStringConfig(
+            node,
+            "model",
+            DEFAULT_GEMINI_IMAGE_MODEL,
+        ).trim();
+        if (!model) {
+            addIssue(issues, "Enter a Gemini image model.");
+        }
+
+        const storageProviderAccountId = getStringConfig(
+            node,
+            "storageProviderAccountId",
+        ).trim();
+        if (!storageProviderAccountId) {
+            addIssue(issues, "Choose a thumbnail storage account.");
+        } else if (!context.storageAccountIds.has(storageProviderAccountId)) {
+            addIssue(issues, "Choose an available thumbnail storage account.");
+        }
+
+        const referenceThumbnailAssetId = getStringConfig(
+            node,
+            "referenceThumbnailAssetId",
+        ).trim();
+        if (
+            referenceThumbnailAssetId &&
+            !context.thumbnailAssetIds.has(referenceThumbnailAssetId)
+        ) {
+            addIssue(issues, "Choose an available reference thumbnail.");
         }
     }
 

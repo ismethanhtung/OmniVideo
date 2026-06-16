@@ -1,3 +1,5 @@
+import { DEFAULT_GEMINI_IMAGE_MODEL } from "@/lib/thumbnails/gemini-defaults";
+
 export type WorkspaceNodeCategory =
     | "input"
     | "processing"
@@ -159,6 +161,11 @@ export type WorkspaceFlowStep =
           kind: "vip-process-video";
           sourceNodeId: string;
           vipNodeId: string;
+      }
+    | {
+          kind: "generate-thumbnail";
+          vipNodeId: string;
+          thumbnailNodeId: string;
       }
     | {
           kind: "mirror-video";
@@ -1176,6 +1183,62 @@ export const WORKSPACE_NODE_TEMPLATES: WorkspaceNodeTemplate[] = [
             "Generated Vietnamese metadata should be reusable in downstream publish nodes.",
     },
     {
+        nodeType: "thumbnail.gemini-generate",
+        version: "0.1.0",
+        label: "Generate VIP Thumbnail",
+        description:
+            "Tạo thumbnail 16:9 bằng Google AI Studio/Gemini từ title thủ công và ảnh tham chiếu tùy chọn.",
+        category: "processing",
+        status: "available",
+        inputPorts: [{ id: "asset", label: "VIP video", dataType: "asset" }],
+        outputPorts: [
+            { id: "asset", label: "Generated thumbnail", dataType: "asset" },
+        ],
+        configFields: [
+            {
+                key: "title",
+                label: "Manual thumbnail title",
+                type: "text",
+                required: true,
+                defaultValue: "",
+            },
+            {
+                key: "providerId",
+                label: "Google AI Provider",
+                type: "account",
+                required: false,
+                defaultValue: "",
+            },
+            {
+                key: "model",
+                label: "Image model",
+                type: "text",
+                required: true,
+                defaultValue: DEFAULT_GEMINI_IMAGE_MODEL,
+            },
+            {
+                key: "storageProviderAccountId",
+                label: "Thumbnail storage account",
+                type: "account",
+                required: true,
+                defaultValue: "",
+            },
+            {
+                key: "referenceThumbnailAssetId",
+                label: "Reference thumbnail asset",
+                type: "text",
+                required: false,
+                defaultValue: "",
+            },
+        ],
+        timeoutMs: 300000,
+        retryPolicy: { maxAttempts: 1, backoff: "none" },
+        idempotencyStrategy: "provider-request-id",
+        observabilityHooks: ["onStart", "onSuccess", "onError"],
+        traceabilityNotes:
+            "Generated thumbnail must preserve manual title, provider/model, storage account, and optional reference asset lineage.",
+    },
+    {
         nodeType: "edit.mirror",
         version: "0.1.0",
         label: "Mirror Video",
@@ -1836,6 +1899,9 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
     );
     const vipNodes = graph.nodes.filter(
         (node) => node.templateNodeType === "video.vip-processing",
+    );
+    const thumbnailNodes = graph.nodes.filter(
+        (node) => node.templateNodeType === "thumbnail.gemini-generate",
     );
     const editNodes = graph.nodes.filter(
         (node) => node.templateNodeType === "edit.mask-region",
@@ -2583,6 +2649,49 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
         });
     }
 
+    const thumbnailSteps: WorkspaceFlowStep[] = [];
+    for (const thumbnailNode of thumbnailNodes) {
+        const upstreamVipNodes = graph.edges
+            .filter(
+                (edge) =>
+                    edge.toNodeId === thumbnailNode.id &&
+                    edge.toPortId === "asset",
+            )
+            .map((edge) =>
+                graph.nodes.find((node) => node.id === edge.fromNodeId),
+            )
+            .filter(
+                (node): node is WorkspaceNodeInstance =>
+                    node !== undefined &&
+                    node.templateNodeType === "video.vip-processing",
+            );
+        if (upstreamVipNodes.length === 0) {
+            errors.push(
+                `Generate VIP Thumbnail '${thumbnailNode.label}' (${thumbnailNode.id}) cần upstream VIP Processing.`,
+            );
+            continue;
+        }
+        if (upstreamVipNodes.length > 1) {
+            errors.push(
+                `Generate VIP Thumbnail '${thumbnailNode.label}' (${thumbnailNode.id}) đang nhận nhiều VIP source; chưa hỗ trợ fan-in.`,
+            );
+            continue;
+        }
+        const upstreamVipNode = upstreamVipNodes[0];
+        if (!artifactProducers.has(upstreamVipNode.id)) {
+            errors.push(
+                `Generate VIP Thumbnail '${thumbnailNode.label}' (${thumbnailNode.id}) cần VIP upstream chạy được.`,
+            );
+            continue;
+        }
+        thumbnailSteps.push({
+            kind: "generate-thumbnail",
+            vipNodeId: upstreamVipNode.id,
+            thumbnailNodeId: thumbnailNode.id,
+        });
+        producers.add(thumbnailNode.id);
+    }
+
     const mirrorSteps: WorkspaceFlowStep[] = [];
     for (const mirrorNode of mirrorNodes) {
         const upstreamSources = graph.edges
@@ -2860,6 +2969,7 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
         translationSteps.length === 0 &&
         voiceSteps.length === 0 &&
         metadataSteps.length === 0 &&
+        thumbnailSteps.length === 0 &&
         dubbingSteps.length === 0 &&
         vipSteps.length === 0 &&
         mirrorSteps.length === 0 &&
@@ -2886,6 +2996,7 @@ export function planWorkspaceFlow(graph: WorkspaceGraph): WorkspaceFlowPlan {
             ...dubbingSteps,
             ...vipSteps,
             ...metadataSteps,
+            ...thumbnailSteps,
             ...mirrorSteps,
             ...editSteps,
             ...artifactStorageSteps,
@@ -3571,5 +3682,47 @@ export function createUploadRemoteVipSaveLocalSampleGraph(): WorkspaceGraph {
                   }
                 : node,
         ),
+    };
+}
+
+export function createUploadRemoteVipThumbnailSaveLocalSampleGraph(): WorkspaceGraph {
+    const graph = createUploadRemoteVipSaveLocalSampleGraph();
+    return {
+        ...graph,
+        draftId: "upload-remote-vip-thumbnail-save-local-sample",
+        title: "Upload -> EC2 Voice + Render -> Thumbnail -> Save Local",
+        nodes: [
+            ...graph.nodes.map((node) =>
+                node.id === "output-download-local-1"
+                    ? {
+                          ...node,
+                          position: { x: 1320, y: 220 },
+                      }
+                    : node,
+            ),
+            {
+                id: "thumbnail-gemini-generate-1",
+                templateNodeType: "thumbnail.gemini-generate",
+                label: "Generate Gemini thumbnail",
+                position: { x: 940, y: 40 },
+                config: {
+                    title: "",
+                    providerId: "",
+                    model: DEFAULT_GEMINI_IMAGE_MODEL,
+                    storageProviderAccountId: "",
+                    referenceThumbnailAssetId: "",
+                },
+            },
+        ],
+        edges: [
+            ...graph.edges,
+            {
+                id: "video-vip-processing-1:asset->thumbnail-gemini-generate-1:asset",
+                fromNodeId: "video-vip-processing-1",
+                fromPortId: "asset",
+                toNodeId: "thumbnail-gemini-generate-1",
+                toPortId: "asset",
+            },
+        ],
     };
 }

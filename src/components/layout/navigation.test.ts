@@ -35,12 +35,16 @@ describe("navigation registry", () => {
     expect(pipelineGroup?.items.map((item) => item.id)).toContain(
       "thumbnailStudio",
     );
+    expect(pipelineGroup?.items.map((item) => item.id)).toContain(
+      "aiImageStudio",
+    );
     expect(LEFTBAR_NAV.flatMap((group) => group.items.map((item) => item.id))).toContain(
       "inspirationVault",
     );
     expect(getNavItem("chineseTranscription")?.description).toContain("Groq");
     expect(getNavItem("chineseTranscription")?.label).toBe("Audio Transcript");
     expect(getNavItem("thumbnailStudio")?.label).toBe("Thumbnail Studio");
+    expect(getNavItem("aiImageStudio")?.label).toBe("AI Image Studio");
     expect(getNavItem("inspirationVault")?.label).toBe("Inspiration Vault");
   });
 
@@ -71,6 +75,7 @@ describe("navigation registry", () => {
     expect(toSectionPath("inspirationVault")).toBe("/inspiration-vault");
     expect(toSectionPath("videoIntake")).toBe("/video-intake");
     expect(toSectionPath("thumbnailStudio")).toBe("/thumbnail-studio");
+    expect(toSectionPath("aiImageStudio")).toBe("/ai-image-studio");
     expect(toSectionPath("publishedContent")).toBe("/published-content");
   });
 
@@ -88,6 +93,8 @@ describe("navigation registry", () => {
     expect(resolveSectionFromSegment("publishedContent")).toBe("publishedContent");
     expect(resolveSectionFromSegment("thumbnail-studio")).toBe("thumbnailStudio");
     expect(resolveSectionFromSegment("thumbnailStudio")).toBe("thumbnailStudio");
+    expect(resolveSectionFromSegment("ai-image-studio")).toBe("aiImageStudio");
+    expect(resolveSectionFromSegment("aiImageStudio")).toBe("aiImageStudio");
     expect(resolveSectionFromSegment("")).toBe("workspace");
     expect(resolveSectionFromSegment("unknown")).toBeNull();
   });

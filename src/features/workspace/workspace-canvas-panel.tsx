@@ -32,6 +32,7 @@ import {
     getAssetFolderName,
     matchesVideoAssetSearch,
 } from "@/lib/storage/asset-folder";
+import { DEFAULT_GEMINI_IMAGE_MODEL } from "@/lib/thumbnails/gemini-defaults";
 import {
     fetchFacebookPagesForAccount,
     type FacebookPageOption,
@@ -190,6 +191,8 @@ type WorkspaceThumbnailAsset = {
     _id: string;
     providerAssetId?: string | null;
     storageProvider?: string;
+    mimeType?: string | null;
+    sizeBytes?: number | null;
     metadata?: {
         title?: string | null;
         folder?: string | null;
@@ -4838,6 +4841,145 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                             result: vipPayload.data,
                         }),
                     );
+                } else if (step.kind === "generate-thumbnail") {
+                    const vipNode = findNode(step.vipNodeId);
+                    const thumbnailNode = findNode(step.thumbnailNodeId);
+                    if (!vipNode || !thumbnailNode) {
+                        throw new Error("Missing thumbnail generation nodes.");
+                    }
+                    const title = getStringConfig(thumbnailNode, "title").trim();
+                    const storageProviderAccountId = getStringConfig(
+                        thumbnailNode,
+                        "storageProviderAccountId",
+                    ).trim();
+                    const storageAccount = storageAccounts.find(
+                        (account) => account._id === storageProviderAccountId,
+                    );
+                    if (!title) {
+                        setNodeStatus(
+                            thumbnailNode.id,
+                            "failed",
+                            "Chưa nhập thumbnail title thủ công.",
+                        );
+                        throw new Error(
+                            `Generate VIP Thumbnail '${thumbnailNode.label}' cần title thủ công.`,
+                        );
+                    }
+                    if (!storageAccount) {
+                        setNodeStatus(
+                            thumbnailNode.id,
+                            "failed",
+                            "Chưa chọn thumbnail storage account.",
+                        );
+                        throw new Error(
+                            `Generate VIP Thumbnail '${thumbnailNode.label}' cần storage account hợp lệ.`,
+                        );
+                    }
+
+                    const formData = new FormData();
+                    formData.set("title", title);
+                    formData.set(
+                        "storageProviderAccountId",
+                        storageProviderAccountId,
+                    );
+                    const providerId = getStringConfig(
+                        thumbnailNode,
+                        "providerId",
+                    ).trim();
+                    if (providerId) {
+                        formData.set("providerId", providerId);
+                    }
+                    formData.set(
+                        "model",
+                        getStringConfig(
+                            thumbnailNode,
+                            "model",
+                            DEFAULT_GEMINI_IMAGE_MODEL,
+                        ),
+                    );
+                    const referenceThumbnailAssetId = getStringConfig(
+                        thumbnailNode,
+                        "referenceThumbnailAssetId",
+                    ).trim();
+                    if (referenceThumbnailAssetId) {
+                        formData.set(
+                            "referenceThumbnailAssetId",
+                            referenceThumbnailAssetId,
+                        );
+                    }
+                    const referenceFile = runtimeFilesByNodeId[thumbnailNode.id];
+                    if (referenceFile) {
+                        formData.set("referenceImage", referenceFile);
+                    }
+                    const metadata = vietnameseMetadataByNodeId[step.vipNodeId];
+                    if (metadata) {
+                        formData.set(
+                            "context",
+                            [
+                                `Generated metadata title: ${metadata.title}`,
+                                `Description: ${metadata.description}`,
+                                `Hashtags: ${metadata.hashtags.join(", ")}`,
+                            ].join("\n"),
+                        );
+                    }
+
+                    setNodeStatus(
+                        thumbnailNode.id,
+                        "running",
+                        "Generating Gemini thumbnail...",
+                    );
+                    updateProgressStepDetail(step, {
+                        progressMode: "indeterminate",
+                        progress: 0,
+                        description:
+                            "Generating a 16:9 Vietnamese thumbnail with Gemini and saving it to Thumbnail Assets...",
+                    });
+
+                    const thumbnailPayload = await fetchWorkspaceJson<{
+                        ok: true;
+                        data: {
+                            assetId: string;
+                            title: string;
+                            mimeType: string;
+                            byteLength: number;
+                            model: string;
+                        };
+                    }>({
+                        url: "/api/thumbnails/gemini-generate",
+                        actionLabel: "Generate Gemini thumbnail",
+                        init: { method: "POST", body: formData },
+                    });
+                    assetByProducer[step.thumbnailNodeId] =
+                        thumbnailPayload.data.assetId;
+                    setRuntimeAssetIdsByNodeId((current) => ({
+                        ...current,
+                        [thumbnailNode.id]: thumbnailPayload.data.assetId,
+                    }));
+                    setThumbnailAssets((current) => [
+                        {
+                            _id: thumbnailPayload.data.assetId,
+                            mimeType: thumbnailPayload.data.mimeType,
+                            sizeBytes: thumbnailPayload.data.byteLength,
+                            metadata: {
+                                title: thumbnailPayload.data.title,
+                                folder: "thumbnails/vip",
+                                tags: ["vip", "ai-generated", "thumbnail"],
+                            },
+                            createdAt: new Date().toISOString(),
+                        },
+                        ...current,
+                    ]);
+                    setNodeStatus(
+                        thumbnailNode.id,
+                        "success",
+                        `Thumbnail ${thumbnailPayload.data.assetId}.`,
+                    );
+                    summary.push(
+                        `Generated thumbnail ${thumbnailPayload.data.assetId}.`,
+                    );
+                    advanceProgress(
+                        `Thumbnail ${thumbnailNode.label} complete.`,
+                    );
                 } else if (step.kind === "mirror-video") {
                     const sourceNode = findNode(step.sourceNodeId);
                     const mirrorNode = findNode(step.mirrorNodeId);
@@ -7383,6 +7525,14 @@ function describeStep(
                 "Preprocess, dub, mirror, blur/subtitles, and generate metadata",
         };
     }
+    if (step.kind === "generate-thumbnail") {
+        return {
+            key: `thumbnail-${step.thumbnailNodeId}`,
+            statusKey: step.thumbnailNodeId,
+            label: `Thumbnail · ${findLabel(step.vipNodeId)} → ${findLabel(step.thumbnailNodeId)}`,
+            subtitle: "Generate Gemini thumbnail from manual title",
+        };
+    }
     if (step.kind === "mirror-video") {
         return {
             key: `mirror-${step.mirrorNodeId}`,
@@ -8891,6 +9041,150 @@ function NodeRuntimeConfig({
                     <p className="border border-main bg-main px-3 py-2 text-[10px] leading-4 text-muted">
                         Node lá: chạy để sinh title + description + hashtags
                         tiếng Việt cho publish fallback.
+                    </p>
+                </div>
+            </InspectorSection>
+        );
+    }
+
+    if (node.templateNodeType === "thumbnail.gemini-generate") {
+        const selectedProviderId = getStringConfig(node, "providerId");
+        const models = selectedProviderId
+            ? (aiModelsByProviderId[selectedProviderId] ?? [])
+            : [];
+        const isLoadingModels = selectedProviderId
+            ? Boolean(loadingAiModelProviderIds[selectedProviderId])
+            : false;
+        return (
+            <InspectorSection title="Runtime Config">
+                <div className="space-y-2 border border-main bg-secondary/20 p-2">
+                    <RuntimeTextInput
+                        label="Thumbnail title"
+                        value={getStringConfig(node, "title")}
+                        disabled={isRunningFlow}
+                        placeholder="VD: Hệ Thống Ép Ta Làm Hôn Quân"
+                        onChange={(value) => setConfig({ title: value })}
+                    />
+                    <RuntimeSelect
+                        label="Google AI Provider"
+                        value={selectedProviderId}
+                        disabled={isRunningFlow}
+                        onChange={async (value) => {
+                            setConfig({
+                                providerId: value,
+                                model: value ? "" : DEFAULT_GEMINI_IMAGE_MODEL,
+                            });
+                            if (value) {
+                                const loadedModels =
+                                    await onEnsureAiProviderModels(value);
+                                const preferredModelId =
+                                    loadedModels.find(
+                                        (model) =>
+                                            model.id ===
+                                            DEFAULT_GEMINI_IMAGE_MODEL,
+                                    )?.id ??
+                                    loadedModels.find((model) =>
+                                        /image|gemini-2\.5-flash-image/iu.test(
+                                            model.id,
+                                        ),
+                                    )?.id ?? loadedModels[0]?.id;
+                                if (preferredModelId) {
+                                    setConfig({
+                                        providerId: value,
+                                        model: preferredModelId,
+                                    });
+                                }
+                            }
+                        }}
+                    >
+                        <option value="">Google AI Studio (env)</option>
+                        {aiProviders.map((provider) => (
+                            <option key={provider._id} value={provider._id}>
+                                {provider.label} ({provider.providerType})
+                            </option>
+                        ))}
+                    </RuntimeSelect>
+                    {selectedProviderId && models.length > 0 ? (
+                        <RuntimeSelect
+                            label={`Image model${isLoadingModels ? " (loading...)" : ""}`}
+                            value={getStringConfig(node, "model")}
+                            disabled={isRunningFlow || isLoadingModels}
+                            onChange={(value) => setConfig({ model: value })}
+                        >
+                            {models.map((model) => (
+                                <option key={model.id} value={model.id}>
+                                    {model.name}
+                                </option>
+                            ))}
+                        </RuntimeSelect>
+                    ) : (
+                        <RuntimeTextInput
+                            label={`Image model${isLoadingModels ? " (loading...)" : ""}`}
+                            value={getStringConfig(
+                                node,
+                                "model",
+                                DEFAULT_GEMINI_IMAGE_MODEL,
+                            )}
+                            disabled={isRunningFlow}
+                            placeholder={DEFAULT_GEMINI_IMAGE_MODEL}
+                            onChange={(value) => setConfig({ model: value })}
+                        />
+                    )}
+                    <RuntimeSelect
+                        label="Thumbnail storage"
+                        value={getStringConfig(
+                            node,
+                            "storageProviderAccountId",
+                        )}
+                        disabled={isRunningFlow}
+                        onChange={(value) =>
+                            setConfig({ storageProviderAccountId: value })
+                        }
+                    >
+                        <option value="">Select storage account</option>
+                        {storageAccounts.map((account) => (
+                            <option key={account._id} value={account._id}>
+                                {account.label} ({account.providerType})
+                            </option>
+                        ))}
+                    </RuntimeSelect>
+                    <label className="block">
+                        <span className="mb-1 block text-[10px] font-semibold text-muted">
+                            Reference image upload
+                        </span>
+                        <input
+                            type="file"
+                            accept="image/*,.png,.jpg,.jpeg,.webp"
+                            disabled={isRunningFlow}
+                            onChange={(event) =>
+                                onUpdateNodeFile(
+                                    node.id,
+                                    event.currentTarget.files?.[0] ?? null,
+                                )
+                            }
+                            className="block w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main file:mr-2 file:border-0 file:bg-secondary file:px-2 file:py-1 file:text-[10px] file:font-semibold file:text-main"
+                        />
+                        {runtimeFile ? (
+                            <span className="mt-1 block truncate text-[10px] text-muted">
+                                {runtimeFile.name}
+                            </span>
+                        ) : null}
+                    </label>
+                    <WorkspaceThumbnailAssetPicker
+                        assets={thumbnailAssets}
+                        selectedAssetId={getStringConfig(
+                            node,
+                            "referenceThumbnailAssetId",
+                        )}
+                        disabled={isRunningFlow}
+                        onSelect={(assetId) =>
+                            setConfig({ referenceThumbnailAssetId: assetId })
+                        }
+                    />
+                    <p className="border border-main bg-main px-3 py-2 text-[10px] leading-4 text-muted">
+                        Flow dừng theo nghĩa cần bạn điền title ở node này
+                        trước khi Run. Metadata tự động chỉ dùng làm context
+                        phụ, không dùng làm title chính.
                     </p>
                 </div>
             </InspectorSection>

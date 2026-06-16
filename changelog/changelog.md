@@ -1,5 +1,122 @@
 # OmniVideo Changelog
 
+## FAST-VIDEO-048 - Add complete Z Image Turbo Replicate preset
+
+- Bumped app version from `0.11.21` to `0.11.22` as a patch release for the Feature Sandbox Replicate preset update.
+- Updated the default `prunaai/z-image-turbo` input JSON with `width`, `height`, `go_fast`, `output_format`, `guidance_scale`, `output_quality`, and `num_inference_steps`.
+- Added a `Z Image Turbo` reset button in Replicate Model Lab so the complete preset can be restored after editing.
+- Verification (FAST-VIDEO-048):
+  - `npm run test -- --run src/features/audio/piper-tts-sandbox-panel.test.ts` pass (1 file / 2 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+
+## FAST-VIDEO-047 - Add Replicate generic runner to Feature Sandbox
+
+- Bumped app version from `0.11.20` to `0.11.21` as a patch release for the Feature Sandbox Replicate runner.
+- Added `POST /api/replicate/predictions` for sandbox Replicate predictions with server env token fallback (`REPLICATE_API_TOKEN`) or temporary pasted token.
+- Added auto owner/model latest-version resolution via Replicate model lookup, plus explicit version, official model endpoint, and deployment endpoint modes.
+- Added arbitrary JSON input support and optional local file injection into any Replicate input key as a data URL for small image/audio/video tests.
+- Expanded Feature Sandbox with `Replicate Model Lab`, defaulting to `prunaai/z-image-turbo`, output URL/media previews, raw prediction JSON, logs/status visibility, and copy output action.
+- Verification (FAST-VIDEO-047):
+  - `npm run test -- --run src/app/api/replicate/predictions/route.test.ts src/features/audio/piper-tts-sandbox-panel.test.ts src/components/layout/navigation.test.ts` pass (3 files / 12 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+
+## FAST-VIDEO-046 - Tune Video Tools and Workspace defaults
+
+- Bumped app version from `0.11.19` to `0.11.20` as a patch release covering AI Image Studio video rendering and workflow default tuning.
+- Changed Video Tools Lab partial blur default strength from `50` to `35`.
+- Changed Workspace Gemini thumbnail default model to `models/gemini-3.1-flash-lite` across template defaults, seed config, setup validation, inspector fallback, and thumbnail API fallback.
+- Kept the Workspace thumbnail provider default on Google AI Studio env mode and renamed the inspector option to `Google AI Studio (env)`.
+- Fixed Google Gemini thumbnail route model URL construction so model names already prefixed with `models/` do not become `models/models/...`.
+- Verification (FAST-VIDEO-046):
+  - `npm run test -- --run src/features/ai-image/ai-image-studio-panel.test.ts src/app/api/ai-image/render-video/route.test.ts src/features/video-processing/video-tools-lab-panel.test.ts src/lib/workspace/workspace-graph.test.ts src/app/api/thumbnails/gemini-generate/route.test.ts` pass (5 files / 72 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+
+## FAST-VIDEO-045 - Render AI Image Studio storyboard video
+
+- Added `POST /api/ai-image/render-video` to accept storyboard scenes plus per-scene uploaded images and return a rendered MP4.
+- Generated Piper TTS audio from each scene voiceover using the scene time ranges as the speech timeline.
+- Built a 9:16 slideshow video from uploaded scene images with ffmpeg, concatenated the scene clips, burned SRT subtitles, and muxed voice audio.
+- Added AI Image Studio video assembly controls with render gating, progress/error state, MP4 preview, output metrics, and direct download.
+- Added focused route coverage for successful render input and missing scene-image validation.
+- Verification (FAST-VIDEO-045):
+  - `npm run test -- --run src/features/ai-image/ai-image-studio-panel.test.ts src/app/api/ai-image/render-video/route.test.ts src/features/video-processing/video-tools-lab-panel.test.ts src/lib/workspace/workspace-graph.test.ts src/app/api/thumbnails/gemini-generate/route.test.ts` pass (5 files / 72 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+
+## FAST-VIDEO-044 - Rework AI Image Studio into storyboard planner
+
+- Bumped app version from `0.11.18` to `0.11.19` as a patch release for the AI Image Studio workflow change.
+- Replaced direct image generation controls with a storyboard-first planner for video ideas, categories, provider/model selection, retry/improve prompts, and AI-generated scene tables.
+- Added `POST /api/ai-image/storyboard` to generate structured Vietnamese storyboard JSON with time range, visual prompt, and voiceover fields through configured AI Providers or env Google AI Studio.
+- Added per-scene copy controls for visual prompt, voiceover, and full scene text so scenes can be pasted into external image tools.
+- Added per-scene image upload slots and a reference image bank for manually created style/reference images.
+- Left video assembly, TTS, speech, and subtitles as the next phase while exposing their progress placeholders in the page.
+- Verification (FAST-VIDEO-044):
+  - `npm run test -- --run src/features/ai-image/ai-image-studio-panel.test.ts src/app/api/ai-image/storyboard/route.test.ts src/app/api/ai-image/huggingface-generate/route.test.ts` pass (3 files / 13 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+
+## FAST-VIDEO-043 - Let AI Image Studio generate with configured AI Providers
+
+- Bumped app version from `0.11.17` to `0.11.18` as a patch release for AI Image Studio provider selection.
+- Added `Configured AI Provider` mode to AI Image Studio so users can select existing AI Providers such as ChiaseGPU instead of relying only on Hugging Face.
+- Added provider/model loading from `/api/ai-providers` and `/api/ai-providers/[providerId]/models`, with model manual override preserved.
+- Extended `POST /api/ai-image/huggingface-generate` with provider-backed OpenAI-compatible `/images/generations` support using the server-side stored API key.
+- Supported provider image responses returned as `b64_json` or image URLs.
+- Added regression coverage for provider-backed image generation and UI provider controls.
+- Verification (FAST-VIDEO-043):
+  - `npm run test -- --run src/features/ai-image/ai-image-studio-panel.test.ts src/app/api/ai-image/huggingface-generate/route.test.ts` pass (2 files / 9 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+
+## FAST-VIDEO-042 - Harden AI Image Studio Hugging Face network errors
+
+- Bumped app version from `0.11.16` to `0.11.17` as a patch release for AI Image Studio Hugging Face connectivity.
+- Switched AI Image Studio Hugging Face generation to prefer the current Inference Providers router endpoint before falling back to the legacy `api-inference` endpoint.
+- Fixed model path encoding so Hugging Face model ids like `stabilityai/stable-diffusion-xl-base-1.0` are sent as path segments instead of a single `%2F`-encoded segment.
+- Added explicit provider network error mapping for DNS/TLS/timeout failures instead of returning a generic HTTP 500.
+- Added regression coverage for router endpoint use, legacy fallback, provider JSON errors, and network failures.
+- Verification (FAST-VIDEO-042):
+  - `npm run test -- --run src/app/api/ai-image/huggingface-generate/route.test.ts` pass (1 file / 5 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+
+## FAST-VIDEO-041 - Add AI Image Studio page for Hugging Face generation
+
+- Bumped app version from `0.11.15` to `0.11.16` as a patch release for the AI image-first video creation experiment.
+- Added `AI Image Studio` under Video Pipeline with an Audio Transcript-style bordered tool UI for prompt, model, token, frame size, steps, guidance, seed, preview, prompt copy, and image download.
+- Added `POST /api/ai-image/huggingface-generate` to call Hugging Face Inference image models, return binary image responses as data URLs, and map provider JSON errors such as model loading into clear API errors.
+- Registered `/ai-image-studio` routing and navigation entries.
+- Added focused navigation, panel structure, and Hugging Face API route tests.
+- Verification (FAST-VIDEO-041):
+  - `npm run test -- --run src/components/layout/navigation.test.ts src/features/ai-image/ai-image-studio-panel.test.ts src/app/api/ai-image/huggingface-generate/route.test.ts` pass (3 files / 13 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+
+## FAST-WORKSPACE-088 - Add VIP Gemini thumbnail generation seed
+
+- Bumped app version from `0.11.14` to `0.11.15` as a patch release for the Workspace VIP thumbnail experiment.
+- Added a `Generate VIP Thumbnail` Workspace node that requires a manual thumbnail title, supports Gemini/Google AI Studio image generation, optional local/reference thumbnail input, and saves output into Thumbnail Assets.
+- Added the `Seed Remote VIP + Gemini Thumbnail` seed so Upload Video -> EC2 voice/render can continue into a manual-title thumbnail generation step before local save.
+- Added setup validation so the flow stops before running when the thumbnail title or thumbnail storage account is missing.
+- Added focused graph, seed, setup validation, and API route coverage for the new thumbnail path.
+- Verification (FAST-WORKSPACE-088):
+  - `npm run test -- --run src/lib/workspace/workspace-graph.test.ts src/lib/workspace/workspace-flow-setup.test.ts src/lib/workspace/workspace-seeds.test.ts src/app/api/thumbnails/gemini-generate/route.test.ts src/features/workspace/workspace-canvas-panel.test.ts` pass (5 files / 96 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+
 ## FAST-WORKSPACE-086 - Quiet VIP checkpoint polling and parse fenced think JSON
 
 - Bumped app version from `0.11.13` to `0.11.14` as a patch release for Workspace VIP translation and progress polling.

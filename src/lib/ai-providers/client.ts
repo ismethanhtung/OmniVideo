@@ -30,6 +30,26 @@ type ChatCompletionResponse = {
     };
 };
 
+type ImageGenerationRequest = {
+    model: string;
+    prompt: string;
+    negativePrompt?: string;
+    size: string;
+    steps?: number;
+    guidanceScale?: number;
+    seed?: number | null;
+};
+
+type ImageGenerationResponse = {
+    created?: number;
+    data?: Array<{
+        b64_json?: string;
+        url?: string;
+        revised_prompt?: string;
+    }>;
+    error?: { message?: string };
+};
+
 type OpenAiModelsResponse = {
     data?: Array<{
         id: string;
@@ -122,6 +142,52 @@ export async function chatCompletion(
     }
 
     return payload as ChatCompletionResponse;
+}
+
+export async function imageGeneration(
+    provider: ProviderConnectionInfo,
+    request: ImageGenerationRequest,
+    fetchImpl: typeof fetch = fetch,
+): Promise<ImageGenerationResponse> {
+    const url = `${provider.baseUrl}/images/generations`;
+    const response = await fetchImpl(url, {
+        method: "POST",
+        headers: {
+            Authorization: `Bearer ${provider.apiKey}`,
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+            model: request.model,
+            prompt: request.negativePrompt
+                ? `${request.prompt}\n\nNegative prompt: ${request.negativePrompt}`
+                : request.prompt,
+            n: 1,
+            size: request.size,
+            response_format: "b64_json",
+            steps: request.steps,
+            guidance_scale: request.guidanceScale,
+            seed: request.seed ?? undefined,
+        }),
+    });
+
+    const payload = (await response.json().catch(() => ({}))) as
+        | ImageGenerationResponse
+        | { error?: { message?: string } };
+
+    if (!response.ok) {
+        const errorMessage =
+            "error" in payload && payload.error?.message
+                ? payload.error.message
+                : `Image generation failed (HTTP ${response.status}).`;
+        throw new AiProviderError({
+            errorCode: "PRV_AI_IMAGE_GENERATION_FAILED",
+            message: errorMessage,
+            statusCode:
+                response.status >= 400 && response.status < 500 ? 422 : 502,
+        });
+    }
+
+    return payload as ImageGenerationResponse;
 }
 
 export async function testProviderConnection(

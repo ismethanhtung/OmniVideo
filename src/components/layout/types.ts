@@ -12,6 +12,7 @@ export type AppSectionId =
   | "localUploadIntake"
   | "chineseTranscription"
   | "videoNarrator"
+  | "aiImageStudio"
   | "piperTtsSandbox"
   | "videoToolsLab"
   | "videoSplitter"

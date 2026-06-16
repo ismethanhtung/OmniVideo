@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
     createAssetVipProcessingSampleGraph,
     createUploadRemoteVipSaveLocalSampleGraph,
+    createUploadRemoteVipThumbnailSaveLocalSampleGraph,
     createUploadVipSaveLocalSampleGraph,
     WORKSPACE_NODE_TEMPLATES,
     addWorkspaceNode,
@@ -123,6 +124,42 @@ describe("workspace graph helpers", () => {
                     key: "downloadMode",
                     type: "select",
                     defaultValue: "downloads",
+                }),
+            ]),
+        );
+    });
+
+    it("defines Gemini thumbnail generation template with manual title controls", () => {
+        const template = WORKSPACE_NODE_TEMPLATES.find(
+            (entry) => entry.nodeType === "thumbnail.gemini-generate",
+        );
+
+        expect(template).toBeDefined();
+        expect(template?.label).toBe("Generate VIP Thumbnail");
+        expect(template?.inputPorts).toEqual([
+            { id: "asset", label: "VIP video", dataType: "asset" },
+        ]);
+        expect(template?.outputPorts).toEqual([
+            { id: "asset", label: "Generated thumbnail", dataType: "asset" },
+        ]);
+        expect(template?.configFields).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    key: "title",
+                    required: true,
+                    defaultValue: "",
+                }),
+                expect.objectContaining({
+                    key: "model",
+                    defaultValue: "models/gemini-3.1-flash-lite",
+                }),
+                expect.objectContaining({
+                    key: "storageProviderAccountId",
+                    required: true,
+                }),
+                expect.objectContaining({
+                    key: "referenceThumbnailAssetId",
+                    required: false,
                 }),
             ]),
         );
@@ -1528,6 +1565,32 @@ describe("workspace graph helpers", () => {
                 kind: "vip-process-video",
                 sourceNodeId: "source-file-1",
                 vipNodeId: "video-vip-processing-1",
+            },
+            {
+                kind: "download-local",
+                downloadNodeId: "output-download-local-1",
+                producerNodeId: "video-vip-processing-1",
+            },
+        ]);
+    });
+
+    it("plans seeded remote VIP voice/render thumbnail save-local flow", () => {
+        const graph = createUploadRemoteVipThumbnailSaveLocalSampleGraph();
+
+        expect(validateWorkspaceGraph(graph)).toEqual({ ok: true, errors: [] });
+        const plan = planWorkspaceFlow(graph);
+
+        expect(plan.ok).toBe(true);
+        expect(plan.steps).toEqual([
+            {
+                kind: "vip-process-video",
+                sourceNodeId: "source-file-1",
+                vipNodeId: "video-vip-processing-1",
+            },
+            {
+                kind: "generate-thumbnail",
+                vipNodeId: "video-vip-processing-1",
+                thumbnailNodeId: "thumbnail-gemini-generate-1",
             },
             {
                 kind: "download-local",

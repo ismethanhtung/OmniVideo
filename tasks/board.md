@@ -177,6 +177,15 @@
 
 ## Done
 
+- `FAST-VIDEO-048` - Add complete Z Image Turbo Replicate preset
+- `FAST-VIDEO-047` - Add Replicate generic runner to Feature Sandbox
+- `FAST-VIDEO-046` - Tune Video Tools and Workspace defaults
+- `FAST-VIDEO-045` - Render AI Image Studio storyboard video
+- `FAST-VIDEO-044` - Rework AI Image Studio into storyboard planner
+- `FAST-VIDEO-043` - Let AI Image Studio generate with configured AI Providers
+- `FAST-VIDEO-042` - Harden AI Image Studio Hugging Face network errors
+- `FAST-VIDEO-041` - Add AI Image Studio page for Hugging Face generation
+- `FAST-WORKSPACE-088` - Add VIP Gemini thumbnail generation seed
 - `FAST-WORKSPACE-086` - Quiet VIP checkpoint polling and parse fenced think JSON
 - `FAST-WORKSPACE-085` - Fix VIP parallel render subtitle speechEnd chunk drift
 - `FAST-WORKSPACE-084` - Harden Vercel remote VIP worker status proxy

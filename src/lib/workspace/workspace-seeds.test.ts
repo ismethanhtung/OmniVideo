@@ -92,4 +92,21 @@ describe("workspace seed templates", () => {
             ]),
         );
     });
+
+    it("registers remote VIP voice render seed with Gemini thumbnail node", () => {
+        const seed = WORKSPACE_SEED_TEMPLATES.find(
+            (entry) => entry.id === "remote-vip-voice-render-thumbnail",
+        );
+
+        expect(seed).toBeDefined();
+        expect(seed?.label).toBe("Seed Remote VIP + Gemini Thumbnail");
+        expect(seed?.buildGraph().nodes.map((node) => node.templateNodeType)).toEqual(
+            expect.arrayContaining([
+                "source.file",
+                "video.vip-processing",
+                "thumbnail.gemini-generate",
+                "output.download-local",
+            ]),
+        );
+    });
 });

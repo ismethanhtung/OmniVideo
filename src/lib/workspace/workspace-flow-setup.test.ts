@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
     addWorkspaceNode,
     connectWorkspaceNodes,
+    createUploadRemoteVipThumbnailSaveLocalSampleGraph,
     createEmptyWorkspaceGraph,
     planWorkspaceFlow,
     updateWorkspaceNodeConfig,
@@ -241,6 +242,56 @@ describe("workspace flow setup helpers", () => {
                 }),
             }),
         ).toEqual(["Choose an available thumbnail."]);
+    });
+
+    it("requires manual title and thumbnail storage setup for Gemini thumbnail nodes", () => {
+        const graph = createUploadRemoteVipThumbnailSaveLocalSampleGraph();
+        const plan = planWorkspaceFlow(graph);
+        const setupNodes = getWorkspaceFlowSetupNodes(graph, plan);
+        const thumbnailNode = setupNodes.find(
+            ({ node }) => node.id === "thumbnail-gemini-generate-1",
+        )?.node;
+
+        expect(plan.ok).toBe(true);
+        expect(thumbnailNode).toBeDefined();
+        expect(
+            getWorkspaceNodeSetupIssues({
+                node: thumbnailNode!,
+                plan,
+                context: context({
+                    runtimeFileNodeIds: new Set(["source-file-1"]),
+                }),
+            }),
+        ).toEqual([
+            "Enter a manual thumbnail title.",
+            "Choose a thumbnail storage account.",
+        ]);
+    });
+
+    it("accepts ready Gemini thumbnail node with optional reference thumbnail", () => {
+        let graph = createUploadRemoteVipThumbnailSaveLocalSampleGraph();
+        graph = updateWorkspaceNodeConfig(graph, "thumbnail-gemini-generate-1", {
+            title: "Hệ Thống Ép Ta Làm Hôn Quân",
+            storageProviderAccountId: "storage-1",
+            referenceThumbnailAssetId: "thumb-1",
+        });
+        const plan = planWorkspaceFlow(graph);
+        const thumbnailNode = getWorkspaceFlowSetupNodes(graph, plan).find(
+            ({ node }) => node.id === "thumbnail-gemini-generate-1",
+        )?.node;
+
+        expect(thumbnailNode).toBeDefined();
+        expect(
+            getWorkspaceNodeSetupIssues({
+                node: thumbnailNode!,
+                plan,
+                context: context({
+                    runtimeFileNodeIds: new Set(["source-file-1"]),
+                    storageAccountIds: new Set(["storage-1"]),
+                    thumbnailAssetIds: new Set(["thumb-1"]),
+                }),
+            }),
+        ).toEqual([]);
     });
 
     it("warns when a mask node uses an upstream storage asset without saved video setup", () => {

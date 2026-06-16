@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Download, RadioTower, Volume2 } from "lucide-react";
+import { Copy, Download, RadioTower, Send, Volume2 } from "lucide-react";
 
 import type { LeftbarNavItem } from "@/components/layout/types";
 import type {
@@ -79,6 +79,53 @@ type TranscriptionApiPayload =
           steps?: AudioTranscriptionStep[];
       };
 
+type ReplicateResolvedTarget = {
+    mode: string;
+    endpoint: string;
+    version?: string;
+};
+
+type ReplicatePredictionPayload =
+    | {
+          ok: true;
+          data: {
+              prediction: {
+                  id?: string;
+                  status?: string;
+                  output?: unknown;
+                  logs?: string;
+                  error?: unknown;
+                  urls?: {
+                      get?: string;
+                      web?: string;
+                  };
+                  [key: string]: unknown;
+              };
+              warnings: string[];
+              resolved: ReplicateResolvedTarget;
+          };
+      }
+    | {
+          ok: false;
+          errorCode?: string;
+          error?: string;
+      };
+
+const DEFAULT_REPLICATE_INPUT = JSON.stringify(
+    {
+        width: 1024,
+        height: 768,
+        prompt: "Cô gái dọn dẹp tủ đồ, định vứt một chiếc áo khoác phao cũ, sờn rách ở tay áo. Anh chồng đi qua nhìn thấy, liền nhặt lại và treo vào tủ.",
+        go_fast: false,
+        output_format: "jpg",
+        guidance_scale: 0,
+        output_quality: 80,
+        num_inference_steps: 8,
+    },
+    null,
+    2,
+);
+
 function formatTime(seconds: number) {
     if (!Number.isFinite(seconds)) return "00:00.000";
     const minutes = Math.floor(seconds / 60);
@@ -93,6 +140,44 @@ function formatBytes(bytes: number) {
     if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
     if (bytes >= 1024) return `${(bytes / 1024).toFixed(2)} KB`;
     return `${bytes} B`;
+}
+
+function collectOutputUrls(value: unknown, urls: string[] = []) {
+    if (typeof value === "string") {
+        if (/^(https?:\/\/|data:)/iu.test(value)) urls.push(value);
+        return urls;
+    }
+    if (Array.isArray(value)) {
+        for (const item of value) collectOutputUrls(item, urls);
+        return urls;
+    }
+    if (value && typeof value === "object") {
+        for (const item of Object.values(value)) collectOutputUrls(item, urls);
+    }
+    return urls;
+}
+
+function classifyMediaUrl(url: string) {
+    const lower = url.toLowerCase();
+    if (
+        lower.startsWith("data:image/") ||
+        /\.(png|jpe?g|webp|gif)(\?|$)/u.test(lower)
+    ) {
+        return "image";
+    }
+    if (
+        lower.startsWith("data:audio/") ||
+        /\.(wav|mp3|m4a|ogg|flac)(\?|$)/u.test(lower)
+    ) {
+        return "audio";
+    }
+    if (
+        lower.startsWith("data:video/") ||
+        /\.(mp4|webm|mov)(\?|$)/u.test(lower)
+    ) {
+        return "video";
+    }
+    return "link";
 }
 
 type PiperTtsSandboxPanelProps = {
@@ -134,6 +219,23 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
     const [result, setResult] = useState<
         Extract<PiperTtsApiPayload, { ok: true }>["data"] | null
     >(null);
+    const [replicateToken, setReplicateToken] = useState("");
+    const [replicateTarget, setReplicateTarget] = useState(
+        "prunaai/z-image-turbo",
+    );
+    const [replicateMode, setReplicateMode] = useState("auto");
+    const [replicateInputJson, setReplicateInputJson] = useState(
+        DEFAULT_REPLICATE_INPUT,
+    );
+    const [replicateFileInputKey, setReplicateFileInputKey] = useState("");
+    const [replicateFile, setReplicateFile] = useState<File | null>(null);
+    const [replicateWaitSeconds, setReplicateWaitSeconds] = useState("45");
+    const [replicateCancelAfter, setReplicateCancelAfter] = useState("5m");
+    const [isRunningReplicate, setIsRunningReplicate] = useState(false);
+    const [replicateError, setReplicateError] = useState<string | null>(null);
+    const [replicateResult, setReplicateResult] = useState<
+        Extract<ReplicatePredictionPayload, { ok: true }>["data"] | null
+    >(null);
 
     useEffect(() => {
         fetch("/api/storage/assets?limit=50", {
@@ -154,6 +256,10 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
     const selectedAsset = useMemo(
         () => assets.find((asset) => asset._id === selectedAssetId) ?? null,
         [assets, selectedAssetId],
+    );
+    const replicateOutputUrls = useMemo(
+        () => collectOutputUrls(replicateResult?.prediction.output),
+        [replicateResult],
     );
     const visibleAssets = useMemo(() => {
         const query = assetSearchQuery.trim().toLowerCase();
@@ -337,9 +443,323 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
         }
     };
 
+    const copyReplicateOutput = async () => {
+        if (!replicateResult) return;
+        await navigator.clipboard.writeText(
+            JSON.stringify(replicateResult.prediction, null, 2),
+        );
+    };
+
+    const runReplicate = async () => {
+        setIsRunningReplicate(true);
+        setReplicateError(null);
+        setReplicateResult(null);
+        try {
+            const formData = new FormData();
+            formData.append("token", replicateToken);
+            formData.append("target", replicateTarget);
+            formData.append("mode", replicateMode);
+            formData.append("inputJson", replicateInputJson);
+            formData.append("fileInputKey", replicateFileInputKey);
+            formData.append("waitSeconds", replicateWaitSeconds);
+            formData.append("cancelAfter", replicateCancelAfter);
+            if (replicateFile) formData.append("inputFile", replicateFile);
+
+            const response = await fetch("/api/replicate/predictions", {
+                method: "POST",
+                body: formData,
+            });
+            const payload = (await response.json()) as ReplicatePredictionPayload;
+            if (!payload.ok) {
+                throw new Error(
+                    payload.errorCode
+                        ? `${payload.errorCode}: ${payload.error ?? "Replicate prediction failed."}`
+                        : (payload.error ?? "Replicate prediction failed."),
+                );
+            }
+            setReplicateResult(payload.data);
+        } catch (requestError) {
+            setReplicateError(
+                requestError instanceof Error
+                    ? requestError.message
+                    : "Replicate prediction failed.",
+            );
+        } finally {
+            setIsRunningReplicate(false);
+        }
+    };
+
     return (
         <section className="border border-main bg-main">
             <div className="space-y-5 p-5">
+                <section className="space-y-3">
+                    <h2 className="text-[13px] font-semibold text-main">
+                        Replicate Model Lab
+                    </h2>
+                    <div className="grid gap-4 lg:grid-cols-[360px_minmax(0,1fr)]">
+                        <div className="space-y-3 border border-main bg-secondary/20 p-4">
+                            <p className="text-[12px] font-semibold text-main">
+                                Prediction Target
+                            </p>
+                            <label className="block">
+                                <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                    Model / version / deployment
+                                </span>
+                                <input
+                                    value={replicateTarget}
+                                    onChange={(event) =>
+                                        setReplicateTarget(event.target.value)
+                                    }
+                                    className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main outline-none focus:border-accent"
+                                    placeholder="prunaai/z-image-turbo"
+                                />
+                            </label>
+                            <label className="block">
+                                <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                    Run mode
+                                </span>
+                                <select
+                                    value={replicateMode}
+                                    onChange={(event) =>
+                                        setReplicateMode(event.target.value)
+                                    }
+                                    className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main outline-none focus:border-accent"
+                                >
+                                    <option value="auto">
+                                        Auto: owner/model latest version
+                                    </option>
+                                    <option value="version">
+                                        Explicit version ref
+                                    </option>
+                                    <option value="official-model">
+                                        Official model endpoint
+                                    </option>
+                                    <option value="deployment">
+                                        Deployment endpoint
+                                    </option>
+                                </select>
+                            </label>
+                            <label className="block">
+                                <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                    Token
+                                </span>
+                                <input
+                                    value={replicateToken}
+                                    onChange={(event) =>
+                                        setReplicateToken(event.target.value)
+                                    }
+                                    type="password"
+                                    className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main outline-none focus:border-accent"
+                                    placeholder="Optional if server has REPLICATE_API_TOKEN"
+                                />
+                            </label>
+                            <div className="grid gap-2 sm:grid-cols-2">
+                                <label className="block">
+                                    <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                        Wait seconds
+                                    </span>
+                                    <input
+                                        value={replicateWaitSeconds}
+                                        onChange={(event) =>
+                                            setReplicateWaitSeconds(
+                                                event.target.value,
+                                            )
+                                        }
+                                        className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main outline-none focus:border-accent"
+                                    />
+                                </label>
+                                <label className="block">
+                                    <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                        Cancel after
+                                    </span>
+                                    <input
+                                        value={replicateCancelAfter}
+                                        onChange={(event) =>
+                                            setReplicateCancelAfter(
+                                                event.target.value,
+                                            )
+                                        }
+                                        className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main outline-none focus:border-accent"
+                                        placeholder="5m"
+                                    />
+                                </label>
+                            </div>
+                            <label className="block">
+                                <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                    Optional file input key
+                                </span>
+                                <input
+                                    value={replicateFileInputKey}
+                                    onChange={(event) =>
+                                        setReplicateFileInputKey(
+                                            event.target.value,
+                                        )
+                                    }
+                                    className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main outline-none focus:border-accent"
+                                    placeholder="image, audio, input_audio..."
+                                />
+                            </label>
+                            <input
+                                type="file"
+                                onChange={(event) =>
+                                    setReplicateFile(
+                                        event.target.files?.[0] ?? null,
+                                    )
+                                }
+                                className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main file:mr-2 file:border-0 file:bg-secondary file:px-2 file:py-1 file:text-[10px] file:font-semibold"
+                            />
+                            <button
+                                type="button"
+                                onClick={runReplicate}
+                                disabled={isRunningReplicate}
+                                className="inline-flex w-full items-center justify-center gap-2 border border-accent/35 bg-accent/10 px-3 py-2 text-[12px] font-semibold text-accent transition-colors hover:bg-accent/15 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                                <Send className="h-3.5 w-3.5" />
+                                {isRunningReplicate
+                                    ? "Running..."
+                                    : "Run Replicate"}
+                            </button>
+                        </div>
+
+                        <div className="space-y-4">
+                            <div className="border border-main bg-secondary/20 p-4">
+                                <div className="flex items-center justify-between gap-3">
+                                    <p className="text-[12px] font-semibold text-main">
+                                        Input JSON
+                                    </p>
+                                    <button
+                                        type="button"
+                                        onClick={() =>
+                                            setReplicateInputJson(
+                                                DEFAULT_REPLICATE_INPUT,
+                                            )
+                                        }
+                                        className="border border-main bg-main px-2 py-1 text-[10px] font-semibold text-main hover:border-accent"
+                                    >
+                                        Z Image Turbo
+                                    </button>
+                                </div>
+                                <textarea
+                                    rows={10}
+                                    value={replicateInputJson}
+                                    onChange={(event) =>
+                                        setReplicateInputJson(
+                                            event.target.value,
+                                        )
+                                    }
+                                    className="mt-2 w-full resize-y border border-main bg-main px-2 py-1.5 font-mono text-[11px] leading-5 text-main outline-none focus:border-accent"
+                                />
+                                <p className="mt-2 text-[10px] leading-4 text-muted">
+                                    For file models, set a file input key and
+                                    upload a small test file. The route injects
+                                    it as a data URL into this JSON object.
+                                </p>
+                            </div>
+                            {replicateError ? (
+                                <p className="border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-[11px] leading-5 text-rose-700">
+                                    {replicateError}
+                                </p>
+                            ) : null}
+                            {replicateResult ? (
+                                <div className="space-y-3 border border-main bg-secondary/20 p-4">
+                                    <div className="flex items-center justify-between gap-3">
+                                        <div>
+                                            <p className="text-[12px] font-semibold text-main">
+                                                Prediction Output
+                                            </p>
+                                            <p className="mt-1 text-[10px] text-muted">
+                                                {replicateResult.resolved.mode} ·{" "}
+                                                {replicateResult.prediction
+                                                    .status ?? "unknown"}
+                                            </p>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={copyReplicateOutput}
+                                            className="inline-flex items-center gap-1.5 border border-main bg-main px-2.5 py-1.5 text-[10px] font-semibold text-main hover:bg-secondary"
+                                        >
+                                            <Copy className="h-3 w-3" />
+                                            Copy JSON
+                                        </button>
+                                    </div>
+                                    {replicateResult.warnings.length > 0 ? (
+                                        <div className="space-y-1">
+                                            {replicateResult.warnings.map(
+                                                (warning) => (
+                                                    <p
+                                                        key={warning}
+                                                        className="border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[10px] leading-4 text-amber-700"
+                                                    >
+                                                        {warning}
+                                                    </p>
+                                                ),
+                                            )}
+                                        </div>
+                                    ) : null}
+                                    {replicateOutputUrls.length > 0 ? (
+                                        <div className="grid gap-3 md:grid-cols-2">
+                                            {replicateOutputUrls.map(
+                                                (url, index) => {
+                                                    const type =
+                                                        classifyMediaUrl(url);
+                                                    return (
+                                                        <div
+                                                            key={`${url}-${index}`}
+                                                            className="border border-main bg-main p-2"
+                                                        >
+                                                            {type ===
+                                                            "image" ? (
+                                                                // eslint-disable-next-line @next/next/no-img-element
+                                                                <img
+                                                                    src={url}
+                                                                    alt={`Replicate output ${index + 1}`}
+                                                                    className="max-h-80 w-full object-contain"
+                                                                />
+                                                            ) : null}
+                                                            {type ===
+                                                            "audio" ? (
+                                                                <audio
+                                                                    controls
+                                                                    src={url}
+                                                                    className="w-full"
+                                                                />
+                                                            ) : null}
+                                                            {type ===
+                                                            "video" ? (
+                                                                <video
+                                                                    controls
+                                                                    src={url}
+                                                                    className="max-h-80 w-full bg-black object-contain"
+                                                                />
+                                                            ) : null}
+                                                            <a
+                                                                href={url}
+                                                                target="_blank"
+                                                                rel="noreferrer"
+                                                                className="mt-2 block truncate text-[10px] font-semibold text-accent"
+                                                            >
+                                                                Output{" "}
+                                                                {index + 1}
+                                                            </a>
+                                                        </div>
+                                                    );
+                                                },
+                                            )}
+                                        </div>
+                                    ) : null}
+                                    <pre className="max-h-[360px] overflow-auto border border-main bg-main p-3 text-[10px] leading-4 text-main">
+                                        {JSON.stringify(
+                                            replicateResult.prediction,
+                                            null,
+                                            2,
+                                        )}
+                                    </pre>
+                                </div>
+                            ) : null}
+                        </div>
+                    </div>
+                </section>
+                <div className="border-t border-main" />
                 <section className="space-y-3">
                     <h2 className="text-[13px] font-semibold text-main">
                         Transcript Retry Lab
