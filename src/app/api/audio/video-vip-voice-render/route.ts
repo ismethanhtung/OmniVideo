@@ -231,7 +231,23 @@ function readTranslation(payload: Record<string, unknown>) {
     } satisfies TranscriptTranslationResult;
 }
 
-function serializeWorkerJob(job: RemoteVipWorkerJob) {
+function summarizeWorkerResult(result: Record<string, unknown> | undefined) {
+    if (!result) return undefined;
+    return {
+        mimeType: result.mimeType,
+        extension: result.extension,
+        fileName: result.fileName,
+        byteLength: result.byteLength,
+        generationDurationMs: result.generationDurationMs,
+        artifactId: result.artifactId,
+    };
+}
+
+function serializeWorkerJob(
+    job: RemoteVipWorkerJob,
+    options: { includeResult?: boolean } = {},
+) {
+    const includeResult = options.includeResult ?? true;
     return {
         jobId: job.id,
         status: job.status,
@@ -241,7 +257,8 @@ function serializeWorkerJob(job: RemoteVipWorkerJob) {
         metrics: job.metrics,
         startedAt: job.startedAt,
         updatedAt: job.updatedAt,
-        result: job.result,
+        result: includeResult ? job.result : undefined,
+        resultSummary: includeResult ? undefined : summarizeWorkerResult(job.result),
         error: job.error,
         errorCode: job.errorCode,
     };
@@ -452,7 +469,9 @@ export async function GET(request: Request) {
         ok: true,
         service: "omnivideo-vip-voice-render",
         data: {
-            jobs: Array.from(remoteVipWorkerJobs.values()).map(serializeWorkerJob),
+            jobs: Array.from(remoteVipWorkerJobs.values()).map((job) =>
+                serializeWorkerJob(job, { includeResult: false }),
+            ),
             activeProcesses: listActivePiperChildProcesses(),
             systemProcesses: listSystemWorkerProcesses(),
             ec2,

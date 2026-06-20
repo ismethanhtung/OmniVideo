@@ -1,17 +1,23 @@
 import { NextResponse } from "next/server";
 
+import { buildStrictDownloadFilename } from "@/lib/storage/strict-download-filename";
 import { getWorkspaceServerArtifact } from "@/lib/workspace/server-artifacts";
 
 export const runtime = "nodejs";
 
 function buildContentDisposition(fileName: string) {
-  const asciiFallback =
-    fileName
-      .replace(/[^\x20-\x7e]+/g, "_")
-      .replace(/["\\]/g, "_")
-      .trim() || "workspace-artifact.mp4";
+  return `attachment; filename="${fileName}"; filename*=UTF-8''${encodeURIComponent(fileName)}`;
+}
 
-  return `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encodeURIComponent(fileName)}`;
+function sanitizeWorkspaceArtifactFileName(fileName: string) {
+  const extension = fileName.match(/\.([a-z0-9]{2,5})$/iu)?.[1] ?? "mp4";
+  const baseName = fileName.replace(/\.[^.]+$/u, "");
+  return buildStrictDownloadFilename({
+    baseName,
+    fallbackBaseName: "workspace-artifact",
+    extension,
+    maxBaseLength: 120,
+  });
 }
 
 export async function GET(
@@ -37,15 +43,16 @@ export async function GET(
       artifact.bytes.byteOffset,
       artifact.bytes.byteOffset + artifact.bytes.byteLength,
     ) as ArrayBuffer;
+    const safeFileName = sanitizeWorkspaceArtifactFileName(artifact.fileName);
 
     return new Response(body, {
       status: 200,
       headers: {
         "Cache-Control": "no-store",
         "Content-Type": artifact.mimeType,
-        "Content-Disposition": buildContentDisposition(artifact.fileName),
+        "Content-Disposition": buildContentDisposition(safeFileName),
         "Content-Length": String(artifact.byteLength),
-        "X-OmniVideo-File-Name": encodeURIComponent(artifact.fileName),
+        "X-OmniVideo-File-Name": encodeURIComponent(safeFileName),
         "X-OmniVideo-Byte-Length": String(artifact.byteLength),
         "X-OmniVideo-Artifact-Kind": artifact.kind,
       },

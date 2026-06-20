@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ChineseTranscriptionError } from "./types";
 import {
+    assertRemoteVipWorkerAvailable,
     runRemoteVideoVipRender,
     runRemoteVideoVipVoiceRender,
 } from "@/lib/multilingual-audio/remote-vip-worker";
@@ -21,10 +22,14 @@ import {
 import { buildSubtitleAssContent } from "@/lib/video-processing/video-edit-pipeline";
 
 vi.mock("@/lib/multilingual-audio/remote-vip-worker", () => ({
+    assertRemoteVipWorkerAvailable: vi.fn(),
     runRemoteVideoVipRender: vi.fn(),
     runRemoteVideoVipVoiceRender: vi.fn(),
 }));
 
+const mockedAssertRemoteVipWorkerAvailable = vi.mocked(
+    assertRemoteVipWorkerAvailable,
+);
 const mockedRunRemoteVideoVipRender = vi.mocked(runRemoteVideoVipRender);
 const mockedRunRemoteVideoVipVoiceRender = vi.mocked(
     runRemoteVideoVipVoiceRender,
@@ -677,6 +682,26 @@ describe("VIP processing stage checkpoints", () => {
         expect(result.fileName).toBe("My-Original-Video-done.mp4");
     });
 
+    it("sanitizes accented and punctuated source titles for output naming", async () => {
+        const runners = createStageRunners();
+        const result = await runVideoVipProcessing({
+            fileName: "part-001.mp4",
+            sourceTitle:
+                "Review Full: Thanh mai trúc mã thích bạn thân, cô ấy đền bù anh trai cho tôi",
+            fileSizeBytes: 3,
+            fileBytes: new Uint8Array([1, 2, 3]),
+            stageRunners: runners,
+            omitVideoBase64: true,
+        });
+
+        expect(result.fileName).toBe(
+            "Review-Full-Thanh-mai-truc-ma-thich-ban-than-co-ay-den-bu-anh-trai-cho-toi-done.mp4",
+        );
+        expect(result.fileName.replace(/\.mp4$/u, "")).toMatch(
+            /^[a-zA-Z0-9-]+$/u,
+        );
+    });
+
     it("fails import mode when line count does not match transcript segment count", async () => {
         const runners = createStageRunners();
         await expect(
@@ -861,6 +886,11 @@ describe("VIP processing stage checkpoints", () => {
             omitVideoBase64: true,
         });
 
+        expect(mockedAssertRemoteVipWorkerAvailable).toHaveBeenCalledWith(
+            expect.objectContaining({
+                endpoint: "http://worker.example",
+            }),
+        );
         expect(runners.generateVoice).not.toHaveBeenCalled();
         expect(runners.render).not.toHaveBeenCalled();
         expect(mockedRunRemoteVideoVipRender).not.toHaveBeenCalled();
@@ -886,5 +916,78 @@ describe("VIP processing stage checkpoints", () => {
         expect(result.voice.byteLength).toBe(11);
         expect(result.stages.voiceDurationMs).toBe(7);
         expect(result.stages.finalRenderDurationMs).toBe(8);
+    });
+
+    it("uses local sanitized output name when stale EC2 worker returns generic filename", async () => {
+        mockedRunRemoteVideoVipVoiceRender.mockResolvedValueOnce({
+            videoBytes: Buffer.from("remote-voice-render-video"),
+            mimeType: "video/mp4",
+            extension: "mp4",
+            fileName: "omnivideo-vip-done.mp4",
+            byteLength: 25,
+            generationDurationMs: 20,
+            voice: {
+                mimeType: "audio/wav",
+                extension: "wav",
+                fileName: "voice.wav",
+                byteLength: 11,
+                segmentCount: 1,
+                generationDurationMs: 7,
+                alignment: {
+                    mode: "timeline",
+                    chunks: 1,
+                    targetDurationSeconds: 1,
+                },
+                settings: { binaryPath: "piper", modelPath: "" },
+                provider: { name: "piper", mode: "local-cli" },
+            },
+            stages: { voiceDurationMs: 7, finalRenderDurationMs: 8 },
+            mix: { originalAudioVolume: 0, voiceVolume: 1 },
+        });
+        const runners = createStageRunners();
+
+        const result = await runVideoVipProcessing({
+            fileName: "source.mp4",
+            sourceTitle:
+                "Review Full: Thanh mai trúc mã thích bạn thân, cô ấy đền bù anh trai cho tôi",
+            fileSizeBytes: 3,
+            fileBytes: new Uint8Array([1, 2, 3]),
+            voiceRenderExecutionMode: "remote-voice-render",
+            remoteVoiceRenderEndpoint: "http://worker.example",
+            stageRunners: runners,
+            omitVideoBase64: true,
+        });
+
+        expect(result.fileName).toBe(
+            "Review-Full-Thanh-mai-truc-ma-thich-ban-than-co-ay-den-bu-anh-trai-cho-toi-done.mp4",
+        );
+    });
+
+    it("checks remote worker before transcript work in remote voice/render mode", async () => {
+        mockedAssertRemoteVipWorkerAvailable.mockRejectedValueOnce(
+            new ChineseTranscriptionError(
+                "SYS_DUBBING_MUX_FAILED",
+                "Remote VIP worker preflight failed.",
+                502,
+            ),
+        );
+        const runners = createStageRunners();
+
+        await expect(
+            runVideoVipProcessing({
+                fileName: "source.mp4",
+                fileSizeBytes: 3,
+                fileBytes: new Uint8Array([1, 2, 3]),
+                voiceRenderExecutionMode: "remote-voice-render",
+                remoteVoiceRenderEndpoint: "http://worker.example",
+                stageRunners: runners,
+                omitVideoBase64: true,
+            }),
+        ).rejects.toMatchObject({
+            code: "SYS_DUBBING_MUX_FAILED",
+        });
+
+        expect(runners.transcribe).not.toHaveBeenCalled();
+        expect(mockedRunRemoteVideoVipVoiceRender).not.toHaveBeenCalled();
     });
 });

@@ -30,7 +30,10 @@ describe("workspace artifact download route", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toBe("video/mp4");
     expect(response.headers.get("X-OmniVideo-File-Name")).toBe(
-      encodeURIComponent("Ăn Không Ngồi Rồi.mp4"),
+      encodeURIComponent("An-Khong-Ngoi-Roi.mp4"),
+    );
+    expect(response.headers.get("content-disposition")).toContain(
+      'filename="An-Khong-Ngoi-Roi.mp4"',
     );
     expect(response.headers.get("X-OmniVideo-Byte-Length")).toBe("15");
     expect(await response.text()).toBe("processed-video");

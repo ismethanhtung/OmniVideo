@@ -66,6 +66,78 @@ describe("video vip voice/render worker API", () => {
         });
     });
 
+    it("omits heavyweight completed job results from general health status", async () => {
+        process.env.OMNIVIDEO_REMOTE_VIP_TOKEN = "secret";
+        mockedRunVideoVipRemoteRender.mockResolvedValueOnce({
+            videoBytes: Buffer.from("done"),
+            mimeType: "video/mp4",
+            extension: "mp4",
+            fileName: "source-done.mp4",
+            byteLength: 4,
+            generationDurationMs: 100,
+            stages: {
+                finalRenderDurationMs: 40,
+            },
+            mix: {
+                originalAudioVolume: 0,
+                voiceVolume: 1,
+            },
+        });
+        const formData = new FormData();
+        formData.set(
+            "payloadJson",
+            JSON.stringify({
+                executionMode: "render-only",
+                fileName: "source.mp4",
+                translatedSegments: [],
+            }),
+        );
+        formData.set("async", "1");
+        formData.set(
+            "videoFile",
+            new File([new Uint8Array([1, 2, 3])], "source.mp4", {
+                type: "video/mp4",
+            }),
+        );
+        formData.set(
+            "voiceFile",
+            new File([Buffer.from("voice")], "voice.wav", {
+                type: "audio/wav",
+            }),
+        );
+
+        const startResponse = await POST(
+            new Request("http://localhost/api/audio/video-vip-voice-render", {
+                method: "POST",
+                headers: { Authorization: "Bearer secret" },
+                body: formData,
+            }),
+        );
+        const startPayload = await startResponse.json();
+        await vi.waitFor(async () => {
+            const jobResponse = await GET(
+                new Request(
+                    `http://localhost/api/audio/video-vip-voice-render?jobId=${startPayload.data.jobId}`,
+                    { headers: { Authorization: "Bearer secret" } },
+                ),
+            );
+            const jobPayload = await jobResponse.json();
+            expect(jobPayload.data.status).toBe("done");
+        });
+
+        const response = await GET(
+            new Request("http://localhost/api/audio/video-vip-voice-render"),
+        );
+        const payload = await response.json();
+
+        expect(payload.data.jobs[0].result).toBeUndefined();
+        expect(payload.data.jobs[0].resultSummary).toMatchObject({
+            fileName: "source-done.mp4",
+            byteLength: 4,
+            artifactId: expect.any(String),
+        });
+    });
+
     it("exposes EC2 metadata and top snapshot when available", async () => {
         const fetchMock = vi.fn(async (url: string | URL) => {
             const value = String(url);

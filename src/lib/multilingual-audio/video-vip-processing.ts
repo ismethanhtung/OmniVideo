@@ -31,6 +31,7 @@ import {
 } from "@/lib/multilingual-audio/types";
 import { buildVideoDubbingVoiceSegments } from "@/lib/multilingual-audio/video-dubbing";
 import { generateVietnameseVideoMetadata } from "@/lib/multilingual-audio/video-metadata";
+import { buildStrictDownloadFilename } from "@/lib/storage/strict-download-filename";
 import {
     buildSubtitleAssContent,
     buildTextOverlayAssContent,
@@ -562,13 +563,12 @@ export function planVipParallelRenderChunks(input: {
 function sanitizeOutputName(fileName: string, sourceTitle?: string) {
     const preferredBase =
         sourceTitle?.trim() || fileName.replace(/\.[^.]+$/u, "");
-    const base = preferredBase || "omnivideo-vip";
-    return `${
-        base
-            .replace(/[^a-zA-Z0-9._-]+/g, "-")
-            .replace(/^-+|-+$/g, "")
-            .slice(0, 90) || "omnivideo-vip"
-    }-done.mp4`;
+    return buildStrictDownloadFilename({
+        baseName: `${preferredBase || "omnivideo-vip"}-done`,
+        fallbackBaseName: "omnivideo-vip-done",
+        extension: "mp4",
+        maxBaseLength: 90,
+    });
 }
 
 function hashText(value: string) {
@@ -2083,6 +2083,47 @@ export async function runVideoVipProcessing(
         });
     };
 
+    if (input.voiceRenderExecutionMode === "remote-voice-render") {
+        const preflightStartedAt = Date.now();
+        logVipEvent(runId, "stage-start", {
+            stage: "remote-voice-render",
+            phase: "preflight",
+            endpointConfigured: Boolean(
+                input.remoteVoiceRenderEndpoint ??
+                    process.env.OMNIVIDEO_REMOTE_VIP_WORKER_URL,
+            ),
+        });
+        const { assertRemoteVipWorkerAvailable } = await import(
+            "@/lib/multilingual-audio/remote-vip-worker"
+        );
+        try {
+            await assertRemoteVipWorkerAvailable({
+                endpoint: input.remoteVoiceRenderEndpoint,
+                token: input.remoteVoiceRenderToken,
+            });
+            logVipEvent(runId, "stage-success", {
+                stage: "remote-voice-render",
+                phase: "preflight",
+                durationMs: Date.now() - preflightStartedAt,
+            });
+        } catch (error) {
+            logVipEvent(runId, "stage-failed", {
+                stage: "remote-voice-render",
+                phase: "preflight",
+                durationMs: Date.now() - preflightStartedAt,
+                error: summarizeVipError(error),
+            });
+            throw toVipCheckpointError({
+                error,
+                paths: checkpointPaths,
+                state: checkpointState,
+                reusedStages,
+                savedStages,
+                failedStage: "render",
+            });
+        }
+    }
+
     const preprocessStartedAt = Date.now();
     // VIP path keeps preprocess lightweight: only affect transcript audio timing,
     // defer video speed transform to final composite render.
@@ -2330,6 +2371,7 @@ export async function runVideoVipProcessing(
         const remoteVideoBytes =
             remoteResult.videoBytes ??
             Buffer.from(remoteResult.videoBase64 ?? "", "base64");
+        const outputFileName = sanitizeOutputName(input.fileName, input.sourceTitle);
         const voiceDurationMs = remoteResult.stages.voiceDurationMs;
         const finalRenderDurationMs = remoteResult.stages.finalRenderDurationMs;
         logVipEvent(runId, "stage-success", {
@@ -2346,7 +2388,7 @@ export async function runVideoVipProcessing(
             checkpointState = {
                 ...checkpointState,
                 renderedVideo: {
-                    fileName: remoteResult.fileName,
+                    fileName: outputFileName,
                     mimeType: "video/mp4",
                     extension: "mp4",
                     byteLength: remoteVideoBytes.byteLength,
@@ -2447,7 +2489,7 @@ export async function runVideoVipProcessing(
             totalDurationMs: Date.now() - startedAt,
             reusedStages: uniqueStages(reusedStages),
             savedStages: uniqueStages(savedStages),
-            outputFileName: remoteResult.fileName,
+            outputFileName,
             outputByteLength: remoteVideoBytes.byteLength,
             voiceRenderExecutionMode: "remote-voice-render",
         });
@@ -2458,7 +2500,7 @@ export async function runVideoVipProcessing(
                 : { videoBase64: remoteVideoBytes.toString("base64") }),
             mimeType: "video/mp4",
             extension: "mp4",
-            fileName: remoteResult.fileName,
+            fileName: outputFileName,
             byteLength: remoteVideoBytes.byteLength,
             generationDurationMs: Date.now() - startedAt,
             transcript,
@@ -3099,7 +3141,7 @@ export async function runVideoVipProcessing(
         totalDurationMs: Date.now() - startedAt,
         reusedStages: uniqueStages(reusedStages),
         savedStages: uniqueStages(savedStages),
-        outputFileName: sanitizeOutputName(input.fileName),
+        outputFileName: sanitizeOutputName(input.fileName, input.sourceTitle),
         outputByteLength: videoBytes.byteLength,
     });
 

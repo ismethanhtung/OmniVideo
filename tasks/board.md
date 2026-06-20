@@ -177,6 +177,9 @@
 
 ## Done
 
+- `FAST-AUDIO-076` - Retry transient translation chunk failures
+- `FAST-WORKSPACE-093` - Harden remote VIP worker polling and filename fallback
+- `FAST-VIDEO-051` - Sanitize VIP output download filenames
 - `FAST-AUDIO-075` - Apply AI Provider RPM throttle to VIP only
 - `FAST-WORKSPACE-092` - Freeze completed progress step durations
 - `FAST-AUDIO-074` - Smooth strict VIP voice timing

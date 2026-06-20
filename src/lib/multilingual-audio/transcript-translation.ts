@@ -37,6 +37,9 @@ const LIMITED_PROVIDER_MAX_SEGMENTS_PER_CHUNK = 150;
 const LIMITED_PROVIDER_MAX_SOURCE_CHARS_PER_CHUNK = 10000;
 const DEFAULT_TRANSLATION_CHUNK_CONCURRENCY = 4;
 const DEFAULT_MAX_QUALITY_RETRIES = 2;
+const DEFAULT_MAX_TRANSIENT_CHUNK_RETRIES = 4;
+const DEFAULT_TRANSIENT_CHUNK_RETRY_BASE_MS = 1000;
+const DEFAULT_TRANSIENT_CHUNK_RETRY_MAX_MS = 15000;
 const INVALID_JSON_SNIPPET_MAX_CHARS = 220;
 const TRANSLATION_PROMPT_VERSION = "transcript-translation-v3-compact-guide";
 const TRANSLATION_GUIDE_SOURCE_MAX_CHARS = 32000;
@@ -101,6 +104,28 @@ function numberOrFallback(value: unknown, fallback: number) {
     return typeof value === "number" && Number.isFinite(value)
         ? value
         : fallback;
+}
+
+function delay(ms: number) {
+    if (ms <= 0) return Promise.resolve();
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function readNonNegativeEnvNumber(name: string, fallback: number) {
+    const value = Number(process.env[name]);
+    return Number.isFinite(value) && value >= 0 ? value : fallback;
+}
+
+function resolveTransientChunkRetryDelayMs(attempt: number) {
+    const baseMs = readNonNegativeEnvNumber(
+        "OMNIVIDEO_TRANSLATION_TRANSIENT_RETRY_BASE_MS",
+        DEFAULT_TRANSIENT_CHUNK_RETRY_BASE_MS,
+    );
+    const maxMs = readNonNegativeEnvNumber(
+        "OMNIVIDEO_TRANSLATION_TRANSIENT_RETRY_MAX_MS",
+        DEFAULT_TRANSIENT_CHUNK_RETRY_MAX_MS,
+    );
+    return Math.min(maxMs, baseMs * 2 ** Math.max(0, attempt - 1));
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -756,7 +781,7 @@ async function requestTranslationGuide(input: {
         throw new ChineseTranscriptionError(
             "PRV_GROQ_TRANSLATION_FAILED",
             payload.error?.message ?? "Translation guide request failed.",
-            response.status >= 400 && response.status < 500 ? 422 : 502,
+            response.status === 429 || response.status >= 500 ? 502 : 422,
         );
     }
 
@@ -884,7 +909,7 @@ async function requestTranslationChunk(input: {
         throw new ChineseTranscriptionError(
             "PRV_GROQ_TRANSLATION_FAILED",
             payload.error?.message ?? "Translation request failed.",
-            response.status >= 400 && response.status < 500 ? 422 : 502,
+            response.status === 429 || response.status >= 500 ? 502 : 422,
         );
     }
 
@@ -1010,7 +1035,7 @@ async function requestSingleSegmentPlainTextFallback(input: {
         throw new ChineseTranscriptionError(
             "PRV_GROQ_TRANSLATION_FAILED",
             payload.error?.message ?? "Translation request failed.",
-            response.status >= 400 && response.status < 500 ? 422 : 502,
+            response.status === 429 || response.status >= 500 ? 502 : 422,
         );
     }
     const rawText = payload.choices?.[0]?.message?.content?.trim() ?? "";
@@ -1058,6 +1083,16 @@ function isInvalidJsonError(error: unknown) {
     );
 }
 
+function isTransientTranslationError(error: unknown) {
+    if (!(error instanceof ChineseTranscriptionError)) return false;
+    if (error.code !== "PRV_GROQ_TRANSLATION_FAILED") return false;
+    if (isInvalidJsonError(error) || isRequestTooLargeError(error)) return false;
+    if (error.status >= 500) return true;
+    return /temporar|try again later|high demand|unavailable|rate limit|quota|overload|fetch failed|network request failed/i.test(
+        error.message,
+    );
+}
+
 async function translateChunkAdaptive(input: {
     segments: AudioTranscriptSegment[];
     allSegments: AudioTranscriptSegment[];
@@ -1075,6 +1110,7 @@ async function translateChunkAdaptive(input: {
     promptCacheKey?: string;
     fullTranscriptChars: number;
     rateLimit?: AiProviderRateLimit;
+    transientRetryAttempt?: number;
 }): Promise<{
     requestIds: string[];
     totalTokens: number;
@@ -1145,6 +1181,32 @@ async function translateChunkAdaptive(input: {
             chunkCount: 1,
         };
     } catch (error) {
+        if (isTransientTranslationError(error)) {
+            const attempt = input.transientRetryAttempt ?? 0;
+            const maxRetries = readNonNegativeEnvNumber(
+                "OMNIVIDEO_TRANSLATION_TRANSIENT_RETRIES",
+                DEFAULT_MAX_TRANSIENT_CHUNK_RETRIES,
+            );
+            if (attempt < maxRetries) {
+                const nextAttempt = attempt + 1;
+                const delayMs = resolveTransientChunkRetryDelayMs(nextAttempt);
+                logTranslationEvent("chunk-transient-retry", {
+                    chunkLabel: input.chunkLabel ?? "chunk",
+                    segmentCount: input.segments.length,
+                    ...segmentRange(input.segments),
+                    attempt: nextAttempt,
+                    maxRetries,
+                    delayMs,
+                    error: summarizeError(error),
+                });
+                await delay(delayMs);
+                return translateChunkAdaptive({
+                    ...input,
+                    retryMode: true,
+                    transientRetryAttempt: nextAttempt,
+                });
+            }
+        }
         if (
             (isRequestTooLargeError(error) || isInvalidJsonError(error)) &&
             input.segments.length > 1

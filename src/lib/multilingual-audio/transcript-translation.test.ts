@@ -17,6 +17,8 @@ const sourceSegments = [
 describe("transcript translation", () => {
   beforeEach(() => {
     vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.stubEnv("OMNIVIDEO_TRANSLATION_TRANSIENT_RETRY_BASE_MS", "0");
+    vi.stubEnv("OMNIVIDEO_TRANSLATION_TRANSIENT_RETRY_MAX_MS", "0");
   });
 
   afterEach(() => {
@@ -272,11 +274,11 @@ describe("transcript translation", () => {
     expect(prompt).not.toContain("durationSeconds");
   });
 
-  it("maps Groq provider errors", async () => {
+  it("maps non-transient provider errors", async () => {
     const fetchImpl = vi.fn(async () => {
       return new Response(
-        JSON.stringify({ error: { message: "rate limit" } }),
-        { status: 429 },
+        JSON.stringify({ error: { message: "bad request" } }),
+        { status: 400 },
       );
     });
 
@@ -288,8 +290,107 @@ describe("transcript translation", () => {
       }),
     ).rejects.toMatchObject({
       code: "PRV_GROQ_TRANSLATION_FAILED",
-      message: "rate limit",
+      message: "bad request",
     });
+  });
+
+  it("retries transient Gemini high-demand chunk failures before succeeding", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            error: {
+              code: 503,
+              message:
+                "This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.",
+              status: "UNAVAILABLE",
+            },
+          }),
+          { status: 503 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            id: "chat_retry_ok",
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    t: {
+                      0: "Người dẫn đường có nằm mơ cũng không ngờ tới",
+                      1: "Một container bí ẩn bị hải quan giữ lại rất lâu",
+                    },
+                  }),
+                },
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+      );
+
+    const result = await translateTranscriptSegments({
+      segments: sourceSegments,
+      apiKey: "secret",
+      baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
+      providerName: "Google AI Studio",
+      model: "gemini-3.1-flash-lite",
+      fetchImpl,
+    });
+
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(result.translatedSegments).toHaveLength(2);
+    expect(result.translatedSegments[0].translatedText).toBe(
+      "Người dẫn đường có nằm mơ cũng không ngờ tới",
+    );
+    expect(console.log).toHaveBeenCalledWith(
+      "[TranscriptTranslation]",
+      expect.objectContaining({
+        event: "chunk-transient-retry",
+        chunkLabel: "1/1",
+        attempt: 1,
+        maxRetries: 4,
+        delayMs: 0,
+        error: expect.objectContaining({
+          status: 502,
+          message: expect.stringContaining("high demand"),
+        }),
+      }),
+    );
+  });
+
+  it("fails boundedly when transient provider failures do not recover", async () => {
+    vi.stubEnv("OMNIVIDEO_TRANSLATION_TRANSIENT_RETRIES", "2");
+    const fetchImpl = vi.fn(async () => {
+      return new Response(
+        JSON.stringify({
+          error: {
+            code: 503,
+            message: "This model is currently experiencing high demand.",
+            status: "UNAVAILABLE",
+          },
+        }),
+        { status: 503 },
+      );
+    });
+
+    await expect(
+      translateTranscriptSegments({
+        segments: sourceSegments,
+        apiKey: "secret",
+        baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
+        providerName: "Google AI Studio",
+        model: "gemini-3.1-flash-lite",
+        fetchImpl,
+      }),
+    ).rejects.toMatchObject({
+      code: "PRV_GROQ_TRANSLATION_FAILED",
+      status: 502,
+      message: expect.stringContaining("high demand"),
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
   });
 
   it("sends prompt cache key and logs cached token usage for OpenAI-native chat requests", async () => {
@@ -361,7 +462,7 @@ describe("transcript translation", () => {
       message: "Translation provider network request failed: fetch failed",
       status: 502,
     });
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(fetchImpl).toHaveBeenCalledTimes(5);
     expect(console.log).toHaveBeenCalledWith(
       "[TranscriptTranslation]",
       expect.objectContaining({
@@ -581,6 +682,15 @@ describe("transcript translation", () => {
           { status: 200 },
         ),
       )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            id: "chat_bad_retry",
+            choices: [{ message: { content: "{ still bad json" } }],
+          }),
+          { status: 200 },
+        ),
+      )
       .mockRejectedValueOnce(new TypeError("fetch failed"));
 
     await expect(
@@ -594,7 +704,7 @@ describe("transcript translation", () => {
       message: "Translation provider network request failed: fetch failed",
       status: 502,
     });
-    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
   });
 
   it("splits translation chunks when Groq reports request too large", async () => {

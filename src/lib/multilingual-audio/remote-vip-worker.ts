@@ -15,6 +15,8 @@ export type RemoteVipWorkerOptions = {
     fetchImpl?: typeof fetch;
     pollIntervalMs?: number;
     pollTimeoutMs?: number;
+    pollNetworkFailureLimit?: number;
+    preflightTimeoutMs?: number;
 };
 
 type RemoteVipWorkerPayload = Omit<
@@ -58,6 +60,8 @@ type RemoteVipWorkerJobResponse = {
 
 const DEFAULT_REMOTE_VIP_POLL_INTERVAL_MS = 5000;
 const DEFAULT_REMOTE_VIP_POLL_TIMEOUT_MS = 6 * 60 * 60 * 1000;
+const DEFAULT_REMOTE_VIP_POLL_NETWORK_FAILURE_LIMIT = 12;
+const DEFAULT_REMOTE_VIP_PREFLIGHT_TIMEOUT_MS = 8000;
 
 function normalizeEndpoint(endpoint: string) {
     return endpoint.replace(/\/+$/u, "");
@@ -111,6 +115,45 @@ export function resolveRemoteVipWorkerConfig(options: RemoteVipWorkerOptions = {
         "";
 
     return { endpoint, token };
+}
+
+export async function assertRemoteVipWorkerAvailable(
+    options: RemoteVipWorkerOptions = {},
+) {
+    const { endpoint, token } = resolveRemoteVipWorkerConfig(options);
+    if (!endpoint) {
+        throw new ChineseTranscriptionError(
+            "SYS_DUBBING_MUX_FAILED",
+            "Remote VIP worker endpoint is not configured.",
+            500,
+        );
+    }
+
+    const fetchImpl = options.fetchImpl ?? fetch;
+    const workerUrl = `${normalizeEndpoint(endpoint)}/api/audio/video-vip-voice-render`;
+    const response = await fetchRemoteVipWorker(
+        fetchImpl,
+        workerUrl,
+        {
+            method: "GET",
+            headers: {
+                ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+            signal: AbortSignal.timeout(resolvePreflightTimeoutMs(options)),
+        },
+        "preflight health check",
+    );
+    const body = (await response.json().catch(() => null)) as
+        | RemoteVipWorkerJobResponse
+        | null;
+    if (!response.ok || !body?.ok) {
+        throw new ChineseTranscriptionError(
+            "SYS_DUBBING_MUX_FAILED",
+            body?.error ??
+                `Remote VIP worker preflight failed with HTTP ${response.status}.`,
+            response.status >= 400 ? response.status : 500,
+        );
+    }
 }
 
 export async function runRemoteVideoVipRender(
@@ -249,6 +292,7 @@ async function postRemoteVipWorker<Result extends RemoteVipWorkerResponseData>(
             jobId: body.data.jobId,
             pollIntervalMs: resolvePollIntervalMs(options),
             pollTimeoutMs: resolvePollTimeoutMs(options),
+            pollNetworkFailureLimit: resolvePollNetworkFailureLimit(options),
         });
         return await hydrateRemoteVipWorkerResult(result, {
             endpoint,
@@ -280,6 +324,22 @@ function resolvePollTimeoutMs(options: RemoteVipWorkerOptions) {
     return Math.max(1000, configured);
 }
 
+function resolvePollNetworkFailureLimit(options: RemoteVipWorkerOptions) {
+    const configured =
+        options.pollNetworkFailureLimit ??
+        (Number(process.env.OMNIVIDEO_REMOTE_VIP_POLL_NETWORK_FAILURE_LIMIT) ||
+            DEFAULT_REMOTE_VIP_POLL_NETWORK_FAILURE_LIMIT);
+    return Math.max(0, Math.round(configured));
+}
+
+function resolvePreflightTimeoutMs(options: RemoteVipWorkerOptions) {
+    const configured =
+        options.preflightTimeoutMs ??
+        (Number(process.env.OMNIVIDEO_REMOTE_VIP_PREFLIGHT_TIMEOUT_MS) ||
+            DEFAULT_REMOTE_VIP_PREFLIGHT_TIMEOUT_MS);
+    return Math.max(1000, Math.round(configured));
+}
+
 async function pollRemoteVipWorkerJob<Result extends RemoteVipWorkerResponseData>(
     input: {
         endpoint: string;
@@ -288,12 +348,14 @@ async function pollRemoteVipWorkerJob<Result extends RemoteVipWorkerResponseData
         jobId: string;
         pollIntervalMs: number;
         pollTimeoutMs: number;
+        pollNetworkFailureLimit: number;
     },
 ): Promise<Result> {
     const startedAt = Date.now();
     let attempt = 0;
     let lastLoggedStage = "";
     let lastLoggedAt = 0;
+    let pollNetworkFailures = 0;
     while (Date.now() - startedAt <= input.pollTimeoutMs) {
         if (attempt > 0) {
             await delay(input.pollIntervalMs);
@@ -302,17 +364,35 @@ async function pollRemoteVipWorkerJob<Result extends RemoteVipWorkerResponseData
         const workerUrl = `${normalizeEndpoint(input.endpoint)}/api/audio/video-vip-voice-render?jobId=${encodeURIComponent(
             input.jobId,
         )}`;
-        const response = await fetchRemoteVipWorker(
-            input.fetchImpl,
-            workerUrl,
-            {
-                method: "GET",
-                headers: {
-                    ...(input.token ? { Authorization: `Bearer ${input.token}` } : {}),
+        let response: Response;
+        try {
+            response = await fetchRemoteVipWorker(
+                input.fetchImpl,
+                workerUrl,
+                {
+                    method: "GET",
+                    headers: {
+                        ...(input.token ? { Authorization: `Bearer ${input.token}` } : {}),
+                    },
                 },
-            },
-            "job poll",
-        );
+                "job poll",
+            );
+            pollNetworkFailures = 0;
+        } catch (error) {
+            pollNetworkFailures += 1;
+            if (pollNetworkFailures > input.pollNetworkFailureLimit) {
+                throw error;
+            }
+            console.log("[VIP remote worker]", {
+                jobId: input.jobId,
+                status: "poll-network-retry",
+                failureCount: pollNetworkFailures,
+                failureLimit: input.pollNetworkFailureLimit,
+                message: error instanceof Error ? error.message : String(error),
+                elapsedMs: Date.now() - startedAt,
+            });
+            continue;
+        }
         const body = (await response.json().catch(() => null)) as
             | RemoteVipWorkerJobResponse
             | null;

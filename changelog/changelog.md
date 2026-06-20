@@ -1,5 +1,44 @@
 # OmniVideo Changelog
 
+## FAST-AUDIO-076 - Retry transient translation chunk failures
+
+- Bumped app version from `0.11.36` to `0.11.37` as a patch release for VIP translation resilience.
+- Added bounded chunk-level retry for transient translation provider failures, including Gemini `503 UNAVAILABLE` high-demand responses, provider `429`/`5xx`, and network fetch failures.
+- Preserved existing request-too-large split retry, invalid JSON retry, and single-segment fallback behavior.
+- Added `chunk-transient-retry` logging with chunk label, attempt count, delay, and summarized provider error.
+- Added regression coverage for Gemini-style `503` recovery and bounded persistent transient failure.
+- Verification (FAST-AUDIO-076):
+  - `npm run test -- --run src/lib/multilingual-audio/transcript-translation.test.ts` pass (1 file / 20 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+
+## FAST-WORKSPACE-093 - Harden remote VIP worker polling and filename fallback
+
+- Bumped app version from `0.11.35` to `0.11.36` as a patch release for remote VIP worker reliability.
+- Added remote worker preflight before transcript/translation in EC2 voice+render mode, so unreachable EC2 fails fast before expensive local stages.
+- Added bounded retry for transient remote worker job-poll network failures instead of failing on the first `fetch failed`.
+- Kept job-specific poll results intact while making general worker health/status omit heavyweight completed job result payloads.
+- Overrode remote VIP output filenames locally with the strict source-title sanitizer, so stale EC2 workers cannot return `omnivideo-vip-done.mp4`.
+- Verification (FAST-WORKSPACE-093):
+  - `npm run test -- --run src/lib/multilingual-audio/remote-vip-worker.test.ts src/app/api/audio/video-vip-voice-render/route.test.ts src/lib/multilingual-audio/video-vip-processing.test.ts` pass (3 files / 45 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+  - Live EC2 check at `http://16.162.254.230:8787/api/audio/video-vip-voice-render` returned `ok:true`, but the current worker still serves the old heavyweight status payload until redeployed/restarted.
+
+## FAST-VIDEO-051 - Sanitize VIP output download filenames
+
+- Bumped app version from `0.11.34` to `0.11.35` as a patch release for VIP download filename reliability.
+- Sanitized VIP output filenames from source titles by removing Vietnamese accents, replacing punctuation/whitespace with `-`, collapsing repeated separators, and preserving the existing `.mp4` extension.
+- Hardened Workspace server artifact download headers so legacy accented artifact filenames are returned to the browser as conservative ASCII hyphenated names.
+- Added regression coverage for the reported Vietnamese title pattern and server artifact download headers.
+- Verification (FAST-VIDEO-051):
+  - `npm run test -- --run src/lib/multilingual-audio/video-vip-processing.test.ts src/app/api/workspace/artifacts/[artifactId]/download/route.test.ts` pass (2 files / 24 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+
 ## FAST-AUDIO-075 - Apply AI Provider RPM throttle to VIP only
 
 - Bumped app version from `0.11.33` to `0.11.34` as a patch release for VIP AI Provider RPM throttling.

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+    assertRemoteVipWorkerAvailable,
     runRemoteVideoVipRender,
     runRemoteVideoVipVoiceRender,
 } from "./remote-vip-worker";
@@ -260,6 +261,7 @@ describe("remote VIP worker client", () => {
                 endpoint: "http://worker.example",
                 fetchImpl,
                 pollIntervalMs: 0,
+                pollNetworkFailureLimit: 0,
             }),
         ).rejects.toMatchObject({
             code: "SYS_DUBBING_MUX_FAILED",
@@ -267,6 +269,86 @@ describe("remote VIP worker client", () => {
             message:
                 "Remote VIP worker job poll failed for http://worker.example/api/audio/video-vip-voice-render?jobId=job-network: fetch failed",
         });
+    });
+
+    it("retries transient worker poll network failures before returning a completed job", async () => {
+        const fetchImpl = vi
+            .fn<typeof fetch>()
+            .mockResolvedValueOnce(
+                Response.json(
+                    {
+                        ok: true,
+                        data: {
+                            jobId: "job-retry",
+                            status: "running",
+                        },
+                    },
+                    { status: 202 },
+                ),
+            )
+            .mockRejectedValueOnce(new TypeError("fetch failed"))
+            .mockResolvedValueOnce(
+                Response.json({
+                    ok: true,
+                    data: {
+                        status: "done",
+                        result: {
+                            artifactId: "artifact-retry",
+                            mimeType: "video/mp4",
+                            extension: "mp4",
+                            fileName: "source-done.mp4",
+                            byteLength: 12,
+                            generationDurationMs: 100,
+                            stages: {
+                                finalRenderDurationMs: 40,
+                            },
+                            mix: { originalAudioVolume: 0, voiceVolume: 1 },
+                        },
+                    },
+                }),
+            )
+            .mockResolvedValueOnce(
+                new Response(Buffer.from("retry-video"), {
+                    status: 200,
+                    headers: { "Content-Type": "video/mp4" },
+                }),
+            );
+
+        const result = await runRemoteVideoVipRender(baseInput, {
+            endpoint: "http://worker.example",
+            fetchImpl,
+            pollIntervalMs: 0,
+            pollNetworkFailureLimit: 2,
+        });
+
+        expect(result.videoBytes?.toString()).toBe("retry-video");
+        expect(fetchImpl).toHaveBeenCalledTimes(4);
+    });
+
+    it("checks worker health before expensive remote VIP stages", async () => {
+        const fetchImpl = vi.fn<typeof fetch>().mockResolvedValueOnce(
+            Response.json({
+                ok: true,
+                service: "omnivideo-vip-voice-render",
+                data: { jobs: [] },
+            }),
+        );
+
+        await expect(
+            assertRemoteVipWorkerAvailable({
+                endpoint: "http://worker.example/",
+                token: "secret",
+                fetchImpl,
+            }),
+        ).resolves.toBeUndefined();
+
+        expect(fetchImpl).toHaveBeenCalledWith(
+            "http://worker.example/api/audio/video-vip-voice-render",
+            expect.objectContaining({
+                method: "GET",
+                headers: { Authorization: "Bearer secret" },
+            }),
+        );
     });
 
     it("uploads source video and transcript payload for EC2 voice plus render", async () => {
