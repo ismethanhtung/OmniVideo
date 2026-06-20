@@ -21,8 +21,9 @@ import {
 import type { LeftbarNavItem } from "@/components/layout/types";
 import { AssetLifecycleBadges } from "@/components/ui/asset-lifecycle-badges";
 import {
-    DEFAULT_OPENAI_COMPATIBLE_PROVIDER_LABEL,
-    DEFAULT_OPENAI_COMPATIBLE_PROVIDER_TYPE,
+    DEFAULT_GOOGLE_AI_STUDIO_PROVIDER_ID,
+    DEFAULT_GOOGLE_AI_STUDIO_PROVIDER_LABEL,
+    isDefaultGeminiTextModel,
     resolveDefaultAiProviderId,
 } from "@/lib/ai-providers/default-provider";
 import {
@@ -260,7 +261,9 @@ export function VideoNarratorPanel({ section }: VideoNarratorPanelProps) {
     const [aiProviders, setAiProviders] = useState<AiProviderOption[]>([]);
     const [aiModels, setAiModels] = useState<AiModelOption[]>([]);
     const [selectedProviderId, setSelectedProviderId] = useState("env-gemini");
-    const [selectedModel, setSelectedModel] = useState("");
+    const [selectedModel, setSelectedModel] = useState(
+        DEFAULT_TRANSLATION_MODEL,
+    );
     const [prompt, setPrompt] = useState(
         "Xem video này và viết một kịch bản thuyết minh ngắn bằng tiếng Việt. Hãy mô tả sinh động sự kiện đang xảy ra từng bước, dí dỏm và thú vị để giữ chân người xem. Phân chia kịch bản thành các phân đoạn tương ứng với các mốc thời gian trong video.",
     );
@@ -335,7 +338,9 @@ export function VideoNarratorPanel({ section }: VideoNarratorPanelProps) {
     const [metadataHashtagsDraft, setMetadataHashtagsDraft] = useState("");
     const [metadataGenerationDurationMs, setMetadataGenerationDurationMs] = useState<number | null>(null);
     const [showMetadataSettings, setShowMetadataSettings] = useState(false);
-    const [metadataProviderId, setMetadataProviderId] = useState("");
+    const [metadataProviderId, setMetadataProviderId] = useState(
+        DEFAULT_GOOGLE_AI_STUDIO_PROVIDER_ID,
+    );
     const [metadataModel, setMetadataModel] = useState(DEFAULT_TRANSLATION_MODEL);
     const [metadataAiModels, setMetadataAiModels] = useState<AiModelOption[]>([]);
     const [isMetadataLoadingModels, setIsMetadataLoadingModels] = useState(false);
@@ -572,7 +577,7 @@ export function VideoNarratorPanel({ section }: VideoNarratorPanelProps) {
                 setAiModels(payload.data);
                 if (payload.data.length > 0) {
                     const hasDefault = payload.data.find(
-                        (m) => m.id === "gemini-1.5-flash",
+                        (m) => isDefaultGeminiTextModel(m.id),
                     );
                     setSelectedModel(
                         hasDefault ? hasDefault.id : payload.data[0].id,
@@ -603,7 +608,7 @@ export function VideoNarratorPanel({ section }: VideoNarratorPanelProps) {
                 setMetadataAiModels(payload.data);
                 if (payload.data.length > 0) {
                     const hasDefault = payload.data.find(
-                        (m) => m.id === "gemini-1.5-flash",
+                        (m) => isDefaultGeminiTextModel(m.id),
                     );
                     setMetadataModel(
                         hasDefault ? hasDefault.id : payload.data[0].id,
@@ -1417,6 +1422,9 @@ export function VideoNarratorPanel({ section }: VideoNarratorPanelProps) {
                                     }
                                     className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main"
                                 >
+                                    <option value={DEFAULT_TRANSLATION_MODEL}>
+                                        Gemini 3.1 Flash Lite
+                                    </option>
                                     <option value="gemini-1.5-flash">
                                         Gemini 1.5 Flash
                                     </option>
@@ -1437,6 +1445,11 @@ export function VideoNarratorPanel({ section }: VideoNarratorPanelProps) {
                                                     "gemini-1.5-pro",
                                                     "gemini-2.0-flash",
                                                     "gemini-2.5-flash",
+                                                    DEFAULT_TRANSLATION_MODEL,
+                                                    DEFAULT_TRANSLATION_MODEL.replace(
+                                                        /^models\//u,
+                                                        "",
+                                                    ),
                                                 ].includes(m.id),
                                         )
                                         .map((m) => (
@@ -2185,12 +2198,15 @@ export function VideoNarratorPanel({ section }: VideoNarratorPanelProps) {
                                             }}
                                             className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main"
                                         >
-                                            <option value="">
-                                                {DEFAULT_OPENAI_COMPATIBLE_PROVIDER_LABEL} (
-                                                {
-                                                    DEFAULT_OPENAI_COMPATIBLE_PROVIDER_TYPE
+                                            <option
+                                                value={
+                                                    DEFAULT_GOOGLE_AI_STUDIO_PROVIDER_ID
                                                 }
-                                                )
+                                            >
+                                                {
+                                                    DEFAULT_GOOGLE_AI_STUDIO_PROVIDER_LABEL
+                                                }{" "}
+                                                (env)
                                             </option>
                                             {aiProviders.map((prov) => (
                                                 <option key={prov._id} value={prov._id}>

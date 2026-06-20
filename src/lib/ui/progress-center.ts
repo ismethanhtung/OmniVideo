@@ -17,6 +17,7 @@ export type ProgressTaskStep = {
   startedAt?: number;
   updatedAt: number;
   finishedAt?: number;
+  durationMs?: number;
   error?: string;
 };
 
@@ -41,6 +42,7 @@ type ProgressTaskStepInput = {
   description?: string;
   progress?: number;
   progressMode?: ProgressMode;
+  durationMs?: number;
 };
 
 type ProgressTaskInput = {
@@ -107,6 +109,7 @@ function isPersistedProgressTaskStep(value: unknown): value is ProgressTaskStep 
     (step.startedAt === undefined || typeof step.startedAt === "number") &&
     typeof step.updatedAt === "number" &&
     (step.finishedAt === undefined || typeof step.finishedAt === "number") &&
+    (step.durationMs === undefined || typeof step.durationMs === "number") &&
     (step.error === undefined || typeof step.error === "string")
   );
 }
@@ -234,6 +237,7 @@ function createInitialStep(
     status: "queued",
     progress: clampProgress(input.progress ?? 0),
     progressMode: input.progressMode ?? "indeterminate",
+    durationMs: input.durationMs,
     updatedAt: now,
   };
 }
@@ -350,6 +354,7 @@ export function startProgressStep({
             startedAt: step.startedAt ?? now,
             updatedAt: now,
             finishedAt: undefined,
+            durationMs: undefined,
             error: undefined,
           }
         : step,
@@ -364,7 +369,12 @@ export function updateProgressStep(
   patch: Partial<
     Pick<
       ProgressTaskStep,
-      "title" | "description" | "progress" | "progressMode" | "status"
+      | "title"
+      | "description"
+      | "progress"
+      | "progressMode"
+      | "status"
+      | "durationMs"
     >
   >,
 ) {
@@ -393,26 +403,36 @@ export function finishProgressStep({
   status,
   description,
   error,
+  durationMs,
 }: {
   taskId: string;
   stepId: string;
   status: Extract<ProgressStepStatus, "success" | "failed" | "skipped">;
   description?: string;
   error?: string;
+  durationMs?: number;
 }) {
   updateTask(taskId, (existing, now) => ({
     ...existing,
     steps: existing.steps.map((step) =>
       step.id === stepId
-        ? {
-            ...step,
-            description: description ?? step.description,
-            error,
-            status,
-            progress: status === "success" ? 100 : step.progress,
-            updatedAt: now,
-            finishedAt: now,
-          }
+        ? (() => {
+            const isAlreadyFinished =
+              step.finishedAt !== undefined &&
+              (step.status === "success" ||
+                step.status === "failed" ||
+                step.status === "skipped");
+            return {
+              ...step,
+              description: description ?? step.description,
+              error,
+              status,
+              progress: status === "success" ? 100 : step.progress,
+              updatedAt: now,
+              finishedAt: isAlreadyFinished ? step.finishedAt : now,
+              durationMs: durationMs ?? step.durationMs,
+            };
+          })()
         : step,
     ),
     updatedAt: now,

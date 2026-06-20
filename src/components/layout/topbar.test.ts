@@ -35,6 +35,8 @@ describe("Topbar background progress modal", () => {
         expect(source).not.toContain("sm:col-span-2");
         expect(source).toContain("render (speed+mix+mirror+blur+sub)");
         expect(source).toContain("ProgressStepRow");
+        expect(source).toContain("formatDurationValueMs");
+        expect(source).toContain("typeof step.durationMs === \"number\"");
         expect(source).toContain("step.progressMode === \"determinate\"");
         expect(source).toContain("setInterval(() =>");
         expect(source).toContain("measured progress");

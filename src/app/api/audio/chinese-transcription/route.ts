@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 
-import { applyDemoRateLimit } from "@/lib/access-control/route-guards";
+import {
+    applyDemoRateLimit,
+    requireOwnerForProviderAccount,
+} from "@/lib/access-control/route-guards";
 import { runChineseVideoTranscription } from "@/lib/multilingual-audio/chinese-transcription";
 import { ChineseTranscriptionError } from "@/lib/multilingual-audio/types";
 
@@ -26,6 +29,13 @@ export async function POST(request: Request) {
         const formData = await request.formData();
         const file = formData.get("videoFile");
         const assetId = readFormValue(formData, "assetId").trim();
+        const providerId = readFormValue(formData, "providerId").trim();
+        const model = readFormValue(formData, "model").trim();
+        const providerAccessDenied = requireOwnerForProviderAccount(
+            request,
+            providerId || undefined,
+        );
+        if (providerAccessDenied) return providerAccessDenied;
 
         let source:
             | {
@@ -102,6 +112,26 @@ export async function POST(request: Request) {
             );
         }
 
+        let providerConfig:
+            | {
+                  transcriptionApiKey: string;
+                  transcriptionBaseUrl: string;
+                  transcriptionProviderName: string;
+              }
+            | undefined;
+        if (providerId) {
+            const { getAiProviderById, getAiProvidersDb } = await import(
+                "@/lib/ai-providers/repository"
+            );
+            const db = await getAiProvidersDb();
+            const provider = await getAiProviderById({ db, providerId });
+            providerConfig = {
+                transcriptionApiKey: provider.apiKey,
+                transcriptionBaseUrl: provider.baseUrl,
+                transcriptionProviderName: provider.label,
+            };
+        }
+
         const result = await runChineseVideoTranscription({
             fileName: source.fileName,
             mimeType: source.mimeType,
@@ -109,6 +139,8 @@ export async function POST(request: Request) {
             fileBytes: source.fileBytes,
             language: readFormValue(formData, "language") || "zh",
             prompt: readFormValue(formData, "prompt") || undefined,
+            transcriptionModel: model || undefined,
+            ...providerConfig,
             includeWordTimestamps:
                 readFormValue(formData, "includeWordTimestamps") === "true",
             videoSpeedFactor: readNumberFormValue(formData, "videoSpeedFactor"),

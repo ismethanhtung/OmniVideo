@@ -4,6 +4,8 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
+import type { AiProviderRateLimit } from "@/lib/ai-providers/rate-limit";
+
 import { resolveFfmpegPath } from "./audio-extraction";
 import { runChineseVideoTranscription } from "./chinese-transcription";
 import { generateVoiceFromSegments } from "./piper-tts";
@@ -40,6 +42,7 @@ export type VideoDubbingInput = {
     apiKey?: string;
     baseUrl?: string;
     providerName?: string;
+    rateLimit?: AiProviderRateLimit;
     ttsSettings?: Partial<VoiceGenerationSettings>;
     originalAudioVolume?: number;
     voiceVolume?: number;
@@ -262,6 +265,7 @@ export async function runVideoDubbing(
         apiKey: input.apiKey,
         baseUrl: input.baseUrl,
         providerName: input.providerName,
+        rateLimit: input.rateLimit,
     });
     const voice = await generateVoiceFromSegments({
         segments: buildVideoDubbingVoiceSegments({ transcript, translation }),

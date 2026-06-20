@@ -12,6 +12,7 @@ import type {
 const REPO_PIPER_BINARY = "piper";
 const REPO_PIPER_MODEL = "";
 const REPO_PIPER_CONFIG = "";
+const DEFAULT_TRANSCRIPTION_MODEL = "whisper-large-v3-turbo";
 
 type PiperTtsApiPayload =
     | {
@@ -67,6 +68,18 @@ type StoredVideoAsset = {
     storageProvider?: string;
 };
 
+type AiProviderOption = {
+    _id: string;
+    label: string;
+    providerType: string;
+    status: string;
+};
+
+type AiModelOption = {
+    id: string;
+    name: string;
+};
+
 type TranscriptionApiPayload =
     | {
           ok: true;
@@ -111,6 +124,34 @@ type ReplicatePredictionPayload =
           error?: string;
       };
 
+type ReplicateSchemaField = {
+    key: string;
+    title: string;
+    type: string;
+    format: string;
+    description: string;
+    default?: unknown;
+    enum?: unknown[];
+    likelyFileInput: boolean;
+};
+
+type ReplicateSchemaPayload =
+    | {
+          ok: true;
+          data: {
+              mode: string;
+              version: string;
+              inputProperties: ReplicateSchemaField[];
+              suggestedFileKeys: string[];
+              note?: string;
+          };
+      }
+    | {
+          ok: false;
+          errorCode?: string;
+          error?: string;
+      };
+
 const DEFAULT_REPLICATE_INPUT = JSON.stringify(
     {
         width: 1024,
@@ -125,6 +166,12 @@ const DEFAULT_REPLICATE_INPUT = JSON.stringify(
     null,
     2,
 );
+const DEFAULT_STYLE_LOCK =
+    "Một phong cách duy nhất cho toàn bộ video: cinematic Vietnamese drama, semi-realistic anime/manhua illustration, soft film lighting, warm emotional color grading, detailed fabric texture, natural proportions, consistent camera lens and composition language.";
+const DEFAULT_CHARACTER_LOCK =
+    "Nhân vật chính phải giữ nguyên qua mọi ảnh: cô gái trẻ người Việt, tóc đen dài ngang vai, khuôn mặt thanh tú hơi buồn, dáng người nhỏ, mặc áo len sáng màu; người chồng dáng cao gầy, tóc đen ngắn, áo khoác tối màu, biểu cảm ít nói nhưng dịu dàng.";
+const DEFAULT_CONTINUITY_LOCK =
+    "Không đổi phong cách đồ họa, độ tuổi, kiểu tóc, màu tóc, khuôn mặt, trang phục chính, tỉ lệ cơ thể và mood ánh sáng giữa các cảnh. Mỗi ảnh là một cảnh khác nhau nhưng thuộc cùng một bộ phim.";
 
 function formatTime(seconds: number) {
     if (!Number.isFinite(seconds)) return "00:00.000";
@@ -188,10 +235,19 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
     const Icon = section.icon ?? RadioTower;
     const [file, setFile] = useState<File | null>(null);
     const [assets, setAssets] = useState<StoredVideoAsset[]>([]);
+    const [aiProviders, setAiProviders] = useState<AiProviderOption[]>([]);
+    const [aiModels, setAiModels] = useState<AiModelOption[]>([]);
+    const [isLoadingAiProviders, setIsLoadingAiProviders] = useState(false);
+    const [isLoadingAiModels, setIsLoadingAiModels] = useState(false);
     const [selectedAssetId, setSelectedAssetId] = useState("");
     const [showAssetBrowser, setShowAssetBrowser] = useState(false);
     const [assetSearchQuery, setAssetSearchQuery] = useState("");
     const [language, setLanguage] = useState("zh");
+    const [selectedTranscriptionProviderId, setSelectedTranscriptionProviderId] =
+        useState("");
+    const [transcriptionModel, setTranscriptionModel] = useState(
+        DEFAULT_TRANSCRIPTION_MODEL,
+    );
     const [includeWordTimestamps, setIncludeWordTimestamps] = useState(true);
     const [retryPromptHardConstraint, setRetryPromptHardConstraint] =
         useState(true);
@@ -231,6 +287,22 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
     const [replicateFile, setReplicateFile] = useState<File | null>(null);
     const [replicateWaitSeconds, setReplicateWaitSeconds] = useState("45");
     const [replicateCancelAfter, setReplicateCancelAfter] = useState("5m");
+    const [styleLock, setStyleLock] = useState(DEFAULT_STYLE_LOCK);
+    const [characterLock, setCharacterLock] = useState(DEFAULT_CHARACTER_LOCK);
+    const [continuityLock, setContinuityLock] = useState(
+        DEFAULT_CONTINUITY_LOCK,
+    );
+    const [scenePrompt, setScenePrompt] = useState(
+        "Cô gái dọn dẹp tủ đồ, định vứt một chiếc áo khoác phao cũ, sờn rách ở tay áo. Anh chồng đi qua nhìn thấy, liền nhặt lại và treo vào tủ.",
+    );
+    const [isInspectingReplicateSchema, setIsInspectingReplicateSchema] =
+        useState(false);
+    const [replicateSchemaError, setReplicateSchemaError] = useState<
+        string | null
+    >(null);
+    const [replicateSchema, setReplicateSchema] = useState<
+        Extract<ReplicateSchemaPayload, { ok: true }>["data"] | null
+    >(null);
     const [isRunningReplicate, setIsRunningReplicate] = useState(false);
     const [replicateError, setReplicateError] = useState<string | null>(null);
     const [replicateResult, setReplicateResult] = useState<
@@ -248,6 +320,47 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
             })
             .catch(() => {});
     }, []);
+
+    useEffect(() => {
+        setIsLoadingAiProviders(true);
+        fetch("/api/ai-providers", {
+            method: "GET",
+            cache: "no-store",
+        })
+            .then((response) => response.json())
+            .then((payload: { ok: boolean; data?: AiProviderOption[] }) => {
+                const activeProviders = (payload.data ?? []).filter(
+                    (provider) => provider.status === "active",
+                );
+                if (payload.ok) setAiProviders(activeProviders);
+            })
+            .catch(() => setAiProviders([]))
+            .finally(() => setIsLoadingAiProviders(false));
+    }, []);
+
+    useEffect(() => {
+        if (!selectedTranscriptionProviderId) {
+            setAiModels([]);
+            return;
+        }
+        setIsLoadingAiModels(true);
+        fetch(`/api/ai-providers/${selectedTranscriptionProviderId}/models`, {
+            method: "GET",
+            cache: "no-store",
+        })
+            .then((response) => response.json())
+            .then((payload: { ok: boolean; data?: AiModelOption[] }) => {
+                const models = payload.ok ? (payload.data ?? []) : [];
+                setAiModels(models);
+                const preferred =
+                    models.find((model) =>
+                        /whisper|transcri|speech|audio/iu.test(model.id),
+                    ) ?? models[0];
+                if (preferred) setTranscriptionModel(preferred.id);
+            })
+            .catch(() => setAiModels([]))
+            .finally(() => setIsLoadingAiModels(false));
+    }, [selectedTranscriptionProviderId]);
 
     const audioUrl = useMemo(() => {
         if (!result) return null;
@@ -417,6 +530,12 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
             if (transcriptPrompt.trim()) {
                 formData.append("prompt", transcriptPrompt.trim());
             }
+            if (selectedTranscriptionProviderId) {
+                formData.append("providerId", selectedTranscriptionProviderId);
+            }
+            if (transcriptionModel.trim()) {
+                formData.append("model", transcriptionModel.trim());
+            }
             const response = await fetch("/api/audio/chinese-transcription", {
                 method: "POST",
                 body: formData,
@@ -448,6 +567,73 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
         await navigator.clipboard.writeText(
             JSON.stringify(replicateResult.prediction, null, 2),
         );
+    };
+
+    const inspectReplicateSchema = async () => {
+        setIsInspectingReplicateSchema(true);
+        setReplicateSchemaError(null);
+        setReplicateSchema(null);
+        try {
+            const params = new URLSearchParams({
+                target: replicateTarget,
+                mode: replicateMode,
+            });
+            if (replicateToken.trim()) params.set("token", replicateToken);
+            const response = await fetch(
+                `/api/replicate/predictions?${params.toString()}`,
+                { cache: "no-store" },
+            );
+            const payload = (await response.json()) as ReplicateSchemaPayload;
+            if (!payload.ok) {
+                throw new Error(
+                    payload.errorCode
+                        ? `${payload.errorCode}: ${payload.error ?? "Schema inspection failed."}`
+                        : (payload.error ?? "Schema inspection failed."),
+                );
+            }
+            setReplicateSchema(payload.data);
+            if (
+                !replicateFileInputKey.trim() &&
+                payload.data.suggestedFileKeys[0]
+            ) {
+                setReplicateFileInputKey(payload.data.suggestedFileKeys[0]);
+            }
+        } catch (requestError) {
+            setReplicateSchemaError(
+                requestError instanceof Error
+                    ? requestError.message
+                    : "Schema inspection failed.",
+            );
+        } finally {
+            setIsInspectingReplicateSchema(false);
+        }
+    };
+
+    const applyConsistentPrompt = () => {
+        const prompt = [
+            `Scene: ${scenePrompt.trim()}`,
+            `Style lock: ${styleLock.trim()}`,
+            `Character lock: ${characterLock.trim()}`,
+            `Continuity lock: ${continuityLock.trim()}`,
+            "Render this as one frame from the same visual series. Do not change the established character design or visual style.",
+        ]
+            .filter((line) => !/:\s*$/u.test(line))
+            .join("\n\n");
+
+        try {
+            const parsed = JSON.parse(replicateInputJson) as Record<
+                string,
+                unknown
+            >;
+            if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+                throw new Error("Input JSON must be an object.");
+            }
+            setReplicateInputJson(
+                JSON.stringify({ ...parsed, prompt }, null, 2),
+            );
+        } catch {
+            setReplicateInputJson(JSON.stringify({ prompt }, null, 2));
+        }
     };
 
     const runReplicate = async () => {
@@ -553,6 +739,91 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
                                     placeholder="Optional if server has REPLICATE_API_TOKEN"
                                 />
                             </label>
+                            <button
+                                type="button"
+                                onClick={inspectReplicateSchema}
+                                disabled={isInspectingReplicateSchema}
+                                className="inline-flex w-full items-center justify-center gap-2 border border-main bg-main px-3 py-2 text-[11px] font-semibold text-main transition-colors hover:border-accent disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                                {isInspectingReplicateSchema
+                                    ? "Inspecting..."
+                                    : "Inspect Schema"}
+                            </button>
+                            {replicateSchemaError ? (
+                                <p className="border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-[10px] leading-4 text-rose-700">
+                                    {replicateSchemaError}
+                                </p>
+                            ) : null}
+                            {replicateSchema ? (
+                                <div className="space-y-2 border border-main bg-main p-2">
+                                    <div className="flex items-center justify-between gap-2">
+                                        <p className="text-[10px] font-semibold text-main">
+                                            Schema Inputs
+                                        </p>
+                                        <span className="truncate text-[10px] text-muted">
+                                            {replicateSchema.version ||
+                                                replicateSchema.mode}
+                                        </span>
+                                    </div>
+                                    {replicateSchema.note ? (
+                                        <p className="text-[10px] leading-4 text-muted">
+                                            {replicateSchema.note}
+                                        </p>
+                                    ) : null}
+                                    {replicateSchema.suggestedFileKeys.length >
+                                    0 ? (
+                                        <div className="flex flex-wrap gap-1">
+                                            {replicateSchema.suggestedFileKeys.map(
+                                                (key) => (
+                                                    <button
+                                                        key={key}
+                                                        type="button"
+                                                        onClick={() =>
+                                                            setReplicateFileInputKey(
+                                                                key,
+                                                            )
+                                                        }
+                                                        className="border border-accent/35 bg-accent/10 px-2 py-1 text-[10px] font-semibold text-accent"
+                                                    >
+                                                        Use {key}
+                                                    </button>
+                                                ),
+                                            )}
+                                        </div>
+                                    ) : (
+                                        <p className="text-[10px] leading-4 text-muted">
+                                            No obvious image/file reference input
+                                            detected.
+                                        </p>
+                                    )}
+                                    <div className="max-h-44 overflow-auto border border-main">
+                                        {replicateSchema.inputProperties.map(
+                                            (field) => (
+                                                <div
+                                                    key={field.key}
+                                                    className="border-b border-main px-2 py-1.5 last:border-b-0"
+                                                >
+                                                    <p className="text-[10px] font-semibold text-main">
+                                                        {field.key}
+                                                        {field.likelyFileInput
+                                                            ? " · file"
+                                                            : ""}
+                                                    </p>
+                                                    <p className="truncate text-[10px] text-muted">
+                                                        {[
+                                                            field.type,
+                                                            field.format,
+                                                            field.description,
+                                                        ]
+                                                            .filter(Boolean)
+                                                            .join(" · ")}
+                                                    </p>
+                                                </div>
+                                            ),
+                                        )}
+                                    </div>
+                                </div>
+                            ) : null}
                             <div className="grid gap-2 sm:grid-cols-2">
                                 <label className="block">
                                     <span className="mb-1 block text-[10px] font-semibold text-muted">
@@ -622,6 +893,78 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
                         </div>
 
                         <div className="space-y-4">
+                            <div className="border border-main bg-secondary/20 p-4">
+                                <div className="flex items-center justify-between gap-3">
+                                    <p className="text-[12px] font-semibold text-main">
+                                        Reference & Consistency
+                                    </p>
+                                    <button
+                                        type="button"
+                                        onClick={applyConsistentPrompt}
+                                        className="border border-main bg-main px-2 py-1 text-[10px] font-semibold text-main hover:border-accent"
+                                    >
+                                        Build Prompt
+                                    </button>
+                                </div>
+                                <label className="mt-3 block">
+                                    <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                        Scene prompt
+                                    </span>
+                                    <textarea
+                                        rows={3}
+                                        value={scenePrompt}
+                                        onChange={(event) =>
+                                            setScenePrompt(event.target.value)
+                                        }
+                                        className="w-full resize-y border border-main bg-main px-2 py-1.5 text-[11px] leading-5 text-main outline-none focus:border-accent"
+                                    />
+                                </label>
+                                <div className="mt-3 grid gap-3 xl:grid-cols-3">
+                                    <label className="block">
+                                        <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                            Style lock
+                                        </span>
+                                        <textarea
+                                            rows={5}
+                                            value={styleLock}
+                                            onChange={(event) =>
+                                                setStyleLock(event.target.value)
+                                            }
+                                            className="w-full resize-y border border-main bg-main px-2 py-1.5 text-[11px] leading-5 text-main outline-none focus:border-accent"
+                                        />
+                                    </label>
+                                    <label className="block">
+                                        <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                            Character lock
+                                        </span>
+                                        <textarea
+                                            rows={5}
+                                            value={characterLock}
+                                            onChange={(event) =>
+                                                setCharacterLock(
+                                                    event.target.value,
+                                                )
+                                            }
+                                            className="w-full resize-y border border-main bg-main px-2 py-1.5 text-[11px] leading-5 text-main outline-none focus:border-accent"
+                                        />
+                                    </label>
+                                    <label className="block">
+                                        <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                            Continuity lock
+                                        </span>
+                                        <textarea
+                                            rows={5}
+                                            value={continuityLock}
+                                            onChange={(event) =>
+                                                setContinuityLock(
+                                                    event.target.value,
+                                                )
+                                            }
+                                            className="w-full resize-y border border-main bg-main px-2 py-1.5 text-[11px] leading-5 text-main outline-none focus:border-accent"
+                                        />
+                                    </label>
+                                </div>
+                            </div>
                             <div className="border border-main bg-secondary/20 p-4">
                                 <div className="flex items-center justify-between gap-3">
                                     <p className="text-[12px] font-semibold text-main">
@@ -878,6 +1221,81 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
                                     </div>
                                 ) : null}
                             </div>
+                            <label className="block">
+                                <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                    AI Provider
+                                </span>
+                                <select
+                                    value={selectedTranscriptionProviderId}
+                                    onChange={(event) =>
+                                        setSelectedTranscriptionProviderId(
+                                            event.target.value,
+                                        )
+                                    }
+                                    disabled={isRunningTranscript || isLoadingAiProviders}
+                                    className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main outline-none transition-colors focus:border-accent"
+                                >
+                                    <option value="">
+                                        Groq env (GROQ_API_KEY)
+                                    </option>
+                                    {aiProviders.map((provider) => (
+                                        <option
+                                            key={provider._id}
+                                            value={provider._id}
+                                        >
+                                            {provider.label} (
+                                            {provider.providerType})
+                                        </option>
+                                    ))}
+                                </select>
+                            </label>
+                            <label className="block">
+                                <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                    Transcription model
+                                </span>
+                                {selectedTranscriptionProviderId &&
+                                aiModels.length > 0 ? (
+                                    <select
+                                        value={transcriptionModel}
+                                        onChange={(event) =>
+                                            setTranscriptionModel(
+                                                event.target.value,
+                                            )
+                                        }
+                                        disabled={
+                                            isRunningTranscript ||
+                                            isLoadingAiModels
+                                        }
+                                        className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main outline-none transition-colors focus:border-accent"
+                                    >
+                                        {aiModels.map((model) => (
+                                            <option
+                                                key={model.id}
+                                                value={model.id}
+                                            >
+                                                {model.name || model.id}
+                                            </option>
+                                        ))}
+                                    </select>
+                                ) : (
+                                    <input
+                                        value={transcriptionModel}
+                                        onChange={(event) =>
+                                            setTranscriptionModel(
+                                                event.target.value,
+                                            )
+                                        }
+                                        disabled={
+                                            isRunningTranscript ||
+                                            isLoadingAiModels
+                                        }
+                                        className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main outline-none transition-colors focus:border-accent"
+                                        placeholder={
+                                            DEFAULT_TRANSCRIPTION_MODEL
+                                        }
+                                    />
+                                )}
+                            </label>
                             <label className="block">
                                 <span className="mb-1 block text-[10px] font-semibold text-muted">
                                     Language

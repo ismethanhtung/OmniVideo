@@ -1,10 +1,16 @@
 import { describe, expect, it } from "vitest";
 
 import {
+    DEFAULT_GEMINI_TEXT_MODEL,
+    DEFAULT_GOOGLE_AI_STUDIO_PROVIDER_ID,
+} from "@/lib/ai-providers/default-provider";
+
+import {
     createAssetVipProcessingSampleGraph,
     createUploadRemoteVipSaveLocalSampleGraph,
     createUploadRemoteVipThumbnailSaveLocalSampleGraph,
     createUploadVipSaveLocalSampleGraph,
+    DEFAULT_WORKSPACE_BLUR_STRENGTH,
     WORKSPACE_NODE_TEMPLATES,
     addWorkspaceNode,
     connectWorkspaceNodes,
@@ -288,6 +294,9 @@ describe("workspace graph helpers", () => {
             });
             if (nodeType === "audio.video-dubbing") {
                 expect(graph.nodes[0].config).toMatchObject({
+                    translationProviderId:
+                        DEFAULT_GOOGLE_AI_STUDIO_PROVIDER_ID,
+                    model: DEFAULT_GEMINI_TEXT_MODEL,
                     originalAudioVolume: 0,
                 });
             }
@@ -308,9 +317,13 @@ describe("workspace graph helpers", () => {
         );
 
         expect(graph.nodes[0].config).toMatchObject({
+            translationProviderId: DEFAULT_GOOGLE_AI_STUDIO_PROVIDER_ID,
+            model: DEFAULT_GEMINI_TEXT_MODEL,
+            metadataProviderId: DEFAULT_GOOGLE_AI_STUDIO_PROVIDER_ID,
+            metadataModel: DEFAULT_GEMINI_TEXT_MODEL,
             renderPreset: "veryfast",
             speedFactor: 0.75,
-            originalAudioVolume: 0.2,
+            originalAudioVolume: 0,
         });
     });
 
@@ -319,6 +332,12 @@ describe("workspace graph helpers", () => {
             (entry) => entry.nodeType === "edit.mask-region",
         );
 
+        expect(template?.configFields).toContainEqual(
+            expect.objectContaining({
+                key: "blurStrength",
+                defaultValue: DEFAULT_WORKSPACE_BLUR_STRENGTH,
+            }),
+        );
         expect(template?.configFields).toContainEqual(
             expect.objectContaining({
                 key: "subtitleBackgroundPaddingY",

@@ -450,7 +450,7 @@ export async function POST(request: Request) {
                                 strength: readNumber(
                                     formData,
                                     "blurStrength",
-                                    50,
+                                    25,
                                 ),
                             }),
                   }

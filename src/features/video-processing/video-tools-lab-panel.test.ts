@@ -104,7 +104,7 @@ describe("Video Tools Lab source preview controls", () => {
 
     it("uses compact subtitle defaults and richer font choices with preview styling", () => {
         expect(source).toContain('setSubtitleFontFamily("Bangers")');
-        expect(source).toContain("useState(35)");
+        expect(source).toContain("useState(25)");
         expect(source).toContain("useState(8)");
         expect(source).toContain("setSubtitleFontSize(50)");
         expect(source).toContain("setSubtitleBackgroundPaddingY(8)");

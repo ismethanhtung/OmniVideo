@@ -8,6 +8,14 @@ import {
     applyDemoRateLimit,
     requireOwnerForProviderAccount,
 } from "@/lib/access-control/route-guards";
+import {
+    GOOGLE_AI_STUDIO_OPENAI_BASE_URL,
+    DEFAULT_GOOGLE_AI_STUDIO_PROVIDER_ID,
+    isGoogleAiStudioProviderId,
+    normalizeGeminiModelName,
+    readGoogleAiStudioApiKey,
+} from "@/lib/ai-providers/default-provider";
+import { createAiProviderRateLimit } from "@/lib/ai-providers/rate-limit";
 import { resolveAssetDownload } from "@/lib/storage/asset-download";
 import {
     type VoiceGenerationSettings,
@@ -300,7 +308,7 @@ function readBlurConfig(
             start: readOptionalNumber(formData, "timelineStart") ?? 0,
             end: readOptionalNumber(formData, "timelineEnd") ?? 36000,
         },
-        strength: readOptionalNumber(formData, "blurStrength") ?? 50,
+        strength: readOptionalNumber(formData, "blurStrength") ?? 25,
     };
 }
 
@@ -657,8 +665,12 @@ export async function POST(request: Request) {
         const file = formData.get("videoFile");
         const assetId = readFormValue(formData, "assetId").trim();
         const artifactId = readFormValue(formData, "artifactId").trim();
-        const providerId = readFormValue(formData, "providerId").trim();
-        const metadataProviderId = readFormValue(formData, "metadataProviderId").trim();
+        const providerId =
+            readFormValue(formData, "providerId").trim() ||
+            DEFAULT_GOOGLE_AI_STUDIO_PROVIDER_ID;
+        const metadataProviderId =
+            readFormValue(formData, "metadataProviderId").trim() ||
+            DEFAULT_GOOGLE_AI_STUDIO_PROVIDER_ID;
         const vipResumeKey = readFormValue(formData, "vipResumeKey").trim();
         const voiceRenderExecutionModeRaw = readFormValue(
             formData,
@@ -684,9 +696,16 @@ export async function POST(request: Request) {
             readOptionalBoolean(formData, "useSourceAssetVideoEditSetup") ===
             true;
 
+        const guardedProviderId = isGoogleAiStudioProviderId(providerId)
+            ? isGoogleAiStudioProviderId(metadataProviderId)
+                ? undefined
+                : metadataProviderId
+            : providerId || (isGoogleAiStudioProviderId(metadataProviderId)
+                  ? undefined
+                  : metadataProviderId);
         const providerAccessDenied = requireOwnerForProviderAccount(
             request,
-            providerId || metadataProviderId,
+            guardedProviderId,
         );
         if (providerAccessDenied) return providerAccessDenied;
 
@@ -725,8 +744,13 @@ export async function POST(request: Request) {
         let apiKey: string | undefined;
         let baseUrl: string | undefined;
         let providerName: string | undefined;
+        let translationRateLimit: ReturnType<typeof createAiProviderRateLimit>;
 
-        if (providerId) {
+        if (isGoogleAiStudioProviderId(providerId)) {
+            apiKey = readGoogleAiStudioApiKey();
+            baseUrl = GOOGLE_AI_STUDIO_OPENAI_BASE_URL;
+            providerName = "Google AI Studio";
+        } else if (providerId) {
             const { getAiProviderById, getAiProvidersDb } = await import(
                 "@/lib/ai-providers/repository"
             );
@@ -735,13 +759,24 @@ export async function POST(request: Request) {
             apiKey = provider.apiKey;
             baseUrl = provider.baseUrl;
             providerName = provider.label;
+            translationRateLimit = createAiProviderRateLimit({
+                providerId,
+                providerName: provider.label,
+                rpm: provider.rateLimitRpm,
+                feature: "video-vip-translation",
+            });
         }
 
         let metadataApiKey: string | undefined;
         let metadataBaseUrl: string | undefined;
         let metadataProviderName: string | undefined;
+        let metadataRateLimit: ReturnType<typeof createAiProviderRateLimit>;
 
-        if (metadataProviderId) {
+        if (isGoogleAiStudioProviderId(metadataProviderId)) {
+            metadataApiKey = readGoogleAiStudioApiKey();
+            metadataBaseUrl = GOOGLE_AI_STUDIO_OPENAI_BASE_URL;
+            metadataProviderName = "Google AI Studio";
+        } else if (metadataProviderId) {
             const { getAiProviderById, getAiProvidersDb } = await import(
                 "@/lib/ai-providers/repository"
             );
@@ -753,6 +788,12 @@ export async function POST(request: Request) {
             metadataApiKey = provider.apiKey;
             metadataBaseUrl = provider.baseUrl;
             metadataProviderName = provider.label;
+            metadataRateLimit = createAiProviderRateLimit({
+                providerId: metadataProviderId,
+                providerName: provider.label,
+                rpm: provider.rateLimitRpm,
+                feature: "video-vip-metadata",
+            });
         }
 
         const ttsSettings: Partial<VoiceGenerationSettings> = {
@@ -776,6 +817,9 @@ export async function POST(request: Request) {
                   source.sourceVideoEditSetup,
               )
             : undefined;
+        const model = readFormValue(formData, "model") || undefined;
+        const metadataModel =
+            readFormValue(formData, "metadataModel") || undefined;
         const result = await runVideoVipProcessing({
             fileName: source.fileName,
             sourceTitle: source.sourceTitle,
@@ -785,14 +829,21 @@ export async function POST(request: Request) {
             language: readFormValue(formData, "language") || "zh",
             sourceLanguage: readFormValue(formData, "sourceLanguage") || undefined,
             targetLanguage: readFormValue(formData, "targetLanguage") || "vi",
-            model: readFormValue(formData, "model") || undefined,
-            metadataModel: readFormValue(formData, "metadataModel") || undefined,
+            model: isGoogleAiStudioProviderId(providerId) && model
+                ? normalizeGeminiModelName(model)
+                : model,
+            metadataModel:
+                isGoogleAiStudioProviderId(metadataProviderId) && metadataModel
+                    ? normalizeGeminiModelName(metadataModel)
+                    : metadataModel,
             apiKey,
             baseUrl,
             providerName,
+            translationRateLimit,
             metadataApiKey,
             metadataBaseUrl,
             metadataProviderName,
+            metadataRateLimit,
             translationMode,
             importedTranslationLines,
             checkpointKey: vipResumeKey || undefined,

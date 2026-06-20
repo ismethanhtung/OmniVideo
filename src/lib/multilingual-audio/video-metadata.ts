@@ -1,4 +1,9 @@
 import {
+  waitForAiProviderRateLimit,
+  type AiProviderRateLimit,
+} from "@/lib/ai-providers/rate-limit";
+
+import {
   ChineseTranscriptionError,
   DEFAULT_TRANSLATION_MODEL,
   type TranscriptTranslationSegment,
@@ -167,6 +172,7 @@ export async function generateVietnameseVideoMetadata(input: {
   apiKey?: string;
   baseUrl?: string;
   providerName?: string;
+  rateLimit?: AiProviderRateLimit;
   fetcher?: typeof fetch;
 }): Promise<VietnameseVideoMetadataResult> {
   if (!Array.isArray(input.translatedSegments) || input.translatedSegments.length === 0) {
@@ -184,6 +190,7 @@ export async function generateVietnameseVideoMetadata(input: {
 
   let response: Response;
   try {
+    await waitForAiProviderRateLimit(input.rateLimit);
     response = await fetcher(`${baseUrl}/chat/completions`, {
       method: "POST",
       headers: {

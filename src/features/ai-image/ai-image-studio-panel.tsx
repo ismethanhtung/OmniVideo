@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
     Clipboard,
     Copy,
@@ -18,6 +18,12 @@ import {
 } from "lucide-react";
 
 import type { LeftbarNavItem } from "@/components/layout/types";
+import {
+    DEFAULT_GEMINI_TEXT_MODEL,
+    DEFAULT_GOOGLE_AI_STUDIO_PROVIDER_ID,
+    DEFAULT_GOOGLE_AI_STUDIO_PROVIDER_LABEL,
+    DEFAULT_GOOGLE_AI_STUDIO_PROVIDER_TYPE,
+} from "@/lib/ai-providers/default-provider";
 
 type AiImageStudioPanelProps = {
     section: LeftbarNavItem;
@@ -88,6 +94,17 @@ const CATEGORY_PRESETS = [
 const DEFAULT_IDEA_PROMPT =
     "Một câu chuyện ngắn cảm động về tình yêu lâu năm: không còn lãng mạn ồn ào, nhưng vẫn âm thầm che chở đúng lúc người kia cần nhất.";
 
+const FIELD_CLASS =
+    "w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main outline-none transition-colors focus:border-accent";
+const TEXTAREA_CLASS =
+    "w-full resize-none border border-main bg-main px-2 py-1.5 text-[11px] leading-5 text-main outline-none transition-colors placeholder:text-muted/60 focus:border-accent";
+const PRIMARY_ACTION_CLASS =
+    "inline-flex items-center justify-center gap-2 border border-accent/35 bg-accent/10 px-3 py-2 text-[12px] font-semibold text-accent transition-colors hover:bg-accent/15 disabled:cursor-not-allowed disabled:opacity-60";
+const SECONDARY_ACTION_CLASS =
+    "inline-flex items-center justify-center gap-2 border border-main bg-secondary px-3 py-2 text-[12px] font-semibold text-main transition-colors hover:bg-secondary/80 disabled:cursor-not-allowed disabled:opacity-60";
+const SMALL_ACTION_CLASS =
+    "inline-flex items-center justify-center gap-1.5 border border-main bg-main px-2 py-1 text-[10px] font-semibold text-main transition-colors hover:bg-secondary";
+
 function sceneToClipboardText(scene: StoryboardScene) {
     return [
         `Thời gian: ${scene.time}`,
@@ -121,11 +138,13 @@ function createImageObject(file: File) {
 export function AiImageStudioPanel({ section }: AiImageStudioPanelProps) {
     const Icon = section.icon ?? ImagePlus;
     const [aiProviders, setAiProviders] = useState<AiProviderOption[]>([]);
-    const [selectedProviderId, setSelectedProviderId] = useState("env-gemini");
+    const [selectedProviderId, setSelectedProviderId] = useState(
+        DEFAULT_GOOGLE_AI_STUDIO_PROVIDER_ID,
+    );
     const [aiModels, setAiModels] = useState<AiModelOption[]>([]);
     const [isLoadingProviders, setIsLoadingProviders] = useState(false);
     const [isLoadingModels, setIsLoadingModels] = useState(false);
-    const [model, setModel] = useState("gemini-2.5-pro");
+    const [model, setModel] = useState(DEFAULT_GEMINI_TEXT_MODEL);
     const [category, setCategory] = useState(CATEGORY_PRESETS[0] ?? "");
     const [targetDurationSec, setTargetDurationSec] = useState(60);
     const [sceneCount, setSceneCount] = useState(5);
@@ -146,6 +165,7 @@ export function AiImageStudioPanel({ section }: AiImageStudioPanelProps) {
         null,
     );
     const [copiedKey, setCopiedKey] = useState<string | null>(null);
+    const referenceImageInputRef = useRef<HTMLInputElement | null>(null);
 
     useEffect(() => {
         setIsLoadingProviders(true);
@@ -157,9 +177,9 @@ export function AiImageStudioPanel({ section }: AiImageStudioPanelProps) {
                 );
                 setAiProviders([
                     {
-                        _id: "env-gemini",
-                        label: "Env Google AI Studio",
-                        providerType: "gemini",
+                        _id: DEFAULT_GOOGLE_AI_STUDIO_PROVIDER_ID,
+                        label: DEFAULT_GOOGLE_AI_STUDIO_PROVIDER_LABEL,
+                        providerType: DEFAULT_GOOGLE_AI_STUDIO_PROVIDER_TYPE,
                         status: "active",
                     },
                     ...activeProviders,
@@ -180,11 +200,19 @@ export function AiImageStudioPanel({ section }: AiImageStudioPanelProps) {
                 const models = payload.ok ? (payload.data ?? []) : [];
                 setAiModels(models);
                 const preferred =
+                    models.find(
+                        (entry) =>
+                            entry.id === DEFAULT_GEMINI_TEXT_MODEL ||
+                            entry.id ===
+                                DEFAULT_GEMINI_TEXT_MODEL.replace(
+                                    /^models\//u,
+                                    "",
+                                ),
+                    ) ??
                     models.find((entry) =>
-                        /3\.1|gemini.*pro|pro|gpt|claude|qwen/iu.test(
-                            entry.id,
-                        ),
-                    ) ?? models[0];
+                        /3\.1|gemini.*pro|pro|gpt|claude|qwen/iu.test(entry.id),
+                    ) ??
+                    models[0];
                 if (preferred) setModel(preferred.id);
             })
             .catch(() => setAiModels([]))
@@ -207,7 +235,8 @@ export function AiImageStudioPanel({ section }: AiImageStudioPanelProps) {
                 body: JSON.stringify({
                     category,
                     ideaPrompt,
-                    improvementPrompt: mode === "retry" ? improvementPrompt : "",
+                    improvementPrompt:
+                        mode === "retry" ? improvementPrompt : "",
                     previousStoryboard:
                         mode === "retry" ? storyboardToContext(storyboard) : "",
                     providerId: selectedProviderId,
@@ -222,7 +251,9 @@ export function AiImageStudioPanel({ section }: AiImageStudioPanelProps) {
                 error?: string;
             };
             if (!response.ok || !payload.ok || !payload.data) {
-                throw new Error(payload.error || "Storyboard generation failed.");
+                throw new Error(
+                    payload.error || "Storyboard generation failed.",
+                );
             }
             setStoryboard(payload.data);
             setSceneImages({});
@@ -354,16 +385,17 @@ export function AiImageStudioPanel({ section }: AiImageStudioPanelProps) {
                 </div>
                 <div className="grid shrink-0 grid-cols-3 gap-2 text-[10px] text-muted">
                     <Metric label="Storyboard" value={`${totalSceneCount} scenes`} />
-                    <Metric label="Images" value={`${uploadedSceneCount}/${totalSceneCount}`} />
+                    <Metric
+                        label="Images"
+                        value={`${uploadedSceneCount}/${totalSceneCount}`}
+                    />
                     <Metric label="Render" value={renderResult ? "Ready" : "Video + TTS"} />
                 </div>
             </header>
-
             <div className="grid gap-4 p-5 xl:grid-cols-[380px_minmax(0,1fr)]">
                 <aside className="space-y-3">
                     <div className="border border-main bg-secondary/20 p-4">
                         <div className="flex items-center gap-2">
-                            <Wand2 className="h-4 w-4 text-muted" />
                             <p className="text-[12px] font-semibold text-main">
                                 Script Generator
                             </p>
@@ -379,7 +411,7 @@ export function AiImageStudioPanel({ section }: AiImageStudioPanelProps) {
                                     setCategory(event.target.value)
                                 }
                                 disabled={isGenerating}
-                                className="w-full border border-main bg-main px-2 py-2 text-[12px] text-main outline-none transition-colors focus:border-accent"
+                                className={FIELD_CLASS}
                             >
                                 {CATEGORY_PRESETS.map((entry) => (
                                     <option key={entry} value={entry}>
@@ -421,7 +453,7 @@ export function AiImageStudioPanel({ section }: AiImageStudioPanelProps) {
                                 }
                                 disabled={isGenerating}
                                 rows={6}
-                                className="w-full resize-none border border-main bg-main px-3 py-2 text-[12px] leading-5 text-main outline-none transition-colors focus:border-accent"
+                                className={TEXTAREA_CLASS}
                             />
                         </label>
 
@@ -437,7 +469,7 @@ export function AiImageStudioPanel({ section }: AiImageStudioPanelProps) {
                                 disabled={isGenerating}
                                 rows={3}
                                 placeholder="VD: làm câu chuyện sâu sắc hơn, twist mạnh hơn, giảm lời thoại ở cảnh 1..."
-                                className="w-full resize-none border border-main bg-main px-3 py-2 text-[12px] leading-5 text-main outline-none transition-colors focus:border-accent"
+                                className={TEXTAREA_CLASS}
                             />
                         </label>
                     </div>
@@ -456,14 +488,15 @@ export function AiImageStudioPanel({ section }: AiImageStudioPanelProps) {
                                     setSelectedProviderId(event.target.value)
                                 }
                                 disabled={isGenerating || isLoadingProviders}
-                                className="w-full border border-main bg-main px-2 py-2 text-[12px] text-main outline-none transition-colors focus:border-accent"
+                                className={FIELD_CLASS}
                             >
                                 {aiProviders.map((provider) => (
                                     <option
                                         key={provider._id}
                                         value={provider._id}
                                     >
-                                        {provider.label} ({provider.providerType})
+                                        {provider.label} (
+                                        {provider.providerType})
                                     </option>
                                 ))}
                             </select>
@@ -479,7 +512,7 @@ export function AiImageStudioPanel({ section }: AiImageStudioPanelProps) {
                                         setModel(event.target.value)
                                     }
                                     disabled={isGenerating || isLoadingModels}
-                                    className="w-full border border-main bg-main px-2 py-2 text-[12px] text-main outline-none transition-colors focus:border-accent"
+                                    className={FIELD_CLASS}
                                 >
                                     {aiModels.map((entry) => (
                                         <option key={entry.id} value={entry.id}>
@@ -494,18 +527,10 @@ export function AiImageStudioPanel({ section }: AiImageStudioPanelProps) {
                                         setModel(event.target.value)
                                     }
                                     disabled={isGenerating}
-                                    className="w-full border border-main bg-main px-2 py-2 text-[12px] text-main outline-none transition-colors focus:border-accent"
+                                    className={FIELD_CLASS}
                                 />
                             )}
                         </label>
-                        {aiModels.length > 0 ? (
-                            <input
-                                value={model}
-                                onChange={(event) => setModel(event.target.value)}
-                                disabled={isGenerating}
-                                className="mt-2 w-full border border-main bg-main px-2 py-2 text-[11px] text-main outline-none transition-colors focus:border-accent"
-                            />
-                        ) : null}
 
                         <div className="mt-4 grid grid-cols-2 gap-2">
                             <button
@@ -516,13 +541,8 @@ export function AiImageStudioPanel({ section }: AiImageStudioPanelProps) {
                                     !model.trim() ||
                                     !selectedProviderId
                                 }
-                                className="inline-flex items-center justify-center gap-2 border border-accent bg-accent px-3 py-2 text-[12px] font-semibold text-inverse disabled:cursor-not-allowed disabled:opacity-60"
+                                className={PRIMARY_ACTION_CLASS}
                             >
-                                {isGenerating ? (
-                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                ) : (
-                                    <Sparkles className="h-4 w-4" />
-                                )}
                                 Generate
                             </button>
                             <button
@@ -534,9 +554,8 @@ export function AiImageStudioPanel({ section }: AiImageStudioPanelProps) {
                                     !model.trim() ||
                                     !selectedProviderId
                                 }
-                                className="inline-flex items-center justify-center gap-2 border border-main bg-main px-3 py-2 text-[12px] font-semibold text-main hover:border-accent disabled:cursor-not-allowed disabled:opacity-60"
+                                className={SECONDARY_ACTION_CLASS}
                             >
-                                <RefreshCw className="h-4 w-4" />
                                 Retry
                             </button>
                         </div>
@@ -547,22 +566,29 @@ export function AiImageStudioPanel({ section }: AiImageStudioPanelProps) {
                             <p className="text-[12px] font-semibold text-main">
                                 Reference Image Bank
                             </p>
-                            <label className="inline-flex cursor-pointer items-center gap-2 border border-main bg-main px-2 py-1.5 text-[10px] font-semibold text-main hover:border-accent">
+                            <button
+                                type="button"
+                                onClick={() =>
+                                    referenceImageInputRef.current?.click()
+                                }
+                                className={SMALL_ACTION_CLASS}
+                            >
                                 <Upload className="h-3.5 w-3.5" />
                                 Add
-                                <input
-                                    type="file"
-                                    accept="image/*"
-                                    multiple
-                                    className="hidden"
-                                    onChange={(event) => {
-                                        addReferenceImages(
-                                            event.currentTarget.files,
-                                        );
-                                        event.currentTarget.value = "";
-                                    }}
-                                />
-                            </label>
+                            </button>
+                            <input
+                                ref={referenceImageInputRef}
+                                type="file"
+                                accept="image/*"
+                                multiple
+                                className="hidden"
+                                onChange={(event) => {
+                                    addReferenceImages(
+                                        event.currentTarget.files,
+                                    );
+                                    event.currentTarget.value = "";
+                                }}
+                            />
                         </div>
                         <div className="mt-3 grid grid-cols-2 gap-2">
                             {referenceImages.length === 0 ? (
@@ -595,7 +621,7 @@ export function AiImageStudioPanel({ section }: AiImageStudioPanelProps) {
                                                         `Hãy tạo ảnh mới có cùng phong cách hình ảnh, ánh sáng, bố cục, màu sắc và cảm xúc như ảnh tham chiếu: ${image.name}`,
                                                     )
                                                 }
-                                                className="inline-flex flex-1 items-center justify-center border border-main px-2 py-1 text-[10px] font-semibold text-main hover:border-accent"
+                                                className={`${SMALL_ACTION_CLASS} flex-1`}
                                             >
                                                 <Copy className="h-3 w-3" />
                                                 {copiedKey === `ref-${image.id}`
@@ -609,7 +635,7 @@ export function AiImageStudioPanel({ section }: AiImageStudioPanelProps) {
                                                         image.id,
                                                     )
                                                 }
-                                                className="inline-flex items-center justify-center border border-main px-2 py-1 text-muted hover:border-accent"
+                                                className={SMALL_ACTION_CLASS}
                                             >
                                                 <X className="h-3 w-3" />
                                             </button>
@@ -652,7 +678,7 @@ export function AiImageStudioPanel({ section }: AiImageStudioPanelProps) {
                                             storyboardToContext(storyboard),
                                         )
                                     }
-                                    className="inline-flex shrink-0 items-center justify-center gap-2 border border-main bg-main px-3 py-2 text-[11px] font-semibold text-main hover:border-accent"
+                                    className="inline-flex shrink-0 items-center justify-center gap-2 border border-main bg-secondary px-3 py-2 text-[11px] font-semibold text-main transition-colors hover:bg-secondary/80"
                                 >
                                     <Clipboard className="h-3.5 w-3.5" />
                                     {copiedKey === "storyboard-all"
@@ -666,7 +692,6 @@ export function AiImageStudioPanel({ section }: AiImageStudioPanelProps) {
                             {!storyboard ? (
                                 <div className="flex min-h-[360px] items-center justify-center border border-main bg-main px-8 py-12 text-center">
                                     <div>
-                                        <PlayCircle className="mx-auto h-10 w-10 text-muted" />
                                         <p className="mt-3 text-[12px] font-semibold text-main">
                                             Generate a storyboard to start
                                         </p>
@@ -697,27 +722,21 @@ export function AiImageStudioPanel({ section }: AiImageStudioPanelProps) {
                         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                             <div>
                                 <div className="flex items-center gap-2">
-                                    <Film className="h-4 w-4 text-muted" />
                                     <p className="text-[12px] font-semibold text-main">
                                         Video Assembly
                                     </p>
                                 </div>
                                 <p className="mt-1 max-w-2xl text-[11px] leading-5 text-muted">
-                                    Render uploaded scene images into an MP4 with
-                                    Piper voiceover and burned subtitles.
+                                    Render uploaded scene images into an MP4
+                                    with Piper voiceover and burned subtitles.
                                 </p>
                             </div>
                             <button
                                 type="button"
                                 onClick={renderVideo}
                                 disabled={!canRenderVideo || isRenderingVideo}
-                                className="inline-flex shrink-0 items-center justify-center gap-2 border border-accent bg-accent px-4 py-2 text-[12px] font-semibold text-inverse disabled:cursor-not-allowed disabled:opacity-60"
+                                className={PRIMARY_ACTION_CLASS}
                             >
-                                {isRenderingVideo ? (
-                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                ) : (
-                                    <Film className="h-4 w-4" />
-                                )}
                                 Render Video
                             </button>
                         </div>
@@ -739,8 +758,8 @@ export function AiImageStudioPanel({ section }: AiImageStudioPanelProps) {
 
                         {!canRenderVideo && storyboard ? (
                             <p className="mt-3 border border-main bg-main px-3 py-2 text-[11px] leading-5 text-muted">
-                                Upload an image for every scene before
-                                rendering the final video.
+                                Upload an image for every scene before rendering
+                                the final video.
                             </p>
                         ) : null}
 
@@ -762,7 +781,9 @@ export function AiImageStudioPanel({ section }: AiImageStudioPanelProps) {
                                     <div className="grid grid-cols-3 gap-2 text-[10px] text-muted">
                                         <Metric
                                             label="Scenes"
-                                            value={String(renderResult.sceneCount)}
+                                            value={String(
+                                                renderResult.sceneCount,
+                                            )}
                                         />
                                         <Metric
                                             label="Duration"
@@ -780,7 +801,7 @@ export function AiImageStudioPanel({ section }: AiImageStudioPanelProps) {
                                     <a
                                         href={renderVideoUrl}
                                         download={renderResult.fileName}
-                                        className="inline-flex items-center justify-center gap-2 border border-main bg-secondary/30 px-3 py-2 text-[11px] font-semibold text-main hover:border-accent"
+                                        className="inline-flex items-center justify-center gap-2 border border-main bg-secondary px-3 py-2 text-[11px] font-semibold text-main transition-colors hover:bg-secondary/80"
                                     >
                                         <Download className="h-3.5 w-3.5" />
                                         Download Video
@@ -825,7 +846,7 @@ function SceneCard({
                         onChange={(event) =>
                             onChange(scene.id, { time: event.target.value })
                         }
-                        className="w-28 border border-main bg-secondary/30 px-2 py-1 text-[10px] text-main outline-none focus:border-accent"
+                        className="w-28 border border-main bg-main px-2 py-1 text-[10px] text-main outline-none transition-colors focus:border-accent"
                     />
                 </div>
                 <div className="mt-3 aspect-video overflow-hidden border border-main bg-secondary/20">
@@ -842,7 +863,7 @@ function SceneCard({
                         </div>
                     )}
                 </div>
-                <label className="mt-2 inline-flex w-full cursor-pointer items-center justify-center gap-2 border border-main bg-secondary/30 px-3 py-2 text-[10px] font-semibold text-main hover:border-accent">
+                <label className="mt-2 inline-flex w-full cursor-pointer items-center justify-center gap-2 border border-main bg-secondary px-3 py-2 text-[10px] font-semibold text-main transition-colors hover:bg-secondary/80">
                     <Upload className="h-3.5 w-3.5" />
                     {image ? "Replace Image" : "Upload Image"}
                     <input
@@ -870,14 +891,14 @@ function SceneCard({
                             onChange(scene.id, { visual: event.target.value })
                         }
                         rows={6}
-                        className="w-full resize-none border border-main bg-secondary/20 px-3 py-2 text-[12px] leading-5 text-main outline-none focus:border-accent"
+                        className={TEXTAREA_CLASS}
                     />
                     <button
                         type="button"
                         onClick={() =>
                             onCopy(`visual-${scene.id}`, scene.visual)
                         }
-                        className="mt-2 inline-flex items-center gap-2 border border-main px-3 py-1.5 text-[10px] font-semibold text-main hover:border-accent"
+                        className={`${SMALL_ACTION_CLASS} mt-2`}
                     >
                         <Copy className="h-3.5 w-3.5" />
                         {copiedKey === `visual-${scene.id}`
@@ -898,18 +919,15 @@ function SceneCard({
                             })
                         }
                         rows={6}
-                        className="w-full resize-none border border-main bg-secondary/20 px-3 py-2 text-[12px] leading-5 text-main outline-none focus:border-accent"
+                        className={TEXTAREA_CLASS}
                     />
                     <div className="mt-2 flex flex-wrap gap-2">
                         <button
                             type="button"
                             onClick={() =>
-                                onCopy(
-                                    `voice-${scene.id}`,
-                                    scene.voiceover,
-                                )
+                                onCopy(`voice-${scene.id}`, scene.voiceover)
                             }
-                            className="inline-flex items-center gap-2 border border-main px-3 py-1.5 text-[10px] font-semibold text-main hover:border-accent"
+                            className={SMALL_ACTION_CLASS}
                         >
                             <Copy className="h-3.5 w-3.5" />
                             {copiedKey === `voice-${scene.id}`
@@ -924,7 +942,7 @@ function SceneCard({
                                     sceneToClipboardText(scene),
                                 )
                             }
-                            className="inline-flex items-center gap-2 border border-main px-3 py-1.5 text-[10px] font-semibold text-main hover:border-accent"
+                            className={SMALL_ACTION_CLASS}
                         >
                             <Clipboard className="h-3.5 w-3.5" />
                             {copiedKey === `scene-${scene.id}`
@@ -968,7 +986,7 @@ function NumberField({
                 disabled={disabled}
                 type="number"
                 onChange={(event) => onChange(Number(event.target.value))}
-                className="w-full border border-main bg-main px-2 py-2 text-[12px] text-main outline-none transition-colors focus:border-accent"
+                className={FIELD_CLASS}
             />
         </label>
     );

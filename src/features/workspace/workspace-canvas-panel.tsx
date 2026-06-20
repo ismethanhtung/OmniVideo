@@ -38,12 +38,14 @@ import {
     type FacebookPageOption,
 } from "@/lib/social/facebook-pages-client";
 import {
-    DEFAULT_OPENAI_COMPATIBLE_PROVIDER_LABEL,
-    DEFAULT_OPENAI_COMPATIBLE_PROVIDER_TYPE,
+    DEFAULT_GOOGLE_AI_STUDIO_PROVIDER_ID,
+    DEFAULT_GOOGLE_AI_STUDIO_PROVIDER_LABEL,
+    isDefaultGeminiTextModel,
     resolveDefaultAiProviderId,
 } from "@/lib/ai-providers/default-provider";
 import {
     WORKSPACE_DRAFT_STORAGE_KEY,
+    DEFAULT_WORKSPACE_VIP_ORIGINAL_AUDIO_VOLUME,
     WORKSPACE_NODE_TEMPLATES,
     addWorkspaceNode,
     connectWorkspaceNodes,
@@ -301,6 +303,30 @@ type WorkspaceRuntimeResumeSnapshot = {
     runResult: string | null;
 };
 const MAX_RESUME_TEXT_LENGTH = 4000;
+const VIP_PROGRESS_STAGE_DESCRIPTORS = [
+    {
+        key: "transcript",
+        label: "VIP · Transcript",
+        subtitle: "Waiting for speech transcript...",
+    },
+    {
+        key: "translation",
+        label: "VIP · Translate",
+        subtitle: "Waiting for translated subtitles...",
+    },
+    {
+        key: "voice-render",
+        label: "VIP · Voice + render",
+        subtitle: "Waiting for voice generation and final render...",
+    },
+    {
+        key: "metadata",
+        label: "VIP · Metadata",
+        subtitle: "Waiting for Vietnamese metadata...",
+    },
+] as const;
+
+type VipProgressStageKey = (typeof VIP_PROGRESS_STAGE_DESCRIPTORS)[number]["key"];
 
 function cn(...classes: Array<string | false | null | undefined>) {
     return classes.filter(Boolean).join(" ");
@@ -326,6 +352,10 @@ function formatDurationMs(durationMs: number) {
     const minutes = Math.floor(totalSeconds / 60);
     const seconds = totalSeconds % 60;
     return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function formatCompactNumber(value: number) {
+    return new Intl.NumberFormat("en-US").format(Math.max(0, Math.round(value)));
 }
 
 function formatTimelineTimestamp(seconds: number) {
@@ -465,6 +495,26 @@ function buildVipMetadataTagLine(metadata: VideoVipProcessingResult["metadata"])
     return `Tags: ${metadata.hashtags.map((tag) => `#${tag.replace(/\s+/gu, "")}`).join(" ")}`;
 }
 
+function buildVipTranslationTokenLine(
+    translation: VideoVipProcessingResult["translation"],
+) {
+    if (typeof translation.totalTokensUsed !== "number") {
+        return null;
+    }
+    const parts = [
+        `${formatCompactNumber(translation.totalTokensUsed)} total`,
+    ];
+    if (
+        typeof translation.totalCachedPromptTokens === "number" &&
+        translation.totalCachedPromptTokens > 0
+    ) {
+        parts.push(
+            `${formatCompactNumber(translation.totalCachedPromptTokens)} cached`,
+        );
+    }
+    return `Translation tokens: ${parts.join(" · ")}`;
+}
+
 function getVipMeasuredStageTotalMs(
     stage: VideoVipProcessingResult["stages"],
 ) {
@@ -485,6 +535,9 @@ function buildVipProgressStepDescription(input: {
     const summary = `VIP processing ${input.nodeLabel} complete.`;
     const segments = input.result.translation.translatedSegments;
     const stage = input.result.stages;
+    const translationTokenLine = buildVipTranslationTokenLine(
+        input.result.translation,
+    );
     const metadataLines = [
         "Metadata:",
         `File: ${input.result.fileName}`,
@@ -493,6 +546,7 @@ function buildVipProgressStepDescription(input: {
         `Runtime: ${formatDurationMs(input.result.generationDurationMs)}`,
         `Transcript: ${input.result.transcript.segments.length} segment(s) · ${input.result.transcript.words.length} word(s)`,
         `Translation: ${segments.length} segment(s) · ${input.result.translation.provider.name} · ${input.result.translation.model}`,
+        ...(translationTokenLine ? [translationTokenLine] : []),
         `Voice: ${input.result.voice.segmentCount} segment(s) · ${formatBytes(input.result.voice.byteLength)} · ${input.result.voice.alignment.mode} alignment`,
         `Voice render time: ${formatDurationMs(stage.voiceDurationMs)}`,
         `Final video render time: ${formatDurationMs(stage.finalRenderDurationMs)}`,
@@ -2578,12 +2632,29 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
             description: `Running ${totalSteps} step(s)...`,
             progress: 0,
             progressMode: "indeterminate",
-            steps: progressStepDescriptors.map((descriptor) => ({
-                id: descriptor.key,
-                title: descriptor.label,
-                description: descriptor.subtitle,
-                progressMode: "indeterminate",
-            })),
+            steps: plan.steps.flatMap((step, index) => {
+                const descriptor =
+                    progressStepDescriptors[index] ??
+                    describeStep(step, graph.nodes);
+                const mainStep = {
+                    id: descriptor.key,
+                    title: descriptor.label,
+                    description: descriptor.subtitle,
+                    progressMode: "indeterminate" as const,
+                };
+                if (step.kind !== "vip-process-video") {
+                    return [mainStep];
+                }
+                return [
+                    mainStep,
+                    ...VIP_PROGRESS_STAGE_DESCRIPTORS.map((stage) => ({
+                        id: `${descriptor.key}:${stage.key}`,
+                        title: stage.label,
+                        description: stage.subtitle,
+                        progressMode: "indeterminate" as const,
+                    })),
+                ];
+            }),
         });
 
         const assetByProducer: Record<string, string> =
@@ -2667,6 +2738,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
             description: string,
             status: "success" | "failed" | "skipped" = "success",
             stepDescription?: string,
+            durationMs?: number,
         ) => {
             updateProgressTask(progressTaskId, {
                 description,
@@ -2675,6 +2747,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                 finishWorkspaceProgressStep(currentProgressStep, {
                     status,
                     description: stepDescription ?? description,
+                    durationMs,
                 });
             }
         };
@@ -2716,6 +2789,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                 status: "success" | "failed" | "skipped";
                 description?: string;
                 error?: string;
+                durationMs?: number;
             },
         ) => {
             const descriptor = getProgressDescriptor(step);
@@ -2723,6 +2797,51 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                 taskId: progressTaskId,
                 stepId: descriptor.key,
                 ...input,
+            });
+        };
+
+        const getVipProgressStageId = (
+            step: WorkspaceFlowStep,
+            stage: VipProgressStageKey,
+        ) => `${getProgressDescriptor(step).key}:${stage}`;
+
+        const startVipProgressStage = (
+            step: WorkspaceFlowStep,
+            stage: VipProgressStageKey,
+            description: string,
+        ) => {
+            startProgressStep({
+                taskId: progressTaskId,
+                stepId: getVipProgressStageId(step, stage),
+                description,
+                progressMode: "indeterminate",
+            });
+        };
+
+        const updateVipProgressStage = (
+            step: WorkspaceFlowStep,
+            stage: VipProgressStageKey,
+            description: string,
+        ) => {
+            updateProgressStep(progressTaskId, getVipProgressStageId(step, stage), {
+                description,
+                progressMode: "indeterminate",
+            });
+        };
+
+        const finishVipProgressStage = (
+            step: WorkspaceFlowStep,
+            stage: VipProgressStageKey,
+            description: string,
+            status: "success" | "failed" | "skipped" = "success",
+            durationMs?: number,
+        ) => {
+            finishProgressStep({
+                taskId: progressTaskId,
+                stepId: getVipProgressStageId(step, stage),
+                status,
+                description,
+                durationMs,
             });
         };
 
@@ -4197,7 +4316,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         getStringConfig(vipNode, "language", "zh"),
                         getStringConfig(vipNode, "targetLanguage", "vi"),
                         getStringConfig(vipNode, "model", DEFAULT_TRANSLATION_MODEL),
-                        String(getNumberConfig(vipNode, "originalAudioVolume", 0.2)),
+                        String(getNumberConfig(vipNode, "originalAudioVolume", DEFAULT_WORKSPACE_VIP_ORIGINAL_AUDIO_VOLUME)),
                         String(getNumberConfig(vipNode, "voiceVolume", 1)),
                         String(getBooleanConfig(vipNode, "mirrorEnabled", true)),
                     ].join(":");
@@ -4311,7 +4430,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     formData.set(
                         "originalAudioVolume",
                         String(
-                            getNumberConfig(vipNode, "originalAudioVolume", 0.2),
+                            getNumberConfig(vipNode, "originalAudioVolume", DEFAULT_WORKSPACE_VIP_ORIGINAL_AUDIO_VOLUME),
                         ),
                     );
                     formData.set(
@@ -4592,6 +4711,11 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     appendVipStageLog(
                         "Server-side VIP is running. Live sub-stage status is being tracked...",
                     );
+                    startVipProgressStage(
+                        step,
+                        "transcript",
+                        "Transcribing source speech...",
+                    );
                     let isPolling = true;
                     const pollCheckpoint = async () => {
                         if (!isPolling) return;
@@ -4612,40 +4736,82 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                             const currentLogs = [...vipStageLogs];
 
                             if (checkpointState.transcript) {
+                                finishVipProgressStage(
+                                    step,
+                                    "transcript",
+                                    `Transcript complete: ${checkpointState.transcript.segments.length} segment(s).`,
+                                );
                                 if (!currentLogs.some((line) => line.startsWith("[transcript] Complete."))) {
                                     currentLogs.push(`[transcript] Complete. Segments: ${checkpointState.transcript.segments.length} total.`);
                                 }
                             } else {
+                                updateVipProgressStage(
+                                    step,
+                                    "transcript",
+                                    "Transcribing source speech...",
+                                );
                                 if (!currentLogs.some((line) => line.startsWith("[transcript] Processing..."))) {
                                     currentLogs.push("[transcript] Processing...");
                                 }
                             }
 
                             if (checkpointState.translation) {
+                                finishVipProgressStage(
+                                    step,
+                                    "translation",
+                                    `Translation complete: ${checkpointState.translation.translatedSegments.length} translated segment(s).`,
+                                );
                                 if (!currentLogs.some((line) => line.startsWith("[translate] Complete."))) {
                                     currentLogs.push(`[translate] Complete. Translated segments: ${checkpointState.translation.translatedSegments.length} total.`);
                                 }
                             } else if (checkpointState.transcript) {
+                                startVipProgressStage(
+                                    step,
+                                    "translation",
+                                    "Translating transcript segments...",
+                                );
                                 if (!currentLogs.some((line) => line.startsWith("[translate] Processing..."))) {
                                     currentLogs.push("[translate] Processing...");
                                 }
                             }
 
                             if (checkpointState.voice || checkpointState.renderedVideo) {
+                                finishVipProgressStage(
+                                    step,
+                                    "voice-render",
+                                    checkpointState.renderedVideo
+                                        ? "Voice generation and final render complete."
+                                        : "Voice generation complete.",
+                                );
                                 if (!currentLogs.some((line) => line.startsWith("[voice render] Complete."))) {
                                     currentLogs.push("[voice render] Complete.");
                                 }
                             } else if (checkpointState.translation) {
+                                startVipProgressStage(
+                                    step,
+                                    "voice-render",
+                                    "Generating voice and rendering final video...",
+                                );
                                 if (!currentLogs.some((line) => line.startsWith("[voice render] Processing"))) {
                                     currentLogs.push("[voice render] Processing (voice generation + video render)...");
                                 }
                             }
 
                             if (checkpointState.metadata) {
+                                finishVipProgressStage(
+                                    step,
+                                    "metadata",
+                                    `Metadata complete: ${checkpointState.metadata.title}`,
+                                );
                                 if (!currentLogs.some((line) => line.startsWith("[metadata] Complete."))) {
                                     currentLogs.push("[metadata] Complete.");
                                 }
                             } else if (checkpointState.voice || checkpointState.renderedVideo) {
+                                startVipProgressStage(
+                                    step,
+                                    "metadata",
+                                    "Generating Vietnamese metadata...",
+                                );
                                 if (!currentLogs.some((line) => line.startsWith("[metadata] Generating"))) {
                                     currentLogs.push("[metadata] Generating VI metadata...");
                                 }
@@ -4821,11 +4987,55 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     appendVipStageLog(
                         `Final video render time: ${formatDurationMs(vipPayload.data.stages.finalRenderDurationMs)}`,
                     );
+                    if (
+                        typeof vipPayload.data.translation.totalTokensUsed ===
+                        "number"
+                    ) {
+                        appendVipStageLog(
+                            `Translation tokens: ${formatCompactNumber(vipPayload.data.translation.totalTokensUsed)} total${
+                                typeof vipPayload.data.translation
+                                    .totalCachedPromptTokens === "number" &&
+                                vipPayload.data.translation
+                                    .totalCachedPromptTokens > 0
+                                    ? ` · ${formatCompactNumber(vipPayload.data.translation.totalCachedPromptTokens)} cached`
+                                    : ""
+                            }`,
+                        );
+                    }
                     appendVipStageLog(
                         `Metadata title: ${vipPayload.data.metadata.title}`,
                     );
                     appendVipStageLog(
                         `Metadata tags: ${buildVipMetadataTagLine(vipPayload.data.metadata).replace("Tags: ", "")}`,
+                    );
+                    finishVipProgressStage(
+                        step,
+                        "transcript",
+                        `Transcript complete: ${vipPayload.data.transcript.segments.length} segment(s).`,
+                        "success",
+                        vipPayload.data.stages.transcriptionDurationMs,
+                    );
+                    finishVipProgressStage(
+                        step,
+                        "translation",
+                        `Translation complete: ${vipPayload.data.translation.translatedSegments.length} translated segment(s).`,
+                        "success",
+                        vipPayload.data.stages.translationDurationMs,
+                    );
+                    finishVipProgressStage(
+                        step,
+                        "voice-render",
+                        `Voice + render complete: ${formatBytes(vipPayload.data.byteLength)} MP4.`,
+                        "success",
+                        vipPayload.data.stages.voiceDurationMs +
+                            vipPayload.data.stages.finalRenderDurationMs,
+                    );
+                    finishVipProgressStage(
+                        step,
+                        "metadata",
+                        `Metadata complete: ${vipPayload.data.metadata.title}`,
+                        "success",
+                        vipPayload.data.stages.metadataDurationMs,
                     );
                     summary.push(
                         `VIP video ready: ${formatBytes(vipPayload.data.byteLength)}.`,
@@ -4840,6 +5050,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                             nodeLabel: vipNode.label,
                             result: vipPayload.data,
                         }),
+                        vipPayload.data.generationDurationMs,
                     );
                 } else if (step.kind === "generate-thumbnail") {
                     const vipNode = findNode(step.vipNodeId);
@@ -8890,8 +9101,9 @@ function NodeRuntimeConfig({
                                     const preferredModelId =
                                         models.find(
                                             (model) =>
-                                                model.id ===
-                                                DEFAULT_TRANSLATION_MODEL,
+                                                isDefaultGeminiTextModel(
+                                                    model.id,
+                                                ),
                                         )?.id ?? models[0].id;
                                     setConfig({
                                         translationProviderId: value,
@@ -8901,9 +9113,8 @@ function NodeRuntimeConfig({
                             }
                         }}
                     >
-                        <option value="">
-                            {DEFAULT_OPENAI_COMPATIBLE_PROVIDER_LABEL} (
-                            {DEFAULT_OPENAI_COMPATIBLE_PROVIDER_TYPE})
+                        <option value={DEFAULT_GOOGLE_AI_STUDIO_PROVIDER_ID}>
+                            {DEFAULT_GOOGLE_AI_STUDIO_PROVIDER_LABEL} (env)
                         </option>
                         {aiProviders.map((provider) => (
                             <option key={provider._id} value={provider._id}>
@@ -8936,7 +9147,7 @@ function NodeRuntimeConfig({
                                 DEFAULT_TRANSLATION_MODEL,
                             )}
                             disabled={isRunningFlow}
-                            placeholder="cx/gpt-5.5"
+                            placeholder={DEFAULT_TRANSLATION_MODEL}
                             onChange={(value) => setConfig({ model: value })}
                         />
                     )}
@@ -8991,8 +9202,9 @@ function NodeRuntimeConfig({
                                     const preferredModelId =
                                         models.find(
                                             (model) =>
-                                                model.id ===
-                                                DEFAULT_TRANSLATION_MODEL,
+                                                isDefaultGeminiTextModel(
+                                                    model.id,
+                                                ),
                                         )?.id ?? models[0].id;
                                     setConfig({
                                         metadataProviderId: value,
@@ -9002,9 +9214,8 @@ function NodeRuntimeConfig({
                             }
                         }}
                     >
-                        <option value="">
-                            {DEFAULT_OPENAI_COMPATIBLE_PROVIDER_LABEL} (
-                            {DEFAULT_OPENAI_COMPATIBLE_PROVIDER_TYPE})
+                        <option value={DEFAULT_GOOGLE_AI_STUDIO_PROVIDER_ID}>
+                            {DEFAULT_GOOGLE_AI_STUDIO_PROVIDER_LABEL} (env)
                         </option>
                         {aiProviders.map((provider) => (
                             <option key={provider._id} value={provider._id}>
@@ -9034,7 +9245,7 @@ function NodeRuntimeConfig({
                                 DEFAULT_TRANSLATION_MODEL,
                             )}
                             disabled={isRunningFlow}
-                            placeholder="cx/gpt-5.5"
+                            placeholder={DEFAULT_TRANSLATION_MODEL}
                             onChange={(value) => setConfig({ model: value })}
                         />
                     )}
@@ -9337,9 +9548,10 @@ function NodeRuntimeConfig({
                                         if (models[0]) {
                                             const preferredModelId =
                                                 models.find(
-                                                    (model) =>
-                                                        model.id ===
-                                                        DEFAULT_TRANSLATION_MODEL,
+                                                (model) =>
+                                                    isDefaultGeminiTextModel(
+                                                        model.id,
+                                                    ),
                                                 )?.id ?? models[0].id;
                                             setConfig({
                                                 translationProviderId: value,
@@ -9349,9 +9561,11 @@ function NodeRuntimeConfig({
                                     }
                                 }}
                             >
-                                <option value="">
-                                    {DEFAULT_OPENAI_COMPATIBLE_PROVIDER_LABEL} (
-                                    {DEFAULT_OPENAI_COMPATIBLE_PROVIDER_TYPE})
+                                <option
+                                    value={DEFAULT_GOOGLE_AI_STUDIO_PROVIDER_ID}
+                                >
+                                    {DEFAULT_GOOGLE_AI_STUDIO_PROVIDER_LABEL}{" "}
+                                    (env)
                                 </option>
                                 {aiProviders.map((provider) => (
                                     <option
@@ -9391,7 +9605,7 @@ function NodeRuntimeConfig({
                                         DEFAULT_TRANSLATION_MODEL,
                                     )}
                                     disabled={isRunningFlow}
-                                    placeholder="cx/gpt-5.5"
+                                    placeholder={DEFAULT_TRANSLATION_MODEL}
                                     onChange={(value) =>
                                         setConfig({ model: value })
                                     }
@@ -9555,8 +9769,9 @@ function NodeRuntimeConfig({
                                     const preferredModelId =
                                         models.find(
                                             (model) =>
-                                                model.id ===
-                                                DEFAULT_TRANSLATION_MODEL,
+                                                isDefaultGeminiTextModel(
+                                                    model.id,
+                                                ),
                                         )?.id ?? models[0].id;
                                     setConfig({
                                         metadataProviderId: value,
@@ -9566,9 +9781,8 @@ function NodeRuntimeConfig({
                             }
                         }}
                     >
-                        <option value="">
-                            {DEFAULT_OPENAI_COMPATIBLE_PROVIDER_LABEL} (
-                            {DEFAULT_OPENAI_COMPATIBLE_PROVIDER_TYPE})
+                        <option value={DEFAULT_GOOGLE_AI_STUDIO_PROVIDER_ID}>
+                            {DEFAULT_GOOGLE_AI_STUDIO_PROVIDER_LABEL} (env)
                         </option>
                         {aiProviders.map((provider) => (
                             <option key={provider._id} value={provider._id}>
@@ -9600,7 +9814,7 @@ function NodeRuntimeConfig({
                                 DEFAULT_TRANSLATION_MODEL,
                             )}
                             disabled={isRunningFlow}
-                            placeholder="cx/gpt-5.5"
+                            placeholder={DEFAULT_TRANSLATION_MODEL}
                             onChange={(value) =>
                                 setConfig({ metadataModel: value })
                             }
@@ -9647,10 +9861,10 @@ function NodeRuntimeConfig({
                         <RuntimeTextInput
                             label="Original volume"
                             value={String(
-                                getNumberConfig(node, "originalAudioVolume", 0.2),
+                                getNumberConfig(node, "originalAudioVolume", DEFAULT_WORKSPACE_VIP_ORIGINAL_AUDIO_VOLUME),
                             )}
                             disabled={isRunningFlow}
-                            placeholder="0.2"
+                            placeholder="0"
                             onChange={(value) =>
                                 setConfig({ originalAudioVolume: Number(value) })
                             }
@@ -10103,9 +10317,10 @@ function NodeRuntimeConfig({
                                         if (models[0]) {
                                             const preferredModelId =
                                                 models.find(
-                                                    (model) =>
-                                                        model.id ===
-                                                        DEFAULT_TRANSLATION_MODEL,
+                                                (model) =>
+                                                    isDefaultGeminiTextModel(
+                                                        model.id,
+                                                    ),
                                                 )?.id ?? models[0].id;
                                             setConfig({
                                                 translationProviderId: value,
@@ -10115,9 +10330,11 @@ function NodeRuntimeConfig({
                                     }
                                 }}
                             >
-                                <option value="">
-                                    {DEFAULT_OPENAI_COMPATIBLE_PROVIDER_LABEL} (
-                                    {DEFAULT_OPENAI_COMPATIBLE_PROVIDER_TYPE})
+                                <option
+                                    value={DEFAULT_GOOGLE_AI_STUDIO_PROVIDER_ID}
+                                >
+                                    {DEFAULT_GOOGLE_AI_STUDIO_PROVIDER_LABEL}{" "}
+                                    (env)
                                 </option>
                                 {aiProviders.map((provider) => (
                                     <option
@@ -10157,7 +10374,7 @@ function NodeRuntimeConfig({
                                         DEFAULT_TRANSLATION_MODEL,
                                     )}
                                     disabled={isRunningFlow}
-                                    placeholder="cx/gpt-5.5"
+                                    placeholder={DEFAULT_TRANSLATION_MODEL}
                                     onChange={(value) =>
                                         setConfig({ model: value })
                                     }

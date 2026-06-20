@@ -1,4 +1,11 @@
+import {
+    DEFAULT_GEMINI_TEXT_MODEL,
+    DEFAULT_GOOGLE_AI_STUDIO_PROVIDER_ID,
+} from "@/lib/ai-providers/default-provider";
 import { DEFAULT_GEMINI_IMAGE_MODEL } from "@/lib/thumbnails/gemini-defaults";
+
+export const DEFAULT_WORKSPACE_VIP_ORIGINAL_AUDIO_VOLUME = 0;
+export const DEFAULT_WORKSPACE_BLUR_STRENGTH = 25;
 
 export type WorkspaceNodeCategory =
     | "input"
@@ -438,7 +445,7 @@ export const WORKSPACE_NODE_TEMPLATES: WorkspaceNodeTemplate[] = [
                 label: "Blur strength",
                 type: "number",
                 required: true,
-                defaultValue: 50,
+                defaultValue: DEFAULT_WORKSPACE_BLUR_STRENGTH,
             },
             {
                 key: "subtitleOverlayEnabled",
@@ -773,14 +780,14 @@ export const WORKSPACE_NODE_TEMPLATES: WorkspaceNodeTemplate[] = [
                 label: "AI Provider",
                 type: "account",
                 required: false,
-                defaultValue: "",
+                defaultValue: DEFAULT_GOOGLE_AI_STUDIO_PROVIDER_ID,
             },
             {
                 key: "model",
                 label: "Translation model",
                 type: "select",
                 required: true,
-                defaultValue: "cx/gpt-5.5",
+                defaultValue: DEFAULT_GEMINI_TEXT_MODEL,
             },
             {
                 key: "originalAudioVolume",
@@ -897,28 +904,28 @@ export const WORKSPACE_NODE_TEMPLATES: WorkspaceNodeTemplate[] = [
                 label: "AI Provider",
                 type: "account",
                 required: false,
-                defaultValue: "",
+                defaultValue: DEFAULT_GOOGLE_AI_STUDIO_PROVIDER_ID,
             },
             {
                 key: "model",
                 label: "Translation model",
                 type: "select",
                 required: true,
-                defaultValue: "cx/gpt-5.5",
+                defaultValue: DEFAULT_GEMINI_TEXT_MODEL,
             },
             {
                 key: "metadataProviderId",
                 label: "Metadata AI Provider",
                 type: "account",
                 required: false,
-                defaultValue: "",
+                defaultValue: DEFAULT_GOOGLE_AI_STUDIO_PROVIDER_ID,
             },
             {
                 key: "metadataModel",
                 label: "Metadata model",
                 type: "select",
                 required: true,
-                defaultValue: "cx/gpt-5.5",
+                defaultValue: DEFAULT_GEMINI_TEXT_MODEL,
             },
             {
                 key: "speedFactor",
@@ -953,7 +960,7 @@ export const WORKSPACE_NODE_TEMPLATES: WorkspaceNodeTemplate[] = [
                 label: "Original audio volume",
                 type: "number",
                 required: true,
-                defaultValue: 0.2,
+                defaultValue: DEFAULT_WORKSPACE_VIP_ORIGINAL_AUDIO_VOLUME,
             },
             {
                 key: "voiceVolume",
@@ -1079,7 +1086,7 @@ export const WORKSPACE_NODE_TEMPLATES: WorkspaceNodeTemplate[] = [
                 label: "Blur strength",
                 type: "number",
                 required: true,
-                defaultValue: 50,
+                defaultValue: DEFAULT_WORKSPACE_BLUR_STRENGTH,
             },
         ],
         timeoutMs: 1800000,
@@ -1117,14 +1124,14 @@ export const WORKSPACE_NODE_TEMPLATES: WorkspaceNodeTemplate[] = [
                 label: "AI Provider",
                 type: "account",
                 required: false,
-                defaultValue: "",
+                defaultValue: DEFAULT_GOOGLE_AI_STUDIO_PROVIDER_ID,
             },
             {
                 key: "model",
                 label: "Translation model",
                 type: "select",
                 required: true,
-                defaultValue: "cx/gpt-5.5",
+                defaultValue: DEFAULT_GEMINI_TEXT_MODEL,
             },
             {
                 key: "targetLanguage",
@@ -1165,14 +1172,14 @@ export const WORKSPACE_NODE_TEMPLATES: WorkspaceNodeTemplate[] = [
                 label: "AI Provider",
                 type: "account",
                 required: false,
-                defaultValue: "",
+                defaultValue: DEFAULT_GOOGLE_AI_STUDIO_PROVIDER_ID,
             },
             {
                 key: "model",
                 label: "Metadata model",
                 type: "select",
                 required: true,
-                defaultValue: "cx/gpt-5.5",
+                defaultValue: DEFAULT_GEMINI_TEXT_MODEL,
             },
         ],
         timeoutMs: 300000,
@@ -3128,7 +3135,7 @@ export function createDouyinReworkSampleGraph(): WorkspaceGraph {
             templateNodeType: "edit.mask-region",
             label: "Blur Chinese subtitles/logo",
             position: { x: 300, y: 96 },
-            config: { blurStrength: 50 },
+            config: { blurStrength: DEFAULT_WORKSPACE_BLUR_STRENGTH },
         },
         {
             id: "audio-extract-voice-1",
@@ -3324,7 +3331,8 @@ export function createUploadDubbingToSocialSampleGraph(): WorkspaceGraph {
                 config: {
                     language: "zh",
                     targetLanguage: "vi",
-                    model: "cx/gpt-5.5",
+                    translationProviderId: DEFAULT_GOOGLE_AI_STUDIO_PROVIDER_ID,
+                    model: DEFAULT_GEMINI_TEXT_MODEL,
                     originalAudioVolume: 0,
                     voiceVolume: 1,
                     ttsPreserveTimestampGaps: true,
@@ -3403,7 +3411,8 @@ export function createAssetTranscriptFullProcessingSampleGraph(): WorkspaceGraph
                 config: {
                     language: "zh",
                     targetLanguage: "vi",
-                    model: "cx/gpt-5.5",
+                    translationProviderId: DEFAULT_GOOGLE_AI_STUDIO_PROVIDER_ID,
+                    model: DEFAULT_GEMINI_TEXT_MODEL,
                     originalAudioVolume: 0,
                     voiceVolume: 1,
                     ttsNoiseScale: 0.667,
@@ -3418,7 +3427,10 @@ export function createAssetTranscriptFullProcessingSampleGraph(): WorkspaceGraph
                 templateNodeType: "text.generate-vi-metadata",
                 label: "Generate VI metadata",
                 position: { x: 820, y: 90 },
-                config: { model: "cx/gpt-5.5" },
+                config: {
+                    metadataProviderId: DEFAULT_GOOGLE_AI_STUDIO_PROVIDER_ID,
+                    model: DEFAULT_GEMINI_TEXT_MODEL,
+                },
             },
             {
                 id: "edit-mirror-1",
@@ -3440,7 +3452,7 @@ export function createAssetTranscriptFullProcessingSampleGraph(): WorkspaceGraph
                     regionHeight: 16,
                     timelineStart: 0,
                     timelineEnd: 36000,
-                    blurStrength: 50,
+                    blurStrength: DEFAULT_WORKSPACE_BLUR_STRENGTH,
                     subtitleOverlayEnabled: true,
                     subtitleFontFamily: "Bangers",
                     subtitleFontSize: 40,
@@ -3541,11 +3553,13 @@ export function createAssetVipProcessingSampleGraph(): WorkspaceGraph {
                 config: {
                     language: "zh",
                     targetLanguage: "vi",
-                    model: "cx/gpt-5.5",
-                    metadataModel: "cx/gpt-5.5",
+                    translationProviderId: DEFAULT_GOOGLE_AI_STUDIO_PROVIDER_ID,
+                    model: DEFAULT_GEMINI_TEXT_MODEL,
+                    metadataProviderId: DEFAULT_GOOGLE_AI_STUDIO_PROVIDER_ID,
+                    metadataModel: DEFAULT_GEMINI_TEXT_MODEL,
                     speedFactor: 0.75,
                     renderPreset: "veryfast",
-                    originalAudioVolume: 0.2,
+                    originalAudioVolume: DEFAULT_WORKSPACE_VIP_ORIGINAL_AUDIO_VOLUME,
                     voiceVolume: 1,
                     ttsNoiseScale: 0.667,
                     ttsNoiseW: 0.8,
@@ -3560,7 +3574,7 @@ export function createAssetVipProcessingSampleGraph(): WorkspaceGraph {
                     regionHeight: 16,
                     timelineStart: 0,
                     timelineEnd: 36000,
-                    blurStrength: 50,
+                    blurStrength: DEFAULT_WORKSPACE_BLUR_STRENGTH,
                 },
             },
             {
@@ -3614,11 +3628,13 @@ export function createUploadVipSaveLocalSampleGraph(): WorkspaceGraph {
                 config: {
                     language: "zh",
                     targetLanguage: "vi",
-                    model: "cx/gpt-5.5",
-                    metadataModel: "cx/gpt-5.5",
+                    translationProviderId: DEFAULT_GOOGLE_AI_STUDIO_PROVIDER_ID,
+                    model: DEFAULT_GEMINI_TEXT_MODEL,
+                    metadataProviderId: DEFAULT_GOOGLE_AI_STUDIO_PROVIDER_ID,
+                    metadataModel: DEFAULT_GEMINI_TEXT_MODEL,
                     speedFactor: 0.75,
                     renderPreset: "veryfast",
-                    originalAudioVolume: 0.2,
+                    originalAudioVolume: DEFAULT_WORKSPACE_VIP_ORIGINAL_AUDIO_VOLUME,
                     voiceVolume: 1,
                     ttsNoiseScale: 0.667,
                     ttsNoiseW: 0.8,
@@ -3633,7 +3649,7 @@ export function createUploadVipSaveLocalSampleGraph(): WorkspaceGraph {
                     regionHeight: 16,
                     timelineStart: 0,
                     timelineEnd: 36000,
-                    blurStrength: 50,
+                    blurStrength: DEFAULT_WORKSPACE_BLUR_STRENGTH,
                 },
             },
             {

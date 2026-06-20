@@ -2,8 +2,13 @@ import {
     extractSpeechReadyAudio,
     extractSpeechSegmentAudio,
 } from "./audio-extraction";
-import { transcribeWithGroq } from "./groq-transcription";
+import {
+    DEFAULT_TRANSCRIPTION_MODEL,
+    DEFAULT_TRANSCRIPTION_PROVIDER_NAME,
+    transcribeWithGroq,
+} from "./groq-transcription";
 import type { NormalizedGroqTranscription } from "./groq-transcription";
+import type { AiProviderRateLimit } from "@/lib/ai-providers/rate-limit";
 import {
     readGroqApiKey,
     validateGroqAudioPayloadSize,
@@ -20,7 +25,7 @@ import {
     type AudioTranscriptionStep,
 } from "./types";
 
-const MAX_CHINESE_SEGMENT_CHARS = 40;
+const MAX_CHINESE_SEGMENT_CHARS = 30;
 const MAX_SEGMENT_RETRY_ATTEMPTS = 5;
 const GROQ_DIRECT_UPLOAD_TARGET_BYTES = 24 * 1024 * 1024;
 const GROQ_CHUNK_OVERLAP_SECONDS = 1.5;
@@ -126,11 +131,15 @@ function buildChunkPlan(input: {
 
 async function transcribeWithGroqChunking(input: {
     apiKey: string;
+    baseUrl?: string;
+    model: string;
+    providerName: string;
     audioBytes: Uint8Array;
     language: string;
     prompt?: string;
     includeWordTimestamps: boolean;
     audioDurationSeconds?: number;
+    rateLimit?: AiProviderRateLimit;
 }) {
     const timestampGranularities = input.includeWordTimestamps
         ? (["segment", "word"] as const)
@@ -142,11 +151,15 @@ async function transcribeWithGroqChunking(input: {
     if (chunks.length === 1) {
         const transcript = await transcribeWithGroq({
             apiKey: input.apiKey,
+            baseUrl: input.baseUrl,
+            model: input.model,
+            providerName: input.providerName,
             audioBytes: input.audioBytes,
             language: input.language,
             prompt: input.prompt,
             audioDurationSeconds: input.audioDurationSeconds,
             timestampGranularities: [...timestampGranularities],
+            rateLimit: input.rateLimit,
         });
         return { transcript, chunkCount: 1 };
     }
@@ -164,11 +177,15 @@ async function transcribeWithGroqChunking(input: {
         });
         const partial = await transcribeWithGroq({
             apiKey: input.apiKey,
+            baseUrl: input.baseUrl,
+            model: input.model,
+            providerName: input.providerName,
             audioBytes: clip.audioBytes,
             language: input.language,
             prompt: input.prompt,
             audioDurationSeconds: clip.durationSeconds,
             timestampGranularities: [...timestampGranularities],
+            rateLimit: input.rateLimit,
         });
         lastRequestId = partial.requestId;
         const offsetSeconds = chunk.start;
@@ -432,12 +449,16 @@ function splitOverlongSegmentByWords(
 async function retryOverlongChineseSegments(input: {
     transcript: NormalizedGroqTranscription;
     apiKey: string;
+    baseUrl?: string;
+    model: string;
+    providerName: string;
     audioBytes: Uint8Array;
     language: string;
     prompt?: string;
     includeWordTimestamps?: boolean;
     overlongSegmentRetryMode: "strict" | "best-effort";
     retryPromptHardConstraint: boolean;
+    rateLimit?: AiProviderRateLimit;
 }) {
     const suspiciousSegments = input.transcript.segments.filter(
         isOverlongChineseSegment,
@@ -478,6 +499,9 @@ async function retryOverlongChineseSegments(input: {
             retryRequestCount += 1;
             const retryTranscript = await transcribeWithGroq({
                 apiKey: input.apiKey,
+                baseUrl: input.baseUrl,
+                model: input.model,
+                providerName: input.providerName,
                 audioBytes: clip.audioBytes,
                 language: input.language,
                 prompt: input.retryPromptHardConstraint
@@ -489,6 +513,7 @@ async function retryOverlongChineseSegments(input: {
                 timestampGranularities: input.includeWordTimestamps
                     ? ["segment", "word"]
                     : ["segment"],
+                rateLimit: input.rateLimit,
             });
             lastText = retryTranscript.text || lastText;
 
@@ -520,7 +545,7 @@ async function retryOverlongChineseSegments(input: {
             if (input.overlongSegmentRetryMode === "strict") {
                 throw new ChineseTranscriptionError(
                     "PRV_GROQ_SEGMENT_RETRY_EXHAUSTED",
-                    `Groq segment retry exhausted for segment ${segment.id} (${segment.start.toFixed(3)}s-${segment.end.toFixed(3)}s). Last text has ${exhausted.hanCharacters} Chinese character(s).`,
+                    `${input.providerName} segment retry exhausted for segment ${segment.id} (${segment.start.toFixed(3)}s-${segment.end.toFixed(3)}s). Last text has ${exhausted.hanCharacters} Chinese character(s).`,
                     502,
                 );
             }
@@ -612,12 +637,18 @@ export async function runChineseVideoTranscription(
 
     let apiKey: string;
     try {
-        apiKey = readGroqApiKey();
+        apiKey = input.transcriptionApiKey?.trim() || readGroqApiKey();
     } catch (error) {
         failWithSteps(error, steps);
     }
 
     const language = input.language?.trim() || "zh";
+    const transcriptionModel =
+        input.transcriptionModel?.trim() || DEFAULT_TRANSCRIPTION_MODEL;
+    const transcriptionProviderName =
+        input.transcriptionProviderName?.trim() ||
+        DEFAULT_TRANSCRIPTION_PROVIDER_NAME;
+    const transcriptionBaseUrl = input.transcriptionBaseUrl?.trim();
     let audioBytes: Uint8Array;
     let audioDurationSeconds: number | undefined;
     try {
@@ -706,16 +737,23 @@ export async function runChineseVideoTranscription(
         const startedAt = now();
         const chunked = await transcribeWithGroqChunking({
             apiKey,
+            baseUrl: transcriptionBaseUrl,
+            model: transcriptionModel,
+            providerName: transcriptionProviderName,
             audioBytes,
             language,
             prompt: input.prompt,
             audioDurationSeconds,
             includeWordTimestamps: input.includeWordTimestamps ?? false,
+            rateLimit: input.transcriptionRateLimit,
         });
         transcript = chunked.transcript;
         const retryResult = await retryOverlongChineseSegments({
             transcript,
             apiKey,
+            baseUrl: transcriptionBaseUrl,
+            model: transcriptionModel,
+            providerName: transcriptionProviderName,
             audioBytes,
             language,
             prompt: input.prompt,
@@ -724,15 +762,17 @@ export async function runChineseVideoTranscription(
                 input.overlongSegmentRetryMode ?? "strict",
             retryPromptHardConstraint:
                 input.retryPromptHardConstraint ?? false,
+            rateLimit: input.transcriptionRateLimit,
         });
         transcript = retryResult.transcript;
         steps.push({
             id: "groq-transcribe",
-            label: "Groq transcription",
+            label: `${transcriptionProviderName} transcription`,
             status: "success",
             detail: `Received ${transcript.segments.length} segment(s) and ${transcript.words.length} word(s).`,
             metrics: {
-                model: "whisper-large-v3-turbo",
+                model: transcriptionModel,
+                provider: transcriptionProviderName,
                 language: transcript.language,
                 segments: transcript.segments.length,
                 words: transcript.words.length,
@@ -755,12 +795,12 @@ export async function runChineseVideoTranscription(
     } catch (error) {
         steps.push({
             id: "groq-transcribe",
-            label: "Groq transcription",
+            label: `${transcriptionProviderName} transcription`,
             status: "failed",
             detail:
                 error instanceof Error
                     ? error.message
-                    : "Groq transcription failed.",
+                    : `${transcriptionProviderName} transcription failed.`,
             metrics: {
                 audioSizeBytes: audioBytes.byteLength,
                 audioSize: formatBytes(audioBytes.byteLength),
@@ -772,7 +812,7 @@ export async function runChineseVideoTranscription(
     return {
         text: transcript.text,
         language: transcript.language,
-        model: "whisper-large-v3-turbo",
+        model: transcriptionModel,
         segments: transcript.segments,
         words: transcript.words,
         source: {
@@ -791,7 +831,7 @@ export async function runChineseVideoTranscription(
         },
         steps,
         provider: {
-            name: "groq",
+            name: transcriptionProviderName,
             requestId: transcript.requestId,
         },
     };

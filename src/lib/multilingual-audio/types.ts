@@ -1,6 +1,9 @@
+import { DEFAULT_GEMINI_TEXT_MODEL } from "@/lib/ai-providers/default-provider";
+import type { AiProviderRateLimit } from "@/lib/ai-providers/rate-limit";
+
 export type AudioTimestampGranularity = "segment" | "word";
 
-export const DEFAULT_TRANSLATION_MODEL = "cx/gpt-5.5";
+export const DEFAULT_TRANSLATION_MODEL = DEFAULT_GEMINI_TEXT_MODEL;
 
 export const GROQ_TRANSLATION_MODELS = [
     {
@@ -49,6 +52,9 @@ export const DEFAULT_PIPER_TTS_SETTINGS = {
 export const PIPER_TTS_ALIGNMENT_SETTINGS = {
     timelineGapBorrowRatio: 0.75,
     maxTimelineGapBorrowSeconds: 0.75,
+    timelineLeadBorrowRatio: 0.75,
+    maxTimelineLeadBorrowSeconds: 0.35,
+    timelineMinInterSpeechGapSeconds: 0.04,
     timelineSegmentSentenceSilenceSeconds: 0.05,
     timelineMinSpeedFactor: 1.25,
     timelineMaxSpeedFactor: 1.75,
@@ -67,6 +73,11 @@ export type ChineseTranscriptionRequest = {
     videoSpeedFactor?: number;
     language?: string;
     prompt?: string;
+    transcriptionModel?: string;
+    transcriptionApiKey?: string;
+    transcriptionBaseUrl?: string;
+    transcriptionProviderName?: string;
+    transcriptionRateLimit?: AiProviderRateLimit;
     includeWordTimestamps?: boolean;
     overlongSegmentRetryMode?: "strict" | "best-effort";
     retryPromptHardConstraint?: boolean;
@@ -123,6 +134,8 @@ export type TranscriptTranslationResult = {
         name: string;
         requestId?: string;
     };
+    totalTokensUsed?: number;
+    totalCachedPromptTokens?: number;
 };
 
 export type VietnameseVideoMetadataResult = {
@@ -199,6 +212,7 @@ export type VoiceGenerationResult = {
             rawDurationSeconds: number;
             targetDurationSeconds: number;
             borrowedGapSeconds: number;
+            borrowedLeadSeconds?: number;
             speedFactor: number;
             tempoFilter: string;
             scheduledStartSeconds?: number;
@@ -226,7 +240,7 @@ export type VoiceGenerationResult = {
 export type ChineseTranscriptionResult = {
     text: string;
     language: string;
-    model: "whisper-large-v3-turbo";
+    model: string;
     segments: AudioTranscriptSegment[];
     words: AudioTranscriptWord[];
     source: {
@@ -245,7 +259,7 @@ export type ChineseTranscriptionResult = {
     };
     steps: AudioTranscriptionStep[];
     provider: {
-        name: "groq";
+        name: string;
         requestId?: string;
     };
 };
@@ -256,6 +270,7 @@ export type ChineseTranscriptionErrorCode =
     | "VAL_AUDIO_FILE_TOO_LARGE"
     | "CFG_GROQ_API_KEY_MISSING"
     | "SYS_AUDIO_EXTRACTION_FAILED"
+    | "PRV_TRANSCRIPTION_FAILED"
     | "PRV_GROQ_TRANSCRIPTION_FAILED"
     | "PRV_GROQ_SEGMENT_RETRY_EXHAUSTED"
     | "VAL_TRANSLATION_SEGMENTS_REQUIRED"

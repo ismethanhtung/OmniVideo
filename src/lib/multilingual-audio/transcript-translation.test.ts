@@ -253,7 +253,7 @@ describe("transcript translation", () => {
     const [, init] = fetchImpl.mock.calls[0];
     const body = JSON.parse(init.body as string);
     const prompt = body.messages[1].content as string;
-    expect(body.model).toBe("cx/gpt-5.5");
+    expect(body.model).toBe(DEFAULT_TRANSLATION_MODEL);
     expect(body.response_format).toEqual({ type: "json_object" });
     expect(prompt).toContain("fit the source timing");
     expect(prompt).toContain("Translation guide:");

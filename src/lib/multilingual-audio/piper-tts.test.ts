@@ -382,8 +382,8 @@ describe("Piper TTS adapter", () => {
       rawDurationSeconds: 1.5,
       targetDurationSeconds: 1.5,
       borrowedGapSeconds: 0.5,
-      speedFactor: 1.25,
-      tempoFilter: "atempo=1.25",
+      speedFactor: 1,
+      tempoFilter: "anull",
       warningCodes: [],
     });
   });
@@ -468,17 +468,17 @@ describe("Piper TTS adapter", () => {
           expect.objectContaining({
             segmentId: 0,
             rawDurationSeconds: 0.5,
-            targetDurationSeconds: expect.closeTo(0.4, 4),
+            targetDurationSeconds: expect.closeTo(0.5, 4),
             scheduledStartSeconds: 0,
-            speedFactor: 1.25,
+            speedFactor: 1,
           }),
           expect.objectContaining({
             segmentId: 1,
             rawDurationSeconds: 0.5,
-            targetDurationSeconds: expect.closeTo(0.4, 4),
-            scheduledStartSeconds: expect.closeTo(0.5, 4),
+            targetDurationSeconds: expect.closeTo(0.5, 4),
+            scheduledStartSeconds: expect.closeTo(0.6, 4),
             pauseBeforeSeconds: 0.1,
-            speedFactor: 1.25,
+            speedFactor: 1,
           }),
         ],
         warnings: [],
@@ -524,15 +524,63 @@ describe("Piper TTS adapter", () => {
     });
   });
 
+  it("lets strict timeline segments borrow safe previous audible slack", async () => {
+    const spawnMock = createMockSpawn();
+    const ffmpegCalls: string[][] = [];
+    setPiperSpawnForTest(spawnMock as never);
+    setPiperFileExistsForTest(() => true);
+    setPiperReadFileForTest(async (filePath) => {
+      if (/\/0\.wav$/u.test(filePath) || /segment-0\.wav$/u.test(filePath)) {
+        return createPcmWavBuffer(2);
+      }
+      if (/\/1\.wav$/u.test(filePath) || /segment-1\.wav$/u.test(filePath)) {
+        return createPcmWavBuffer(7);
+      }
+      return Buffer.from("strict-lead-borrow-audio");
+    });
+    setPiperFfmpegRunnerForTest(async (args) => {
+      ffmpegCalls.push(args);
+      return { stderr: "" };
+    });
+
+    const result = await generateVoiceFromSegments({
+      segments: [
+        { id: 0, start: 0, end: 5, text: "Câu trước dư thời gian" },
+        { id: 1, start: 5, end: 10, text: "Câu sau dài hơn và cần mượn nhẹ" },
+      ],
+      settings: {
+        binaryPath: "piper",
+        modelPath: "/models/voice.onnx",
+        preserveTimestampGaps: true,
+        alignmentMode: "strict",
+      },
+    });
+
+    expect(result.alignment.timeline?.[1]).toMatchObject({
+      segmentId: 1,
+      targetDurationSeconds: expect.closeTo(5.35, 4),
+      borrowedLeadSeconds: expect.closeTo(0.35, 4),
+      speedFactor: expect.closeTo(7 / 5.35, 4),
+      scheduledStartSeconds: expect.closeTo(4.65, 4),
+      scheduledEndSeconds: expect.closeTo(10, 4),
+      driftSeconds: expect.closeTo(-0.35, 4),
+    });
+    const finalMixCall = ffmpegCalls.at(-1) ?? [];
+    const filterComplex =
+      finalMixCall[finalMixCall.indexOf("-filter_complex") + 1] ?? "";
+    expect(filterComplex).toContain("adelay=0:all=1");
+    expect(filterComplex).toContain("adelay=4650:all=1");
+  });
+
   it("places strict timeline chunks by absolute timestamp instead of serial concat", async () => {
     const spawnMock = createMockSpawn();
     const ffmpegCalls: string[][] = [];
     setPiperSpawnForTest(spawnMock as never);
     setPiperFileExistsForTest(() => true);
-    setPiperReadFileForTest(async () => Buffer.from("strict-mixed-audio"));
+    setPiperReadFileForTest(async () => createPcmWavBuffer(0.5));
     setPiperFfmpegRunnerForTest(async (args) => {
       ffmpegCalls.push(args);
-      return { stderr: "Duration: 00:00:02.000" };
+      return { stderr: "" };
     });
 
     await generateVoiceFromSegments({

@@ -4,6 +4,13 @@ import {
   applyDemoRateLimit,
   requireOwnerForProviderAccount,
 } from "@/lib/access-control/route-guards";
+import {
+  GOOGLE_AI_STUDIO_OPENAI_BASE_URL,
+  DEFAULT_GOOGLE_AI_STUDIO_PROVIDER_ID,
+  isGoogleAiStudioProviderId,
+  normalizeGeminiModelName,
+  readGoogleAiStudioApiKey,
+} from "@/lib/ai-providers/default-provider";
 import { translateTranscriptSegments } from "@/lib/multilingual-audio/transcript-translation";
 import { ChineseTranscriptionError } from "@/lib/multilingual-audio/types";
 import type { AudioTranscriptSegment } from "@/lib/multilingual-audio/types";
@@ -26,14 +33,21 @@ export async function POST(request: Request) {
     let apiKey: string | undefined;
     let baseUrl: string | undefined;
     let providerName: string | undefined;
-    const providerId = payload.providerId?.trim();
+    const providerId =
+      payload.providerId?.trim() || DEFAULT_GOOGLE_AI_STUDIO_PROVIDER_ID;
     const providerAccessDenied = requireOwnerForProviderAccount(
       request,
-      providerId,
+      isGoogleAiStudioProviderId(providerId) ? undefined : providerId,
     );
     if (providerAccessDenied) return providerAccessDenied;
 
-    if (providerId) {
+    let model = payload.model;
+    if (isGoogleAiStudioProviderId(providerId)) {
+      apiKey = readGoogleAiStudioApiKey();
+      baseUrl = GOOGLE_AI_STUDIO_OPENAI_BASE_URL;
+      providerName = "Google AI Studio";
+      model = model ? normalizeGeminiModelName(model) : model;
+    } else if (providerId) {
       const { getAiProviderById, getAiProvidersDb } = await import(
         "@/lib/ai-providers/repository"
       );
@@ -48,7 +62,7 @@ export async function POST(request: Request) {
       segments: payload.segments ?? [],
       sourceLanguage: payload.sourceLanguage,
       targetLanguage: payload.targetLanguage,
-      model: payload.model,
+      model,
       apiKey,
       baseUrl,
       providerName,

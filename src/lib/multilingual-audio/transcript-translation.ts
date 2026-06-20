@@ -1,6 +1,11 @@
 import { createHash } from "node:crypto";
 
 import {
+    waitForAiProviderRateLimit,
+    type AiProviderRateLimit,
+} from "@/lib/ai-providers/rate-limit";
+
+import {
     ChineseTranscriptionError,
     DEFAULT_TRANSLATION_MODEL,
     type AudioTranscriptSegment,
@@ -619,7 +624,9 @@ async function fetchTranslationProvider(input: {
     url: string;
     init: RequestInit;
     context: Record<string, unknown>;
+    rateLimit?: AiProviderRateLimit;
 }) {
+    await waitForAiProviderRateLimit(input.rateLimit);
     const startedAt = Date.now();
     try {
         const response = await input.fetcher(input.url, input.init);
@@ -655,6 +662,7 @@ async function requestTranslationGuide(input: {
     baseUrl: string;
     fetcher: typeof fetch;
     promptCacheKey?: string;
+    rateLimit?: AiProviderRateLimit;
 }) {
     const url = `${input.baseUrl}/chat/completions`;
     const guideSource = compactTranscriptForGuide(input.segments);
@@ -701,6 +709,7 @@ async function requestTranslationGuide(input: {
         fetcher: input.fetcher,
         url,
         context: requestContext,
+        rateLimit: input.rateLimit,
         init: {
             method: "POST",
             headers: {
@@ -774,6 +783,7 @@ async function requestTranslationChunk(input: {
     chunkLabel?: string;
     promptCacheKey?: string;
     fullTranscriptChars: number;
+    rateLimit?: AiProviderRateLimit;
 }) {
     const url = `${input.baseUrl}/chat/completions`;
     const nearbyContext = buildNearbyContext({
@@ -828,6 +838,7 @@ async function requestTranslationChunk(input: {
         fetcher: input.fetcher,
         url,
         context: requestContext,
+        rateLimit: input.rateLimit,
         init: {
             method: "POST",
             headers: {
@@ -901,6 +912,7 @@ async function requestSingleSegmentPlainTextFallback(input: {
     fetcher: typeof fetch;
     promptCacheKey?: string;
     fullTranscriptChars: number;
+    rateLimit?: AiProviderRateLimit;
 }) {
     const url = `${input.baseUrl}/chat/completions`;
     const nearbyContext = buildNearbyContext({
@@ -953,6 +965,7 @@ async function requestSingleSegmentPlainTextFallback(input: {
         fetcher: input.fetcher,
         url,
         context: requestContext,
+        rateLimit: input.rateLimit,
         init: {
             method: "POST",
             headers: {
@@ -1061,6 +1074,7 @@ async function translateChunkAdaptive(input: {
     chunkLabel?: string;
     promptCacheKey?: string;
     fullTranscriptChars: number;
+    rateLimit?: AiProviderRateLimit;
 }): Promise<{
     requestIds: string[];
     totalTokens: number;
@@ -1197,6 +1211,7 @@ async function translateChunkAdaptive(input: {
                 fetcher: input.fetcher,
                 promptCacheKey: input.promptCacheKey,
                 fullTranscriptChars: input.fullTranscriptChars,
+                rateLimit: input.rateLimit,
             });
             return {
                 requestIds: fallback.requestId ? [fallback.requestId] : [],
@@ -1224,6 +1239,7 @@ export async function translateTranscriptSegments(input: {
     apiKey?: string;
     baseUrl?: string;
     providerName?: string;
+    rateLimit?: AiProviderRateLimit;
     fetchImpl?: typeof fetch;
 }): Promise<
     TranscriptTranslationResult & {
@@ -1298,6 +1314,7 @@ export async function translateTranscriptSegments(input: {
                 baseUrl,
                 fetcher,
                 promptCacheKey,
+                rateLimit: input.rateLimit,
             });
             translationGuide = guideResult.guide;
             guideRequestId = guideResult.requestId;
@@ -1340,6 +1357,7 @@ export async function translateTranscriptSegments(input: {
                 chunkLabel: `${index + 1}/${chunks.length}`,
                 promptCacheKey,
                 fullTranscriptChars: fullTranscriptContext.length,
+                rateLimit: input.rateLimit,
             }),
     );
     const requestIds = [

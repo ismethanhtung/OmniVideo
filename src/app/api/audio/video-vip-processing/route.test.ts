@@ -24,6 +24,7 @@ vi.mock("@/lib/ai-providers/repository", () => ({
     apiKey: "provider-key",
     baseUrl: "https://provider.example/v1",
     label: "Provider One",
+    rateLimitRpm: 14,
   })),
 }));
 
@@ -810,7 +811,7 @@ describe("video vip processing API", () => {
               height: 4.5,
               start: 0,
               end: 36000,
-              strength: 50,
+              strength: 25,
             },
           ],
         },
@@ -950,7 +951,7 @@ describe("video vip processing API", () => {
               height: 14,
               start: 0,
               end: 36000,
-              strength: 50,
+              strength: 25,
             },
           ],
         },
@@ -999,7 +1000,7 @@ describe("video vip processing API", () => {
     );
   });
 
-  it("uses providerId when resolving the metadata provider account", async () => {
+  it("passes configured provider RPM limits only into VIP processing", async () => {
     mockedRunVideoVipProcessing.mockResolvedValueOnce({
       videoBase64: Buffer.from("vip").toString("base64"),
       mimeType: "video/mp4",
@@ -1063,6 +1064,7 @@ describe("video vip processing API", () => {
     });
 
     const formData = createFormData({
+      providerId: "507f1f77bcf86cd799439010",
       metadataProviderId: "507f1f77bcf86cd799439011",
     });
     formData.set(
@@ -1082,8 +1084,24 @@ describe("video vip processing API", () => {
     expect(response.status).toBe(200);
     expect(mockedGetAiProviderById).toHaveBeenCalledWith({
       db: {},
+      providerId: "507f1f77bcf86cd799439010",
+    });
+    expect(mockedGetAiProviderById).toHaveBeenCalledWith({
+      db: {},
       providerId: "507f1f77bcf86cd799439011",
     });
+    expect(mockedRunVideoVipProcessing).toHaveBeenCalledWith(
+      expect.objectContaining({
+        translationRateLimit: expect.objectContaining({
+          key: "ai-provider:507f1f77bcf86cd799439010",
+          rpm: 14,
+        }),
+        metadataRateLimit: expect.objectContaining({
+          key: "ai-provider:507f1f77bcf86cd799439011",
+          rpm: 14,
+        }),
+      }),
+    );
   });
 
   it("maps storage asset download fetch failures to a structured VIP API error", async () => {

@@ -1,4 +1,4 @@
-# [FAST-WORKSPACE-083] VIP Checkpoint Reuse, Segment Cutting Optimization, and Clear Checkpoints Button
+# [FAST-WORKSPACE-083] Lower VIP original volume default to 0.1
 
 ## 0. Progress Stamp
 
@@ -7,7 +7,6 @@
 - [x] Implementation completed
 - [x] Tests added/updated (if code changed)
 - [x] Version guard passed (if runtime changed)
-- [x] Docs updated (if impacted)
 - [x] Changelog updated
 - [x] Ready for review
 - [x] Done
@@ -16,111 +15,61 @@
 
 - Task ID: FAST-WORKSPACE-083
 - Phase: FAST
-- Target Phase: Workspace Diagnostics & User Experience
-- Domain: Workspace / Audio Transcription
-- Task Type: Bugfix / Usability / Quality
+- Target Phase: Workspace VIP defaults
+- Domain: Workspace / Multilingual Audio
+- Task Type: Fix
 - Priority: P1
 - Size: S
-- Owner: Antigravity
+- Owner: AI Agent
 - Reviewer: Owner
 - Status: Done
 
 ## 2. Context
 
-- Currently, running the same video with different speed parameters (e.g. 0.75x then 0.8x) reuses the old transcription/translation checkpoints, because the polling endpoint key does not include execution parameters, and GET endpoints return stale checkpoints.
-- Overlong transcription segments are currently split using simple greedy pause/punctuation thresholds, resulting in splits in the middle of sentences or phrases (e.g. Vietnamese clause cuts).
-- Users need a manual way to clear saved checkpoints from the Background Progress modal to force a fresh execution run of the workflow from the start when desired.
+- Owner wants `Original volume` default lowered from `0.2x` to `0.1x`.
+- Current VIP defaults use `0.2` across runtime constants, Workspace templates/seeds, and UI fallbacks.
 
 ## 3. Scope
 
 - In scope:
-  - Include key configuration parameters (speed factor, languages, models, translation mode, volume, mirror option) in the frontend `vipResumeKey` generation.
-  - Implement a scoring-based boundary splitting logic in `splitOverlongSegmentByWords` to prefer punctuation (hard and soft) and significant pauses, preventing mid-sentence splits.
-  - Implement a `DELETE` endpoint in `/api/audio/video-vip-processing` to clear specific or all checkpoints from `/tmp/omnivideo-vip-stage-checkpoints/`.
-  - Add a "Clear checkpoints" button next to "Clear finished" in the Background Progress modal.
-  - Add unit tests for scoring-based split and DELETE API endpoint.
-  - Bump app version and update changelog.
+  - Change VIP original audio default from `0.2` to `0.1`.
+  - Update Workspace template/seed defaults, runtime fallbacks, placeholders, and tests.
 - Out of scope:
-  - Changing Whisper segment/word recognition models.
-  - Clearing third-party storage assets or remote server-side artifact caches.
+  - Changing explicit user-saved node configs.
+  - Changing mixer behavior when a caller explicitly passes `0.2`.
 
 ## 4. Acceptance Criteria
 
-1. Changing speed factor or other parameters in the Workspace node config correctly generates a different checkpoint key, ensuring no stale checkpoint files are read or reused.
-2. In `splitOverlongSegmentByWords`, word splitting is optimized using a scoring system: splits are made at hard punctuation (`。？！?!.`) and soft punctuation (`，、；：,;:`) first, and then at significant silence pauses (>0.5s or >0.3s) if punctuation is absent, avoiding arbitrary mid-sentence cuts.
-3. Background Progress modal contains a "Clear checkpoints" button that calls the server-side DELETE API and deletes `/tmp/omnivideo-vip-stage-checkpoints` directory, displaying success.
-4. Unit tests are added and all tests pass (`npm run test`).
-5. App version is bumped to `0.10.118` and version guard (`npm run guard:version`) passes.
+1. New VIP processing defaults use `originalAudioVolume=0.1`.
+2. Workspace VIP runtime fallbacks and inspector placeholders show `0.1`.
+3. Existing explicit `originalAudioVolume` values are still respected.
+4. Tests, version guard, build, and diff check pass.
 
 ## 5. Technical Plan
 
-1. Modify `vipResumeKey` generation in `src/features/workspace/workspace-canvas-panel.tsx`.
-2. Update `splitOverlongSegmentByWords` in `src/lib/multilingual-audio/chinese-transcription.ts` with scoring-based split logic.
-3. Implement `DELETE` method handler in `src/app/api/audio/video-vip-processing/route.ts`.
-4. Add "Clear checkpoints" button and connect click handler in `src/components/layout/topbar.tsx`.
-5. Add unit tests in `chinese-transcription.test.ts` and `route.test.ts`.
-6. Bump version to `0.10.118` in `package.json` and `package-lock.json`.
-7. Run tests, run version-guard, build, and update changelog.
+1. Update the shared VIP original volume constant and Workspace defaults.
+2. Update focused tests for default behavior.
+3. Run verification and update changelog/board.
 
-## 6. Code Change Impact
+## 6. Test Plan
 
-- Có thay đổi code không: Yes
-- Module impacted:
-  - `src/features/workspace/workspace-canvas-panel.tsx`
-  - `src/lib/multilingual-audio/chinese-transcription.ts`
-  - `src/app/api/audio/video-vip-processing/route.ts`
-  - `src/components/layout/topbar.tsx`
-  - `src/lib/multilingual-audio/chinese-transcription.test.ts`
-  - `src/app/api/audio/video-vip-processing/route.test.ts`
-  - `package.json`
-  - `package-lock.json`
-  - `changelog/changelog.md`
-  - `tasks/board.md`
+1. `npm run test -- --run src/lib/workspace/workspace-graph.test.ts src/lib/multilingual-audio/video-vip-processing.test.ts`
+2. `npm run guard:version`
+3. `npm run build`
+4. `git diff --check`
 
-## 7. Test Plan
+## 7. Test Evidence
 
-1. Run focused tests: `npx vitest run src/lib/multilingual-audio/chinese-transcription.test.ts`
-2. Run focused API tests: `npx vitest run src/app/api/audio/video-vip-processing/route.test.ts`
-3. Run all tests: `npm run test`
-4. Run version guard: `npm run guard:version`
-5. Run production build: `npm run build`
+- `npm run test -- --run src/lib/workspace/workspace-graph.test.ts src/lib/multilingual-audio/video-vip-processing.test.ts` pass (2 files / 74 tests).
+- `npm run guard:version` pass.
+- `npm run build` pass.
+- `git diff --check` pass.
 
-## 8. Observability
+## 8. Changelog Note
 
-- Clean split segments at punctuation or pause boundaries.
-- Reset logs/checkpoints on manual clear action.
+- Lower VIP original volume default to `0.1`.
 
-## 9. Risks & Rollback
+## 9. Execution Notes
 
-- Risks: Deleting the checkpoints directory via DELETE API could impact ongoing runs if they try to write checkpoint files during deletion.
-- Mitigation: Deletion uses recursive `force: true` which is safe, and ongoing runs will simply recreate the folder when they write.
-- Rollback: Revert DELETE handler and `vipResumeKey` changes.
-
-## 10. Deliverables
-
-1. Configuration-dependent `vipResumeKey`.
-2. Scoring-based segmentation split logic.
-3. DELETE API endpoint for checkpoints.
-4. Clear checkpoints button in progress modal.
-5. Unit tests, version bump, and changelog update.
-
-## 11. Changelog Note
-
-- Add config parameters to Workspace VIP checkpoint key, optimize sentence segment splits via punctuation/pause scoring, and add a Clear Checkpoints button in Background Progress modal.
-
-## 12. Execution Notes
-
-- Modified `vipResumeKey` generation in `src/features/workspace/workspace-canvas-panel.tsx` to include execution configuration parameters. This prevents the GET polling API from returning stale checkpoint content and ensures parameter changes trigger a clean rerun.
-- Redesigned `splitOverlongSegmentByWords` in `src/lib/multilingual-audio/chinese-transcription.ts` to score boundaries and split on best punctuation or pause instead of arbitrary limits.
-- Implemented `DELETE` route handler in `src/app/api/audio/video-vip-processing/route.ts` to allow deletion of a specific key's checkpoint folder or clearing all checkpoints.
-- Rendered "Clear checkpoints" button next to "Clear finished" in the Background Progress modal (`topbar.tsx`), hooked to delete API with confirmation/alert dialogs.
-- Bumped app version to `0.10.118`.
-
-## 13. Test Evidence
-
-- Focused unit test runs:
-  - `npx vitest run src/lib/multilingual-audio/chinese-transcription.test.ts` passed (9 tests).
-  - `npx vitest run src/app/api/audio/video-vip-processing/route.test.ts` passed (17 tests).
-- Full project verification: `npm run test` passed (118 files / 637 tests).
-- Automated version compliance: `npm run guard:version` passed successfully.
-- Production build validation: `npm run build` completed successfully.
+- Changed shared VIP processing and Workspace VIP defaults from `0.2` to `0.1`.
+- Existing explicit node configs and explicit render calls still keep their configured volume.

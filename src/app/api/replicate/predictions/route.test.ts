@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { requireWriteAccess } from "@/lib/access-control/route-guards";
 
-import { POST } from "./route";
+import { GET, POST } from "./route";
 
 vi.mock("@/lib/access-control/route-guards", () => ({
     requireWriteAccess: vi.fn(() => null),
@@ -81,6 +81,65 @@ describe("Replicate predictions sandbox route", () => {
                 }),
             }),
         );
+    });
+
+    it("inspects model schema and suggests likely file inputs", async () => {
+        const fetchMock = vi.fn().mockResolvedValue(
+            new Response(
+                JSON.stringify({
+                    latest_version: {
+                        id: "version-with-schema",
+                        openapi_schema: {
+                            components: {
+                                schemas: {
+                                    Input: {
+                                        properties: {
+                                            prompt: {
+                                                type: "string",
+                                                description: "Text prompt",
+                                            },
+                                            image: {
+                                                type: "string",
+                                                format: "uri",
+                                                description:
+                                                    "Reference image URL",
+                                            },
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                }),
+                { status: 200 },
+            ),
+        );
+        vi.stubGlobal("fetch", fetchMock);
+        vi.stubEnv("REPLICATE_API_TOKEN", "env-token");
+
+        const response = await GET(
+            new Request(
+                "http://localhost/api/replicate/predictions?target=owner/model&mode=auto",
+            ),
+        );
+        const payload = await response.json();
+
+        expect(response.status).toBe(200);
+        expect(payload.ok).toBe(true);
+        expect(payload.data.version).toBe("version-with-schema");
+        expect(payload.data.inputProperties).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    key: "prompt",
+                    likelyFileInput: false,
+                }),
+                expect.objectContaining({
+                    key: "image",
+                    likelyFileInput: true,
+                }),
+            ]),
+        );
+        expect(payload.data.suggestedFileKeys).toEqual(["image"]);
     });
 
     it("injects uploaded files as data URLs into the selected input key", async () => {

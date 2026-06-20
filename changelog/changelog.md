@@ -1,5 +1,155 @@
 # OmniVideo Changelog
 
+## FAST-AUDIO-075 - Apply AI Provider RPM throttle to VIP only
+
+- Bumped app version from `0.11.33` to `0.11.34` as a patch release for VIP AI Provider RPM throttling.
+- Applied configured AI Provider `rateLimitRpm` only to Workspace VIP translation and metadata AI calls.
+- Kept Workspace VIP transcript behavior unchanged so the selected translation provider does not alter or duplicate the speech-to-text stage.
+- Removed route-level RPM wiring from non-VIP transcript, translation, and metadata endpoints while keeping adapter support inert unless VIP passes a limiter.
+- Added regression coverage for VIP-only rate-limit wiring and the RPM interval helper.
+- Verification (FAST-AUDIO-075):
+  - `npm run test -- --run src/lib/ai-providers/rate-limit.test.ts src/app/api/audio/video-vip-processing/route.test.ts src/lib/multilingual-audio/video-vip-processing.test.ts src/lib/multilingual-audio/transcript-translation.test.ts src/lib/multilingual-audio/video-metadata.test.ts src/app/api/audio/chinese-transcription/route.test.ts src/lib/multilingual-audio/chinese-transcription.test.ts --reporter=dot` pass (7 files / 76 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+
+## FAST-WORKSPACE-092 - Freeze completed progress step durations
+
+- Bumped app version from `0.11.32` to `0.11.33` as a patch release for Background Progress timing correctness.
+- Fixed repeated VIP checkpoint polling so already completed sub-steps keep their original `finishedAt` timestamp instead of continuing to grow while later stages run.
+- Preserved measured `durationMs` updates from final VIP results, so completed steps can still switch to backend stage timing when available.
+- Added regression coverage for repeated `finishProgressStep` calls on an already completed step.
+- Verification (FAST-WORKSPACE-092):
+  - `npm run test -- --run src/lib/ui/progress-center.test.ts src/components/layout/topbar.test.ts src/features/workspace/workspace-canvas-panel.test.ts --reporter=dot` pass (3 files / 37 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+
+## FAST-AUDIO-074 - Smooth strict VIP voice timing
+
+- Bumped app version from `0.11.31` to `0.11.32` as a patch release for VIP voice timing quality.
+- Updated Piper timeline speed calculation so chunks that already fit their target duration keep natural `1.0x` playback instead of being forced to the `1.25x` acceleration floor.
+- Added small strict-timeline lead borrowing from previous audible slack, capped at `0.35s`, so cramped segments can reduce high speed without changing transcript/subtitle timestamps or overlapping previous spoken audio.
+- Kept existing following-gap borrowing and high-speed warning behavior when there is not enough safe slack.
+- Fixed Audio Transcript speed labels to show the actual backend speed factor instead of clamping display to at least `1.25x`.
+- Verification (FAST-AUDIO-074):
+  - `npm run test -- --run src/lib/multilingual-audio/piper-tts.test.ts src/features/audio/chinese-transcription-panel.test.ts src/lib/multilingual-audio/video-dubbing.test.ts src/lib/multilingual-audio/video-vip-processing.test.ts --reporter=dot` pass (4 files / 61 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+
+## FAST-WORKSPACE-091 - Show VIP token usage and measured progress durations
+
+- Bumped app version from `0.11.30` to `0.11.31` as a patch release for Workspace VIP progress visibility.
+- Added translation token usage to VIP completion details when the translation provider returns usage telemetry, including total and cached prompt tokens.
+- Added measured `durationMs` support to Background Progress steps and persisted it across reload-style hydration.
+- Updated Workspace VIP completion to set the main VIP step and transcript/translation/voice-render/metadata sub-step durations from backend stage timing instead of client elapsed time.
+- Verification (FAST-WORKSPACE-091):
+  - `npm run test -- --run src/lib/ui/progress-center.test.ts src/components/layout/topbar.test.ts src/features/workspace/workspace-canvas-panel.test.ts src/lib/multilingual-audio/video-vip-processing.test.ts --reporter=dot` pass (4 files / 56 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+
+## FAST-AUDIO-073 - Tighten overlong Chinese segment retry threshold
+
+- Bumped app version from `0.11.29` to `0.11.30` as a patch release for VIP transcription segment splitting.
+- Tightened overlong Chinese transcript detection from more than `40` Han characters to more than `30`, so 36-character source segments like the observed VIP case are retried before translation/voice generation.
+- Kept the existing segment-level retry flow and best-effort programmatic split fallback, now using the stricter threshold when provider retries still return one long segment.
+- Added regression coverage for the observed Chinese source text that previously escaped retry.
+- Verification (FAST-AUDIO-073):
+  - `npm run test -- --run src/lib/multilingual-audio/chinese-transcription.test.ts src/lib/multilingual-audio/groq-transcription.test.ts src/lib/multilingual-audio/video-vip-processing.test.ts src/app/api/audio/chinese-transcription/route.test.ts --reporter=dot` pass (4 files / 42 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+
+## FAST-AUDIO-072 - Route Gemini transcription sandbox through native audio API
+
+- Bumped app version from `0.11.28` to `0.11.29` as a patch release for Feature Sandbox Gemini transcription.
+- Fixed Feature Sandbox speech transcription with Google AI Studio/Gemini models by routing those requests through native Gemini `generateContent` audio input instead of the Whisper-compatible `/audio/transcriptions` endpoint.
+- Added JSON transcript prompting and response normalization so Gemini output feeds the existing `text`, `language`, `segments`, and `words` UI/result shape.
+- Preserved Groq/default and other OpenAI-compatible Whisper providers on the existing verbose JSON transcription endpoint.
+- Verification (FAST-AUDIO-072):
+  - `npm run test -- --run src/lib/multilingual-audio/groq-transcription.test.ts src/lib/multilingual-audio/chinese-transcription.test.ts src/app/api/audio/chinese-transcription/route.test.ts src/features/audio/piper-tts-sandbox-panel.test.ts src/components/layout/navigation.test.ts --reporter=dot` pass (5 files / 32 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+
+## FAST-AUDIO-071 - Add provider-selectable speech transcription sandbox
+
+- Bumped app version from `0.11.27` to `0.11.28` as a patch release for Feature Sandbox transcription testing.
+- Added AI Provider and transcription model controls to the Feature Sandbox transcript lab while preserving the existing upload video/audio and Video Asset input flow.
+- Generalized the Groq Whisper transcription adapter so sandbox runs can target another OpenAI-compatible `/audio/transcriptions` provider/model without changing the existing extraction, prompt, verbose JSON timestamp, chunking, and overlong-segment retry logic.
+- Extended `/api/audio/chinese-transcription` to accept optional `providerId` and `model`, resolve configured provider credentials server-side, and pass provider/model metadata into the same transcription pipeline.
+- Updated Feature Sandbox navigation copy to mention speech transcription providers.
+- Verification (FAST-AUDIO-071):
+  - `npm run test -- --run src/lib/multilingual-audio/groq-transcription.test.ts src/lib/multilingual-audio/chinese-transcription.test.ts src/app/api/audio/chinese-transcription/route.test.ts src/features/audio/piper-tts-sandbox-panel.test.ts src/components/layout/navigation.test.ts --reporter=dot` pass (5 files / 31 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+
+## FAST-WORKSPACE-090 - Default VIP original volume to zero
+
+- Bumped app version from `0.11.26` to `0.11.27` as a patch release for VIP audio mix defaults.
+- Changed shared VIP `Original volume` default/fallback from `0.1` to `0`, so new Workspace VIP nodes and omitted VIP runtime values mute source audio by default.
+- Updated Workspace VIP inspector placeholder/fallback and seed configs to use the shared `0` default.
+- Preserved explicit caller-provided source audio mix values.
+- Verification (FAST-WORKSPACE-090):
+  - `npm run test -- --run src/lib/workspace/workspace-graph.test.ts src/lib/multilingual-audio/video-vip-processing.test.ts src/app/api/audio/video-vip-processing/route.test.ts src/features/workspace/workspace-canvas-panel.test.ts --reporter=dot` pass (4 files / 116 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+
+## FAST-WORKSPACE-089 - Default Gemini 3.1 Flash Lite and trace VIP progress stages
+
+- Bumped app version from `0.11.25` to `0.11.26` as a patch release for Workspace VIP defaults and progress traceability.
+- Changed shared translation/metadata AI defaults from the old 9router-compatible path to Google AI Studio env (`env-gemini`) with `models/gemini-3.1-flash-lite`.
+- Updated Workspace VIP, dubbing, transcript translation, metadata, Audio Transcript, Video Narrator, and AI Image Studio defaults/placeholders to prefer Gemini 3.1 Flash Lite.
+- Fixed AI Image Studio Reference Image Bank so `Add` explicitly opens the hidden file input, while keeping the compact Audio Transcript-style shell.
+- Expanded Workspace Background Progress for VIP processing with traceable sub-stages for transcript, translation, voice/render, and metadata.
+- Synchronized mask blur fallback/default strength to `25` across Video Tools, Workspace mask nodes, and relevant API fallbacks.
+- Verification (FAST-WORKSPACE-089):
+  - `npm run test -- --run src/lib/ai-providers/default-provider.test.ts src/lib/workspace/workspace-graph.test.ts src/features/workspace/workspace-canvas-panel.test.ts src/features/ai-image/ai-image-studio-panel.test.ts src/app/api/ai-image/storyboard/route.test.ts src/lib/multilingual-audio/transcript-translation.test.ts src/app/api/audio/transcript-translation/route.test.ts src/lib/multilingual-audio/video-metadata.test.ts src/app/api/audio/video-narrator/route.test.ts src/lib/multilingual-audio/video-narrator.test.ts src/app/api/audio/video-vip-processing/route.test.ts src/lib/multilingual-audio/video-vip-processing.test.ts src/features/audio/chinese-transcription-panel.test.ts src/features/video-narrator/video-narrator-panel.test.ts src/features/video-processing/video-tools-lab-panel.test.ts src/app/api/video-processing/edit/route.test.ts --reporter=dot` pass (16 files / 192 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+
+## FAST-VIDEO-050 - Align AI Image Studio UI and lower Video Tools blur default
+
+- Bumped app version from `0.11.24` to `0.11.25` as a patch release for Video Pipeline UI polish.
+- Changed Video Tools Lab partial blur default strength from `35` to `25`.
+- Restored the AI Image Studio Audio Transcript-style header and status metrics.
+- Aligned AI Image Studio fields, textareas, small actions, and primary buttons with the compact Audio Transcript visual treatment, including light accent actions instead of solid accent fill.
+- Verification (FAST-VIDEO-050):
+  - `npm run test -- --run src/features/video-processing/video-tools-lab-panel.test.ts src/features/ai-image/ai-image-studio-panel.test.ts` pass (2 files / 15 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+
+## FAST-VIDEO-049 - Add Replicate reference and consistency workflow
+
+- Bumped app version from `0.11.23` to `0.11.24` as a patch release for Replicate consistency tooling in Feature Sandbox.
+- Added schema inspection to `GET /api/replicate/predictions`, returning model input fields and likely image/audio/video/file reference keys from Replicate `openapi_schema`.
+- Added `Inspect Schema` to Feature Sandbox Replicate Model Lab so users can see whether a model supports a real reference image input.
+- Added `Reference & Consistency` prompt tooling with scene prompt, style lock, character lock, and continuity lock to keep generated frames visually consistent when the model is text-only.
+- Added quick actions to use detected file input keys as the optional uploaded reference key.
+- Verification (FAST-VIDEO-049):
+  - `npm run test -- --run src/app/api/replicate/predictions/route.test.ts src/features/audio/piper-tts-sandbox-panel.test.ts` pass (2 files / 7 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+
+## FAST-WORKSPACE-083 - Lower VIP original volume default to 0.1
+
+- Bumped app version from `0.11.22` to `0.11.23` as a patch release for Workspace VIP audio default tuning.
+- Changed shared VIP processing `Original volume` default from `0.2` to `0.1`.
+- Updated Workspace VIP template defaults, sample seed configs, runtime form fallback, resume key fallback, and inspector placeholder to use `0.1`.
+- Preserved explicit caller-provided original volume values, including existing tests that intentionally pass `0.2`.
+- Verification (FAST-WORKSPACE-083):
+  - `npm run test -- --run src/lib/workspace/workspace-graph.test.ts src/lib/multilingual-audio/video-vip-processing.test.ts` pass (2 files / 74 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+
 ## FAST-VIDEO-048 - Add complete Z Image Turbo Replicate preset
 
 - Bumped app version from `0.11.21` to `0.11.22` as a patch release for the Feature Sandbox Replicate preset update.

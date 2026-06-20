@@ -103,6 +103,7 @@ describe("progress center", () => {
       stepId: "download",
       status: "success",
       description: "Download complete.",
+      durationMs: 32000,
     });
 
     const [finishedTask] = getProgressTasksSnapshot();
@@ -110,6 +111,7 @@ describe("progress center", () => {
       status: "success",
       progress: 100,
       description: "Download complete.",
+      durationMs: 32000,
     });
     expect(finishedTask.steps[0].finishedAt).toEqual(expect.any(Number));
   });
@@ -187,6 +189,90 @@ describe("progress center", () => {
       },
     ]);
     expect(getActiveProgressTaskCount()).toBe(1);
+  });
+
+  it("persists measured step durations across reload-style rehydration", () => {
+    const storage = createLocalStorageMock();
+    vi.stubGlobal("window", { localStorage: storage });
+
+    const taskId = startProgressTask({
+      id: "workspace-measured-flow",
+      title: "Workspace flow",
+      scope: "system",
+      progressMode: "indeterminate",
+      steps: [{ id: "vip:translation", title: "VIP Translate" }],
+    });
+
+    finishProgressStep({
+      taskId,
+      stepId: "vip:translation",
+      status: "success",
+      description: "Translation complete.",
+      durationMs: 20432,
+    });
+
+    resetProgressTasksForTest({ preserveStorage: true });
+
+    expect(getProgressTasksSnapshot()).toMatchObject([
+      {
+        id: "workspace-measured-flow",
+        steps: [
+          {
+            id: "vip:translation",
+            status: "success",
+            durationMs: 20432,
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("does not move finishedAt when polling finishes an already completed step again", () => {
+    const nowSpy = vi.spyOn(Date, "now");
+    try {
+      nowSpy.mockReturnValue(1000);
+      const taskId = startProgressTask({
+        id: "workspace-vip-polling",
+        title: "Workspace flow",
+        scope: "system",
+        progressMode: "indeterminate",
+        steps: [{ id: "vip:transcript", title: "VIP Transcript" }],
+      });
+      startProgressStep({
+        taskId,
+        stepId: "vip:transcript",
+        description: "Transcribing...",
+      });
+
+      nowSpy.mockReturnValue(2000);
+      finishProgressStep({
+        taskId,
+        stepId: "vip:transcript",
+        status: "success",
+        description: "Transcript complete.",
+      });
+      const firstFinishedAt =
+        getProgressTasksSnapshot()[0].steps[0].finishedAt;
+
+      nowSpy.mockReturnValue(5000);
+      finishProgressStep({
+        taskId,
+        stepId: "vip:transcript",
+        status: "success",
+        description: "Transcript complete: 643 segment(s).",
+        durationMs: 32000,
+      });
+
+      const [task] = getProgressTasksSnapshot();
+      expect(task.steps[0]).toMatchObject({
+        status: "success",
+        description: "Transcript complete: 643 segment(s).",
+        finishedAt: firstFinishedAt,
+        durationMs: 32000,
+      });
+    } finally {
+      nowSpy.mockRestore();
+    }
   });
 
   it("removes one dismissed finished task from persisted history", () => {

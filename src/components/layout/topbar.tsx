@@ -1413,6 +1413,14 @@ function formatDurationMs(from: number, to: number) {
     return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
+function formatDurationValueMs(durationMs: number) {
+    const safeMs = Number.isFinite(durationMs) ? Math.max(0, durationMs) : 0;
+    const totalSeconds = Math.round(safeMs / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
 function formatSegmentTimestamp(seconds: number) {
     const totalSeconds = Math.max(0, Math.floor(seconds));
     const minutes = Math.floor(totalSeconds / 60);
@@ -2098,6 +2106,12 @@ function ProgressStepRow({
     now: number;
 }) {
     const parsedDescription = parseStepDescription(step.description);
+    const durationLabel =
+        typeof step.durationMs === "number"
+            ? formatDurationValueMs(step.durationMs)
+            : step.startedAt
+              ? formatDurationMs(step.startedAt, step.finishedAt ?? now)
+              : "--:--";
 
     return (
         <div className="px-3 py-2.5">
@@ -2122,14 +2136,7 @@ function ProgressStepRow({
                     <p className="font-mono uppercase tracking-wide">
                         {step.status}
                     </p>
-                    <p className="mt-0.5">
-                        {step.startedAt
-                            ? formatDurationMs(
-                                  step.startedAt,
-                                  step.finishedAt ?? now,
-                              )
-                            : "--:--"}
-                    </p>
+                    <p className="mt-0.5">{durationLabel}</p>
                 </div>
             </div>
 

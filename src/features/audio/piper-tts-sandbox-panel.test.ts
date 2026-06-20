@@ -13,11 +13,23 @@ describe("Feature Sandbox panel", () => {
         expect(source).toContain("Run Replicate");
         expect(source).toContain("Input JSON");
         expect(source).toContain("Optional file input key");
+        expect(source).toContain("Inspect Schema");
+        expect(source).toContain("Schema Inputs");
+        expect(source).toContain("suggestedFileKeys");
         expect(source).toContain("Z Image Turbo");
         expect(source).toContain("output_format");
         expect(source).toContain("num_inference_steps");
         expect(source).toContain("guidance_scale");
         expect(source).toContain("output_quality");
+    });
+
+    it("adds reference and consistency prompt tooling for text-only image models", () => {
+        expect(source).toContain("Reference & Consistency");
+        expect(source).toContain("Style lock");
+        expect(source).toContain("Character lock");
+        expect(source).toContain("Continuity lock");
+        expect(source).toContain("Build Prompt");
+        expect(source).toContain("applyConsistentPrompt");
     });
 
     it("keeps raw prediction output and media preview controls", () => {
@@ -27,5 +39,25 @@ describe("Feature Sandbox panel", () => {
         expect(source).toContain("classifyMediaUrl");
         expect(source).toContain("<audio");
         expect(source).toContain("<video");
+    });
+
+    it("lets the transcript lab choose provider and transcription model", () => {
+        expect(source).toContain("Transcript Retry Lab");
+        expect(source).toContain("Upload video/audio");
+        expect(source).toContain("Video Asset");
+        expect(source).toContain("AI Provider");
+        expect(source).toContain("Groq env (GROQ_API_KEY)");
+        expect(source).toContain("Transcription model");
+        expect(source).toContain("DEFAULT_TRANSCRIPTION_MODEL");
+        expect(source).toContain("selectedTranscriptionProviderId");
+        expect(source).toContain(
+            'formData.append("providerId", selectedTranscriptionProviderId)',
+        );
+        expect(source).toContain(
+            'formData.append("model", transcriptionModel.trim())',
+        );
+        expect(source).toContain(
+            "`/api/ai-providers/${selectedTranscriptionProviderId}/models`",
+        );
     });
 });

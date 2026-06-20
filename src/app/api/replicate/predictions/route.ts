@@ -20,8 +20,71 @@ type ReplicatePredictionResponse = {
     [key: string]: unknown;
 };
 
+type ReplicateOpenApiProperty = {
+    type?: string;
+    title?: string;
+    description?: string;
+    format?: string;
+    enum?: unknown[];
+    default?: unknown;
+    [key: string]: unknown;
+};
+
 const REPLICATE_API_BASE = "https://api.replicate.com/v1";
 const SMALL_DATA_URL_LIMIT_BYTES = 256 * 1024;
+
+export async function GET(request: Request) {
+    try {
+        const writeDenied = requireWriteAccess(request);
+        if (writeDenied) return writeDenied;
+
+        const url = new URL(request.url);
+        const token =
+            url.searchParams.get("token")?.trim() ||
+            process.env.REPLICATE_API_TOKEN?.trim() ||
+            "";
+        const target = url.searchParams.get("target")?.trim() || "";
+        const mode = normalizeRunMode(url.searchParams.get("mode") ?? "");
+
+        if (!token) {
+            return validationError(
+                "CFG_REPLICATE_TOKEN_MISSING",
+                "REPLICATE_API_TOKEN is required, or paste a temporary token.",
+            );
+        }
+        if (!target) {
+            return validationError(
+                "VAL_REPLICATE_TARGET_REQUIRED",
+                "Replicate model/version target is required.",
+            );
+        }
+
+        const schema = await inspectPredictionSchema({ target, mode, token });
+        return NextResponse.json({ ok: true, data: schema });
+    } catch (error) {
+        const status =
+            error instanceof ReplicateApiError
+                ? error.status
+                : error instanceof ReplicateValidationError
+                  ? 400
+                  : 500;
+        return NextResponse.json(
+            {
+                ok: false,
+                errorCode:
+                    error instanceof ReplicateApiError ||
+                    error instanceof ReplicateValidationError
+                        ? error.code
+                        : "SYS_REPLICATE_SCHEMA_FAILED",
+                error:
+                    error instanceof Error
+                        ? error.message
+                        : "Replicate schema inspection failed.",
+            },
+            { status },
+        );
+    }
+}
 
 export async function POST(request: Request) {
     try {
@@ -265,6 +328,164 @@ async function fetchLatestModelVersion(input: {
         );
     }
     return version;
+}
+
+async function inspectPredictionSchema(input: {
+    target: string;
+    mode: ReplicateRunMode;
+    token: string;
+}) {
+    if (input.mode === "deployment") {
+        return {
+            mode: "deployment",
+            version: "",
+            inputProperties: [],
+            suggestedFileKeys: [],
+            note: "Deployment schema inspection is not available in this sandbox. Inspect the underlying model/version instead.",
+        };
+    }
+
+    const model = parseOwnerName(input.target.split(":")[0]);
+    const modelPayload = await fetchModelPayload({
+        owner: model.owner,
+        name: model.name,
+        token: input.token,
+    });
+    const version =
+        input.mode === "version" && input.target.includes(":")
+            ? input.target.split(":").at(-1) || ""
+            : modelPayload.latest_version?.id || "";
+    const schema =
+        modelPayload.latest_version?.openapi_schema ??
+        (version
+            ? await fetchModelVersionSchema({
+                  owner: model.owner,
+                  name: model.name,
+                  version,
+                  token: input.token,
+              })
+            : undefined);
+    const inputProperties = extractInputProperties(schema);
+
+    return {
+        mode: input.mode === "official-model" ? "official-model" : "version",
+        version,
+        inputProperties,
+        suggestedFileKeys: inputProperties
+            .filter((property) => isLikelyFileInput(property))
+            .map((property) => property.key),
+    };
+}
+
+async function fetchModelPayload(input: {
+    owner: string;
+    name: string;
+    token: string;
+}) {
+    const response = await fetch(
+        `${REPLICATE_API_BASE}/models/${encodeURIComponent(
+            input.owner,
+        )}/${encodeURIComponent(input.name)}`,
+        {
+            headers: {
+                Authorization: `Bearer ${input.token}`,
+            },
+        },
+    );
+    const payload = (await response.json().catch(() => ({}))) as {
+        latest_version?: {
+            id?: string;
+            openapi_schema?: unknown;
+        };
+        detail?: string;
+        error?: string;
+    };
+    if (!response.ok) {
+        throw new ReplicateApiError(
+            "PRV_REPLICATE_MODEL_LOOKUP_FAILED",
+            payload.detail || payload.error || "Replicate model lookup failed.",
+            response.status,
+        );
+    }
+    return payload;
+}
+
+async function fetchModelVersionSchema(input: {
+    owner: string;
+    name: string;
+    version: string;
+    token: string;
+}) {
+    const response = await fetch(
+        `${REPLICATE_API_BASE}/models/${encodeURIComponent(
+            input.owner,
+        )}/${encodeURIComponent(input.name)}/versions/${encodeURIComponent(
+            input.version,
+        )}`,
+        {
+            headers: {
+                Authorization: `Bearer ${input.token}`,
+            },
+        },
+    );
+    const payload = (await response.json().catch(() => ({}))) as {
+        openapi_schema?: unknown;
+        detail?: string;
+        error?: string;
+    };
+    if (!response.ok) {
+        throw new ReplicateApiError(
+            "PRV_REPLICATE_SCHEMA_LOOKUP_FAILED",
+            payload.detail || payload.error || "Replicate schema lookup failed.",
+            response.status,
+        );
+    }
+    return payload.openapi_schema;
+}
+
+function extractInputProperties(schema: unknown) {
+    const components = getObject(schema)?.components;
+    const schemas = getObject(components)?.schemas;
+    const inputSchema = getObject(schemas)?.Input;
+    const properties = getObject(getObject(inputSchema)?.properties);
+    if (!properties) return [];
+    return Object.entries(properties).map(([key, value]) => {
+        const property = getObject(value) as ReplicateOpenApiProperty | null;
+        return {
+            key,
+            title: typeof property?.title === "string" ? property.title : key,
+            type: typeof property?.type === "string" ? property.type : "",
+            format:
+                typeof property?.format === "string" ? property.format : "",
+            description:
+                typeof property?.description === "string"
+                    ? property.description
+                    : "",
+            default: property?.default,
+            enum: Array.isArray(property?.enum) ? property.enum : undefined,
+            likelyFileInput: property
+                ? isLikelyFileInput({ key, ...property })
+                : false,
+        };
+    });
+}
+
+function isLikelyFileInput(property: {
+    key: string;
+    type?: string;
+    format?: string;
+    description?: string;
+}) {
+    const haystack = `${property.key} ${property.description ?? ""}`.toLowerCase();
+    return (
+        property.format === "uri" ||
+        /\b(image|audio|video|file|reference|ref|mask|init)\b/u.test(haystack)
+    );
+}
+
+function getObject(value: unknown): Record<string, unknown> | null {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+    return value as Record<string, unknown>;
 }
 
 async function createPrediction(input: {

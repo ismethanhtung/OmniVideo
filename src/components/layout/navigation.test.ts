@@ -64,7 +64,7 @@ describe("navigation registry", () => {
     );
     expect(pipelineGroup?.items.map((item) => item.id)).toContain("videoToolsLab");
     expect(getNavItem("piperTtsSandbox")?.label).toBe("Feature Sandbox");
-    expect(getNavItem("piperTtsSandbox")?.description).toContain("transcript retry");
+    expect(getNavItem("piperTtsSandbox")?.description).toContain("speech transcription providers");
     expect(getNavItem("videoToolsLab")?.description).toContain("mirror video");
     expect(getNavItem("videoSplitter")?.label).toBe("Video Tools");
     expect(navIds).not.toContain("groqTtsSandbox");

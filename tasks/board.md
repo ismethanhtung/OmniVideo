@@ -177,6 +177,18 @@
 
 ## Done
 
+- `FAST-AUDIO-075` - Apply AI Provider RPM throttle to VIP only
+- `FAST-WORKSPACE-092` - Freeze completed progress step durations
+- `FAST-AUDIO-074` - Smooth strict VIP voice timing
+- `FAST-WORKSPACE-091` - Show VIP token usage and fix progress step durations
+- `FAST-AUDIO-073` - Tighten overlong Chinese segment retry threshold
+- `FAST-AUDIO-072` - Route Gemini transcription sandbox through native audio API
+- `FAST-AUDIO-071` - Add provider-selectable speech transcription sandbox
+- `FAST-WORKSPACE-090` - Default VIP original volume to zero
+- `FAST-WORKSPACE-089` - Default Gemini 3.1 Flash Lite and trace VIP progress stages
+- `FAST-VIDEO-050` - Align AI Image Studio UI and lower Video Tools blur default
+- `FAST-VIDEO-049` - Add Replicate reference and consistency workflow
+- `FAST-WORKSPACE-083` - Lower VIP original volume default to 0.1
 - `FAST-VIDEO-048` - Add complete Z Image Turbo Replicate preset
 - `FAST-VIDEO-047` - Add Replicate generic runner to Feature Sandbox
 - `FAST-VIDEO-046` - Tune Video Tools and Workspace defaults

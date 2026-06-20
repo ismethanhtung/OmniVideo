@@ -10,10 +10,15 @@ import {
     getAiProvidersDb,
 } from "@/lib/ai-providers/repository";
 import { AiProviderError } from "@/lib/ai-providers/types";
+import {
+    DEFAULT_GEMINI_TEXT_MODEL,
+    DEFAULT_GOOGLE_AI_STUDIO_PROVIDER_ID,
+    normalizeGeminiModelName,
+} from "@/lib/ai-providers/default-provider";
 
 export const runtime = "nodejs";
 
-const DEFAULT_MODEL = "gemini-2.5-pro";
+const DEFAULT_MODEL = DEFAULT_GEMINI_TEXT_MODEL;
 const MAX_CONTEXT_CHARS = 16000;
 
 type StoryboardScene = {
@@ -166,7 +171,7 @@ async function generateWithEnvGemini(input: { model: string; prompt: string }) {
         throw new Error("Google AI Studio API key is missing.");
     }
     const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(input.model)}:generateContent?key=${encodeURIComponent(apiKey)}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(normalizeGeminiModelName(input.model))}:generateContent?key=${encodeURIComponent(apiKey)}`,
         {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -212,7 +217,9 @@ export async function POST(request: Request) {
         const ideaPrompt = readString(payload, "ideaPrompt");
         const improvementPrompt = readString(payload, "improvementPrompt");
         const previousStoryboard = readString(payload, "previousStoryboard");
-        const providerId = readString(payload, "providerId") || "env-gemini";
+        const providerId =
+            readString(payload, "providerId") ||
+            DEFAULT_GOOGLE_AI_STUDIO_PROVIDER_ID;
         const model = readString(payload, "model") || DEFAULT_MODEL;
         const targetDurationSec = readNumber(
             payload,
@@ -225,7 +232,9 @@ export async function POST(request: Request) {
 
         const providerAccessDenied = requireOwnerForProviderAccount(
             request,
-            providerId === "env-gemini" ? undefined : providerId,
+            providerId === DEFAULT_GOOGLE_AI_STUDIO_PROVIDER_ID
+                ? undefined
+                : providerId,
         );
         if (providerAccessDenied) return providerAccessDenied;
 
@@ -239,7 +248,7 @@ export async function POST(request: Request) {
         });
 
         let modelText = "";
-        if (providerId === "env-gemini") {
+        if (providerId === DEFAULT_GOOGLE_AI_STUDIO_PROVIDER_ID) {
             modelText = await generateWithEnvGemini({ model, prompt });
         } else {
             const db = await getAiProvidersDb();

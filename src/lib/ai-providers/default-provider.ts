@@ -1,11 +1,16 @@
-export const DEFAULT_OPENAI_COMPATIBLE_PROVIDER_LABEL = "9router";
-export const DEFAULT_OPENAI_COMPATIBLE_PROVIDER_TYPE = "openai-compatible";
+export const DEFAULT_GOOGLE_AI_STUDIO_PROVIDER_ID = "env-gemini";
+export const DEFAULT_GOOGLE_AI_STUDIO_PROVIDER_LABEL = "Google AI Studio";
+export const DEFAULT_GOOGLE_AI_STUDIO_PROVIDER_TYPE = "gemini";
+export const DEFAULT_GEMINI_TEXT_MODEL = "models/gemini-3.1-flash-lite";
+export const GOOGLE_AI_STUDIO_OPENAI_BASE_URL =
+    "https://generativelanguage.googleapis.com/v1beta/openai";
 
 type ProviderLike = {
     _id: string;
     label?: string | null;
     providerType?: string | null;
     status?: string | null;
+    baseUrl?: string | null;
 };
 
 function normalize(value: unknown) {
@@ -15,31 +20,41 @@ function normalize(value: unknown) {
 export function resolveDefaultAiProviderId<T extends ProviderLike>(
     providers: T[],
 ) {
-    const activeProviders = providers.filter(
-        (provider) => normalize(provider.status || "active") === "active",
-    );
-    const byExact = activeProviders.find(
-        (provider) =>
-            normalize(provider.providerType) ===
-                DEFAULT_OPENAI_COMPATIBLE_PROVIDER_TYPE &&
-            normalize(provider.label) === DEFAULT_OPENAI_COMPATIBLE_PROVIDER_LABEL,
-    );
-    if (byExact?._id) return byExact._id;
+    const configuredGoogleProvider = providers.find((provider) => {
+        if (normalize(provider.status) && normalize(provider.status) !== "active") {
+            return false;
+        }
+        const label = normalize(provider.label);
+        const baseUrl = normalize(provider.baseUrl);
+        return (
+            label.includes("google ai studio") ||
+            label.includes("gemini") ||
+            baseUrl.includes("generativelanguage.googleapis.com")
+        );
+    });
 
-    const byLabel = activeProviders.find(
-        (provider) =>
-            normalize(provider.providerType) ===
-                DEFAULT_OPENAI_COMPATIBLE_PROVIDER_TYPE &&
-            normalize(provider.label).includes(
-                DEFAULT_OPENAI_COMPATIBLE_PROVIDER_LABEL,
-            ),
-    );
-    if (byLabel?._id) return byLabel._id;
+    return configuredGoogleProvider?._id ?? DEFAULT_GOOGLE_AI_STUDIO_PROVIDER_ID;
+}
 
-    const byType = activeProviders.find(
-        (provider) =>
-            normalize(provider.providerType) ===
-            DEFAULT_OPENAI_COMPATIBLE_PROVIDER_TYPE,
+export function isGoogleAiStudioProviderId(providerId: string | undefined) {
+    return normalize(providerId) === DEFAULT_GOOGLE_AI_STUDIO_PROVIDER_ID;
+}
+
+export function readGoogleAiStudioApiKey() {
+    return (
+        process.env.GEMINI_API_KEY?.trim() ||
+        process.env.GOOGLE_API_KEY?.trim() ||
+        ""
     );
-    return byType?._id ?? "";
+}
+
+export function normalizeGeminiModelName(model: string) {
+    return model.trim().replace(/^models\//u, "");
+}
+
+export function isDefaultGeminiTextModel(model: string | undefined) {
+    return (
+        normalizeGeminiModelName(model ?? "") ===
+        normalizeGeminiModelName(DEFAULT_GEMINI_TEXT_MODEL)
+    );
 }

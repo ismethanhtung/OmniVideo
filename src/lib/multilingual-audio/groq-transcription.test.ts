@@ -73,7 +73,10 @@ describe("Groq transcription adapter", () => {
 
     expect(result.text).toBe("大家好");
     expect(fetchImpl).toHaveBeenCalledTimes(1);
-    const [, init] = fetchImpl.mock.calls[0];
+    const [url, init] = fetchImpl.mock.calls[0];
+    expect(url).toBe(
+      "https://api.groq.com/openai/v1/audio/transcriptions",
+    );
     expect(init.headers).toEqual({ Authorization: "Bearer secret" });
     const body = init.body as FormData;
     expect(body.get("model")).toBe("whisper-large-v3-turbo");
@@ -84,6 +87,94 @@ describe("Groq transcription adapter", () => {
       "segment",
       "word",
     ]);
+  });
+
+  it("uses selected OpenAI-compatible transcription model and base URL", async () => {
+    const fetchImpl = vi.fn(async () => {
+      return new Response(
+        JSON.stringify({
+          text: "hello",
+          language: "en",
+          segments: [{ start: 0, end: 1, text: "hello" }],
+          words: [],
+        }),
+        { status: 200 },
+      );
+    });
+
+    await transcribeWithGroq({
+      apiKey: "provider-secret",
+      baseUrl: "https://speech.example.com/v1/",
+      model: "custom-whisper-large",
+      providerName: "Custom Speech",
+      audioBytes: new Uint8Array([1, 2, 3]),
+      language: "en",
+      timestampGranularities: ["segment"],
+      fetchImpl,
+    });
+
+    const [url, init] = fetchImpl.mock.calls[0];
+    expect(url).toBe("https://speech.example.com/v1/audio/transcriptions");
+    expect(init.headers).toEqual({ Authorization: "Bearer provider-secret" });
+    expect((init.body as FormData).get("model")).toBe("custom-whisper-large");
+  });
+
+  it("routes Google AI Studio Gemini transcription through native generateContent audio", async () => {
+    const fetchImpl = vi.fn(async () => {
+      return new Response(
+        JSON.stringify({
+          candidates: [
+            {
+              content: {
+                parts: [
+                  {
+                    text: JSON.stringify({
+                      text: "大家好",
+                      language: "zh",
+                      segments: [
+                        { id: 0, start: 0, end: 1.5, text: "大家好" },
+                      ],
+                      words: [{ word: "大家", start: 0, end: 0.8 }],
+                    }),
+                  },
+                ],
+              },
+            },
+          ],
+        }),
+        { status: 200 },
+      );
+    });
+
+    const result = await transcribeWithGroq({
+      apiKey: "gemini-key",
+      baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
+      model: "models/gemini-3.1-flash-lite",
+      providerName: "Google AI Studio",
+      audioBytes: new Uint8Array([1, 2, 3]),
+      language: "zh",
+      timestampGranularities: ["segment", "word"],
+      audioDurationSeconds: 3,
+      fetchImpl,
+    });
+
+    expect(result.segments).toEqual([
+      { id: 0, start: 0, end: 1.5, text: "大家好" },
+    ]);
+    const [url, init] = fetchImpl.mock.calls[0];
+    expect(String(url)).toContain(
+      "models/gemini-3.1-flash-lite:generateContent",
+    );
+    expect(String(url)).not.toContain("/audio/transcriptions");
+    const body = JSON.parse(String(init.body)) as {
+      contents: Array<{ parts: Array<{ inlineData?: { data?: string }; text?: string }> }>;
+      generationConfig: { responseMimeType: string };
+    };
+    expect(body.contents[0].parts[0].inlineData?.data).toBe("AQID");
+    expect(body.contents[0].parts[1].text).toContain(
+      "Include word-level timestamps",
+    );
+    expect(body.generationConfig.responseMimeType).toBe("application/json");
   });
 
   it("maps Groq provider errors to a stable error", async () => {
@@ -125,7 +216,7 @@ describe("Groq transcription adapter", () => {
     const expectPromise = expect(promise).rejects.toMatchObject({
       code: "PRV_GROQ_TRANSCRIPTION_FAILED",
       status: 502,
-      message: "Groq transcription network request failed: fetch failed",
+      message: "groq transcription network request failed: fetch failed",
     });
 
     await vi.runAllTimersAsync();

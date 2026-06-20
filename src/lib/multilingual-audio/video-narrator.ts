@@ -1,3 +1,8 @@
+import {
+    DEFAULT_GEMINI_TEXT_MODEL,
+    normalizeGeminiModelName,
+} from "@/lib/ai-providers/default-provider";
+
 import { ChineseTranscriptionError } from "./types";
 
 export type TimedNarrationSegment = {
@@ -158,7 +163,9 @@ export async function generateGeminiNarrationScript(input: {
     model: string;
     customPrompt?: string;
 }): Promise<TimedNarrationSegment[]> {
-    const modelName = input.model || "gemini-1.5-flash";
+    const modelName = normalizeGeminiModelName(
+        input.model || DEFAULT_GEMINI_TEXT_MODEL,
+    );
     const generateUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${input.apiKey}`;
 
     const defaultPrompt =

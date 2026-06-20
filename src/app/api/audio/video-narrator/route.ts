@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { applyDemoRateLimit, requireOwnerForProviderAccount } from "@/lib/access-control/route-guards";
 import {
+    DEFAULT_GEMINI_TEXT_MODEL,
+    normalizeGeminiModelName,
+} from "@/lib/ai-providers/default-provider";
+import {
     uploadVideoToGemini,
     pollGeminiFileStatus,
     generateGeminiNarrationScript,
@@ -44,7 +48,9 @@ export async function POST(request: Request) {
         const file = formData.get("videoFile");
         const assetId = readFormValue(formData, "assetId").trim();
         const providerId = readFormValue(formData, "providerId").trim();
-        const model = readFormValue(formData, "model").trim() || "gemini-1.5-flash";
+        const model =
+            readFormValue(formData, "model").trim() ||
+            DEFAULT_GEMINI_TEXT_MODEL;
         const prompt = readFormValue(formData, "prompt").trim();
 
         // Check if this is a render request
@@ -323,7 +329,7 @@ export async function POST(request: Request) {
             fileUri: uploadResult.fileUri,
             mimeType: source.mimeType,
             apiKey,
-            model,
+            model: normalizeGeminiModelName(model),
             customPrompt: prompt || undefined,
         });
 

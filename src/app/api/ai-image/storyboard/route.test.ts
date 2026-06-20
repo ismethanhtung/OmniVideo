@@ -4,6 +4,7 @@ import {
     requireOwnerForProviderAccount,
     requireWriteAccess,
 } from "@/lib/access-control/route-guards";
+import { DEFAULT_GEMINI_TEXT_MODEL } from "@/lib/ai-providers/default-provider";
 import { chatCompletion } from "@/lib/ai-providers/client";
 import {
     getAiProviderById,
@@ -154,7 +155,7 @@ describe("AI Image storyboard route", () => {
                 method: "POST",
                 body: JSON.stringify({
                     providerId: "env-gemini",
-                    model: "gemini-2.5-pro",
+                    model: DEFAULT_GEMINI_TEXT_MODEL,
                     category: "Triết lý sống",
                 }),
             }),
@@ -163,7 +164,11 @@ describe("AI Image storyboard route", () => {
 
         expect(response.status).toBe(200);
         expect(payload.data.providerId).toBe("env-gemini");
+        expect(payload.data.model).toBe(DEFAULT_GEMINI_TEXT_MODEL);
         expect(payload.data.scenes[0].visual).toContain("Cô gái");
+        expect(vi.mocked(fetch).mock.calls[0][0]).toEqual(
+            expect.stringContaining("models/gemini-3.1-flash-lite"),
+        );
         expect(mockedRequireOwnerForProviderAccount).toHaveBeenCalledWith(
             expect.any(Request),
             undefined,

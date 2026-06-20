@@ -205,7 +205,7 @@ export const LEFTBAR_NAV: LeftbarNavGroup[] = [
                 icon: PackageOpen,
                 label: "Feature Sandbox",
                 description:
-                    "Test nhanh Replicate models, transcript retry, Piper TTS và segment inspection.",
+                    "Test nhanh Replicate models, speech transcription providers, Piper TTS và segment inspection.",
             },
             {
                 id: "videoSplitter",

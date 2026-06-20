@@ -19,8 +19,9 @@ import {
 import type { LeftbarNavItem } from "@/components/layout/types";
 import { AssetLifecycleBadges } from "@/components/ui/asset-lifecycle-badges";
 import {
-    DEFAULT_OPENAI_COMPATIBLE_PROVIDER_LABEL,
-    DEFAULT_OPENAI_COMPATIBLE_PROVIDER_TYPE,
+    DEFAULT_GOOGLE_AI_STUDIO_PROVIDER_ID,
+    DEFAULT_GOOGLE_AI_STUDIO_PROVIDER_LABEL,
+    isDefaultGeminiTextModel,
     resolveDefaultAiProviderId,
 } from "@/lib/ai-providers/default-provider";
 import {
@@ -164,7 +165,7 @@ function formatDurationMs(ms: number) {
 
 function formatSpeedFactor(value: number) {
     if (!Number.isFinite(value)) return "n/a";
-    return `${Math.max(1.25, value).toFixed(2)}x`;
+    return `${Math.max(1, value).toFixed(2)}x`;
 }
 
 function clampVideoSpeedFactor(value: number) {
@@ -575,7 +576,9 @@ export function ChineseTranscriptionPanel({
         useState<number | null>(null);
 
     const [aiProviders, setAiProviders] = useState<AiProviderOption[]>([]);
-    const [selectedProviderId, setSelectedProviderId] = useState("");
+    const [selectedProviderId, setSelectedProviderId] = useState(
+        DEFAULT_GOOGLE_AI_STUDIO_PROVIDER_ID,
+    );
     const [aiModels, setAiModels] = useState<AiModelOption[]>([]);
     const [translationModel, setTranslationModel] = useState(
         DEFAULT_TRANSLATION_MODEL,
@@ -784,8 +787,7 @@ export function ChineseTranscriptionPanel({
                 if (payload.data.length > 0) {
                     const preferredModel =
                         payload.data.find(
-                            (model) =>
-                                model.id === DEFAULT_TRANSLATION_MODEL,
+                            (model) => isDefaultGeminiTextModel(model.id),
                         )?.id ?? payload.data[0].id;
                     setTranslationModel(preferredModel);
                 }
@@ -1215,6 +1217,9 @@ export function ChineseTranscriptionPanel({
                     chunk.targetDurationSeconds,
                 borrowedGapSeconds:
                     previous.borrowedGapSeconds + chunk.borrowedGapSeconds,
+                borrowedLeadSeconds:
+                    (previous.borrowedLeadSeconds ?? 0) +
+                    (chunk.borrowedLeadSeconds ?? 0),
                 speedFactor: Math.max(previous.speedFactor, chunk.speedFactor),
                 warningCodes: Array.from(
                     new Set([...previous.warningCodes, ...chunk.warningCodes]),
@@ -2146,12 +2151,13 @@ export function ChineseTranscriptionPanel({
                                     }
                                     className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main"
                                 >
-                                    <option value="">
-                                        {DEFAULT_OPENAI_COMPATIBLE_PROVIDER_LABEL} (
-                                        {
-                                            DEFAULT_OPENAI_COMPATIBLE_PROVIDER_TYPE
+                                    <option
+                                        value={
+                                            DEFAULT_GOOGLE_AI_STUDIO_PROVIDER_ID
                                         }
-                                        )
+                                    >
+                                        {DEFAULT_GOOGLE_AI_STUDIO_PROVIDER_LABEL}{" "}
+                                        (env)
                                     </option>
                                     {aiProviders.map((provider) => (
                                         <option
@@ -2201,7 +2207,7 @@ export function ChineseTranscriptionPanel({
                                                 event.currentTarget.value,
                                             )
                                         }
-                                        placeholder="cx/gpt-5.5"
+                                        placeholder={DEFAULT_TRANSLATION_MODEL}
                                         className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main placeholder:text-muted/60"
                                     />
                                 )}

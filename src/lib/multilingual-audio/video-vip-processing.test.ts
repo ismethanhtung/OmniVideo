@@ -612,6 +612,57 @@ describe("VIP processing stage checkpoints", () => {
         ]);
     });
 
+    it("applies VIP rate limits to translation and metadata without changing transcript", async () => {
+        const runners = createStageRunners();
+        const translationRateLimit = {
+            key: "ai-provider:translation",
+            rpm: 14,
+        };
+        const metadataRateLimit = {
+            key: "ai-provider:metadata",
+            rpm: 14,
+        };
+
+        await runVideoVipProcessing({
+            fileName: "source.mp4",
+            fileSizeBytes: 3,
+            fileBytes: new Uint8Array([1, 2, 3]),
+            apiKey: "provider-key",
+            baseUrl: "https://provider.example/v1",
+            providerName: "Provider One",
+            translationRateLimit,
+            metadataApiKey: "metadata-key",
+            metadataBaseUrl: "https://metadata.example/v1",
+            metadataProviderName: "Metadata Provider",
+            metadataRateLimit,
+            stageRunners: runners,
+            omitVideoBase64: true,
+        });
+
+        expect(runners.transcribe).toHaveBeenCalledWith(
+            expect.not.objectContaining({
+                transcriptionApiKey: expect.any(String),
+                transcriptionRateLimit: expect.anything(),
+            }),
+        );
+        expect(runners.translate).toHaveBeenCalledWith(
+            expect.objectContaining({
+                apiKey: "provider-key",
+                baseUrl: "https://provider.example/v1",
+                providerName: "Provider One",
+                rateLimit: translationRateLimit,
+            }),
+        );
+        expect(runners.generateMetadata).toHaveBeenCalledWith(
+            expect.objectContaining({
+                apiKey: "metadata-key",
+                baseUrl: "https://metadata.example/v1",
+                providerName: "Metadata Provider",
+                rateLimit: metadataRateLimit,
+            }),
+        );
+    });
+
     it("prefers sourceTitle over technical fileName for output naming", async () => {
         const runners = createStageRunners();
         const result = await runVideoVipProcessing({
@@ -723,7 +774,7 @@ describe("VIP processing stage checkpoints", () => {
 
         const renderInput = vi.mocked(runners.render).mock.calls[0][0];
         expect(renderInput.speedFactor).toBe(0.75);
-        expect(renderInput.originalAudioVolume).toBe(0.2);
+        expect(renderInput.originalAudioVolume).toBe(0);
         expect(renderInput.voiceVolume).toBe(1);
     });
 

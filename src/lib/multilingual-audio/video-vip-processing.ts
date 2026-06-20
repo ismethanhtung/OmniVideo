@@ -13,6 +13,7 @@ import {
 import { cpus, tmpdir } from "node:os";
 import path from "node:path";
 
+import type { AiProviderRateLimit } from "@/lib/ai-providers/rate-limit";
 import { resolveFfmpegPath } from "@/lib/multilingual-audio/audio-extraction";
 import { runChineseVideoTranscription } from "@/lib/multilingual-audio/chinese-transcription";
 import { generateVoiceFromSegments } from "@/lib/multilingual-audio/piper-tts";
@@ -328,6 +329,7 @@ export type VideoVipProcessingInput = {
     apiKey?: string;
     baseUrl?: string;
     providerName?: string;
+    translationRateLimit?: AiProviderRateLimit;
     ttsSettings?: Partial<VoiceGenerationSettings>;
     originalAudioVolume?: number;
     voiceVolume?: number;
@@ -345,6 +347,7 @@ export type VideoVipProcessingInput = {
     metadataApiKey?: string;
     metadataBaseUrl?: string;
     metadataProviderName?: string;
+    metadataRateLimit?: AiProviderRateLimit;
     omitVideoBase64?: boolean;
     checkpointKey?: string;
     checkpointDir?: string;
@@ -475,7 +478,7 @@ function normalizeVolume(value: number | undefined, fallback: number) {
 }
 
 export const DEFAULT_VIP_VIDEO_SPEED_FACTOR = 0.75;
-export const DEFAULT_VIP_ORIGINAL_AUDIO_VOLUME = 0.2;
+export const DEFAULT_VIP_ORIGINAL_AUDIO_VOLUME = 0;
 const DEFAULT_VIP_RENDER_TIMEOUT_MS = 4 * 60 * 60 * 1000;
 
 function isVipRenderPreset(value: string | undefined): value is VipRenderPreset {
@@ -2195,6 +2198,7 @@ export async function runVideoVipProcessing(
                     apiKey: input.apiKey,
                     baseUrl: input.baseUrl,
                     providerName: input.providerName,
+                    rateLimit: input.translationRateLimit,
                 });
             } catch (error) {
                 logVipEvent(runId, "stage-failed", {
@@ -2381,6 +2385,7 @@ export async function runVideoVipProcessing(
                         baseUrl: input.metadataBaseUrl ?? input.baseUrl,
                         providerName:
                             input.metadataProviderName ?? input.providerName,
+                        rateLimit: input.metadataRateLimit,
                     });
                 } catch (error) {
                     logVipEvent(runId, "stage-failed", {
@@ -2686,6 +2691,7 @@ export async function runVideoVipProcessing(
                         baseUrl: input.metadataBaseUrl ?? input.baseUrl,
                         providerName:
                             input.metadataProviderName ?? input.providerName,
+                        rateLimit: input.metadataRateLimit,
                     });
                 } catch (error) {
                     logVipEvent(runId, "stage-failed", {
@@ -3039,6 +3045,7 @@ export async function runVideoVipProcessing(
                     apiKey: input.metadataApiKey ?? input.apiKey,
                     baseUrl: input.metadataBaseUrl ?? input.baseUrl,
                     providerName: input.metadataProviderName ?? input.providerName,
+                    rateLimit: input.metadataRateLimit,
                 });
             } catch (error) {
                 logVipEvent(runId, "stage-failed", {
