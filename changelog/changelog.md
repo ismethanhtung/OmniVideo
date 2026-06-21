@@ -1,5 +1,32 @@
 # OmniVideo Changelog
 
+## FAST-WORKSPACE-095 - Parallelize remote VIP source upload staging
+
+- Bumped app version from `0.11.38` to `0.11.39` as a patch release for large remote VIP source upload speed.
+- Added remote worker source chunk staging on `/api/audio/video-vip-voice-render`, allowing EC2 to receive large source videos as staged parts and later resolve `sourceUploadId` during job start.
+- Updated the default remote worker client to stage large source videos in parallel chunks before sending a lightweight async start request.
+- Preserved fallback to the existing single multipart start upload when chunk staging is unsupported or fails, so old workers do not hard-break the flow.
+- Updated Workspace remote VIP progress text for parallel EC2 chunk staging.
+- Added regression coverage for staged chunk upload, fallback to single upload, worker-side staged source assembly, and UI progress visibility.
+- Verification (FAST-WORKSPACE-095):
+  - `npm run test -- --run src/lib/multilingual-audio/remote-vip-worker.test.ts src/app/api/audio/video-vip-voice-render/route.test.ts src/features/workspace/workspace-canvas-panel.test.ts` pass (3 files / 50 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+
+## FAST-WORKSPACE-094 - Harden remote VIP start upload and progress visibility
+
+- Bumped app version from `0.11.37` to `0.11.38` as a patch release for remote VIP EC2 start upload reliability.
+- Replaced the default remote worker start POST path with a Node HTTP/HTTPS multipart upload transport that uses an explicit long timeout and upload progress callbacks instead of native `fetch(FormData)` for large video uploads.
+- Saved remote worker progress into VIP checkpoints for preflight, source upload, worker acceptance, polling, completion, and artifact download phases.
+- Updated Workspace VIP progress polling to show EC2-specific status such as upload bytes, accepted job, worker stage, poll retry, and artifact download instead of only the generic voice/render message.
+- Added regression coverage for default Node multipart upload progress, checkpoint persistence, and Workspace progress visibility.
+- Verification (FAST-WORKSPACE-094):
+  - `npm run test -- --run src/lib/multilingual-audio/remote-vip-worker.test.ts src/lib/multilingual-audio/video-vip-processing.test.ts src/features/workspace/workspace-canvas-panel.test.ts` pass (3 files / 61 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+
 ## FAST-AUDIO-076 - Retry transient translation chunk failures
 
 - Bumped app version from `0.11.36` to `0.11.37` as a patch release for VIP translation resilience.

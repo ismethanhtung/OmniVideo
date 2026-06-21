@@ -1,5 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 
 import { NextResponse } from "next/server";
 
@@ -61,6 +64,10 @@ type RemoteVipWorkerTopSnapshot = {
 };
 
 const REMOTE_VIP_JOB_TTL_MS = 6 * 60 * 60 * 1000;
+const REMOTE_VIP_SOURCE_UPLOAD_ROOT = path.join(
+    tmpdir(),
+    "omnivideo-vip-source-uploads",
+);
 
 const remoteVipWorkerJobs: Map<string, RemoteVipWorkerJob> =
     ((globalThis as typeof globalThis & {
@@ -103,6 +110,169 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
+function readWorkerFormString(formData: FormData, key: string) {
+    const value = formData.get(key);
+    return typeof value === "string" ? value.trim() : "";
+}
+
+function readWorkerFormNumber(formData: FormData, key: string) {
+    const parsed = Number(readWorkerFormString(formData, key));
+    return Number.isFinite(parsed) ? parsed : NaN;
+}
+
+function isValidSourceUploadId(value: string) {
+    return /^[a-f0-9-]{36}$/iu.test(value);
+}
+
+function getSourceUploadDir(uploadId: string) {
+    if (!isValidSourceUploadId(uploadId)) {
+        throw new ChineseTranscriptionError(
+            "VAL_DUBBING_VIDEO_REQUIRED",
+            "sourceUploadId is invalid.",
+            400,
+        );
+    }
+    return path.join(REMOTE_VIP_SOURCE_UPLOAD_ROOT, uploadId);
+}
+
+function getSourceUploadPartPath(uploadId: string, partIndex: number) {
+    return path.join(getSourceUploadDir(uploadId), `${partIndex}.part`);
+}
+
+function getSourceUploadMetadataPath(uploadId: string) {
+    return path.join(getSourceUploadDir(uploadId), "metadata.json");
+}
+
+async function handleSourceUploadPart(request: Request) {
+    const formData = await request.formData();
+    const uploadId = readWorkerFormString(formData, "sourceUploadId");
+    const partIndex = readWorkerFormNumber(formData, "partIndex");
+    const partCount = readWorkerFormNumber(formData, "partCount");
+    const totalBytes = readWorkerFormNumber(formData, "totalBytes");
+    const fileName = readWorkerFormString(formData, "fileName") || "source.mp4";
+    const mimeType = readWorkerFormString(formData, "mimeType") || "video/mp4";
+    const chunkFile = formData.get("chunkFile");
+    if (
+        !isValidSourceUploadId(uploadId) ||
+        !Number.isInteger(partIndex) ||
+        !Number.isInteger(partCount) ||
+        partIndex < 0 ||
+        partCount <= 0 ||
+        partIndex >= partCount ||
+        !Number.isFinite(totalBytes) ||
+        totalBytes <= 0 ||
+        !(chunkFile instanceof File)
+    ) {
+        throw new ChineseTranscriptionError(
+            "VAL_DUBBING_VIDEO_REQUIRED",
+            "Valid sourceUploadId, part metadata, and chunkFile are required.",
+            400,
+        );
+    }
+
+    const dir = getSourceUploadDir(uploadId);
+    await mkdir(dir, { recursive: true });
+    const now = new Date().toISOString();
+    await writeFile(
+        getSourceUploadMetadataPath(uploadId),
+        JSON.stringify(
+            {
+                uploadId,
+                fileName,
+                mimeType,
+                totalBytes,
+                partCount,
+                updatedAt: now,
+            },
+            null,
+            2,
+        ),
+    );
+    const chunkBytes = Buffer.from(await chunkFile.arrayBuffer());
+    await writeFile(getSourceUploadPartPath(uploadId, partIndex), chunkBytes);
+
+    return NextResponse.json({
+        ok: true,
+        data: {
+            uploadId,
+            partIndex,
+            partCount,
+            chunkByteLength: chunkBytes.byteLength,
+        },
+    });
+}
+
+async function readStagedSourceUpload(uploadId: string) {
+    const metadataPath = getSourceUploadMetadataPath(uploadId);
+    let metadata: {
+        fileName?: unknown;
+        mimeType?: unknown;
+        totalBytes?: unknown;
+        partCount?: unknown;
+    };
+    try {
+        metadata = JSON.parse(await readFile(metadataPath, "utf8")) as typeof metadata;
+    } catch {
+        throw new ChineseTranscriptionError(
+            "VAL_DUBBING_VIDEO_REQUIRED",
+            "Staged source upload was not found on the remote worker.",
+            404,
+        );
+    }
+
+    const partCount = Number(metadata.partCount);
+    const totalBytes = Number(metadata.totalBytes);
+    if (
+        !Number.isInteger(partCount) ||
+        partCount <= 0 ||
+        !Number.isFinite(totalBytes) ||
+        totalBytes <= 0
+    ) {
+        throw new ChineseTranscriptionError(
+            "VAL_DUBBING_VIDEO_REQUIRED",
+            "Staged source upload metadata is invalid.",
+            400,
+        );
+    }
+
+    const parts = await Promise.all(
+        Array.from({ length: partCount }, async (_, index) => {
+            try {
+                return await readFile(getSourceUploadPartPath(uploadId, index));
+            } catch {
+                throw new ChineseTranscriptionError(
+                    "VAL_DUBBING_VIDEO_REQUIRED",
+                    `Staged source upload is missing chunk ${index + 1}/${partCount}.`,
+                    400,
+                );
+            }
+        }),
+    );
+    const fileBytes = Buffer.concat(parts);
+    if (fileBytes.byteLength !== totalBytes) {
+        throw new ChineseTranscriptionError(
+            "VAL_DUBBING_VIDEO_REQUIRED",
+            `Staged source upload size mismatch: expected ${totalBytes} bytes, received ${fileBytes.byteLength} bytes.`,
+            400,
+        );
+    }
+
+    await rm(getSourceUploadDir(uploadId), { recursive: true, force: true }).catch(
+        () => undefined,
+    );
+    return {
+        fileBytes: new Uint8Array(fileBytes),
+        fileName:
+            typeof metadata.fileName === "string" && metadata.fileName.trim()
+                ? metadata.fileName
+                : "source.mp4",
+        mimeType:
+            typeof metadata.mimeType === "string" && metadata.mimeType.trim()
+                ? metadata.mimeType
+                : "video/mp4",
+    };
+}
+
 async function parseWorkerPayload(request: Request) {
     const contentType = request.headers.get("content-type") ?? "";
     if (contentType.includes("multipart/form-data")) {
@@ -120,15 +290,23 @@ async function parseWorkerPayload(request: Request) {
                 400,
             );
         }
-        if (!(file instanceof File)) {
+        const payload = JSON.parse(payloadJson) as Record<string, unknown>;
+        const executionMode = normalizeWorkerExecutionMode(payload.executionMode);
+        const stagedSourceUploadId =
+            typeof payload.sourceUploadId === "string"
+                ? payload.sourceUploadId.trim()
+                : "";
+        const stagedSource =
+            !(file instanceof File) && stagedSourceUploadId
+                ? await readStagedSourceUpload(stagedSourceUploadId)
+                : null;
+        if (!(file instanceof File) && !stagedSource) {
             throw new ChineseTranscriptionError(
                 "VAL_DUBBING_VIDEO_REQUIRED",
-                "videoFile is required for remote VIP voice/render.",
+                "videoFile or sourceUploadId is required for remote VIP voice/render.",
                 400,
             );
         }
-        const payload = JSON.parse(payloadJson) as Record<string, unknown>;
-        const executionMode = normalizeWorkerExecutionMode(payload.executionMode);
         if (executionMode === "render-only" && !(voiceFile instanceof File)) {
             throw new ChineseTranscriptionError(
                 "VAL_TTS_SEGMENTS_REQUIRED",
@@ -138,13 +316,22 @@ async function parseWorkerPayload(request: Request) {
         }
         return {
             payload,
-            fileBytes: new Uint8Array(await file.arrayBuffer()),
+            fileBytes:
+                file instanceof File
+                    ? new Uint8Array(await file.arrayBuffer())
+                    : stagedSource?.fileBytes ?? new Uint8Array(),
             voiceBytes:
                 voiceFile instanceof File
                     ? new Uint8Array(await voiceFile.arrayBuffer())
                     : undefined,
-            fileName: file.name || undefined,
-            mimeType: file.type || undefined,
+            fileName:
+                file instanceof File
+                    ? file.name || undefined
+                    : stagedSource?.fileName,
+            mimeType:
+                file instanceof File
+                    ? file.type || undefined
+                    : stagedSource?.mimeType,
             asyncRequested,
         };
     }
@@ -468,6 +655,10 @@ export async function GET(request: Request) {
     return NextResponse.json({
         ok: true,
         service: "omnivideo-vip-voice-render",
+        capabilities: {
+            sourceChunkUpload: true,
+            sourceUploadReference: true,
+        },
         data: {
             jobs: Array.from(remoteVipWorkerJobs.values()).map((job) =>
                 serializeWorkerJob(job, { includeResult: false }),
@@ -498,6 +689,10 @@ export async function POST(request: Request) {
     if (denied) return denied;
 
     try {
+        const url = new URL(request.url);
+        if (url.searchParams.get("sourceUpload") === "part") {
+            return await handleSourceUploadPart(request);
+        }
         const { payload, fileBytes, voiceBytes, fileName, mimeType, asyncRequested } =
             await parseWorkerPayload(request);
         const workerInput = {

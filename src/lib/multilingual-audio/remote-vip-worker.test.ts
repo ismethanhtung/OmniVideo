@@ -1,3 +1,5 @@
+import { EventEmitter } from "node:events";
+
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -175,6 +177,347 @@ describe("remote VIP worker client", () => {
             "http://worker.example/api/workspace/artifacts/artifact-async/download",
         );
         expect(result.videoBytes?.toString()).toBe("async-remote-video");
+    });
+
+    it("uses Node multipart upload with progress for default remote start requests", async () => {
+        const requestBodies: Buffer[] = [];
+        const requestMock = vi.fn((_url, _options, onResponse) => {
+            const chunks: Buffer[] = [];
+            const request = new EventEmitter() as EventEmitter & {
+                setTimeout: (timeoutMs: number, callback: () => void) => typeof request;
+                write: (chunk: Buffer) => boolean;
+                end: (callback?: () => void) => typeof request;
+                destroy: (error?: Error) => typeof request;
+            };
+            request.setTimeout = vi.fn(() => request);
+            request.write = vi.fn((chunk: Buffer) => {
+                chunks.push(Buffer.from(chunk));
+                return true;
+            });
+            request.end = vi.fn((callback?: () => void) => {
+                requestBodies.push(Buffer.concat(chunks));
+                callback?.();
+                const response = new EventEmitter() as EventEmitter & {
+                    statusCode?: number;
+                };
+                response.statusCode = 200;
+                onResponse(response);
+                queueMicrotask(() => {
+                    response.emit(
+                        "data",
+                        Buffer.from(
+                            JSON.stringify({
+                                ok: true,
+                                data: {
+                                    videoBase64:
+                                        Buffer.from("node-video").toString("base64"),
+                                    mimeType: "video/mp4",
+                                    extension: "mp4",
+                                    fileName: "source-done.mp4",
+                                    byteLength: 10,
+                                    generationDurationMs: 100,
+                                    stages: {
+                                        finalRenderDurationMs: 40,
+                                    },
+                                    mix: { originalAudioVolume: 0, voiceVolume: 1 },
+                                },
+                            }),
+                        ),
+                    );
+                    response.emit("end");
+                });
+                return request;
+            });
+            request.destroy = vi.fn((error?: Error) => {
+                if (error) request.emit("error", error);
+                return request;
+            });
+            return request;
+        });
+        vi.doMock("node:http", async () => {
+            const actual = await vi.importActual<typeof import("node:http")>(
+                "node:http",
+            );
+            return {
+                ...actual,
+                request: requestMock,
+            };
+        });
+        vi.resetModules();
+        const { runRemoteVideoVipRender: runWithNodeUpload } = await import(
+            "./remote-vip-worker"
+        );
+        const progress: Array<{ phase: string; percent?: number }> = [];
+
+        try {
+            const result = await runWithNodeUpload(baseInput, {
+                endpoint: "http://worker.example",
+                token: "secret",
+                onProgress: (event) => {
+                    progress.push({
+                        phase: event.phase,
+                        percent: event.percent,
+                    });
+                },
+            });
+
+            expect(result.videoBytes?.toString()).toBe("node-video");
+            expect(requestMock).toHaveBeenCalledTimes(1);
+            expect(requestBodies).toHaveLength(1);
+            const body = requestBodies[0];
+            expect(body.toString("utf8")).toContain('name="payloadJson"');
+            expect(body.toString("utf8")).toContain(
+                '"executionMode":"render-only"',
+            );
+            expect(body.toString("utf8")).toContain('name="videoFile"');
+            expect(body.indexOf(Buffer.from([1, 2, 3]))).toBeGreaterThanOrEqual(
+                0,
+            );
+            expect(progress.map((event) => event.phase)).toEqual(
+                expect.arrayContaining([
+                    "start-upload",
+                    "start-upload-progress",
+                    "start-upload-complete",
+                    "start-response",
+                    "done",
+                ]),
+            );
+            expect(progress.some((event) => event.percent === 100)).toBe(true);
+        } finally {
+            vi.doUnmock("node:http");
+            vi.resetModules();
+        }
+    });
+
+    it("stages large source videos as parallel chunks before a lightweight start request", async () => {
+        const requestBodies: Buffer[] = [];
+        const requestMock = vi.fn((_url, _options, onResponse) => {
+            const chunks: Buffer[] = [];
+            const request = new EventEmitter() as EventEmitter & {
+                setTimeout: (timeoutMs: number, callback: () => void) => typeof request;
+                write: (chunk: Buffer) => boolean;
+                end: (callback?: () => void) => typeof request;
+                destroy: (error?: Error) => typeof request;
+            };
+            request.setTimeout = vi.fn(() => request);
+            request.write = vi.fn((chunk: Buffer) => {
+                chunks.push(Buffer.from(chunk));
+                return true;
+            });
+            request.end = vi.fn((callback?: () => void) => {
+                requestBodies.push(Buffer.concat(chunks));
+                callback?.();
+                const response = new EventEmitter() as EventEmitter & {
+                    statusCode?: number;
+                };
+                response.statusCode = 200;
+                onResponse(response);
+                queueMicrotask(() => {
+                    response.emit(
+                        "data",
+                        Buffer.from(
+                            JSON.stringify({
+                                ok: true,
+                                data: {
+                                    videoBase64:
+                                        Buffer.from("staged-video").toString("base64"),
+                                    mimeType: "video/mp4",
+                                    extension: "mp4",
+                                    fileName: "source-done.mp4",
+                                    byteLength: 12,
+                                    generationDurationMs: 100,
+                                    stages: {
+                                        finalRenderDurationMs: 40,
+                                    },
+                                    mix: { originalAudioVolume: 0, voiceVolume: 1 },
+                                },
+                            }),
+                        ),
+                    );
+                    response.emit("end");
+                });
+                return request;
+            });
+            request.destroy = vi.fn((error?: Error) => {
+                if (error) request.emit("error", error);
+                return request;
+            });
+            return request;
+        });
+        const stagedParts: Array<{ uploadId: string; partIndex: string }> = [];
+        const chunkFetch = vi.fn(async (_url: string | URL, init?: RequestInit) => {
+            const formData = init?.body as FormData;
+            stagedParts.push({
+                uploadId: String(formData.get("sourceUploadId")),
+                partIndex: String(formData.get("partIndex")),
+            });
+            return Response.json({ ok: true, data: { received: true } });
+        });
+        vi.stubGlobal("fetch", chunkFetch);
+        vi.doMock("node:http", async () => {
+            const actual = await vi.importActual<typeof import("node:http")>(
+                "node:http",
+            );
+            return {
+                ...actual,
+                request: requestMock,
+            };
+        });
+        vi.resetModules();
+        const { runRemoteVideoVipRender: runWithNodeUpload } = await import(
+            "./remote-vip-worker"
+        );
+        const progress: string[] = [];
+
+        try {
+            const largeInput = {
+                ...baseInput,
+                fileSizeBytes: 3 * 1024 * 1024 + 1,
+                fileBytes: new Uint8Array(3 * 1024 * 1024 + 1).fill(7),
+            };
+            const result = await runWithNodeUpload(largeInput, {
+                endpoint: "http://worker.example",
+                token: "secret",
+                sourceUploadThresholdBytes: 1,
+                sourceUploadChunkBytes: 1024 * 1024,
+                sourceUploadConcurrency: 2,
+                onProgress: (event) => {
+                    progress.push(event.phase);
+                },
+            });
+
+            expect(result.videoBytes?.toString()).toBe("staged-video");
+            expect(chunkFetch).toHaveBeenCalledTimes(4);
+            expect(new Set(stagedParts.map((part) => part.uploadId)).size).toBe(1);
+            expect(stagedParts.map((part) => part.partIndex).sort()).toEqual([
+                "0",
+                "1",
+                "2",
+                "3",
+            ]);
+            const startBody = requestBodies[0].toString("utf8");
+            expect(startBody).toContain("sourceUploadId");
+            expect(startBody).not.toContain('name="videoFile"');
+            expect(progress).toEqual(
+                expect.arrayContaining([
+                    "source-stage-upload",
+                    "source-stage-upload-progress",
+                    "source-stage-upload-complete",
+                    "start-response",
+                    "done",
+                ]),
+            );
+        } finally {
+            vi.doUnmock("node:http");
+            vi.resetModules();
+            vi.unstubAllGlobals();
+        }
+    });
+
+    it("falls back to single start upload when chunk staging is unsupported", async () => {
+        const requestBodies: Buffer[] = [];
+        const requestMock = vi.fn((_url, _options, onResponse) => {
+            const chunks: Buffer[] = [];
+            const request = new EventEmitter() as EventEmitter & {
+                setTimeout: (timeoutMs: number, callback: () => void) => typeof request;
+                write: (chunk: Buffer) => boolean;
+                end: (callback?: () => void) => typeof request;
+                destroy: (error?: Error) => typeof request;
+            };
+            request.setTimeout = vi.fn(() => request);
+            request.write = vi.fn((chunk: Buffer) => {
+                chunks.push(Buffer.from(chunk));
+                return true;
+            });
+            request.end = vi.fn((callback?: () => void) => {
+                requestBodies.push(Buffer.concat(chunks));
+                callback?.();
+                const response = new EventEmitter() as EventEmitter & {
+                    statusCode?: number;
+                };
+                response.statusCode = 200;
+                onResponse(response);
+                queueMicrotask(() => {
+                    response.emit(
+                        "data",
+                        Buffer.from(
+                            JSON.stringify({
+                                ok: true,
+                                data: {
+                                    videoBase64:
+                                        Buffer.from("fallback-video").toString("base64"),
+                                    mimeType: "video/mp4",
+                                    extension: "mp4",
+                                    fileName: "source-done.mp4",
+                                    byteLength: 14,
+                                    generationDurationMs: 100,
+                                    stages: {
+                                        finalRenderDurationMs: 40,
+                                    },
+                                    mix: { originalAudioVolume: 0, voiceVolume: 1 },
+                                },
+                            }),
+                        ),
+                    );
+                    response.emit("end");
+                });
+                return request;
+            });
+            request.destroy = vi.fn((error?: Error) => {
+                if (error) request.emit("error", error);
+                return request;
+            });
+            return request;
+        });
+        vi.stubGlobal(
+            "fetch",
+            vi.fn(async () =>
+                Response.json(
+                    { ok: false, error: "payloadJson is required" },
+                    { status: 400 },
+                ),
+            ),
+        );
+        vi.doMock("node:http", async () => {
+            const actual = await vi.importActual<typeof import("node:http")>(
+                "node:http",
+            );
+            return {
+                ...actual,
+                request: requestMock,
+            };
+        });
+        vi.resetModules();
+        const { runRemoteVideoVipRender: runWithNodeUpload } = await import(
+            "./remote-vip-worker"
+        );
+        const progress: string[] = [];
+
+        try {
+            const result = await runWithNodeUpload(baseInput, {
+                endpoint: "http://worker.example",
+                token: "secret",
+                sourceUploadThresholdBytes: 1,
+                onProgress: (event) => {
+                    progress.push(event.phase);
+                },
+            });
+
+            expect(result.videoBytes?.toString()).toBe("fallback-video");
+            expect(requestBodies[0].toString("utf8")).toContain('name="videoFile"');
+            expect(progress).toEqual(
+                expect.arrayContaining([
+                    "source-stage-fallback",
+                    "start-upload",
+                    "start-upload-complete",
+                    "done",
+                ]),
+            );
+        } finally {
+            vi.doUnmock("node:http");
+            vi.resetModules();
+            vi.unstubAllGlobals();
+        }
     });
 
     it("maps async worker job failures to VIP mux errors", async () => {

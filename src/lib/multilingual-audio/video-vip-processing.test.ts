@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -916,6 +916,75 @@ describe("VIP processing stage checkpoints", () => {
         expect(result.voice.byteLength).toBe(11);
         expect(result.stages.voiceDurationMs).toBe(7);
         expect(result.stages.finalRenderDurationMs).toBe(8);
+    });
+
+    it("persists remote worker upload progress in VIP checkpoints", async () => {
+        mockedAssertRemoteVipWorkerAvailable.mockResolvedValueOnce(undefined);
+        mockedRunRemoteVideoVipVoiceRender.mockImplementationOnce(
+            async (_input, options) => {
+                await options.onProgress?.({
+                    phase: "start-upload-progress",
+                    uploadedBytes: 2,
+                    totalBytes: 3,
+                    percent: 67,
+                    message: "Uploading source video to remote VIP worker.",
+                });
+                return {
+                    videoBytes: Buffer.from("remote-voice-render-video"),
+                    mimeType: "video/mp4",
+                    extension: "mp4",
+                    fileName: "source-done.mp4",
+                    byteLength: 25,
+                    generationDurationMs: 20,
+                    voice: {
+                        mimeType: "audio/wav",
+                        extension: "wav",
+                        fileName: "voice.wav",
+                        byteLength: 11,
+                        segmentCount: 1,
+                        generationDurationMs: 7,
+                        alignment: {
+                            mode: "timeline",
+                            chunks: 1,
+                            targetDurationSeconds: 1,
+                        },
+                        settings: { binaryPath: "piper", modelPath: "" },
+                        provider: { name: "piper", mode: "local-cli" },
+                    },
+                    stages: { voiceDurationMs: 7, finalRenderDurationMs: 8 },
+                    mix: { originalAudioVolume: 0, voiceVolume: 1 },
+                };
+            },
+        );
+        const checkpointDir = await createCheckpointDir();
+        const runners = createStageRunners();
+
+        await runVideoVipProcessing({
+            fileName: "source.mp4",
+            fileSizeBytes: 3,
+            fileBytes: new Uint8Array([1, 2, 3]),
+            voiceRenderExecutionMode: "remote-voice-render",
+            remoteVoiceRenderEndpoint: "http://worker.example",
+            checkpointKey: "workspace-vip:remote-progress",
+            checkpointDir,
+            stageRunners: runners,
+            omitVideoBase64: true,
+        });
+
+        const [checkpointKeyDir] = await readdir(checkpointDir);
+        const checkpoint = JSON.parse(
+            await readFile(
+                path.join(checkpointDir, checkpointKeyDir, "checkpoint.json"),
+                "utf8",
+            ),
+        );
+        expect(checkpoint.remoteWorker).toMatchObject({
+            phase: "start-upload-progress",
+            uploadedBytes: 2,
+            totalBytes: 3,
+            percent: 67,
+            message: "Uploading source video to remote VIP worker.",
+        });
     });
 
     it("uses local sanitized output name when stale EC2 worker returns generic filename", async () => {

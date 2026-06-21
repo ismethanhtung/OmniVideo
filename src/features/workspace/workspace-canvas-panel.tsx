@@ -346,6 +346,94 @@ function formatBytes(bytes: number) {
     return `${bytes} B`;
 }
 
+function formatRemoteVipWorkerProgress(remoteWorker: unknown) {
+    if (!remoteWorker || typeof remoteWorker !== "object") return "";
+    const state = remoteWorker as Record<string, unknown>;
+    const phase = typeof state.phase === "string" ? state.phase : "";
+    const message = typeof state.message === "string" ? state.message : "";
+    const jobId = typeof state.jobId === "string" ? state.jobId : "";
+    const stage = typeof state.stage === "string" ? state.stage : "";
+    const uploadedBytes =
+        typeof state.uploadedBytes === "number" ? state.uploadedBytes : undefined;
+    const totalBytes =
+        typeof state.totalBytes === "number" ? state.totalBytes : undefined;
+    const percent =
+        typeof state.percent === "number" ? Math.round(state.percent) : undefined;
+    const byteLength =
+        typeof state.byteLength === "number" ? state.byteLength : undefined;
+    const failureCount =
+        typeof state.failureCount === "number" ? state.failureCount : undefined;
+    const failureLimit =
+        typeof state.failureLimit === "number" ? state.failureLimit : undefined;
+
+    if (phase === "preflight") {
+        return "[remote] Checking EC2 worker health before VIP work...";
+    }
+    if (phase === "preflight-complete") {
+        return "[remote] EC2 worker health check passed.";
+    }
+    if (phase === "preflight-failed") {
+        return `[remote] EC2 worker health check failed${message ? `: ${message}` : "."}`;
+    }
+    if (
+        phase === "source-stage-upload" ||
+        phase === "source-stage-upload-progress" ||
+        phase === "source-stage-upload-complete"
+    ) {
+        if (typeof uploadedBytes === "number" && typeof totalBytes === "number") {
+            const suffix =
+                typeof percent === "number" ? ` (${percent}%)` : "";
+            return `[remote] Uploading source video to EC2 in parallel chunks: ${formatBytes(
+                uploadedBytes,
+            )} / ${formatBytes(totalBytes)}${suffix}.`;
+        }
+        return "[remote] Uploading source video to EC2 in parallel chunks...";
+    }
+    if (phase === "source-stage-fallback") {
+        return `[remote] Parallel EC2 upload staging fell back to single upload${message ? `: ${message}` : "."}`;
+    }
+    if (
+        phase === "start-upload" ||
+        phase === "start-upload-progress" ||
+        phase === "start-upload-complete"
+    ) {
+        if (typeof uploadedBytes === "number" && typeof totalBytes === "number") {
+            const suffix =
+                typeof percent === "number" ? ` (${percent}%)` : "";
+            return `[remote] Uploading source video to EC2: ${formatBytes(
+                uploadedBytes,
+            )} / ${formatBytes(totalBytes)}${suffix}.`;
+        }
+        return "[remote] Uploading source video to EC2...";
+    }
+    if (phase === "start-response") {
+        return "[remote] EC2 responded to the start request.";
+    }
+    if (phase === "queued") {
+        return `[remote] EC2 accepted VIP job${jobId ? ` ${jobId}` : ""}; waiting for worker progress...`;
+    }
+    if (phase === "running") {
+        return `[remote] EC2 running${stage ? ` stage ${stage}` : ""}${message ? `: ${message}` : "."}`;
+    }
+    if (phase === "poll-network-retry") {
+        const retry =
+            typeof failureCount === "number" && typeof failureLimit === "number"
+                ? ` ${failureCount}/${failureLimit}`
+                : "";
+        return `[remote] EC2 poll network retry${retry}${message ? `: ${message}` : "."}`;
+    }
+    if (phase === "done") {
+        return "[remote] EC2 completed voice/render; preparing final artifact...";
+    }
+    if (phase === "artifact-download") {
+        return "[remote] Downloading rendered video from EC2...";
+    }
+    if (phase === "artifact-download-complete") {
+        return `[remote] Downloaded rendered video from EC2${typeof byteLength === "number" ? `: ${formatBytes(byteLength)}` : ""}.`;
+    }
+    return message ? `[remote] ${message}` : "";
+}
+
 function formatDurationMs(durationMs: number) {
     const safeMs = Number.isFinite(durationMs) ? Math.max(0, durationMs) : 0;
     const totalSeconds = Math.round(safeMs / 1000);
@@ -4734,6 +4822,15 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
 
                             const checkpointState = payload.data;
                             const currentLogs = [...vipStageLogs];
+                            const remoteWorkerLine = formatRemoteVipWorkerProgress(
+                                checkpointState.remoteWorker,
+                            );
+                            if (
+                                remoteWorkerLine &&
+                                !currentLogs.some((line) => line.startsWith("[remote]"))
+                            ) {
+                                currentLogs.push(remoteWorkerLine);
+                            }
 
                             if (checkpointState.transcript) {
                                 finishVipProgressStage(
@@ -4787,13 +4884,20 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                                     currentLogs.push("[voice render] Complete.");
                                 }
                             } else if (checkpointState.translation) {
+                                const voiceRenderDescription = remoteWorkerLine
+                                    ? remoteWorkerLine.replace(/^\[remote\]\s*/u, "")
+                                    : "Generating voice and rendering final video...";
                                 startVipProgressStage(
                                     step,
                                     "voice-render",
-                                    "Generating voice and rendering final video...",
+                                    voiceRenderDescription,
                                 );
                                 if (!currentLogs.some((line) => line.startsWith("[voice render] Processing"))) {
-                                    currentLogs.push("[voice render] Processing (voice generation + video render)...");
+                                    currentLogs.push(
+                                        remoteWorkerLine
+                                            ? `[voice render] ${voiceRenderDescription}`
+                                            : "[voice render] Processing (voice generation + video render)...",
+                                    );
                                 }
                             }
 

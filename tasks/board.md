@@ -177,6 +177,8 @@
 
 ## Done
 
+- `FAST-WORKSPACE-095` - Parallelize remote VIP source upload staging
+- `FAST-WORKSPACE-094` - Harden remote VIP start upload and progress visibility
 - `FAST-AUDIO-076` - Retry transient translation chunk failures
 - `FAST-WORKSPACE-093` - Harden remote VIP worker polling and filename fallback
 - `FAST-VIDEO-051` - Sanitize VIP output download filenames

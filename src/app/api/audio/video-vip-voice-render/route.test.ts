@@ -56,6 +56,10 @@ describe("video vip voice/render worker API", () => {
         expect(payload).toMatchObject({
             ok: true,
             service: "omnivideo-vip-voice-render",
+            capabilities: {
+                sourceChunkUpload: true,
+                sourceUploadReference: true,
+            },
             data: {
                 jobs: [],
                 activeProcesses: [],
@@ -395,6 +399,103 @@ describe("video vip voice/render worker API", () => {
             expect.objectContaining({
                 fileName: "source.mp4",
                 fileBytes: new Uint8Array([4, 5, 6]),
+                voiceAudioBase64: Buffer.from("voice").toString("base64"),
+                omitVideoBase64: true,
+            }),
+        );
+    });
+
+    it("runs render from staged source upload chunks", async () => {
+        process.env.OMNIVIDEO_REMOTE_VIP_TOKEN = "secret";
+        mockedRunVideoVipRemoteRender.mockResolvedValueOnce({
+            videoBytes: Buffer.from("staged-done"),
+            mimeType: "video/mp4",
+            extension: "mp4",
+            fileName: "source-done.mp4",
+            byteLength: 11,
+            generationDurationMs: 100,
+            stages: {
+                finalRenderDurationMs: 40,
+            },
+            mix: {
+                originalAudioVolume: 0,
+                voiceVolume: 1,
+            },
+        });
+
+        const uploadId = "11111111-1111-4111-8111-111111111111";
+        for (const [partIndex, bytes] of [
+            [0, new Uint8Array([1, 2])],
+            [1, new Uint8Array([3, 4])],
+        ] as const) {
+            const chunkForm = new FormData();
+            chunkForm.set("sourceUploadId", uploadId);
+            chunkForm.set("partIndex", String(partIndex));
+            chunkForm.set("partCount", "2");
+            chunkForm.set("totalBytes", "4");
+            chunkForm.set("fileName", "source.mp4");
+            chunkForm.set("mimeType", "video/mp4");
+            chunkForm.set(
+                "chunkFile",
+                new File([bytes], `${partIndex}.part`, {
+                    type: "application/octet-stream",
+                }),
+            );
+            const chunkResponse = await POST(
+                new Request(
+                    "http://localhost/api/audio/video-vip-voice-render?sourceUpload=part",
+                    {
+                        method: "POST",
+                        headers: { Authorization: "Bearer secret" },
+                        body: chunkForm,
+                    },
+                ),
+            );
+            expect(chunkResponse.status).toBe(200);
+        }
+
+        const formData = new FormData();
+        formData.set(
+            "payloadJson",
+            JSON.stringify({
+                sourceUploadId: uploadId,
+                fileName: "source.mp4",
+                translatedSegments: [
+                    {
+                        id: 0,
+                        start: 0,
+                        end: 1,
+                        sourceText: "你好",
+                        translatedText: "Xin chào",
+                    },
+                ],
+            }),
+        );
+        formData.set(
+            "voiceFile",
+            new File([Buffer.from("voice")], "voice.wav", {
+                type: "audio/wav",
+            }),
+        );
+
+        const response = await POST(
+            new Request("http://localhost/api/audio/video-vip-voice-render", {
+                method: "POST",
+                headers: { Authorization: "Bearer secret" },
+                body: formData,
+            }),
+        );
+        const payload = await response.json();
+
+        expect(response.status).toBe(200);
+        expect(payload.data).toMatchObject({
+            artifactId: expect.any(String),
+            byteLength: 11,
+        });
+        expect(mockedRunVideoVipRemoteRender).toHaveBeenCalledWith(
+            expect.objectContaining({
+                fileName: "source.mp4",
+                fileBytes: new Uint8Array([1, 2, 3, 4]),
                 voiceAudioBase64: Buffer.from("voice").toString("base64"),
                 omitVideoBase64: true,
             }),

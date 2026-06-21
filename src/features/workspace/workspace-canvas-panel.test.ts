@@ -86,6 +86,11 @@ describe("WorkspaceCanvasPanel canvas interactions", () => {
         expect(source).toContain("Check worker");
         expect(source).toContain("Kill active jobs");
         expect(source).toContain("/api/audio/remote-vip-worker");
+        expect(source).toContain("formatRemoteVipWorkerProgress");
+        expect(source).toContain("checkpointState.remoteWorker");
+        expect(source).toContain("Uploading source video to EC2");
+        expect(source).toContain("Uploading source video to EC2 in parallel chunks");
+        expect(source).toContain("EC2 accepted VIP job");
     });
 
     it("hydrates mask setup from source asset metadata in UI and runtime", () => {

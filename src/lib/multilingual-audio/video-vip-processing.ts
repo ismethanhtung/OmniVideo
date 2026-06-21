@@ -29,6 +29,7 @@ import {
     type VoiceGenerationResult,
     type VoiceGenerationSettings,
 } from "@/lib/multilingual-audio/types";
+import type { RemoteVipWorkerProgress } from "@/lib/multilingual-audio/remote-vip-worker";
 import { buildVideoDubbingVoiceSegments } from "@/lib/multilingual-audio/video-dubbing";
 import { generateVietnameseVideoMetadata } from "@/lib/multilingual-audio/video-metadata";
 import { buildStrictDownloadFilename } from "@/lib/storage/strict-download-filename";
@@ -67,7 +68,20 @@ type VipCheckpointState = {
         byteLength: number;
     };
     metadata?: VietnameseVideoMetadataResult;
+    remoteWorker?: VipRemoteWorkerCheckpointState;
     durations?: Partial<VideoVipProcessingResult["stages"]>;
+    updatedAt: string;
+};
+
+type VipRemoteWorkerCheckpointState = Omit<
+    RemoteVipWorkerProgress,
+    "phase"
+> & {
+    phase:
+        | RemoteVipWorkerProgress["phase"]
+        | "preflight"
+        | "preflight-complete"
+        | "preflight-failed";
     updatedAt: string;
 };
 
@@ -2082,9 +2096,30 @@ export async function runVideoVipProcessing(
             checkpointKey: checkpointPaths.key,
         });
     };
+    const saveRemoteWorkerProgress = async (
+        progress: Omit<VipRemoteWorkerCheckpointState, "updatedAt">,
+    ) => {
+        checkpointState = {
+            ...checkpointState,
+            remoteWorker: {
+                ...progress,
+                updatedAt: new Date().toISOString(),
+            },
+        };
+        if (checkpointPaths) {
+            await writeVipCheckpoint({
+                paths: checkpointPaths,
+                state: checkpointState,
+            });
+        }
+    };
 
     if (input.voiceRenderExecutionMode === "remote-voice-render") {
         const preflightStartedAt = Date.now();
+        await saveRemoteWorkerProgress({
+            phase: "preflight",
+            message: "Checking remote VIP worker health before transcript work.",
+        });
         logVipEvent(runId, "stage-start", {
             stage: "remote-voice-render",
             phase: "preflight",
@@ -2101,12 +2136,23 @@ export async function runVideoVipProcessing(
                 endpoint: input.remoteVoiceRenderEndpoint,
                 token: input.remoteVoiceRenderToken,
             });
+            await saveRemoteWorkerProgress({
+                phase: "preflight-complete",
+                message: "Remote VIP worker health check passed.",
+            });
             logVipEvent(runId, "stage-success", {
                 stage: "remote-voice-render",
                 phase: "preflight",
                 durationMs: Date.now() - preflightStartedAt,
             });
         } catch (error) {
+            await saveRemoteWorkerProgress({
+                phase: "preflight-failed",
+                message:
+                    error instanceof Error
+                        ? error.message
+                        : "Remote VIP worker health check failed.",
+            });
             logVipEvent(runId, "stage-failed", {
                 stage: "remote-voice-render",
                 phase: "preflight",
@@ -2351,6 +2397,7 @@ export async function runVideoVipProcessing(
                 {
                     endpoint: input.remoteVoiceRenderEndpoint,
                     token: input.remoteVoiceRenderToken,
+                    onProgress: saveRemoteWorkerProgress,
                 },
             );
         } catch (error) {
@@ -2662,6 +2709,7 @@ export async function runVideoVipProcessing(
                 {
                     endpoint: input.remoteVoiceRenderEndpoint,
                     token: input.remoteVoiceRenderToken,
+                    onProgress: saveRemoteWorkerProgress,
                 },
             );
         } catch (error) {
