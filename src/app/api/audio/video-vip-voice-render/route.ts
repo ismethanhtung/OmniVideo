@@ -863,6 +863,9 @@ async function executeWorkerJob(input: {
         textOverlays: isRecord(payload.textOverlays)
             ? (payload.textOverlays as VideoVipRemoteRenderInput["textOverlays"])
             : undefined,
+        backgroundMusic: isRecord(payload.backgroundMusic)
+            ? (payload.backgroundMusic as VideoVipRemoteRenderInput["backgroundMusic"])
+            : undefined,
         omitVideoBase64: true,
     };
 
@@ -912,6 +915,8 @@ async function executeWorkerJob(input: {
                     voiceByteLength: renderInput.voiceBytes.byteLength,
                     translatedCount: renderInput.translatedSegments.length,
                     speedFactor: renderInput.speedFactor,
+                    backgroundMusicTrackCount:
+                        renderInput.backgroundMusic?.tracks.length ?? 0,
                 },
             });
             const result = await renderVipCompositeVideo(renderInput);

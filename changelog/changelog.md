@@ -1,5 +1,46 @@
 # OmniVideo Changelog
 
+## FAST-VIDEO-054 - Fix VIP background music render failure
+
+- Bumped app version from `0.11.41` to `0.11.42` as a patch release for VIP background music render reliability.
+- Fixed VIP ffmpeg music mixing so repeat and scheduled background music tracks are trimmed to the known output timeline before mixing, preventing infinite or overlong audio graphs.
+- Removed unnecessary `adelay=0:all=1` usage for tracks starting at `0:00` and switched scheduled track delays to the more compatible `adelay=<ms>|<ms>` syntax.
+- Passed the generated voice duration into one-pass VIP renders when background music is configured, so the ffmpeg graph has a finite music timeline even when repeat is enabled.
+- Expanded ffmpeg render failure messages to include recent stderr context instead of only the generic `Conversion failed!` line.
+- Verification (FAST-VIDEO-054):
+  - `npm run test -- --run src/lib/multilingual-audio/video-vip-processing.test.ts` pass (1 file / 28 tests).
+  - `npm run test -- --run src/lib/multilingual-audio/video-vip-processing.test.ts src/app/api/audio/video-vip-processing/route.test.ts src/app/api/audio/video-vip-voice-render/route.test.ts src/features/workspace/workspace-canvas-panel.test.ts src/features/video-processing/video-tools-lab-panel.test.ts src/app/api/video-processing/background-music/route.test.ts src/lib/multilingual-audio/remote-vip-worker.test.ts` pass (7 files / 110 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+
+## FAST-VIDEO-053 - Fix dynamic music discovery and remote FormData fallback
+
+- Bumped app version from `0.11.40` to `0.11.41` as a patch release for VIP background music and remote worker reliability.
+- Added `/api/video-processing/background-music` to list supported files directly from `public/musics`.
+- Updated Video Tools Lab to load background music options dynamically and added a Refresh action for newly added music files.
+- Added remote VIP start fallback from the custom Node multipart uploader to native `fetch(FormData)` when an EC2 worker responds with `Failed to parse body as FormData`.
+- Added regression coverage for music library listing, Video Tools Lab dynamic loading guards, and remote FormData fallback.
+- Verification (FAST-VIDEO-053):
+  - `npm run test -- --run src/app/api/video-processing/background-music/route.test.ts src/features/video-processing/video-tools-lab-panel.test.ts src/lib/multilingual-audio/remote-vip-worker.test.ts` pass (3 files / 26 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+
+## FAST-VIDEO-052 - Add saved background music setup for VIP video renders
+
+- Bumped app version from `0.11.39` to `0.11.40` as a patch release for VIP background music rendering.
+- Added Video Tools Lab background music setup controls for enabling music, selecting the public test track, setting master/per-track volume, repeat, and per-track start times.
+- Persisted background music setup in video edit metadata and forwarded saved setup from Workspace VIP runs into `/api/audio/video-vip-processing`.
+- Validated VIP music sources so only safe `/musics/...` public assets are accepted.
+- Added VIP ffmpeg audio mixing for generated voice, optional original source audio, and scheduled/repeated music tracks, with remote EC2 worker payload pass-through.
+- Added regression coverage for Video Tools Lab setup UI, Workspace VIP payload forwarding, API validation/setup parsing, worker payload pass-through, and ffmpeg mix args.
+- Verification (FAST-VIDEO-052):
+  - `npm run test -- --run src/lib/multilingual-audio/video-vip-processing.test.ts src/app/api/audio/video-vip-processing/route.test.ts src/app/api/audio/video-vip-voice-render/route.test.ts src/features/workspace/workspace-canvas-panel.test.ts src/features/video-processing/video-tools-lab-panel.test.ts` pass (5 files / 93 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+
 ## FAST-WORKSPACE-095 - Parallelize remote VIP source upload staging
 
 - Bumped app version from `0.11.38` to `0.11.39` as a patch release for large remote VIP source upload speed.

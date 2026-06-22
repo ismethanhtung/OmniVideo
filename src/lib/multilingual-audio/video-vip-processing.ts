@@ -34,6 +34,12 @@ import { buildVideoDubbingVoiceSegments } from "@/lib/multilingual-audio/video-d
 import { generateVietnameseVideoMetadata } from "@/lib/multilingual-audio/video-metadata";
 import { buildStrictDownloadFilename } from "@/lib/storage/strict-download-filename";
 import {
+    isSafePublicMusicSource,
+    normalizeVideoBackgroundMusicConfig,
+    type VideoBackgroundMusicConfig,
+    type VideoBackgroundMusicTrackConfig,
+} from "@/lib/video-processing/background-music";
+import {
     buildSubtitleAssContent,
     buildTextOverlayAssContent,
     type VideoEditInput,
@@ -42,6 +48,16 @@ import {
 type VipSubtitleStyle = NonNullable<
     Parameters<typeof buildSubtitleAssContent>[1]
 >;
+
+type ResolvedVipBackgroundMusicTrack = VideoBackgroundMusicTrackConfig & {
+    filePath: string;
+};
+
+type ResolvedVipBackgroundMusicConfig = {
+    enabled: true;
+    volume: number;
+    tracks: ResolvedVipBackgroundMusicTrack[];
+};
 
 type VipStageName =
     | "transcript"
@@ -355,6 +371,7 @@ export type VideoVipProcessingInput = {
     coverBoxes?: VideoEditInput["coverBoxes"];
     subtitleStyle?: VipSubtitleStyle;
     textOverlays?: VideoEditInput["textOverlays"];
+    backgroundMusic?: VideoBackgroundMusicConfig;
     sourceTitle?: string;
     sourceDescription?: string;
     translationMode?: VipTranslationMode;
@@ -428,6 +445,7 @@ export type VideoVipVoiceRenderInput = {
     coverBoxes?: VideoEditInput["coverBoxes"];
     subtitleStyle?: VipSubtitleStyle;
     textOverlays?: VideoEditInput["textOverlays"];
+    backgroundMusic?: VideoBackgroundMusicConfig;
     omitVideoBase64?: boolean;
     stageRunners?: Pick<VipStageRunners, "generateVoice" | "render">;
 };
@@ -468,6 +486,7 @@ export type VideoVipRemoteRenderInput = {
     coverBoxes?: VideoEditInput["coverBoxes"];
     subtitleStyle?: VipSubtitleStyle;
     textOverlays?: VideoEditInput["textOverlays"];
+    backgroundMusic?: VideoBackgroundMusicConfig;
     omitVideoBase64?: boolean;
     stageRunners?: Pick<VipStageRunners, "render">;
 };
@@ -490,6 +509,54 @@ export type VideoVipRemoteRenderResult = {
 function normalizeVolume(value: number | undefined, fallback: number) {
     if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
     return Math.min(2, Math.max(0, value));
+}
+
+function resolvePublicMusicFilePath(source: string) {
+    if (!isSafePublicMusicSource(source)) {
+        throw new ChineseTranscriptionError(
+            "VAL_DUBBING_MUSIC_INVALID",
+            `Background music source must be under /musics: ${source}`,
+            400,
+        );
+    }
+    const publicDir = path.resolve(process.cwd(), "public");
+    const musicRoot = path.resolve(publicDir, "musics");
+    const resolved = path.resolve(publicDir, source.replace(/^\/+/u, ""));
+    if (
+        resolved !== musicRoot &&
+        !resolved.startsWith(`${musicRoot}${path.sep}`)
+    ) {
+        throw new ChineseTranscriptionError(
+            "VAL_DUBBING_MUSIC_INVALID",
+            `Background music source must be under /musics: ${source}`,
+            400,
+        );
+    }
+    return resolved;
+}
+
+async function resolveVipBackgroundMusicConfig(
+    input: VideoBackgroundMusicConfig | undefined,
+): Promise<ResolvedVipBackgroundMusicConfig | undefined> {
+    const config = normalizeVideoBackgroundMusicConfig(input);
+    if (!config) return undefined;
+    const tracks: ResolvedVipBackgroundMusicTrack[] = [];
+    for (const track of config.tracks) {
+        const filePath = resolvePublicMusicFilePath(track.source);
+        try {
+            await access(filePath);
+        } catch {
+            throw new ChineseTranscriptionError(
+                "VAL_DUBBING_MUSIC_INVALID",
+                `Background music file was not found on this server: ${track.source}`,
+                400,
+            );
+        }
+        tracks.push({ ...track, filePath });
+    }
+    return tracks.length > 0
+        ? { enabled: true, volume: config.volume, tracks }
+        : undefined;
 }
 
 export const DEFAULT_VIP_VIDEO_SPEED_FACTOR = 0.75;
@@ -618,6 +685,7 @@ function buildVipCheckpointFingerprint(input: VideoVipProcessingInput) {
             coverBoxes: input.coverBoxes,
             subtitleStyle: input.subtitleStyle,
             textOverlays: input.textOverlays,
+            backgroundMusic: input.backgroundMusic,
             sourceTitle: input.sourceTitle,
             sourceDescription: input.sourceDescription,
             translationMode: input.translationMode ?? "ai",
@@ -1158,6 +1226,7 @@ export function buildVipFinalRenderArgs(input: {
     coverBoxes?: ReturnType<typeof normalizeCoverBoxes>;
     originalAudioVolume: number;
     voiceVolume: number;
+    backgroundMusic?: ResolvedVipBackgroundMusicConfig;
     renderPreset?: VipRenderPreset;
     renderThreads?: number;
     sourceStartSeconds?: number;
@@ -1169,7 +1238,19 @@ export function buildVipFinalRenderArgs(input: {
 }) {
     const clampedSpeed = Math.min(2, Math.max(0.5, input.speedFactor || 1));
     const timelineOffsetSeconds = Math.max(0, input.timelineOffsetSeconds ?? 0);
-    const timelineDurationSeconds = input.timelineDurationSeconds;
+    const timelineDurationSeconds =
+        typeof input.timelineDurationSeconds === "number" &&
+        Number.isFinite(input.timelineDurationSeconds) &&
+        input.timelineDurationSeconds > 0
+            ? input.timelineDurationSeconds
+            : undefined;
+    const audioTimelineDurationSeconds =
+        timelineDurationSeconds ??
+        (typeof input.voiceDurationSeconds === "number" &&
+        Number.isFinite(input.voiceDurationSeconds) &&
+        input.voiceDurationSeconds > 0
+            ? input.voiceDurationSeconds
+            : undefined);
     const videoFilters: string[] = [];
     if (Math.abs(clampedSpeed - 1) >= 0.0001) {
         videoFilters.push(
@@ -1232,19 +1313,78 @@ export function buildVipFinalRenderArgs(input: {
 
     const atempo = buildAtempoFilters(clampedSpeed).join(",");
     const shouldMixOriginalAudio = input.originalAudioVolume > 0.0001;
-    const audioParts = shouldMixOriginalAudio
-        ? [
-              atempo
-                  ? `[0:a]${atempo},volume=${input.originalAudioVolume.toFixed(3)}[orig]`
-                  : `[0:a]volume=${input.originalAudioVolume.toFixed(3)}[orig]`,
-              `[1:a]volume=${input.voiceVolume.toFixed(3)}[voice]`,
-              `[orig][voice]amix=inputs=2:duration=longest:dropout_transition=0[aout]`,
-          ]
-        : [
-              Math.abs(input.voiceVolume - 1) >= 0.0001
-                  ? `[1:a]volume=${input.voiceVolume.toFixed(3)}[aout]`
-                  : `[1:a]anull[aout]`,
-          ];
+    const backgroundMusicTracks =
+        input.backgroundMusic?.enabled === true
+            ? input.backgroundMusic.tracks.filter((track) => {
+                  if (!audioTimelineDurationSeconds) return true;
+                  return (
+                      Math.max(0, track.startSeconds - timelineOffsetSeconds) <
+                      audioTimelineDurationSeconds
+                  );
+              })
+            : [];
+    const audioParts: string[] = [];
+    const mixLabels: string[] = [];
+    if (shouldMixOriginalAudio) {
+        audioParts.push(
+            atempo
+                ? `[0:a]${atempo},volume=${input.originalAudioVolume.toFixed(3)}[orig]`
+                : `[0:a]volume=${input.originalAudioVolume.toFixed(3)}[orig]`,
+        );
+    }
+    const shouldMixAudio = shouldMixOriginalAudio || backgroundMusicTracks.length > 0;
+    const voiceLabel = shouldMixAudio ? "voice" : "aout";
+    audioParts.push(
+        Math.abs(input.voiceVolume - 1) >= 0.0001
+            ? `[1:a]volume=${input.voiceVolume.toFixed(3)}[${voiceLabel}]`
+            : `[1:a]anull[${voiceLabel}]`,
+    );
+    if (shouldMixAudio) {
+        if (backgroundMusicTracks.length > 0) {
+            mixLabels.push("[voice]");
+            if (shouldMixOriginalAudio) mixLabels.push("[orig]");
+        } else {
+            if (shouldMixOriginalAudio) mixLabels.push("[orig]");
+            mixLabels.push("[voice]");
+        }
+    }
+    backgroundMusicTracks.forEach((track, index) => {
+        const inputIndex = index + 2;
+        const musicLabel = `music${index}`;
+        const relativeStartSeconds = Math.max(
+            0,
+            track.startSeconds - timelineOffsetSeconds,
+        );
+        const delayMs = Math.max(0, Math.round(relativeStartSeconds * 1000));
+        const remainingDurationSeconds = audioTimelineDurationSeconds
+            ? Math.max(0.001, audioTimelineDurationSeconds - relativeStartSeconds)
+            : undefined;
+        const volume = Math.min(
+            4,
+            Math.max(0, track.volume * (input.backgroundMusic?.volume ?? 1)),
+        );
+        const musicFilters = [
+            ...(remainingDurationSeconds
+                ? [`atrim=duration=${remainingDurationSeconds.toFixed(3)}`]
+                : []),
+            "asetpts=PTS-STARTPTS",
+            `volume=${volume.toFixed(3)}`,
+            ...(delayMs > 0 ? [`adelay=${delayMs}|${delayMs}`] : []),
+        ];
+        audioParts.push(
+            `[${inputIndex}:a]${musicFilters.join(",")}[${musicLabel}]`,
+        );
+        mixLabels.push(`[${musicLabel}]`);
+    });
+    if (mixLabels.length > 1) {
+        const mixDuration =
+            backgroundMusicTracks.length > 0 ? "first" : "longest";
+        audioParts.push(
+            `${mixLabels.join("")}amix=inputs=${mixLabels.length}:duration=${mixDuration}:dropout_transition=0${
+                backgroundMusicTracks.length > 0 ? ":normalize=0" : ""
+            }[aout]`,
+        );
+    }
 
     const videoChain =
         videoFilters.length > 0 ? videoFilters.join(",") : "null";
@@ -1300,6 +1440,11 @@ export function buildVipFinalRenderArgs(input: {
             startSeconds: input.voiceStartSeconds,
             durationSeconds: input.voiceDurationSeconds,
         }),
+        ...backgroundMusicTracks.flatMap((track) => [
+            ...(track.repeat ? ["-stream_loop", "-1"] : []),
+            "-i",
+            track.filePath,
+        ]),
         "-filter_complex",
         filterParts.join(";"),
         "-map",
@@ -1375,6 +1520,34 @@ async function prepareVipSubtitleFontsDir(input: {
     return fontsDir;
 }
 
+export function buildFfmpegExitErrorMessage(input: {
+    code: number | null;
+    stderr: string;
+}) {
+    const exitLabel =
+        typeof input.code === "number"
+            ? `ffmpeg exited with code ${input.code}`
+            : "ffmpeg exited";
+    const lines = input.stderr
+        .split(/\r?\n/u)
+        .map((line) => line.trim())
+        .filter(Boolean);
+    const concise =
+        lines
+            .slice()
+            .reverse()
+            .find((line) =>
+                /Error|Invalid|Option not found|Failed|No such filter|Conversion failed/iu.test(
+                    line,
+                ),
+            ) ??
+        lines.at(-1) ??
+        exitLabel;
+    const stderrTail = lines.slice(-12).join("\n");
+    if (!stderrTail) return concise;
+    return `${exitLabel}: ${concise}\nffmpeg stderr tail:\n${stderrTail}`;
+}
+
 async function runFfmpeg(input: { args: string[]; timeoutMs?: number } | string[]) {
     const args = Array.isArray(input) ? input : input.args;
     const timeoutMs = Array.isArray(input) ? undefined : input.timeoutMs;
@@ -1431,23 +1604,16 @@ async function runFfmpeg(input: { args: string[]; timeoutMs?: number } | string[
                 );
                 return;
             }
-            const lines = stderr
-                .split(/\r?\n/u)
-                .map((line) => line.trim())
-                .filter(Boolean);
-            const concise =
-                lines
-                    .slice()
-                    .reverse()
-                    .find(
-                        (line) =>
-                            /Error|Invalid|Option not found|Failed|No such filter/iu.test(
-                                line,
-                            ),
-                    ) ??
-                lines.at(-1) ??
-                `ffmpeg exited with code ${code}`;
-            finish(() => reject(new Error(concise)));
+            finish(() =>
+                reject(
+                    new Error(
+                        buildFfmpegExitErrorMessage({
+                            code,
+                            stderr,
+                        }),
+                    ),
+                ),
+            );
         });
     });
 }
@@ -1577,6 +1743,7 @@ export async function renderVipCompositeVideo(input: {
     coverBoxes?: VideoEditInput["coverBoxes"];
     subtitleStyle: VipSubtitleStyle | undefined;
     textOverlays?: VideoEditInput["textOverlays"];
+    backgroundMusic?: VideoBackgroundMusicConfig;
     originalAudioVolume: number;
     voiceVolume: number;
     renderPreset?: VipRenderPreset;
@@ -1640,7 +1807,10 @@ export async function renderVipCompositeVideo(input: {
         };
 
         const voiceDurationSeconds = await readWavDurationSeconds(voicePath);
-        const renderChunks = voiceDurationSeconds
+        const backgroundMusic = await resolveVipBackgroundMusicConfig(
+            input.backgroundMusic,
+        );
+        const renderChunks = voiceDurationSeconds && !backgroundMusic
             ? planVipParallelRenderChunks({
                   durationSeconds: voiceDurationSeconds,
                   requestedChunks: resolveVipRenderChunkCount(),
@@ -1703,6 +1873,7 @@ export async function renderVipCompositeVideo(input: {
                             coverBoxes: normalizedCoverBoxes,
                             originalAudioVolume: input.originalAudioVolume,
                             voiceVolume: input.voiceVolume,
+                            backgroundMusic,
                             renderPreset: input.renderPreset,
                             renderThreads: perChunkThreads,
                             sourceStartSeconds:
@@ -1746,7 +1917,12 @@ export async function renderVipCompositeVideo(input: {
                     coverBoxes: normalizedCoverBoxes,
                     originalAudioVolume: input.originalAudioVolume,
                     voiceVolume: input.voiceVolume,
+                    backgroundMusic,
                     renderPreset: input.renderPreset,
+                    timelineDurationSeconds:
+                        backgroundMusic && voiceDurationSeconds
+                            ? voiceDurationSeconds
+                            : undefined,
                 }),
                 timeoutMs: resolveVipRenderTimeoutMs(),
             });
@@ -1839,6 +2015,9 @@ export async function runVideoVipVoiceRender(
         DEFAULT_VIP_ORIGINAL_AUDIO_VOLUME,
     );
     const voiceVolume = normalizeVolume(input.voiceVolume, 1);
+    const backgroundMusic = normalizeVideoBackgroundMusicConfig(
+        input.backgroundMusic,
+    );
     const renderStartedAt = Date.now();
     logVipEvent(runId, "remote-stage-start", {
         stage: "render",
@@ -1853,6 +2032,7 @@ export async function runVideoVipVoiceRender(
         renderPreset,
         originalAudioVolume,
         voiceVolume,
+        backgroundMusicTrackCount: backgroundMusic?.tracks.length ?? 0,
     });
     let videoBytes: Buffer;
     try {
@@ -1871,6 +2051,7 @@ export async function runVideoVipVoiceRender(
             coverBoxes: input.coverBoxes,
             subtitleStyle: input.subtitleStyle,
             textOverlays: input.textOverlays,
+            backgroundMusic,
             originalAudioVolume,
             voiceVolume,
             renderPreset,
@@ -1951,6 +2132,9 @@ export async function runVideoVipRemoteRender(
         DEFAULT_VIP_ORIGINAL_AUDIO_VOLUME,
     );
     const voiceVolume = normalizeVolume(input.voiceVolume, 1);
+    const backgroundMusic = normalizeVideoBackgroundMusicConfig(
+        input.backgroundMusic,
+    );
     const runners = {
         render: input.stageRunners?.render ?? renderVipCompositeVideo,
     };
@@ -1968,6 +2152,7 @@ export async function runVideoVipRemoteRender(
         renderPreset,
         originalAudioVolume,
         voiceVolume,
+        backgroundMusicTrackCount: backgroundMusic?.tracks.length ?? 0,
     });
     let videoBytes: Buffer;
     try {
@@ -1982,6 +2167,7 @@ export async function runVideoVipRemoteRender(
             coverBoxes: input.coverBoxes,
             subtitleStyle: input.subtitleStyle,
             textOverlays: input.textOverlays,
+            backgroundMusic,
             originalAudioVolume,
             voiceVolume,
             renderPreset,
@@ -2039,6 +2225,9 @@ export async function runVideoVipProcessing(
         Math.max(0.5, input.videoSpeedFactor ?? DEFAULT_VIP_VIDEO_SPEED_FACTOR),
     );
     const renderPreset = normalizeRenderPreset(input.renderPreset);
+    const backgroundMusic = normalizeVideoBackgroundMusicConfig(
+        input.backgroundMusic,
+    );
     logVipEvent(runId, "run-start", {
         fileName: input.fileName,
         mimeType: input.mimeType,
@@ -2060,6 +2249,7 @@ export async function runVideoVipProcessing(
             DEFAULT_VIP_ORIGINAL_AUDIO_VOLUME,
         ),
         voiceVolume: normalizeVolume(input.voiceVolume, 1),
+        backgroundMusicTrackCount: backgroundMusic?.tracks.length ?? 0,
         checkpointEnabled: Boolean(input.checkpointKey),
     });
     const runners: VipStageRunners = {
@@ -2362,6 +2552,7 @@ export async function runVideoVipProcessing(
             renderPreset,
             originalAudioVolume,
             voiceVolume,
+            backgroundMusicTrackCount: backgroundMusic?.tracks.length ?? 0,
             alignmentMode:
                 input.ttsSettings?.alignmentMode ??
                 DEFAULT_PIPER_TTS_SETTINGS.alignmentMode,
@@ -2392,6 +2583,7 @@ export async function runVideoVipProcessing(
                     coverBoxes: input.coverBoxes,
                     subtitleStyle: input.subtitleStyle,
                     textOverlays: input.textOverlays,
+                    backgroundMusic,
                     omitVideoBase64: true,
                 },
                 {
@@ -2676,6 +2868,7 @@ export async function runVideoVipProcessing(
             renderPreset,
             originalAudioVolume,
             voiceVolume,
+            backgroundMusicTrackCount: backgroundMusic?.tracks.length ?? 0,
         });
         const { runRemoteVideoVipRender } = await import(
             "@/lib/multilingual-audio/remote-vip-worker"
@@ -2704,6 +2897,7 @@ export async function runVideoVipProcessing(
                     coverBoxes: input.coverBoxes,
                     subtitleStyle: input.subtitleStyle,
                     textOverlays: input.textOverlays,
+                    backgroundMusic,
                     omitVideoBase64: true,
                 },
                 {
@@ -2999,6 +3193,7 @@ export async function runVideoVipProcessing(
         renderPreset,
         originalAudioVolume,
         voiceVolume,
+        backgroundMusicTrackCount: backgroundMusic?.tracks.length ?? 0,
     });
     if (checkpointState.renderedVideo && checkpointPaths) {
         try {
@@ -3032,6 +3227,7 @@ export async function runVideoVipProcessing(
                     coverBoxes: input.coverBoxes,
                     subtitleStyle: input.subtitleStyle,
                     textOverlays: input.textOverlays,
+                    backgroundMusic,
                     originalAudioVolume,
                     voiceVolume,
                     renderPreset,
@@ -3065,6 +3261,7 @@ export async function runVideoVipProcessing(
                 coverBoxes: input.coverBoxes,
                 subtitleStyle: input.subtitleStyle,
                 textOverlays: input.textOverlays,
+                backgroundMusic,
                 originalAudioVolume,
                 voiceVolume,
                 renderPreset,

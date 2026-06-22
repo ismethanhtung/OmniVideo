@@ -38,6 +38,7 @@ export type RemoteVipWorkerProgress = {
         | "start-upload"
         | "start-upload-progress"
         | "start-upload-complete"
+        | "start-upload-fallback"
         | "source-stage-upload"
         | "source-stage-upload-progress"
         | "source-stage-upload-complete"
@@ -367,7 +368,7 @@ async function postRemoteVipWorker<Result extends RemoteVipWorkerResponseData>(
             });
         }
     }
-    const response = options.fetchImpl
+    let response = options.fetchImpl
         ? await postRemoteVipWorkerWithFetch({
               upload: effectiveUpload,
               fetchImpl,
@@ -380,6 +381,26 @@ async function postRemoteVipWorker<Result extends RemoteVipWorkerResponseData>(
               token,
               options,
           });
+    if (
+        !options.fetchImpl &&
+        isRemoteVipWorkerFormDataParseFailure(response)
+    ) {
+        await emitRemoteVipWorkerProgress(options, {
+            phase: "start-upload-fallback",
+            uploadedBytes: 0,
+            totalBytes: effectiveUpload.sourceVideoBytes.byteLength,
+            percent: 0,
+            responseStatus: response.status,
+            message:
+                "Remote worker could not parse the Node multipart body; retrying with native FormData.",
+        });
+        response = await postRemoteVipWorkerWithFetch({
+            upload: effectiveUpload,
+            fetchImpl,
+            workerUrl,
+            token,
+        });
+    }
 
     const body = response.body;
     if (!response.ok || !body?.ok || !body.data) {
@@ -431,6 +452,18 @@ async function postRemoteVipWorker<Result extends RemoteVipWorkerResponseData>(
         fetchImpl,
         onProgress: options.onProgress,
     });
+}
+
+function isRemoteVipWorkerFormDataParseFailure(
+    response: ParsedRemoteVipWorkerResponse,
+) {
+    if (response.ok) return false;
+    const error = response.body?.error ?? "";
+    return (
+        response.status >= 500 &&
+        typeof error === "string" &&
+        /Failed to parse body as FormData/i.test(error)
+    );
 }
 
 async function postRemoteVipWorkerWithFetch(input: {

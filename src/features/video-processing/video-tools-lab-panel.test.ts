@@ -9,10 +9,13 @@ import {
 const SOURCE_PATH = "src/features/video-processing/video-tools-lab-panel.tsx";
 const HELPER_SOURCE_PATH =
     "src/lib/video-processing/subtitle-placement.ts";
+const MUSIC_SOURCE_PATH =
+    "src/lib/video-processing/background-music.ts";
 
 describe("Video Tools Lab source preview controls", () => {
     const source = readFileSync(SOURCE_PATH, "utf8");
     const helperSource = readFileSync(HELPER_SOURCE_PATH, "utf8");
+    const musicSource = readFileSync(MUSIC_SOURCE_PATH, "utf8");
 
     it("keeps original preview playback controls outside the blur frame", () => {
         const previewStart = source.indexOf("Original Preview");
@@ -87,6 +90,27 @@ describe("Video Tools Lab source preview controls", () => {
         expect(source).toContain("textOverlaysJson");
         expect(source).toContain("textOverlayPlayResX");
         expect(source).toContain("getVideoTextFontOption");
+    });
+
+    it("adds saved background music controls for VIP render setup", () => {
+        expect(source).toContain("VIDEO_BACKGROUND_MUSIC_LIBRARY");
+        expect(musicSource).toContain(
+            "vprodmusic_asia_bgm-across-the-rivers-of-asia-143602.mp3",
+        );
+        expect(source).toContain("backgroundMusicEnabled");
+        expect(source).toContain("backgroundMusicOptions");
+        expect(source).toContain("backgroundMusicVolume");
+        expect(source).toContain("backgroundMusicTracks");
+        expect(source).toContain("/api/video-processing/background-music");
+        expect(source).toContain("loadBackgroundMusicOptions");
+        expect(source).toContain("Background music");
+        expect(source).toContain("Master volume");
+        expect(source).toContain("Track volume");
+        expect(source).toContain("Repeat");
+        expect(source).toContain("Refresh");
+        expect(source).toContain("Add music track");
+        expect(source).toContain("removeBackgroundMusicTrack");
+        expect(source).toContain("normalizeBackgroundMusicDrafts");
     });
 
     it("keeps preview placement as the source for exported subtitle margins", () => {

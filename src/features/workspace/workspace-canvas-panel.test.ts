@@ -117,12 +117,18 @@ describe("WorkspaceCanvasPanel canvas interactions", () => {
     it("forwards saved Video Tools cover box and text overlay setup to Workspace render APIs", () => {
         expect(source).toContain("coverBoxEnabled");
         expect(source).toContain("textOverlayEnabled");
+        expect(source).toContain("backgroundMusicEnabled");
+        expect(source).toContain("backgroundMusicVolume");
+        expect(source).toContain("backgroundMusicTracksJson");
         expect(source).toContain("textOverlaysJson");
         expect(source).toContain('"coverBoxEnabled"');
         expect(source).toContain('"coverBoxesJson"');
         expect(source).toContain('"coverBoxColor"');
         expect(source).toContain('"textOverlayEnabled"');
         expect(source).toContain('"textOverlaysJson"');
+        expect(source).toContain('"backgroundMusicEnabled"');
+        expect(source).toContain('"backgroundMusicVolume"');
+        expect(source).toContain('"backgroundMusicTracksJson"');
         expect(source).toContain("subtitleBackgroundPaddingY");
         expect(source).toContain('"subtitleBackgroundPaddingY"');
         expect(source).toContain("textOverlayPlayResX");

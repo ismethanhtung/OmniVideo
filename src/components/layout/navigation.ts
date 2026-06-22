@@ -18,6 +18,7 @@ import {
     ImagePlus,
     ListVideo,
     Mic2,
+    Film,
     RadioTower,
     Compass,
     ClipboardCheck,
@@ -110,7 +111,7 @@ export const LEFTBAR_NAV: LeftbarNavGroup[] = [
             },
             {
                 id: "videoNarrator",
-                icon: Mic2,
+                icon: Film,
                 label: "Video Narrator",
                 description:
                     "Sử dụng AI Video Understanding (Gemini) để thuyết minh tiếng Việt, sinh giọng nói và render video.",

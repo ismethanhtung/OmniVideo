@@ -22,6 +22,11 @@ import {
     ChineseTranscriptionError,
 } from "@/lib/multilingual-audio/types";
 import { runVideoVipProcessing } from "@/lib/multilingual-audio/video-vip-processing";
+import {
+    isSafePublicMusicSource,
+    normalizeVideoBackgroundMusicConfig,
+    type VideoBackgroundMusicConfig,
+} from "@/lib/video-processing/background-music";
 import type { VideoEditInput } from "@/lib/video-processing/video-edit-pipeline";
 import {
     buildSubtitleAssPlacementFromVideoEditSetup,
@@ -574,6 +579,83 @@ function readTextOverlayConfig(
     return undefined;
 }
 
+function readBackgroundMusicConfig(
+    formData: FormData,
+    sourceVideoEditSetup?: Record<string, unknown> | null,
+): VideoBackgroundMusicConfig | undefined {
+    const formEnabled = readOptionalBoolean(formData, "backgroundMusicEnabled");
+    const formVolume = readOptionalNumber(formData, "backgroundMusicVolume");
+    const formTracksJson = readFormValue(
+        formData,
+        "backgroundMusicTracksJson",
+    ).trim();
+    let formTracks: unknown[] | undefined;
+    if (formTracksJson) {
+        try {
+            const parsed = JSON.parse(formTracksJson) as unknown;
+            if (!Array.isArray(parsed)) {
+                throw new Error("backgroundMusicTracksJson must be an array.");
+            }
+            formTracks = parsed;
+        } catch {
+            throw new ChineseTranscriptionError(
+                "VAL_DUBBING_MUSIC_INVALID",
+                "backgroundMusicTracksJson must be a valid array.",
+                400,
+            );
+        }
+    }
+
+    const hasFormMusicConfig =
+        formEnabled !== undefined ||
+        formVolume !== undefined ||
+        formTracks !== undefined;
+    const setupBackgroundMusic =
+        sourceVideoEditSetup?.backgroundMusic &&
+        typeof sourceVideoEditSetup.backgroundMusic === "object" &&
+        !Array.isArray(sourceVideoEditSetup.backgroundMusic)
+            ? (sourceVideoEditSetup.backgroundMusic as Record<string, unknown>)
+            : null;
+    const rawConfig = hasFormMusicConfig
+        ? {
+              enabled: formEnabled ?? false,
+              volume: formVolume,
+              tracks: formTracks ?? [],
+          }
+        : setupBackgroundMusic ?? {
+              enabled: sourceVideoEditSetup?.backgroundMusicEnabled,
+              volume: sourceVideoEditSetup?.backgroundMusicVolume,
+              tracks: sourceVideoEditSetup?.backgroundMusicTracks,
+          };
+    const config = normalizeVideoBackgroundMusicConfig(rawConfig);
+    const setupNestedEnabled = readSetupBoolean(setupBackgroundMusic, "enabled");
+    const requestedEnabled = hasFormMusicConfig
+        ? formEnabled === true
+        : config?.enabled === true ||
+          setupNestedEnabled === true ||
+          sourceVideoEditSetup?.backgroundMusicEnabled === true;
+    if (requestedEnabled && !config) {
+        throw new ChineseTranscriptionError(
+            "VAL_DUBBING_MUSIC_INVALID",
+            "Background music requires at least one valid track.",
+            400,
+        );
+    }
+    if (!config) return undefined;
+
+    const unsafeTrack = config.tracks.find(
+        (track) => !isSafePublicMusicSource(track.source),
+    );
+    if (unsafeTrack) {
+        throw new ChineseTranscriptionError(
+            "VAL_DUBBING_MUSIC_INVALID",
+            `Background music source must be under /musics: ${unsafeTrack.source}`,
+            400,
+        );
+    }
+    return config;
+}
+
 async function readStorageAssetVideo(assetId: string) {
     const db = await getIntakeDb();
     const asset = await getVideoAssetById({ db, assetId });
@@ -934,6 +1016,10 @@ export async function POST(request: Request) {
                 ),
             },
             textOverlays: readTextOverlayConfig(
+                formData,
+                sourceSetupForRender,
+            ),
+            backgroundMusic: readBackgroundMusicConfig(
                 formData,
                 sourceSetupForRender,
             ),

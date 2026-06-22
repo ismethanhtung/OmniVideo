@@ -93,6 +93,11 @@ import {
 import type { VideoDubbingResult } from "@/lib/multilingual-audio/video-dubbing";
 import type { VideoVipProcessingResult } from "@/lib/multilingual-audio/video-vip-processing";
 import { buildWordAwareVoiceSegments } from "@/lib/multilingual-audio/voice-segment-timing";
+import {
+    DEFAULT_VIDEO_BACKGROUND_MUSIC_VOLUME,
+    normalizeVideoBackgroundMusicConfig,
+    type VideoBackgroundMusicTrackConfig,
+} from "@/lib/video-processing/background-music";
 import { loadLocalVideoEditSetup } from "@/lib/video-processing/local-video-edit-setup";
 import {
     buildSubtitleAssPlacementFromVideoEditSetup,
@@ -184,6 +189,9 @@ type WorkspaceAsset = {
                 start?: number;
                 end?: number;
             } | null;
+            backgroundMusicEnabled?: boolean;
+            backgroundMusicVolume?: number;
+            backgroundMusicTracks?: VideoBackgroundMusicTrackConfig[];
         } | null;
     };
     createdAt?: string;
@@ -391,6 +399,9 @@ function formatRemoteVipWorkerProgress(remoteWorker: unknown) {
     }
     if (phase === "source-stage-fallback") {
         return `[remote] Parallel EC2 upload staging fell back to single upload${message ? `: ${message}` : "."}`;
+    }
+    if (phase === "start-upload-fallback") {
+        return `[remote] EC2 rejected the multipart parser path; retrying with native FormData${message ? `: ${message}` : "."}`;
     }
     if (
         phase === "start-upload" ||
@@ -1779,6 +1790,11 @@ function resolveMaskRegionConfig(
         setup?.textOverlayEnabled === true && setup.textOverlay
             ? JSON.stringify([setup.textOverlay])
             : "";
+    const setupBackgroundMusic = normalizeVideoBackgroundMusicConfig({
+        enabled: setup?.backgroundMusicEnabled,
+        volume: setup?.backgroundMusicVolume,
+        tracks: setup?.backgroundMusicTracks,
+    });
 
     return {
         mirrorEnabled: resolveMaskBooleanConfig({
@@ -1835,6 +1851,12 @@ function resolveMaskRegionConfig(
         textOverlaysJson:
             getStringConfig(node, "textOverlaysJson").trim() ||
             setupTextOverlaysJson,
+        backgroundMusicEnabled: setupBackgroundMusic?.enabled === true,
+        backgroundMusicVolume:
+            setupBackgroundMusic?.volume ?? DEFAULT_VIDEO_BACKGROUND_MUSIC_VOLUME,
+        backgroundMusicTracksJson: setupBackgroundMusic
+            ? JSON.stringify(setupBackgroundMusic.tracks)
+            : "",
         regionX: resolveMaskNumberConfig({
             node,
             key: "regionX",
@@ -4746,6 +4768,20 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         formData.set(
                             "textOverlaysJson",
                             maskConfig.textOverlaysJson,
+                        );
+                    }
+                    formData.set(
+                        "backgroundMusicEnabled",
+                        String(maskConfig.backgroundMusicEnabled),
+                    );
+                    formData.set(
+                        "backgroundMusicVolume",
+                        String(maskConfig.backgroundMusicVolume),
+                    );
+                    if (maskConfig.backgroundMusicTracksJson) {
+                        formData.set(
+                            "backgroundMusicTracksJson",
+                            maskConfig.backgroundMusicTracksJson,
                         );
                     }
 

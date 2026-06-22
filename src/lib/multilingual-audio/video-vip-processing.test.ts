@@ -11,6 +11,7 @@ import {
     runRemoteVideoVipVoiceRender,
 } from "@/lib/multilingual-audio/remote-vip-worker";
 import {
+    buildFfmpegExitErrorMessage,
     buildVipFinalRenderArgs,
     planVipParallelRenderChunks,
     resolveVipRenderChunkCount,
@@ -427,6 +428,126 @@ describe("VIP final render filter order", () => {
         expect(filter).toContain(
             "[orig][voice]amix=inputs=2:duration=longest:dropout_transition=0[aout]",
         );
+    });
+
+    it("mixes repeat and scheduled background music tracks into VIP audio", () => {
+        const args = buildVipFinalRenderArgs({
+            videoPath: "/tmp/source.mp4",
+            voicePath: "/tmp/voice.wav",
+            subtitleAssPath: "/tmp/subtitles.ass",
+            outputPath: "/tmp/output.mp4",
+            speedFactor: 1,
+            mirrorEnabled: false,
+            blurRegions: [],
+            originalAudioVolume: 0,
+            voiceVolume: 1,
+            timelineDurationSeconds: 360,
+            backgroundMusic: {
+                enabled: true,
+                volume: 0.25,
+                tracks: [
+                    {
+                        source: "/musics/one.mp3",
+                        label: "One",
+                        filePath: "/tmp/music-one.mp3",
+                        startSeconds: 0,
+                        volume: 1,
+                        repeat: true,
+                    },
+                    {
+                        source: "/musics/two.mp3",
+                        label: "Two",
+                        filePath: "/tmp/music-two.mp3",
+                        startSeconds: 300,
+                        volume: 0.5,
+                        repeat: false,
+                    },
+                    {
+                        source: "/musics/late.mp3",
+                        label: "Late",
+                        filePath: "/tmp/music-late.mp3",
+                        startSeconds: 500,
+                        volume: 1,
+                        repeat: false,
+                    },
+                ],
+            },
+        });
+        const filter = args[args.indexOf("-filter_complex") + 1] ?? "";
+
+        expect(args).toEqual(
+            expect.arrayContaining([
+                "-stream_loop",
+                "-1",
+                "-i",
+                "/tmp/music-one.mp3",
+                "-i",
+                "/tmp/music-two.mp3",
+            ]),
+        );
+        expect(filter).toContain(
+            "[2:a]atrim=duration=360.000,asetpts=PTS-STARTPTS,volume=0.250[music0]",
+        );
+        expect(filter).toContain(
+            "[3:a]atrim=duration=60.000,asetpts=PTS-STARTPTS,volume=0.125,adelay=300000|300000[music1]",
+        );
+        expect(filter).toContain(
+            "[voice][music0][music1]amix=inputs=3:duration=first:dropout_transition=0:normalize=0[aout]",
+        );
+        expect(filter).not.toContain("adelay=0");
+        expect(filter).not.toContain(":all=1");
+        expect(args).not.toContain("/tmp/music-late.mp3");
+    });
+
+    it("anchors background music mixes to voice even when source audio is audible", () => {
+        const args = buildVipFinalRenderArgs({
+            videoPath: "/tmp/source.mp4",
+            voicePath: "/tmp/voice.wav",
+            subtitleAssPath: "/tmp/subtitles.ass",
+            outputPath: "/tmp/output.mp4",
+            speedFactor: 1,
+            mirrorEnabled: false,
+            blurRegions: [],
+            originalAudioVolume: 0.2,
+            voiceVolume: 1,
+            timelineDurationSeconds: 30,
+            backgroundMusic: {
+                enabled: true,
+                volume: 0.25,
+                tracks: [
+                    {
+                        source: "/musics/one.mp3",
+                        label: "One",
+                        filePath: "/tmp/music-one.mp3",
+                        startSeconds: 0,
+                        volume: 1,
+                        repeat: true,
+                    },
+                ],
+            },
+        });
+        const filter = args[args.indexOf("-filter_complex") + 1] ?? "";
+
+        expect(filter).toContain("[0:a]volume=0.200[orig]");
+        expect(filter).toContain(
+            "[voice][orig][music0]amix=inputs=3:duration=first:dropout_transition=0:normalize=0[aout]",
+        );
+    });
+
+    it("includes stderr tail when formatting ffmpeg render failures", () => {
+        const message = buildFfmpegExitErrorMessage({
+            code: 1,
+            stderr: [
+                "Input #0, mov,mp4,m4a,3gp,3g2,mj2, from 'source.mp4':",
+                "[AVFilterGraph @ 0x123] No such filter: 'broken_filter'",
+                "Error initializing complex filters.",
+                "Conversion failed!",
+            ].join("\n"),
+        });
+
+        expect(message).toContain("ffmpeg exited with code 1: Conversion failed!");
+        expect(message).toContain("ffmpeg stderr tail:");
+        expect(message).toContain("No such filter: 'broken_filter'");
     });
 
     it("passes fontsdir to ass filters when subtitle fonts dir is provided", () => {

@@ -289,6 +289,108 @@ describe("remote VIP worker client", () => {
         }
     });
 
+    it("falls back to native FormData when worker cannot parse Node multipart", async () => {
+        const requestMock = vi.fn((_url, _options, onResponse) => {
+            const request = new EventEmitter() as EventEmitter & {
+                setTimeout: (timeoutMs: number, callback: () => void) => typeof request;
+                write: (chunk: Buffer) => boolean;
+                end: (callback?: () => void) => typeof request;
+                destroy: (error?: Error) => typeof request;
+            };
+            request.setTimeout = vi.fn(() => request);
+            request.write = vi.fn(() => true);
+            request.end = vi.fn((callback?: () => void) => {
+                callback?.();
+                const response = new EventEmitter() as EventEmitter & {
+                    statusCode?: number;
+                };
+                response.statusCode = 500;
+                onResponse(response);
+                queueMicrotask(() => {
+                    response.emit(
+                        "data",
+                        Buffer.from(
+                            JSON.stringify({
+                                ok: false,
+                                errorCode: "SYS_DUBBING_MUX_FAILED",
+                                error: "Failed to parse body as FormData.",
+                            }),
+                        ),
+                    );
+                    response.emit("end");
+                });
+                return request;
+            });
+            request.destroy = vi.fn((error?: Error) => {
+                if (error) request.emit("error", error);
+                return request;
+            });
+            return request;
+        });
+        const fetchMock = vi.fn<typeof fetch>().mockResolvedValueOnce(
+            Response.json({
+                ok: true,
+                data: {
+                    videoBase64: Buffer.from("fetch-fallback-video").toString(
+                        "base64",
+                    ),
+                    mimeType: "video/mp4",
+                    extension: "mp4",
+                    fileName: "source-done.mp4",
+                    byteLength: 20,
+                    generationDurationMs: 100,
+                    stages: {
+                        finalRenderDurationMs: 40,
+                    },
+                    mix: { originalAudioVolume: 0, voiceVolume: 1 },
+                },
+            }),
+        );
+        vi.stubGlobal("fetch", fetchMock);
+        vi.doMock("node:http", async () => {
+            const actual = await vi.importActual<typeof import("node:http")>(
+                "node:http",
+            );
+            return {
+                ...actual,
+                request: requestMock,
+            };
+        });
+        vi.resetModules();
+        const { runRemoteVideoVipRender: runWithNodeUpload } = await import(
+            "./remote-vip-worker"
+        );
+        const progress: string[] = [];
+
+        try {
+            const result = await runWithNodeUpload(baseInput, {
+                endpoint: "http://worker.example",
+                token: "secret",
+                onProgress: (event) => {
+                    progress.push(event.phase);
+                },
+            });
+
+            expect(result.videoBytes?.toString()).toBe("fetch-fallback-video");
+            expect(requestMock).toHaveBeenCalledTimes(1);
+            expect(fetchMock).toHaveBeenCalledTimes(1);
+            const [, init] = fetchMock.mock.calls[0];
+            expect(init?.body).toBeInstanceOf(FormData);
+            expect(progress).toEqual(
+                expect.arrayContaining([
+                    "start-upload",
+                    "start-response",
+                    "start-upload-fallback",
+                    "done",
+                ]),
+            );
+        } finally {
+            vi.doUnmock("node:http");
+            vi.resetModules();
+            vi.unstubAllGlobals();
+        }
+    });
+
     it("stages large source videos as parallel chunks before a lightweight start request", async () => {
         const requestBodies: Buffer[] = [];
         const requestMock = vi.fn((_url, _options, onResponse) => {

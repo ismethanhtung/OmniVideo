@@ -356,6 +356,19 @@ describe("video vip voice/render worker API", () => {
             "payloadJson",
             JSON.stringify({
                 fileName: "source.mp4",
+                backgroundMusic: {
+                    enabled: true,
+                    volume: 0.2,
+                    tracks: [
+                        {
+                            source: "/musics/vprodmusic_asia_bgm-across-the-rivers-of-asia-143602.mp3",
+                            label: "Across the Rivers of Asia",
+                            startSeconds: 0,
+                            volume: 1,
+                            repeat: true,
+                        },
+                    ],
+                },
                 translatedSegments: [
                     {
                         id: 0,
@@ -400,6 +413,16 @@ describe("video vip voice/render worker API", () => {
                 fileName: "source.mp4",
                 fileBytes: new Uint8Array([4, 5, 6]),
                 voiceAudioBase64: Buffer.from("voice").toString("base64"),
+                backgroundMusic: expect.objectContaining({
+                    enabled: true,
+                    volume: 0.2,
+                    tracks: [
+                        expect.objectContaining({
+                            source: "/musics/vprodmusic_asia_bgm-across-the-rivers-of-asia-143602.mp3",
+                            repeat: true,
+                        }),
+                    ],
+                }),
                 omitVideoBase64: true,
             }),
         );

@@ -42,6 +42,70 @@ function createFormData(fields?: Record<string, string>) {
   return formData;
 }
 
+function createVipProcessingResult() {
+  return {
+    videoBase64: Buffer.from("vip").toString("base64"),
+    mimeType: "video/mp4" as const,
+    extension: "mp4" as const,
+    fileName: "vip-output.mp4",
+    byteLength: 3,
+    generationDurationMs: 100,
+    transcript: {
+      text: "你好",
+      language: "zh",
+      model: "whisper-large-v3-turbo",
+      segments: [{ id: 0, start: 0, end: 1, text: "你好" }],
+      words: [],
+      source: { fileName: "source.mp4", fileSizeBytes: 3 },
+      audio: {
+        format: "mp3" as const,
+        sampleRate: 16000,
+        channels: 1,
+        bitrateKbps: 64,
+        fileSizeBytes: 3,
+      },
+      steps: [],
+      provider: { name: "groq" as const },
+    },
+    translation: {
+      sourceLanguage: "zh",
+      targetLanguage: "vi",
+      model: "cx/gpt-5.5",
+      translatedSegments: [],
+      generationDurationMs: 5,
+      chunks: [],
+      provider: { name: "groq" },
+    },
+    voice: {
+      mimeType: "audio/wav",
+      extension: "wav",
+      fileName: "voice.wav",
+      byteLength: 9,
+      segmentCount: 1,
+      generationDurationMs: 4,
+      alignment: { mode: "timeline" as const, chunks: 1, targetDurationSeconds: 1 },
+      settings: { binaryPath: "piper", modelPath: "" },
+      provider: { name: "piper" as const, mode: "local-cli" as const },
+    },
+    metadata: {
+      title: "Tiêu đề",
+      description: "Mô tả",
+      hashtags: ["review"],
+      model: "cx/gpt-5.5",
+      provider: { name: "groq" },
+    },
+    stages: {
+      preprocessDurationMs: 0,
+      transcriptionDurationMs: 1,
+      translationDurationMs: 1,
+      voiceDurationMs: 1,
+      muxDurationMs: 0,
+      finalRenderDurationMs: 1,
+      metadataDurationMs: 1,
+    },
+  };
+}
+
 describe("video vip processing API", () => {
   beforeEach(() => {
     mockedRunVideoVipProcessing.mockReset();
@@ -998,6 +1062,112 @@ describe("video vip processing API", () => {
         }),
       }),
     );
+  });
+
+  it("uses saved asset background music setup for VIP render", async () => {
+    mockedRunVideoVipProcessing.mockResolvedValueOnce(createVipProcessingResult());
+    mockedGetIntakeDb.mockResolvedValueOnce({} as Awaited<ReturnType<typeof getIntakeDb>>);
+    mockedGetVideoAssetById.mockResolvedValueOnce({
+      _id: "asset-1",
+      mimeType: "video/mp4",
+      metadata: {
+        title: "Music setup asset",
+        videoEditSetup: {
+          backgroundMusicEnabled: true,
+          backgroundMusicVolume: 0.22,
+          backgroundMusicTracks: [
+            {
+              source: "/musics/vprodmusic_asia_bgm-across-the-rivers-of-asia-143602.mp3",
+              label: "Across the Rivers of Asia",
+              startSeconds: 0,
+              volume: 1,
+              repeat: true,
+            },
+            {
+              source: "/musics/vprodmusic_asia_bgm-across-the-rivers-of-asia-143602.mp3",
+              label: "Across the Rivers of Asia",
+              startSeconds: 300,
+              volume: 0.5,
+              repeat: false,
+            },
+          ],
+        },
+      },
+    } as Awaited<ReturnType<typeof getVideoAssetById>>);
+    mockedResolveAssetDownload.mockResolvedValueOnce({
+      ok: true,
+      body: new Uint8Array([1, 2, 3]),
+      headers: new Headers({ "content-type": "video/mp4" }),
+    });
+
+    const response = await POST(
+      new Request("http://localhost/api/audio/video-vip-processing", {
+        method: "POST",
+        body: createFormData({
+          assetId: "asset-1",
+          useSourceAssetVideoEditSetup: "true",
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(mockedRunVideoVipProcessing).toHaveBeenCalledWith(
+      expect.objectContaining({
+        backgroundMusic: {
+          enabled: true,
+          volume: 0.22,
+          tracks: [
+            expect.objectContaining({
+              source: "/musics/vprodmusic_asia_bgm-across-the-rivers-of-asia-143602.mp3",
+              startSeconds: 0,
+              volume: 1,
+              repeat: true,
+            }),
+            expect.objectContaining({
+              startSeconds: 300,
+              volume: 0.5,
+              repeat: false,
+            }),
+          ],
+        },
+      }),
+    );
+  });
+
+  it("rejects unsafe background music sources before VIP render", async () => {
+    const formData = createFormData({
+      backgroundMusicEnabled: "true",
+      backgroundMusicVolume: "0.2",
+      backgroundMusicTracksJson: JSON.stringify([
+        {
+          source: "/musics/../secret.mp3",
+          startSeconds: 0,
+          volume: 1,
+          repeat: true,
+        },
+      ]),
+    });
+    formData.set(
+      "videoFile",
+      new File([new Uint8Array([1, 2, 3])], "source.mp4", {
+        type: "video/mp4",
+      }),
+    );
+
+    const response = await POST(
+      new Request("http://localhost/api/audio/video-vip-processing", {
+        method: "POST",
+        body: formData,
+      }),
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(payload).toMatchObject({
+      ok: false,
+      errorCode: "VAL_DUBBING_MUSIC_INVALID",
+    });
+    expect(mockedRunVideoVipProcessing).not.toHaveBeenCalled();
   });
 
   it("passes configured provider RPM limits only into VIP processing", async () => {

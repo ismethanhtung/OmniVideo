@@ -177,6 +177,9 @@
 
 ## Done
 
+- `FAST-VIDEO-054` - Fix VIP background music render failure
+- `FAST-VIDEO-053` - Fix VIP background music library discovery and remote FormData fallback
+- `FAST-VIDEO-052` - Add saved background music setup for VIP video renders
 - `FAST-WORKSPACE-095` - Parallelize remote VIP source upload staging
 - `FAST-WORKSPACE-094` - Harden remote VIP start upload and progress visibility
 - `FAST-AUDIO-076` - Retry transient translation chunk failures

@@ -5,9 +5,12 @@ import {
     Captions,
     Clapperboard,
     FlipHorizontal2,
+    Music2,
     Pause,
     Play,
+    Plus,
     ScanLine,
+    Trash2,
     Type,
     Volume2,
     VolumeX,
@@ -28,6 +31,14 @@ import {
     loadLocalVideoEditSetup,
     saveLocalVideoEditSetup,
 } from "@/lib/video-processing/local-video-edit-setup";
+import {
+    DEFAULT_VIDEO_BACKGROUND_MUSIC_TRACK_VOLUME,
+    DEFAULT_VIDEO_BACKGROUND_MUSIC_VOLUME,
+    VIDEO_BACKGROUND_MUSIC_LIBRARY,
+    normalizeVideoBackgroundMusicTrack,
+    type VideoBackgroundMusicLibraryOption,
+    type VideoBackgroundMusicTrackConfig,
+} from "@/lib/video-processing/background-music";
 
 import {
     ASS_SUBTITLE_OUTLINE,
@@ -133,6 +144,9 @@ type StoredVideoAsset = {
                 start?: number;
                 end?: number;
             } | null;
+            backgroundMusicEnabled?: boolean;
+            backgroundMusicVolume?: number;
+            backgroundMusicTracks?: VideoBackgroundMusicTrackConfig[];
         } | null;
     };
 };
@@ -163,6 +177,10 @@ type TextOverlayDraft = {
     y: number;
     start: number;
     end: number;
+};
+
+type BackgroundMusicTrackDraft = VideoBackgroundMusicTrackConfig & {
+    id: string;
 };
 
 type VideoEditSetup = NonNullable<
@@ -459,6 +477,43 @@ function buildDraftId(prefix: string) {
     return `${prefix}-${Date.now()}-${Math.random()}`;
 }
 
+function buildDefaultBackgroundMusicTrack(
+    options: readonly VideoBackgroundMusicLibraryOption[] =
+        VIDEO_BACKGROUND_MUSIC_LIBRARY,
+): BackgroundMusicTrackDraft {
+    const option = options[0] ?? VIDEO_BACKGROUND_MUSIC_LIBRARY[0];
+    return {
+        id: buildDraftId("music"),
+        source: option.source,
+        label: option.label,
+        startSeconds: 0,
+        volume: DEFAULT_VIDEO_BACKGROUND_MUSIC_TRACK_VOLUME,
+        repeat: true,
+    };
+}
+
+function normalizeBackgroundMusicDrafts(
+    tracks: unknown,
+    options: readonly VideoBackgroundMusicLibraryOption[] =
+        VIDEO_BACKGROUND_MUSIC_LIBRARY,
+): BackgroundMusicTrackDraft[] {
+    if (!Array.isArray(tracks)) return [buildDefaultBackgroundMusicTrack(options)];
+    const normalized = tracks
+        .map((track) => normalizeVideoBackgroundMusicTrack(track))
+        .filter(
+            (
+                track,
+            ): track is VideoBackgroundMusicTrackConfig => track !== null,
+        )
+        .map((track) => ({
+            ...track,
+            id: buildDraftId("music"),
+        }));
+    return normalized.length > 0
+        ? normalized
+        : [buildDefaultBackgroundMusicTrack(options)];
+}
+
 function normalizeSubtitleBackgroundColor(value: string | null | undefined) {
     const normalized = (value || "").trim().toUpperCase();
     return SUBTITLE_BACKGROUND_COLOR_OPTIONS.some(
@@ -534,6 +589,17 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
     const [textOverlay, setTextOverlay] = useState<TextOverlayDraft>({
         ...DEFAULT_TEXT_OVERLAY,
     });
+    const [backgroundMusicEnabled, setBackgroundMusicEnabled] =
+        useState(false);
+    const [backgroundMusicVolume, setBackgroundMusicVolume] = useState(
+        DEFAULT_VIDEO_BACKGROUND_MUSIC_VOLUME,
+    );
+    const [backgroundMusicOptions, setBackgroundMusicOptions] = useState<
+        VideoBackgroundMusicLibraryOption[]
+    >(() => VIDEO_BACKGROUND_MUSIC_LIBRARY.map((item) => ({ ...item })));
+    const [backgroundMusicTracks, setBackgroundMusicTracks] = useState<
+        BackgroundMusicTrackDraft[]
+    >(() => [buildDefaultBackgroundMusicTrack()]);
     const [videoNaturalSize, setVideoNaturalSize] = useState({
         width: 1920,
         height: 1080,
@@ -572,6 +638,41 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
     const textOverlayBoxRef = useRef<HTMLDivElement | null>(null);
     const sourceVideoRef = useRef<HTMLVideoElement | null>(null);
     const subtitlePreviewPosRef = useRef({ left: 120, top: 320 });
+
+    const loadBackgroundMusicOptions = useCallback(async () => {
+        try {
+            const response = await fetch("/api/video-processing/background-music", {
+                method: "GET",
+                cache: "no-store",
+            });
+            const payload = (await response.json()) as {
+                ok?: boolean;
+                data?: VideoBackgroundMusicLibraryOption[];
+            };
+            if (!response.ok || !payload.ok || !Array.isArray(payload.data)) {
+                throw new Error("Background music list failed.");
+            }
+            const options = payload.data.filter(
+                (item): item is VideoBackgroundMusicLibraryOption =>
+                    Boolean(item) &&
+                    typeof item.source === "string" &&
+                    item.source.trim().startsWith("/musics/") &&
+                    typeof item.label === "string" &&
+                    item.label.trim().length > 0,
+            );
+            if (options.length > 0) {
+                setBackgroundMusicOptions(options);
+            }
+        } catch {
+            setBackgroundMusicOptions(
+                VIDEO_BACKGROUND_MUSIC_LIBRARY.map((item) => ({ ...item })),
+            );
+        }
+    }, []);
+
+    useEffect(() => {
+        void loadBackgroundMusicOptions();
+    }, [loadBackgroundMusicOptions]);
 
     useEffect(() => {
         fetch("/api/storage/assets?limit=100", {
@@ -622,6 +723,21 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
 
     const activeRegion =
         blurRegions.find((item) => item.id === activeRegionId) ?? null;
+    const backgroundMusicSelectOptions = useMemo(() => {
+        const options = new Map<string, VideoBackgroundMusicLibraryOption>();
+        for (const option of backgroundMusicOptions) {
+            options.set(option.source, option);
+        }
+        for (const track of backgroundMusicTracks) {
+            if (!options.has(track.source)) {
+                options.set(track.source, {
+                    source: track.source,
+                    label: track.label || track.source,
+                });
+            }
+        }
+        return Array.from(options.values());
+    }, [backgroundMusicOptions, backgroundMusicTracks]);
 
     const applyDefaultSubtitleSetup = useCallback(() => {
         setSubtitleFontFamily("Bangers");
@@ -648,6 +764,42 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
         },
         [],
     );
+
+    const applyDefaultBackgroundMusicSetup = useCallback(() => {
+        setBackgroundMusicVolume(DEFAULT_VIDEO_BACKGROUND_MUSIC_VOLUME);
+        setBackgroundMusicTracks([
+            buildDefaultBackgroundMusicTrack(backgroundMusicOptions),
+        ]);
+    }, [backgroundMusicOptions]);
+
+    const updateBackgroundMusicTrack = useCallback(
+        (trackId: string, patch: Partial<VideoBackgroundMusicTrackConfig>) => {
+            setBackgroundMusicTracks((current) =>
+                current.map((track) =>
+                    track.id === trackId ? { ...track, ...patch } : track,
+                ),
+            );
+        },
+        [],
+    );
+
+    const addBackgroundMusicTrack = useCallback(() => {
+        setBackgroundMusicTracks((current) => [
+            ...current,
+            {
+                ...buildDefaultBackgroundMusicTrack(backgroundMusicOptions),
+                repeat: false,
+                startSeconds: Math.max(0, current.length * 300),
+            },
+        ]);
+    }, [backgroundMusicOptions]);
+
+    const removeBackgroundMusicTrack = useCallback((trackId: string) => {
+        setBackgroundMusicTracks((current) => {
+            if (current.length <= 1) return current;
+            return current.filter((track) => track.id !== trackId);
+        });
+    }, []);
 
     const getCurrentSubtitlePreviewPlacement = useCallback(() => {
         const frame = previewFrameRef.current;
@@ -1013,6 +1165,8 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                 applyDefaultSubtitleSetup();
                 setTextOverlayEnabled(false);
                 applyDefaultTextOverlaySetup();
+                setBackgroundMusicEnabled(false);
+                applyDefaultBackgroundMusicSetup();
                 return;
             }
             setMirrorEnabled(setup.mirrorEnabled === true);
@@ -1159,8 +1313,31 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                       }
                     : {}),
             });
+            setBackgroundMusicEnabled(setup.backgroundMusicEnabled === true);
+            setBackgroundMusicVolume(
+                Math.min(
+                    2,
+                    Math.max(
+                        0,
+                        Number.isFinite(setup.backgroundMusicVolume)
+                            ? Number(setup.backgroundMusicVolume)
+                            : DEFAULT_VIDEO_BACKGROUND_MUSIC_VOLUME,
+                    ),
+                ),
+            );
+            setBackgroundMusicTracks(
+                normalizeBackgroundMusicDrafts(
+                    setup.backgroundMusicTracks,
+                    backgroundMusicOptions,
+                ),
+            );
         },
-        [applyDefaultSubtitleSetup, applyDefaultTextOverlaySetup],
+        [
+            applyDefaultBackgroundMusicSetup,
+            applyDefaultSubtitleSetup,
+            applyDefaultTextOverlaySetup,
+            backgroundMusicOptions,
+        ],
     );
 
     useEffect(() => {
@@ -1216,6 +1393,15 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                 subtitlePlacementRegion,
                 textOverlayEnabled,
                 textOverlay: { ...textOverlay },
+                backgroundMusicEnabled,
+                backgroundMusicVolume,
+                backgroundMusicTracks: backgroundMusicTracks.map((track) => ({
+                    source: track.source,
+                    label: track.label,
+                    startSeconds: track.startSeconds,
+                    volume: track.volume,
+                    repeat: track.repeat,
+                })),
             };
             if (!selectedAssetId && videoFile) {
                 saveLocalVideoEditSetup({
@@ -1906,6 +2092,292 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                                 className="h-4 w-4 accent-[var(--color-accent)]"
                             />
                         </label>
+
+                        <label className="flex items-center justify-between gap-3 border border-main bg-main px-3 py-2">
+                            <span className="flex items-start gap-2">
+                                <Music2 className="mt-0.5 h-3.5 w-3.5 text-muted" />
+                                <span>
+                                    <span className="block text-[11px] font-semibold text-main">
+                                        Background music
+                                    </span>
+                                    <span className="block text-[10px] text-muted">
+                                        Lưu nhạc nền cho VIP node render.
+                                    </span>
+                                </span>
+                            </span>
+                            <input
+                                type="checkbox"
+                                checked={backgroundMusicEnabled}
+                                disabled={isRunningEdit}
+                                onChange={(event) =>
+                                    setBackgroundMusicEnabled(
+                                        event.currentTarget.checked,
+                                    )
+                                }
+                                className="h-4 w-4 accent-[var(--color-accent)]"
+                            />
+                        </label>
+
+                        {backgroundMusicEnabled ? (
+                            <div className="space-y-2 border border-main bg-main p-3">
+                                <div className="flex items-center justify-between gap-2">
+                                    <p className="text-[11px] font-semibold text-main">
+                                        Background Music
+                                    </p>
+                                    <button
+                                        type="button"
+                                        disabled={isRunningEdit}
+                                        onClick={applyDefaultBackgroundMusicSetup}
+                                        className="inline-flex items-center gap-1 border border-main bg-secondary px-2 py-1 text-[10px] font-semibold text-main hover:bg-secondary/75 disabled:cursor-not-allowed disabled:opacity-60"
+                                    >
+                                        <Music2 className="h-3 w-3" />
+                                        Preset
+                                    </button>
+                                    <button
+                                        type="button"
+                                        disabled={isRunningEdit}
+                                        onClick={() => void loadBackgroundMusicOptions()}
+                                        className="inline-flex items-center gap-1 border border-main bg-secondary px-2 py-1 text-[10px] font-semibold text-main hover:bg-secondary/75 disabled:cursor-not-allowed disabled:opacity-60"
+                                    >
+                                        Refresh
+                                    </button>
+                                </div>
+                                <div className="grid grid-cols-[1fr_64px] items-end gap-2">
+                                    <label className="block">
+                                        <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                            Master volume
+                                        </span>
+                                        <input
+                                            type="range"
+                                            min={0}
+                                            max={2}
+                                            step={0.01}
+                                            value={backgroundMusicVolume}
+                                            disabled={isRunningEdit}
+                                            onChange={(event) =>
+                                                setBackgroundMusicVolume(
+                                                    clampNumber(
+                                                        Number(
+                                                            event.currentTarget
+                                                                .value,
+                                                        ),
+                                                        0,
+                                                        2,
+                                                    ),
+                                                )
+                                            }
+                                            className="w-full accent-[var(--color-accent)]"
+                                        />
+                                    </label>
+                                    <input
+                                        type="number"
+                                        min={0}
+                                        max={2}
+                                        step={0.01}
+                                        value={backgroundMusicVolume}
+                                        disabled={isRunningEdit}
+                                        onChange={(event) =>
+                                            setBackgroundMusicVolume(
+                                                clampNumber(
+                                                    Number(
+                                                        event.currentTarget
+                                                            .value,
+                                                    ),
+                                                    0,
+                                                    2,
+                                                ),
+                                            )
+                                        }
+                                        className="w-full border border-main bg-secondary/30 px-2 py-1.5 text-[11px] text-main"
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    {backgroundMusicTracks.map(
+                                        (track, index) => (
+                                            <div
+                                                key={track.id}
+                                                className="space-y-2 border border-main bg-secondary/20 p-2"
+                                            >
+                                                <div className="flex items-center justify-between gap-2">
+                                                    <p className="text-[10px] font-semibold text-muted">
+                                                        Track #{index + 1}
+                                                    </p>
+                                                    <button
+                                                        type="button"
+                                                        disabled={
+                                                            isRunningEdit ||
+                                                            backgroundMusicTracks.length <=
+                                                                1
+                                                        }
+                                                        onClick={() =>
+                                                            removeBackgroundMusicTrack(
+                                                                track.id,
+                                                            )
+                                                        }
+                                                        className="inline-flex items-center gap-1 border border-rose-500/30 bg-rose-500/10 px-2 py-1 text-[10px] font-semibold text-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                                    >
+                                                        <Trash2 className="h-3 w-3" />
+                                                        Remove
+                                                    </button>
+                                                </div>
+                                                <label className="block">
+                                                    <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                                        Music
+                                                    </span>
+                                                    <select
+                                                        value={track.source}
+                                                        disabled={isRunningEdit}
+                                                        onChange={(event) => {
+                                                            const source =
+                                                                event
+                                                                    .currentTarget
+                                                                    .value;
+                                                            const option =
+                                                                backgroundMusicSelectOptions.find(
+                                                                    (item) =>
+                                                                        item.source ===
+                                                                        source,
+                                                                );
+                                                            updateBackgroundMusicTrack(
+                                                                track.id,
+                                                                {
+                                                                    source,
+                                                                    label:
+                                                                        option?.label ??
+                                                                        source,
+                                                                },
+                                                            );
+                                                        }}
+                                                        className="w-full border border-main bg-secondary/30 px-2 py-1.5 text-[11px] text-main"
+                                                    >
+                                                        {backgroundMusicSelectOptions.map(
+                                                            (option) => (
+                                                                <option
+                                                                    key={
+                                                                        option.source
+                                                                    }
+                                                                    value={
+                                                                        option.source
+                                                                    }
+                                                                >
+                                                                    {
+                                                                        option.label
+                                                                    }
+                                                                </option>
+                                                            ),
+                                                        )}
+                                                    </select>
+                                                </label>
+                                                <div className="grid grid-cols-3 gap-2">
+                                                    <label className="block">
+                                                        <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                                            Start (s)
+                                                        </span>
+                                                        <input
+                                                            type="number"
+                                                            min={0}
+                                                            step={1}
+                                                            value={
+                                                                track.startSeconds
+                                                            }
+                                                            disabled={
+                                                                isRunningEdit
+                                                            }
+                                                            onChange={(event) =>
+                                                                updateBackgroundMusicTrack(
+                                                                    track.id,
+                                                                    {
+                                                                        startSeconds:
+                                                                            clampNumber(
+                                                                                Number(
+                                                                                    event
+                                                                                        .currentTarget
+                                                                                        .value,
+                                                                                ),
+                                                                                0,
+                                                                                36000,
+                                                                            ),
+                                                                    },
+                                                                )
+                                                            }
+                                                            className="w-full border border-main bg-secondary/30 px-2 py-1.5 text-[11px] text-main"
+                                                        />
+                                                    </label>
+                                                    <label className="block">
+                                                        <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                                            Track volume
+                                                        </span>
+                                                        <input
+                                                            type="number"
+                                                            min={0}
+                                                            max={2}
+                                                            step={0.01}
+                                                            value={
+                                                                track.volume
+                                                            }
+                                                            disabled={
+                                                                isRunningEdit
+                                                            }
+                                                            onChange={(event) =>
+                                                                updateBackgroundMusicTrack(
+                                                                    track.id,
+                                                                    {
+                                                                        volume: clampNumber(
+                                                                            Number(
+                                                                                event
+                                                                                    .currentTarget
+                                                                                    .value,
+                                                                            ),
+                                                                            0,
+                                                                            2,
+                                                                        ),
+                                                                    },
+                                                                )
+                                                            }
+                                                            className="w-full border border-main bg-secondary/30 px-2 py-1.5 text-[11px] text-main"
+                                                        />
+                                                    </label>
+                                                    <label className="flex items-end justify-between gap-2 border border-main bg-main px-2 py-1.5">
+                                                        <span className="text-[10px] font-semibold text-muted">
+                                                            Repeat
+                                                        </span>
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={
+                                                                track.repeat
+                                                            }
+                                                            disabled={
+                                                                isRunningEdit
+                                                            }
+                                                            onChange={(event) =>
+                                                                updateBackgroundMusicTrack(
+                                                                    track.id,
+                                                                    {
+                                                                        repeat: event
+                                                                            .currentTarget
+                                                                            .checked,
+                                                                    },
+                                                                )
+                                                            }
+                                                            className="h-4 w-4 accent-[var(--color-accent)]"
+                                                        />
+                                                    </label>
+                                                </div>
+                                            </div>
+                                        ),
+                                    )}
+                                </div>
+                                <button
+                                    type="button"
+                                    disabled={isRunningEdit}
+                                    onClick={addBackgroundMusicTrack}
+                                    className="inline-flex w-full items-center justify-center gap-2 border border-main bg-secondary px-2 py-1.5 text-[10px] font-semibold text-main hover:bg-secondary/75 disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                    <Plus className="h-3 w-3" />
+                                    Add music track
+                                </button>
+                            </div>
+                        ) : null}
 
                         {blurEnabled || coverBoxEnabled ? (
                             <div className="grid gap-2 border border-main bg-main p-3">
