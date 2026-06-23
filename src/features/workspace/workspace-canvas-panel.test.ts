@@ -72,6 +72,7 @@ describe("WorkspaceCanvasPanel canvas interactions", () => {
         expect(source).toContain("remoteVipWorkerConfig.endpoint");
         expect(source).toContain("remoteVipWorkerConfig.token");
         expect(source).toContain("Remote worker endpoint source:");
+        expect(source).toContain("Compatibility fallback: retrying remote upload with native FormData");
         expect(source).toContain("X-OmniVideo-Remote-Vip-Token");
         expect(source).toContain("buildRemoteWorkerRequestInit");
         expect(source).toContain(
@@ -288,6 +289,18 @@ describe("WorkspaceCanvasPanel canvas interactions", () => {
         expect(source).toContain("Tags:");
         expect(source).toContain("Mix:");
         expect(source).toContain("Segments (");
+        expect(source).not.toContain("VipTranslationCorrectionPanel");
+        expect(source).toContain("WORKSPACE_VIP_TRANSLATION_CORRECTION_EVENT");
+        expect(source).toContain(
+            "isWorkspaceVipTranslationCorrectionDetail(detail)",
+        );
+        expect(source).toContain("window.addEventListener(");
+        expect(source).toContain("No corrected VIP segment changes were found.");
+        expect(source).toContain("Correction mode enabled");
+        expect(source).toContain("transcriptOverrideJson");
+        expect(source).toContain("importedTranslationSegmentsJson");
+        expect(source).toContain("buildVipTranslationOverride");
+        expect(source).toContain("buildVipImportedTranslationSegmentsJson");
         expect(source).not.toContain("more segment(s) not shown");
         expect(source).toContain("readWorkspaceResponseBlob");
         expect(source).toContain("Downloading asset source");

@@ -11,11 +11,14 @@ import {
 import {
     AlertTriangle,
     CheckCircle2,
+    FastForward,
     Moon,
     Gauge,
     Lightbulb,
     Orbit,
+    Pencil,
     RefreshCw,
+    RotateCcw,
     Rocket,
     Server,
     Sun,
@@ -49,6 +52,7 @@ import {
     readRemoteVipWorkerBrowserConfig,
     writeRemoteVipWorkerBrowserConfig,
 } from "@/lib/workspace/remote-vip-worker-config";
+import { dispatchWorkspaceVipTranslationCorrection } from "@/lib/workspace/vip-translation-correction-events";
 
 type TopbarProps = {
     activeSection: AppSectionId;
@@ -1462,10 +1466,16 @@ function ProgressModal({
             if (data.ok) {
                 alert("Đã xoá toàn bộ checkpoints thành công!");
             } else {
-                alert("Xoá checkpoints thất bại: " + (data.error || "Lỗi không xác định"));
+                alert(
+                    "Xoá checkpoints thất bại: " +
+                        (data.error || "Lỗi không xác định"),
+                );
             }
         } catch (error) {
-            alert("Lỗi khi kết nối tới server: " + (error instanceof Error ? error.message : String(error)));
+            alert(
+                "Lỗi khi kết nối tới server: " +
+                    (error instanceof Error ? error.message : String(error)),
+            );
         } finally {
             setIsClearingCheckpoints(false);
         }
@@ -1544,7 +1554,9 @@ function ProgressModal({
                             disabled={isClearingCheckpoints}
                             className="border border-main bg-main px-2.5 py-1 text-[11px] font-semibold text-main hover:bg-secondary disabled:opacity-50"
                         >
-                            {isClearingCheckpoints ? "Clearing..." : "Clear checkpoints"}
+                            {isClearingCheckpoints
+                                ? "Clearing..."
+                                : "Clear checkpoints"}
                         </button>
                     </div>
                 </div>
@@ -1797,9 +1809,7 @@ function parseProgressSegmentLine(line: string): ParsedProgressSegment {
             return {
                 id: typeof parsed.id === "number" ? parsed.id : undefined,
                 start:
-                    typeof parsed.start === "number"
-                        ? parsed.start
-                        : undefined,
+                    typeof parsed.start === "number" ? parsed.start : undefined,
                 end: typeof parsed.end === "number" ? parsed.end : undefined,
                 sourceText:
                     typeof parsed.sourceText === "string"
@@ -1902,6 +1912,7 @@ function ProgressTaskDetails({
             richStep.detail.timelineLines.length > 0 ? (
                 <div className="relative min-h-0">
                     <ProgressSegmentsPanel
+                        step={richStep.step}
                         header={richStep.detail.timelineHeader}
                         lines={richStep.detail.timelineLines}
                     />
@@ -1965,31 +1976,160 @@ function ProgressRichStepPanel({
 }
 
 function ProgressSegmentsPanel({
+    step,
     header,
     lines,
 }: {
+    step: ProgressTaskStep;
     header: string;
     lines: string[];
 }) {
     const [showSourceText, setShowSourceText] = useState(false);
+    const [isEditingTranslations, setIsEditingTranslations] = useState(false);
+    const [editedTextBySegmentId, setEditedTextBySegmentId] = useState<
+        Record<string, string | undefined>
+    >({});
     const segments = lines.map(parseProgressSegmentLine);
+    const vipStepId = step.id.split(":")[0] ?? "";
+    const vipNodeId = vipStepId.startsWith("vip-")
+        ? vipStepId.slice("vip-".length)
+        : "";
+    const editableSegments = segments.filter(
+        (
+            segment,
+        ): segment is ParsedProgressSegment & {
+            id: number;
+        } => typeof segment.id === "number",
+    );
+    const canEditVipTranslations =
+        step.status === "success" &&
+        vipNodeId.length > 0 &&
+        editableSegments.length > 0;
+    const segmentSignature = lines.join("\n");
+    const changedCount = editableSegments.filter((segment) => {
+        const edited = editedTextBySegmentId[String(segment.id)];
+        return (
+            edited !== undefined &&
+            edited.trim() !== segment.translatedText.trim()
+        );
+    }).length;
+    const hasEmptyEditedText = editableSegments.some((segment) => {
+        const edited = editedTextBySegmentId[String(segment.id)];
+        return edited !== undefined && edited.trim().length === 0;
+    });
+
+    useEffect(() => {
+        setIsEditingTranslations(false);
+        setEditedTextBySegmentId({});
+    }, [step.id, segmentSignature]);
+
+    const updateEditedSegmentText = (segmentId: number, value: string) => {
+        setEditedTextBySegmentId((current) => {
+            const next = { ...current };
+            const original = editableSegments.find(
+                (segment) => segment.id === segmentId,
+            )?.translatedText;
+            if (original !== undefined && value.trim() === original.trim()) {
+                delete next[String(segmentId)];
+            } else {
+                next[String(segmentId)] = value;
+            }
+            return next;
+        });
+    };
+
+    const runCorrectedVip = () => {
+        if (
+            !canEditVipTranslations ||
+            changedCount === 0 ||
+            hasEmptyEditedText
+        ) {
+            return;
+        }
+        dispatchWorkspaceVipTranslationCorrection({
+            vipNodeId,
+            segments: editableSegments.map((segment) => ({
+                id: segment.id,
+                translatedText:
+                    editedTextBySegmentId[String(segment.id)] ??
+                    segment.translatedText,
+            })),
+        });
+        setIsEditingTranslations(false);
+    };
 
     return (
         <section className="flex max-h-[32rem] min-h-0 flex-col border border-main bg-main xl:absolute xl:inset-0 xl:max-h-none">
-            <div className="flex items-center justify-between gap-2 border-b border-main bg-secondary/25 px-3 py-2">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-main bg-secondary/25 px-3 py-2">
                 <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">
                     {header}
                 </p>
-                <button
-                    type="button"
-                    onClick={() => setShowSourceText((current) => !current)}
-                    className="border border-main bg-main px-2 py-1 text-[10px] font-semibold text-main hover:bg-secondary"
-                >
-                    {showSourceText ? "Hide source" : "Show source"}
-                </button>
+                <div className="flex flex-wrap items-center justify-end gap-1.5">
+                    {isEditingTranslations ? (
+                        <span
+                            className={`border px-2 py-1 text-[10px] font-semibold ${
+                                hasEmptyEditedText
+                                    ? "border-rose-500/30 bg-rose-500/10 text-rose-700"
+                                    : "border-main bg-main text-muted"
+                            }`}
+                        >
+                            {hasEmptyEditedText
+                                ? "Empty segment"
+                                : `${changedCount} edited`}
+                        </span>
+                    ) : null}
+                    <button
+                        type="button"
+                        onClick={() => setShowSourceText((current) => !current)}
+                        className="border border-main bg-main px-2 py-1 text-[10px] font-semibold text-main hover:bg-secondary"
+                    >
+                        {showSourceText ? "Hide source" : "Show source"}
+                    </button>
+                    {canEditVipTranslations ? (
+                        <button
+                            type="button"
+                            onClick={() =>
+                                setIsEditingTranslations((current) => !current)
+                            }
+                            className="inline-flex items-center gap-1 border border-main bg-main px-2 py-1 text-[10px] font-semibold text-main hover:bg-secondary"
+                            title="Edit translated segment text"
+                        >
+                            <Pencil className="h-3 w-3" />
+                            {isEditingTranslations ? "Done" : "Edit"}
+                        </button>
+                    ) : null}
+                    {isEditingTranslations ? (
+                        <>
+                            <button
+                                type="button"
+                                onClick={() => setEditedTextBySegmentId({})}
+                                disabled={changedCount === 0}
+                                className="inline-flex items-center gap-1 border border-main bg-main px-2 py-1 text-[10px] font-semibold text-main hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-50"
+                                title="Reset edited segment text"
+                            >
+                                <RotateCcw className="h-3 w-3" />
+                                Reset
+                            </button>
+                            <button
+                                type="button"
+                                onClick={runCorrectedVip}
+                                disabled={
+                                    changedCount === 0 || hasEmptyEditedText
+                                }
+                                className="inline-flex items-center gap-1 border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 text-[10px] font-semibold text-emerald-700 hover:bg-emerald-500/15 disabled:cursor-not-allowed disabled:opacity-50"
+                                title="Run corrected VIP"
+                            >
+                                <FastForward className="h-3 w-3" />
+                                Run corrected VIP
+                            </button>
+                        </>
+                    ) : null}
+                </div>
             </div>
             <div className="min-h-0 flex-1 divide-y divide-soft overflow-y-auto">
                 {segments.map((segment, index) => {
+                    const editableSegmentId =
+                        typeof segment.id === "number" ? segment.id : null;
                     const isHighSpeed =
                         typeof segment.speedFactor === "number" &&
                         segment.speedFactor >= HIGH_PROGRESS_VOICE_SPEED_FACTOR;
@@ -2037,8 +2177,8 @@ function ProgressSegmentsPanel({
                                 segment.targetDurationSeconds !== undefined ? (
                                     <span className="font-mono text-[9px] text-muted">
                                         raw{" "}
-                                        {segment.rawDurationSeconds.toFixed(2)}
-                                        s / target{" "}
+                                        {segment.rawDurationSeconds.toFixed(2)}s
+                                        / target{" "}
                                         {segment.targetDurationSeconds.toFixed(
                                             2,
                                         )}
@@ -2053,9 +2193,30 @@ function ProgressSegmentsPanel({
                                         : ""
                                 }`}
                             >
-                                <p className="text-[10px] leading-3.5 text-main">
-                                    {segment.translatedText || segment.rawLine}
-                                </p>
+                                {isEditingTranslations &&
+                                editableSegmentId !== null ? (
+                                    <textarea
+                                        value={
+                                            editedTextBySegmentId[
+                                                String(editableSegmentId)
+                                            ] ??
+                                            segment.translatedText ??
+                                            segment.rawLine
+                                        }
+                                        onChange={(event) =>
+                                            updateEditedSegmentText(
+                                                editableSegmentId,
+                                                event.currentTarget.value,
+                                            )
+                                        }
+                                        className=" w-full resize-y border border-main bg-secondary/35 px-2 py-1 text-[10px] leading-3.5 text-main"
+                                    />
+                                ) : (
+                                    <p className="text-[10px] leading-3.5 text-main">
+                                        {segment.translatedText ||
+                                            segment.rawLine}
+                                    </p>
+                                )}
                                 {showSourceText && segment.sourceText ? (
                                     <p className="border-l border-main pl-2 text-[9px] leading-3.5 text-muted">
                                         {segment.sourceText}

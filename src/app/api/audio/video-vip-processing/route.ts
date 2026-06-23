@@ -18,6 +18,7 @@ import {
 import { createAiProviderRateLimit } from "@/lib/ai-providers/rate-limit";
 import { resolveAssetDownload } from "@/lib/storage/asset-download";
 import {
+    type ChineseTranscriptionResult,
     type VoiceGenerationSettings,
     ChineseTranscriptionError,
 } from "@/lib/multilingual-audio/types";
@@ -84,6 +85,75 @@ function parseImportedTranslationLines(raw: string) {
                 .trim(),
         )
         .filter((line) => line.length > 0);
+}
+
+function parseImportedTranslationSegmentsJson(raw: string) {
+    const trimmed = raw.trim();
+    if (!trimmed) return undefined;
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(trimmed);
+    } catch {
+        throw new ChineseTranscriptionError(
+            "VAL_TRANSLATION_IMPORT_INVALID",
+            "importedTranslationSegmentsJson must be valid JSON.",
+            400,
+        );
+    }
+    if (!Array.isArray(parsed)) {
+        throw new ChineseTranscriptionError(
+            "VAL_TRANSLATION_IMPORT_INVALID",
+            "importedTranslationSegmentsJson must be an array.",
+            400,
+        );
+    }
+    return parsed.map((item, index) => {
+        const text =
+            typeof item === "string"
+                ? item
+                : item &&
+                    typeof item === "object" &&
+                    "translatedText" in item &&
+                    typeof (item as { translatedText?: unknown }).translatedText ===
+                        "string"
+                  ? (item as { translatedText: string }).translatedText
+                  : "";
+        if (!text.trim()) {
+            throw new ChineseTranscriptionError(
+                "VAL_TRANSLATION_IMPORT_INVALID",
+                `Imported translation segment #${index} is empty or invalid.`,
+                400,
+            );
+        }
+        return text.trim();
+    });
+}
+
+function parseTranscriptOverrideJson(raw: string) {
+    const trimmed = raw.trim();
+    if (!trimmed) return undefined;
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(trimmed);
+    } catch {
+        throw new ChineseTranscriptionError(
+            "VAL_TRANSCRIPT_OVERRIDE_INVALID",
+            "transcriptOverrideJson must be valid JSON.",
+            400,
+        );
+    }
+    if (
+        !parsed ||
+        typeof parsed !== "object" ||
+        !Array.isArray((parsed as Partial<ChineseTranscriptionResult>).segments)
+    ) {
+        throw new ChineseTranscriptionError(
+            "VAL_TRANSCRIPT_OVERRIDE_INVALID",
+            "transcriptOverrideJson must contain transcript segments.",
+            400,
+        );
+    }
+    return parsed as ChineseTranscriptionResult;
 }
 
 function readSetupNumber(
@@ -768,12 +838,19 @@ export async function POST(request: Request) {
             "translationMode",
         ).trim();
         const translationMode = translationModeRaw === "import" ? "import" : "ai";
+        const importedTranslationSegmentsJson = parseImportedTranslationSegmentsJson(
+            readFormValue(formData, "importedTranslationSegmentsJson"),
+        );
         const importedTranslationLines =
             translationMode === "import"
-                ? parseImportedTranslationLines(
+                ? (importedTranslationSegmentsJson ??
+                  parseImportedTranslationLines(
                       readFormValue(formData, "importedTranslationText"),
-                  )
+                  ))
                 : [];
+        const transcriptOverride = parseTranscriptOverrideJson(
+            readFormValue(formData, "transcriptOverrideJson"),
+        );
         const useSourceAssetVideoEditSetup =
             readOptionalBoolean(formData, "useSourceAssetVideoEditSetup") ===
             true;
@@ -909,6 +986,7 @@ export async function POST(request: Request) {
             fileSizeBytes: source.fileBytes.byteLength,
             fileBytes: source.fileBytes,
             language: readFormValue(formData, "language") || "zh",
+            transcriptOverride,
             sourceLanguage: readFormValue(formData, "sourceLanguage") || undefined,
             targetLanguage: readFormValue(formData, "targetLanguage") || "vi",
             model: isGoogleAiStudioProviderId(providerId) && model

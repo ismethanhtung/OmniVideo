@@ -177,6 +177,8 @@
 
 ## Done
 
+- `FAST-VIDEO-056` - Move VIP translation corrections into Background Progress
+- `FAST-VIDEO-055` - Add VIP translation correction rerun
 - `FAST-VIDEO-054` - Fix VIP background music render failure
 - `FAST-VIDEO-053` - Fix VIP background music library discovery and remote FormData fallback
 - `FAST-VIDEO-052` - Add saved background music setup for VIP video renders

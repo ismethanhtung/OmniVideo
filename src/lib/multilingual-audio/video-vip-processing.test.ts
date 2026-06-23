@@ -738,6 +738,70 @@ describe("VIP processing stage checkpoints", () => {
         ]);
     });
 
+    it("uses transcript override and imported translation for corrected reruns", async () => {
+        const runners = createStageRunners();
+        const transcriptOverride = {
+            text: "你好",
+            language: "zh",
+            model: "whisper-large-v3-turbo" as const,
+            segments: [{ id: 0, start: 0, end: 1, text: "你好" }],
+            words: [],
+            source: { fileName: "source.mp4", fileSizeBytes: 3 },
+            audio: {
+                format: "mp3" as const,
+                sampleRate: 16000,
+                channels: 1,
+                bitrateKbps: 64,
+                fileSizeBytes: 3,
+            },
+            steps: [],
+            provider: { name: "groq" as const },
+        };
+
+        const result = await runVideoVipProcessing({
+            fileName: "source.mp4",
+            fileSizeBytes: 3,
+            fileBytes: new Uint8Array([1, 2, 3]),
+            transcriptOverride,
+            translationMode: "import",
+            importedTranslationLines: ["Nàng đẹp quá"],
+            stageRunners: runners,
+            omitVideoBase64: true,
+        });
+
+        expect(runners.transcribe).not.toHaveBeenCalled();
+        expect(runners.translate).not.toHaveBeenCalled();
+        expect(runners.generateVoice).toHaveBeenCalledWith(
+            expect.objectContaining({
+                segments: [
+                    expect.objectContaining({
+                        text: "Nàng đẹp quá",
+                    }),
+                ],
+            }),
+        );
+        expect(result.translation.provider.name).toBe("manual-import");
+        expect(result.translation.translatedSegments[0].translatedText).toBe(
+            "Nàng đẹp quá",
+        );
+        expect(console.log).toHaveBeenCalledWith(
+            "[VIP]",
+            expect.objectContaining({
+                event: "stage-start",
+                stage: "transcript",
+                override: true,
+            }),
+        );
+        expect(console.log).toHaveBeenCalledWith(
+            "[VIP]",
+            expect.objectContaining({
+                event: "stage-success",
+                stage: "transcript",
+                source: "override",
+            }),
+        );
+    });
+
     it("applies VIP rate limits to translation and metadata without changing transcript", async () => {
         const runners = createStageRunners();
         const translationRateLimit = {

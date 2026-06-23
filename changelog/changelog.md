@@ -1,5 +1,32 @@
 # OmniVideo Changelog
 
+## FAST-VIDEO-056 - Move VIP translation corrections into Background Progress
+
+- Bumped app version from `0.11.43` to `0.11.44` as a patch release for Workspace VIP correction UX.
+- Moved VIP translated segment correction into the Background Progress `Segments (...)` panel, with in-place editing for multiple translated lines.
+- Added a typed Background Progress correction event so the Topbar can trigger the existing Workspace corrected VIP rerun path for the matching VIP node.
+- Removed the separate Workspace correction panel so completed VIP review and correction happen in one place.
+- Added validation coverage for correction event payloads and updated focused Workspace/Topbar regression checks.
+- Verification (FAST-VIDEO-056):
+  - `npm run test -- --run src/components/layout/topbar.test.ts src/features/workspace/workspace-canvas-panel.test.ts src/lib/workspace/vip-translation-correction-events.test.ts src/lib/multilingual-audio/video-vip-processing.test.ts src/app/api/audio/video-vip-processing/route.test.ts` pass (5 files / 80 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+
+## FAST-VIDEO-055 - Add VIP translation correction rerun
+
+- Bumped app version from `0.11.42` to `0.11.43` as a patch release for Workspace VIP correction reruns.
+- Added a Workspace VIP translation correction panel that appears after a successful VIP run with runtime transcript and translation data.
+- Added corrected VIP rerun wiring that sends `transcriptOverrideJson` and structured `importedTranslationSegmentsJson`, letting the rerun skip transcription and AI translation while regenerating voice/render/metadata.
+- Extended VIP processing to accept transcript overrides and include their hash in checkpoint fingerprints so stale voice/render/metadata are not reused for corrected translations.
+- Added validation for structured imported translation segment JSON and transcript override JSON.
+- Reworded the remote FormData fallback progress line as a compatibility fallback instead of an alarming EC2 rejection.
+- Verification (FAST-VIDEO-055):
+  - `npm run test -- --run src/lib/multilingual-audio/video-vip-processing.test.ts src/app/api/audio/video-vip-processing/route.test.ts src/features/workspace/workspace-canvas-panel.test.ts src/lib/multilingual-audio/remote-vip-worker.test.ts` pass (4 files / 89 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+
 ## FAST-VIDEO-054 - Fix VIP background music render failure
 
 - Bumped app version from `0.11.41` to `0.11.42` as a patch release for VIP background music render reliability.

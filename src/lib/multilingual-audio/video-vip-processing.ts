@@ -353,6 +353,7 @@ export type VideoVipProcessingInput = {
     fileSizeBytes: number;
     fileBytes: Uint8Array;
     language?: string;
+    transcriptOverride?: ChineseTranscriptionResult;
     sourceLanguage?: string;
     targetLanguage?: string;
     model?: string;
@@ -668,6 +669,22 @@ function buildVipCheckpointFingerprint(input: VideoVipProcessingInput) {
             fileName: input.fileName,
             fileSizeBytes: input.fileSizeBytes,
             language: input.language,
+            transcriptOverrideHash: input.transcriptOverride
+                ? hashText(
+                      JSON.stringify({
+                          language: input.transcriptOverride.language,
+                          model: input.transcriptOverride.model,
+                          segments: input.transcriptOverride.segments.map(
+                              (segment) => ({
+                                  id: segment.id,
+                                  start: segment.start,
+                                  end: segment.end,
+                                  text: segment.text,
+                              }),
+                          ),
+                      }),
+                  )
+                : undefined,
             sourceLanguage: input.sourceLanguage,
             targetLanguage: input.targetLanguage,
             model: input.model,
@@ -2376,12 +2393,14 @@ export async function runVideoVipProcessing(
     logVipEvent(runId, "stage-start", {
         stage: "transcript",
         reused: Boolean(checkpointState.transcript),
+        override: Boolean(input.transcriptOverride),
         fileSizeBytes: input.fileBytes.byteLength,
         language: input.language ?? "zh",
         speedFactor: clampedSpeed,
     });
     const transcript =
         checkpointState.transcript ??
+        input.transcriptOverride ??
         (await (async () => {
             try {
                 return await runners.transcribe({
@@ -2434,6 +2453,7 @@ export async function runVideoVipProcessing(
         await saveCheckpoint("transcript");
         logVipEvent(runId, "stage-success", {
             stage: "transcript",
+            source: input.transcriptOverride ? "override" : "transcription",
             segmentCount: transcript.segments.length,
             wordCount: transcript.words.length,
             transcriptChars: transcript.text.length,

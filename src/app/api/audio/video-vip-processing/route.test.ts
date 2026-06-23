@@ -786,6 +786,91 @@ describe("video vip processing API", () => {
     });
   });
 
+  it("forwards corrected VIP transcript and imported segment JSON", async () => {
+    mockedRunVideoVipProcessing.mockResolvedValueOnce(createVipProcessingResult());
+    const formData = createFormData({
+      translationMode: "import",
+      importedTranslationSegmentsJson: JSON.stringify([
+        { id: 0, translatedText: "Nàng đẹp quá" },
+      ]),
+      transcriptOverrideJson: JSON.stringify({
+        text: "你好",
+        language: "zh",
+        model: "whisper-large-v3-turbo",
+        segments: [{ id: 0, start: 0, end: 1, text: "你好" }],
+        words: [],
+        source: { fileName: "source.mp4", fileSizeBytes: 3 },
+        audio: {
+          format: "mp3",
+          sampleRate: 16000,
+          channels: 1,
+          bitrateKbps: 64,
+          fileSizeBytes: 3,
+        },
+        steps: [],
+        provider: { name: "groq" },
+      }),
+    });
+    formData.set(
+      "videoFile",
+      new File([new Uint8Array([1, 2, 3])], "source.mp4", {
+        type: "video/mp4",
+      }),
+    );
+
+    const response = await POST(
+      new Request("http://localhost/api/audio/video-vip-processing", {
+        method: "POST",
+        body: formData,
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(mockedRunVideoVipProcessing).toHaveBeenCalledWith(
+      expect.objectContaining({
+        translationMode: "import",
+        importedTranslationLines: ["Nàng đẹp quá"],
+        transcriptOverride: expect.objectContaining({
+          language: "zh",
+          segments: [
+            expect.objectContaining({
+              id: 0,
+              text: "你好",
+            }),
+          ],
+        }),
+      }),
+    );
+  });
+
+  it("rejects invalid corrected VIP imported segment JSON", async () => {
+    const formData = createFormData({
+      translationMode: "import",
+      importedTranslationSegmentsJson: "{nope",
+    });
+    formData.set(
+      "videoFile",
+      new File([new Uint8Array([1, 2, 3])], "source.mp4", {
+        type: "video/mp4",
+      }),
+    );
+
+    const response = await POST(
+      new Request("http://localhost/api/audio/video-vip-processing", {
+        method: "POST",
+        body: formData,
+      }),
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(payload).toMatchObject({
+      ok: false,
+      errorCode: "VAL_TRANSLATION_IMPORT_INVALID",
+    });
+    expect(mockedRunVideoVipProcessing).not.toHaveBeenCalled();
+  });
+
   it("falls back to saved asset subtitle setup when VIP request values are defaults", async () => {
     mockedRunVideoVipProcessing.mockResolvedValueOnce({
       videoBase64: Buffer.from("vip").toString("base64"),

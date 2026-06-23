@@ -80,6 +80,10 @@ import {
 } from "@/lib/workspace/workspace-seeds";
 import { readRemoteVipWorkerBrowserConfig } from "@/lib/workspace/remote-vip-worker-config";
 import {
+    WORKSPACE_VIP_TRANSLATION_CORRECTION_EVENT,
+    isWorkspaceVipTranslationCorrectionDetail,
+} from "@/lib/workspace/vip-translation-correction-events";
+import {
     DEFAULT_TRANSLATION_MODEL,
     DEFAULT_PIPER_TTS_SETTINGS,
     PIPER_TTS_ALIGNMENT_SETTINGS,
@@ -310,6 +314,16 @@ type WorkspaceRuntimeResumeSnapshot = {
     runError: string | null;
     runResult: string | null;
 };
+type VipTranslationOverride = {
+    transcript: ChineseTranscriptionResult;
+    translation: TranscriptTranslationResult;
+};
+type WorkspaceRunOptions = {
+    vipTranslationOverridesByNodeId?: Record<
+        string,
+        VipTranslationOverride | undefined
+    >;
+};
 const MAX_RESUME_TEXT_LENGTH = 4000;
 const VIP_PROGRESS_STAGE_DESCRIPTORS = [
     {
@@ -401,7 +415,7 @@ function formatRemoteVipWorkerProgress(remoteWorker: unknown) {
         return `[remote] Parallel EC2 upload staging fell back to single upload${message ? `: ${message}` : "."}`;
     }
     if (phase === "start-upload-fallback") {
-        return `[remote] EC2 rejected the multipart parser path; retrying with native FormData${message ? `: ${message}` : "."}`;
+        return `[remote] Compatibility fallback: retrying remote upload with native FormData${message ? `: ${message}` : "."}`;
     }
     if (
         phase === "start-upload" ||
@@ -682,6 +696,43 @@ function buildVipProgressStepDescription(input: {
     return [summary, ...metadataLines, header, ...timelineLines]
         .filter((line) => line.length > 0)
         .join("\n");
+}
+
+function buildVipTranslationOverride(input: {
+    transcript: ChineseTranscriptionResult;
+    translation: TranscriptTranslationResult;
+    correctionsBySegmentId: Record<string, string | undefined>;
+}): VipTranslationOverride {
+    return {
+        transcript: input.transcript,
+        translation: {
+            ...input.translation,
+            translatedSegments: input.translation.translatedSegments.map(
+                (segment) => {
+                    const corrected =
+                        input.correctionsBySegmentId[String(segment.id)];
+                    return {
+                        ...segment,
+                        translatedText:
+                            corrected !== undefined
+                                ? corrected
+                                : segment.translatedText,
+                    };
+                },
+            ),
+        },
+    };
+}
+
+function buildVipImportedTranslationSegmentsJson(
+    translation: TranscriptTranslationResult,
+) {
+    return JSON.stringify(
+        translation.translatedSegments.map((segment) => ({
+            id: segment.id,
+            translatedText: segment.translatedText,
+        })),
+    );
 }
 
 function clampNumber(value: number, min: number, max: number) {
@@ -2704,7 +2755,10 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
         };
     }, []);
 
-    const runWorkspaceFlow = async (mode: "fresh" | "resume" = "fresh") => {
+    const runWorkspaceFlow = async (
+        mode: "fresh" | "resume" = "fresh",
+        options: WorkspaceRunOptions = {},
+    ) => {
         const plan = planWorkspaceFlow(graph);
         if (!plan.ok) {
             setRunError(plan.errors.join("\n"));
@@ -4414,6 +4468,8 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         sourceNode,
                         consumerLabel: `VIP Processing '${vipNode.label}'`,
                     });
+                    const vipTranslationOverride =
+                        options.vipTranslationOverridesByNodeId?.[step.vipNodeId];
                     const vipResumeKey = [
                         "workspace-vip",
                         vipNode.id,
@@ -4422,7 +4478,9 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         String(formData.get("artifactId") ?? ""),
                         source.detail,
                         String(getNumberConfig(vipNode, "speedFactor", 0.75)),
-                        getStringConfig(vipNode, "translationMode", "ai"),
+                        vipTranslationOverride
+                            ? "corrected-import"
+                            : getStringConfig(vipNode, "translationMode", "ai"),
                         getStringConfig(vipNode, "language", "zh"),
                         getStringConfig(vipNode, "targetLanguage", "vi"),
                         getStringConfig(vipNode, "model", DEFAULT_TRANSLATION_MODEL),
@@ -4434,9 +4492,12 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         "vipResumeKey",
                         vipResumeKey,
                     );
+                    const hasVipTranslationOverride =
+                        Boolean(vipTranslationOverride);
                     const vipTranslationMode =
+                        hasVipTranslationOverride ||
                         getStringConfig(vipNode, "translationMode", "ai") ===
-                        "import"
+                            "import"
                             ? "import"
                             : "ai";
                     formData.set("translationMode", vipTranslationMode);
@@ -4445,10 +4506,23 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         "importedTranslationText",
                     );
                     if (vipTranslationMode === "import") {
-                        formData.set(
-                            "importedTranslationText",
-                            importedTranslationText,
-                        );
+                        if (vipTranslationOverride) {
+                            formData.set(
+                                "transcriptOverrideJson",
+                                JSON.stringify(vipTranslationOverride.transcript),
+                            );
+                            formData.set(
+                                "importedTranslationSegmentsJson",
+                                buildVipImportedTranslationSegmentsJson(
+                                    vipTranslationOverride.translation,
+                                ),
+                            );
+                        } else {
+                            formData.set(
+                                "importedTranslationText",
+                                importedTranslationText,
+                            );
+                        }
                     }
                     const translationProviderId = getStringConfig(
                         vipNode,
@@ -4824,7 +4898,9 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     }
                     if (vipTranslationMode === "import") {
                         appendVipStageLog(
-                            "Import mode enabled: VIP will use manual translated lines instead of AI translate API.",
+                            vipTranslationOverride
+                                ? "Correction mode enabled: VIP will reuse the current transcript and corrected translated lines, skipping transcript and AI translate."
+                                : "Import mode enabled: VIP will use manual translated lines instead of AI translate API.",
                         );
                     }
                     if (mode === "resume") {
@@ -4838,7 +4914,9 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     startVipProgressStage(
                         step,
                         "transcript",
-                        "Transcribing source speech...",
+                        vipTranslationOverride
+                            ? "Reusing current transcript for corrected VIP rerun..."
+                            : "Transcribing source speech...",
                     );
                     let isPolling = true;
                     const pollCheckpoint = async () => {
@@ -6424,6 +6502,81 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
         setIsFlowSetupOpen(false);
         void runWorkspaceFlow("fresh");
     };
+
+    useEffect(() => {
+        const handleVipTranslationCorrection = (event: Event) => {
+            const detail = (event as CustomEvent<unknown>).detail;
+            if (!isWorkspaceVipTranslationCorrectionDetail(detail)) return;
+
+            if (isRunningFlow) {
+                setRunError(
+                    "Workspace flow is already running. Wait for it to finish before running corrected VIP.",
+                );
+                return;
+            }
+
+            const transcript = runtimeTranscriptsByNodeId[detail.vipNodeId];
+            const translation = runtimeTranslationsByNodeId[detail.vipNodeId];
+            if (!transcript || !translation?.translatedSegments.length) {
+                setRunError(
+                    "Cannot rerun corrected VIP because this Workspace session no longer has transcript/translation data. Run the VIP flow once again first.",
+                );
+                return;
+            }
+
+            const correctedTextBySegmentId = new Map(
+                detail.segments.map((segment) => [
+                    String(segment.id),
+                    segment.translatedText,
+                ]),
+            );
+            const correctionsBySegmentId: Record<string, string | undefined> =
+                {};
+            for (const segment of translation.translatedSegments) {
+                const correctedText = correctedTextBySegmentId.get(
+                    String(segment.id),
+                );
+                if (
+                    correctedText !== undefined &&
+                    correctedText.trim() !== segment.translatedText.trim()
+                ) {
+                    correctionsBySegmentId[String(segment.id)] = correctedText;
+                }
+            }
+
+            if (Object.keys(correctionsBySegmentId).length === 0) {
+                setRunError("No corrected VIP segment changes were found.");
+                return;
+            }
+
+            setRunError(null);
+            void runWorkspaceFlow("fresh", {
+                vipTranslationOverridesByNodeId: {
+                    [detail.vipNodeId]: buildVipTranslationOverride({
+                        transcript,
+                        translation,
+                        correctionsBySegmentId,
+                    }),
+                },
+            });
+        };
+
+        window.addEventListener(
+            WORKSPACE_VIP_TRANSLATION_CORRECTION_EVENT,
+            handleVipTranslationCorrection,
+        );
+        return () => {
+            window.removeEventListener(
+                WORKSPACE_VIP_TRANSLATION_CORRECTION_EVENT,
+                handleVipTranslationCorrection,
+            );
+        };
+    }, [
+        isRunningFlow,
+        runtimeTranscriptsByNodeId,
+        runtimeTranslationsByNodeId,
+        runWorkspaceFlow,
+    ]);
 
     const getCanvasPoint = (event: PointerEvent<HTMLElement>) => {
         const rect = viewportRef.current?.getBoundingClientRect();

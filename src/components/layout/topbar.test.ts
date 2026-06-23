@@ -13,6 +13,7 @@ describe("Topbar background progress modal", () => {
         expect(source).toContain("timelineHeader");
         expect(source).toContain("timelineLines");
         expect(source).toContain("ProgressSegmentsPanel");
+        expect(source).toContain("step={richStep.step}");
         expect(source).toContain(
             "xl:grid-cols-[minmax(360px,0.9fr)_minmax(0,1.1fr)]",
         );
@@ -41,6 +42,14 @@ describe("Topbar background progress modal", () => {
         expect(source).toContain("setInterval(() =>");
         expect(source).toContain("measured progress");
         expect(source).toContain("divide-y divide-soft");
+        expect(source).toContain("dispatchWorkspaceVipTranslationCorrection");
+        expect(source).toContain("editedTextBySegmentId");
+        expect(source).toContain("Edit translated segment text");
+        expect(source).toContain("Run corrected VIP");
+        expect(source).toContain("Empty segment");
+        expect(source).toContain("changedCount === 0 || hasEmptyEditedText");
+        expect(source).toContain("textarea");
+        expect(source).toContain("editableSegments.map((segment) =>");
     });
 
     it("supports completion toasts and optional browser notifications", () => {
