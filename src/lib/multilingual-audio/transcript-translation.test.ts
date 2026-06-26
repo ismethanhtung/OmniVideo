@@ -90,6 +90,23 @@ describe("transcript translation", () => {
     ).toBe("Ăn wa sa bi với lát cá 50 xen ti mét.");
   });
 
+  it("guards Vietnamese TTS text against Pinyin-marked Chinese names", () => {
+    expect(
+      normalizeVietnameseTtsText(
+        "Có phải nghe tin Zhūzhū về, nên lại định bám lấy Xǔ Shí?",
+      ),
+    ).toBe(
+      "Có phải nghe tin Trư Trư về, nên lại định bám lấy Hứa Thời?",
+    );
+
+    expect(normalizeVietnameseTtsText("Cô ấy gặp Lǐ hôm qua.")).toBe(
+      "Cô ấy gặp người đó hôm qua.",
+    );
+    expect(normalizeVietnameseTtsText("Cô ấy rất đáng yêu.")).toBe(
+      "Cô ấy rất đáng yêu.",
+    );
+  });
+
   it("normalizes branding bumper text to a short neutral Vietnamese phrase", () => {
     expect(
       normalizeTranslationPayload(

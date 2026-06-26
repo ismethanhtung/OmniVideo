@@ -46,6 +46,11 @@ describe("Topbar background progress modal", () => {
         expect(source).toContain("editedTextBySegmentId");
         expect(source).toContain("Edit translated segment text");
         expect(source).toContain("Run corrected VIP");
+        expect(source).toContain("transcriptRetrySelectedBySegmentId");
+        expect(source).toContain("Retry transcript");
+        expect(source).toContain("Retry transcript + translate");
+        expect(source).toContain("transcriptRetrySegmentIds");
+        expect(source).toContain("runTranscriptRetry");
         expect(source).toContain("Empty segment");
         expect(source).toContain("changedCount === 0 || hasEmptyEditedText");
         expect(source).toContain("textarea");

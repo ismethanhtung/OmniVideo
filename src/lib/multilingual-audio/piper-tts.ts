@@ -8,45 +8,45 @@ import path from "node:path";
 
 import { resolveFfmpegPath } from "./audio-extraction";
 import {
-  ChineseTranscriptionError,
-  DEFAULT_PIPER_TTS_SETTINGS,
-  PIPER_TTS_ALIGNMENT_SETTINGS,
-  type VoiceGenerationResult,
-  type VoiceGenerationSegment,
-  type VoiceGenerationSettings,
+    ChineseTranscriptionError,
+    DEFAULT_PIPER_TTS_SETTINGS,
+    PIPER_TTS_ALIGNMENT_SETTINGS,
+    type VoiceGenerationResult,
+    type VoiceGenerationSegment,
+    type VoiceGenerationSettings,
 } from "./types";
 
 const MAX_PIPER_TEXT_LENGTH = 5000;
 const DEFAULT_TIMEOUT_MS = 60000;
 const {
-  timelineGapBorrowRatio: TIMELINE_GAP_BORROW_RATIO,
-  maxTimelineGapBorrowSeconds: MAX_TIMELINE_GAP_BORROW_SECONDS,
-  timelineLeadBorrowRatio: TIMELINE_LEAD_BORROW_RATIO,
-  maxTimelineLeadBorrowSeconds: MAX_TIMELINE_LEAD_BORROW_SECONDS,
-  timelineMinInterSpeechGapSeconds: TIMELINE_MIN_INTER_SPEECH_GAP_SECONDS,
-  timelineSegmentSentenceSilenceSeconds:
-    TIMELINE_SEGMENT_SENTENCE_SILENCE_SECONDS,
-  timelineMinSpeedFactor: TIMELINE_MIN_SPEED_FACTOR,
-  timelineMaxSpeedFactor: TIMELINE_MAX_SPEED_FACTOR,
-  highTimelineSpeedFactor: HIGH_TIMELINE_SPEED_FACTOR,
-  balancedMaxPauseSeconds: BALANCED_MAX_PAUSE_SECONDS,
-  balancedMaxSpeedFactor: BALANCED_MAX_SPEED_FACTOR,
-  balancedLongPauseSeconds: BALANCED_LONG_PAUSE_SECONDS,
-  balancedDriftWarningSeconds: BALANCED_DRIFT_WARNING_SECONDS,
+    timelineGapBorrowRatio: TIMELINE_GAP_BORROW_RATIO,
+    maxTimelineGapBorrowSeconds: MAX_TIMELINE_GAP_BORROW_SECONDS,
+    timelineLeadBorrowRatio: TIMELINE_LEAD_BORROW_RATIO,
+    maxTimelineLeadBorrowSeconds: MAX_TIMELINE_LEAD_BORROW_SECONDS,
+    timelineMinInterSpeechGapSeconds: TIMELINE_MIN_INTER_SPEECH_GAP_SECONDS,
+    timelineSegmentSentenceSilenceSeconds:
+        TIMELINE_SEGMENT_SENTENCE_SILENCE_SECONDS,
+    timelineMinSpeedFactor: TIMELINE_MIN_SPEED_FACTOR,
+    timelineMaxSpeedFactor: TIMELINE_MAX_SPEED_FACTOR,
+    highTimelineSpeedFactor: HIGH_TIMELINE_SPEED_FACTOR,
+    balancedMaxPauseSeconds: BALANCED_MAX_PAUSE_SECONDS,
+    balancedMaxSpeedFactor: BALANCED_MAX_SPEED_FACTOR,
+    balancedLongPauseSeconds: BALANCED_LONG_PAUSE_SECONDS,
+    balancedDriftWarningSeconds: BALANCED_DRIFT_WARNING_SECONDS,
 } = PIPER_TTS_ALIGNMENT_SETTINGS;
 const DEFAULT_LOCAL_PIPER_DIR = path.join(process.cwd(), "piper");
 const DEFAULT_LOCAL_PIPER_BINARY = path.join(
-  process.cwd(),
-  "piper",
-  ".venv",
-  "bin",
-  "piper",
+    process.cwd(),
+    "piper",
+    ".venv",
+    "bin",
+    "piper",
 );
 const FALLBACK_LOCAL_PIPER_BINARY = path.join(process.cwd(), "piper", "piper");
 const REQUIRED_PIPER_DYLIBS = [
-  "libespeak-ng.1.dylib",
-  "libpiper_phonemize.1.dylib",
-  "libonnxruntime.1.14.1.dylib",
+    "libespeak-ng.1.dylib",
+    "libpiper_phonemize.1.dylib",
+    "libonnxruntime.1.14.1.dylib",
 ];
 const BATCH_TIMEOUT_BASE_MS = 60000;
 const BATCH_TIMEOUT_PER_TEXT_MS = 5000;
@@ -55,120 +55,47 @@ const DEFAULT_PIPER_SEGMENT_BATCH_SIZE = 200;
 const VOICE_CHUNK_TARGET_DURATION_SECONDS = 10 * 60;
 const MIN_ADAPTIVE_PIPER_SEGMENT_BATCH_SIZE = 60;
 const PIPER_SEGMENT_BATCH_SIZE = Math.max(
-  1,
-  Math.min(
-    500,
-    Number(process.env.PIPER_TTS_SEGMENT_BATCH_SIZE) ||
-      DEFAULT_PIPER_SEGMENT_BATCH_SIZE,
-  ),
+    1,
+    Math.min(
+        500,
+        Number(process.env.PIPER_TTS_SEGMENT_BATCH_SIZE) ||
+            DEFAULT_PIPER_SEGMENT_BATCH_SIZE,
+    ),
 );
 const ALIGNMENT_FFMPEG_CONCURRENCY = Math.max(
-  1,
-  Math.min(4, Number(process.env.PIPER_ALIGNMENT_FFMPEG_CONCURRENCY) || 4),
+    1,
+    Math.min(4, Number(process.env.PIPER_ALIGNMENT_FFMPEG_CONCURRENCY) || 4),
 );
 
 type PiperSpawn = typeof spawn;
 
 export type ActivePiperChildProcess = {
-  id: string;
-  pid?: number;
-  kind: "piper" | "ffmpeg";
-  command: string;
-  argsPreview: string[];
-  startedAt: string;
-  elapsedMs: number;
+    id: string;
+    pid?: number;
+    kind: "piper" | "ffmpeg";
+    command: string;
+    argsPreview: string[];
+    startedAt: string;
+    elapsedMs: number;
 };
 
 let piperSpawnForTest: PiperSpawn | null = null;
 let piperFileExistsForTest: ((filePath: string) => boolean) | null = null;
 let piperReadFileForTest: ((filePath: string) => Promise<Buffer>) | null = null;
 let piperFfmpegRunnerForTest:
-  | ((args: string[]) => Promise<{ stderr: string }>)
-  | null = null;
+    | ((args: string[]) => Promise<{ stderr: string }>)
+    | null = null;
 const activePiperChildProcesses = new Map<
-  string,
-  Omit<ActivePiperChildProcess, "elapsedMs"> & {
-    child: Pick<ChildProcess, "kill">;
-    startedAtMs: number;
-  }
+    string,
+    Omit<ActivePiperChildProcess, "elapsedMs"> & {
+        child: Pick<ChildProcess, "kill">;
+        startedAtMs: number;
+    }
 >();
 
 export type PiperTtsInput = {
-  text: string;
-  binaryPath: string;
-  modelPath: string;
-  configPath?: string;
-  speaker?: number;
-  lengthScale?: number;
-  noiseScale?: number;
-  noiseW?: number;
-  sentenceSilence?: number;
-  timeoutMs?: number;
-};
-
-type NormalizedPiperVoiceSettings = VoiceGenerationSettings;
-
-type TimelineAlignmentChunk = {
-  segmentId: number;
-  sourceSegmentId?: number;
-  start: number;
-  end: number;
-  slotDurationSeconds: number;
-  rawDurationSeconds: number;
-  targetDurationSeconds: number;
-  borrowedGapSeconds: number;
-  borrowedLeadSeconds: number;
-  speedFactor: number;
-  tempoFilter: string;
-  scheduledStartSeconds?: number;
-  scheduledEndSeconds?: number;
-  pauseBeforeSeconds?: number;
-  driftSeconds?: number;
-  warningCodes: string[];
-};
-
-type AlignedTimelineItem = {
-  path: string;
-  start: number;
-  chunk: TimelineAlignmentChunk;
-};
-
-type TimelineProcessingChunk = {
-  index: number;
-  segmentCount: number;
-  start: number;
-  end: number;
-  durationSeconds: number;
-};
-
-function resolveAdaptiveSegmentBatchSize(
-  segments: Array<{ start: number; end: number }>,
-) {
-  if (segments.length === 0) return PIPER_SEGMENT_BATCH_SIZE;
-  const starts = segments.map((segment) => segment.start);
-  const ends = segments.map((segment) => segment.end);
-  const spanSeconds = Math.max(...ends) - Math.min(...starts);
-  if (!Number.isFinite(spanSeconds) || spanSeconds <= VOICE_CHUNK_TARGET_DURATION_SECONDS) {
-    return PIPER_SEGMENT_BATCH_SIZE;
-  }
-  const targetChunks = Math.max(
-    1,
-    Math.ceil(spanSeconds / VOICE_CHUNK_TARGET_DURATION_SECONDS),
-  );
-  const adaptiveSize = Math.ceil(segments.length / targetChunks);
-  return Math.max(
-    MIN_ADAPTIVE_PIPER_SEGMENT_BATCH_SIZE,
-    Math.min(PIPER_SEGMENT_BATCH_SIZE, adaptiveSize),
-  );
-}
-
-export type PiperTtsResult = {
-  audioBase64: string;
-  mimeType: "audio/wav";
-  extension: "wav";
-  byteLength: number;
-  durationMs: number;
-  settings: {
+    text: string;
+    binaryPath: string;
     modelPath: string;
     configPath?: string;
     speaker?: number;
@@ -176,1638 +103,1753 @@ export type PiperTtsResult = {
     noiseScale?: number;
     noiseW?: number;
     sentenceSilence?: number;
-  };
-  provider: {
-    name: "piper";
-    mode: "local-cli";
-  };
+    timeoutMs?: number;
+};
+
+type NormalizedPiperVoiceSettings = VoiceGenerationSettings;
+
+type TimelineAlignmentChunk = {
+    segmentId: number;
+    sourceSegmentId?: number;
+    start: number;
+    end: number;
+    slotDurationSeconds: number;
+    rawDurationSeconds: number;
+    targetDurationSeconds: number;
+    borrowedGapSeconds: number;
+    borrowedLeadSeconds: number;
+    speedFactor: number;
+    tempoFilter: string;
+    scheduledStartSeconds?: number;
+    scheduledEndSeconds?: number;
+    pauseBeforeSeconds?: number;
+    driftSeconds?: number;
+    warningCodes: string[];
+};
+
+type AlignedTimelineItem = {
+    path: string;
+    start: number;
+    chunk: TimelineAlignmentChunk;
+};
+
+type TimelineProcessingChunk = {
+    index: number;
+    segmentCount: number;
+    start: number;
+    end: number;
+    durationSeconds: number;
+};
+
+function resolveAdaptiveSegmentBatchSize(
+    segments: Array<{ start: number; end: number }>,
+) {
+    if (segments.length === 0) return PIPER_SEGMENT_BATCH_SIZE;
+    const starts = segments.map((segment) => segment.start);
+    const ends = segments.map((segment) => segment.end);
+    const spanSeconds = Math.max(...ends) - Math.min(...starts);
+    if (
+        !Number.isFinite(spanSeconds) ||
+        spanSeconds <= VOICE_CHUNK_TARGET_DURATION_SECONDS
+    ) {
+        return PIPER_SEGMENT_BATCH_SIZE;
+    }
+    const targetChunks = Math.max(
+        1,
+        Math.ceil(spanSeconds / VOICE_CHUNK_TARGET_DURATION_SECONDS),
+    );
+    const adaptiveSize = Math.ceil(segments.length / targetChunks);
+    return Math.max(
+        MIN_ADAPTIVE_PIPER_SEGMENT_BATCH_SIZE,
+        Math.min(PIPER_SEGMENT_BATCH_SIZE, adaptiveSize),
+    );
+}
+
+export type PiperTtsResult = {
+    audioBase64: string;
+    mimeType: "audio/wav";
+    extension: "wav";
+    byteLength: number;
+    durationMs: number;
+    settings: {
+        modelPath: string;
+        configPath?: string;
+        speaker?: number;
+        lengthScale?: number;
+        noiseScale?: number;
+        noiseW?: number;
+        sentenceSilence?: number;
+    };
+    provider: {
+        name: "piper";
+        mode: "local-cli";
+    };
 };
 
 export function resolvePiperBinaryPath(binaryPath: string) {
-  const bundledRuntimeReady = (() => {
-    if (!fileExists(FALLBACK_LOCAL_PIPER_BINARY)) return false;
-    const piperDir = path.dirname(FALLBACK_LOCAL_PIPER_BINARY);
-    return REQUIRED_PIPER_DYLIBS.every((fileName) =>
-      fileExists(path.join(piperDir, fileName)),
-    );
-  })();
+    const bundledRuntimeReady = (() => {
+        if (!fileExists(FALLBACK_LOCAL_PIPER_BINARY)) return false;
+        const piperDir = path.dirname(FALLBACK_LOCAL_PIPER_BINARY);
+        return REQUIRED_PIPER_DYLIBS.every((fileName) =>
+            fileExists(path.join(piperDir, fileName)),
+        );
+    })();
 
-  const trimmed = binaryPath.trim();
-  if (!trimmed || trimmed === "piper") {
-    if (bundledRuntimeReady) return FALLBACK_LOCAL_PIPER_BINARY;
-    if (fileExists(DEFAULT_LOCAL_PIPER_BINARY)) return DEFAULT_LOCAL_PIPER_BINARY;
-    if (fileExists(FALLBACK_LOCAL_PIPER_BINARY)) return FALLBACK_LOCAL_PIPER_BINARY;
-    return "piper";
-  }
-  if (
-    trimmed === DEFAULT_LOCAL_PIPER_BINARY &&
-    bundledRuntimeReady
-  ) {
-    return FALLBACK_LOCAL_PIPER_BINARY;
-  }
-  if (
-    trimmed === FALLBACK_LOCAL_PIPER_BINARY &&
-    !bundledRuntimeReady &&
-    fileExists(DEFAULT_LOCAL_PIPER_BINARY)
-  ) {
-    return DEFAULT_LOCAL_PIPER_BINARY;
-  }
-  return trimmed;
+    const trimmed = binaryPath.trim();
+    if (!trimmed || trimmed === "piper") {
+        if (bundledRuntimeReady) return FALLBACK_LOCAL_PIPER_BINARY;
+        if (fileExists(DEFAULT_LOCAL_PIPER_BINARY))
+            return DEFAULT_LOCAL_PIPER_BINARY;
+        if (fileExists(FALLBACK_LOCAL_PIPER_BINARY))
+            return FALLBACK_LOCAL_PIPER_BINARY;
+        return "piper";
+    }
+    if (trimmed === DEFAULT_LOCAL_PIPER_BINARY && bundledRuntimeReady) {
+        return FALLBACK_LOCAL_PIPER_BINARY;
+    }
+    if (
+        trimmed === FALLBACK_LOCAL_PIPER_BINARY &&
+        !bundledRuntimeReady &&
+        fileExists(DEFAULT_LOCAL_PIPER_BINARY)
+    ) {
+        return DEFAULT_LOCAL_PIPER_BINARY;
+    }
+    return trimmed;
 }
 
 function fileExists(filePath: string) {
-  return piperFileExistsForTest?.(filePath) ?? existsSync(filePath);
+    return piperFileExistsForTest?.(filePath) ?? existsSync(filePath);
 }
 
 function resolvePiperModelPath(modelPath: string) {
-  const trimmed = modelPath.trim();
-  if (trimmed) return trimmed;
+    const trimmed = modelPath.trim();
+    if (trimmed) return trimmed;
 
-  const bundledModel = path.join(DEFAULT_LOCAL_PIPER_DIR, "model.onnx");
-  if (fileExists(bundledModel)) return bundledModel;
+    const bundledModel = path.join(DEFAULT_LOCAL_PIPER_DIR, "model.onnx");
+    if (fileExists(bundledModel)) return bundledModel;
 
-  let bundledCandidates: string[] = [];
-  try {
-    bundledCandidates = readdirSync(DEFAULT_LOCAL_PIPER_DIR)
-      .filter((fileName) => fileName.endsWith(".onnx"))
-      .sort();
-  } catch {
-    bundledCandidates = [];
-  }
+    let bundledCandidates: string[] = [];
+    try {
+        bundledCandidates = readdirSync(DEFAULT_LOCAL_PIPER_DIR)
+            .filter((fileName) => fileName.endsWith(".onnx"))
+            .sort();
+    } catch {
+        bundledCandidates = [];
+    }
 
-  if (bundledCandidates.length > 0) {
-    return path.join(DEFAULT_LOCAL_PIPER_DIR, bundledCandidates[0]);
-  }
+    if (bundledCandidates.length > 0) {
+        return path.join(DEFAULT_LOCAL_PIPER_DIR, bundledCandidates[0]);
+    }
 
-  return "";
+    return "";
 }
 
-function resolvePiperConfigPath(configPath: string | undefined, modelPath: string) {
-  const trimmed = configPath?.trim();
-  if (trimmed) return trimmed;
+function resolvePiperConfigPath(
+    configPath: string | undefined,
+    modelPath: string,
+) {
+    const trimmed = configPath?.trim();
+    if (trimmed) return trimmed;
 
-  const derived = `${modelPath}.json`;
-  if (fileExists(derived)) return derived;
+    const derived = `${modelPath}.json`;
+    if (fileExists(derived)) return derived;
 
-  const bundledModelConfig = path.join(DEFAULT_LOCAL_PIPER_DIR, "model.onnx.json");
-  if (fileExists(bundledModelConfig)) return bundledModelConfig;
+    const bundledModelConfig = path.join(
+        DEFAULT_LOCAL_PIPER_DIR,
+        "model.onnx.json",
+    );
+    if (fileExists(bundledModelConfig)) return bundledModelConfig;
 
-  return undefined;
+    return undefined;
 }
 
 function validateReadableFile(input: {
-  pathValue: string;
-  code:
-    | "VAL_PIPER_TTS_BINARY_REQUIRED"
-    | "VAL_PIPER_TTS_MODEL_REQUIRED"
-    | "VAL_PIPER_TTS_CONFIG_NOT_FOUND";
-  label: string;
+    pathValue: string;
+    code:
+        | "VAL_PIPER_TTS_BINARY_REQUIRED"
+        | "VAL_PIPER_TTS_MODEL_REQUIRED"
+        | "VAL_PIPER_TTS_CONFIG_NOT_FOUND";
+    label: string;
 }) {
-  if (!fileExists(input.pathValue)) {
-    throw new ChineseTranscriptionError(
-      input.code,
-      `${input.label} not found: ${input.pathValue}`,
-      400,
-    );
-  }
+    if (!fileExists(input.pathValue)) {
+        throw new ChineseTranscriptionError(
+            input.code,
+            `${input.label} not found: ${input.pathValue}`,
+            400,
+        );
+    }
 }
 
 export function validatePiperRuntimeFiles(input: {
-  binaryPath: string;
-  modelPath: string;
-  configPath?: string;
+    binaryPath: string;
+    modelPath: string;
+    configPath?: string;
 }) {
-  validateReadableFile({
-    pathValue: input.binaryPath,
-    code: "VAL_PIPER_TTS_BINARY_REQUIRED",
-    label: "Piper executable",
-  });
-  validateReadableFile({
-    pathValue: input.modelPath,
-    code: "VAL_PIPER_TTS_MODEL_REQUIRED",
-    label: "Piper ONNX model",
-  });
-  if (input.configPath) {
     validateReadableFile({
-      pathValue: input.configPath,
-      code: "VAL_PIPER_TTS_CONFIG_NOT_FOUND",
-      label: "Piper config JSON",
+        pathValue: input.binaryPath,
+        code: "VAL_PIPER_TTS_BINARY_REQUIRED",
+        label: "Piper executable",
     });
-  }
-
-  if (!input.binaryPath.includes(`${path.sep}.venv${path.sep}`)) {
-    const piperDir = path.dirname(input.binaryPath);
-    const missingLibraries = REQUIRED_PIPER_DYLIBS.filter(
-      (fileName) => !fileExists(path.join(piperDir, fileName)),
-    );
-    if (missingLibraries.length > 0) {
-      throw new ChineseTranscriptionError(
-        "CFG_PIPER_TTS_RUNTIME_MISSING",
-        `Piper runtime is missing dynamic libraries in ${piperDir}: ${missingLibraries.join(", ")}`,
-        500,
-      );
+    validateReadableFile({
+        pathValue: input.modelPath,
+        code: "VAL_PIPER_TTS_MODEL_REQUIRED",
+        label: "Piper ONNX model",
+    });
+    if (input.configPath) {
+        validateReadableFile({
+            pathValue: input.configPath,
+            code: "VAL_PIPER_TTS_CONFIG_NOT_FOUND",
+            label: "Piper config JSON",
+        });
     }
-  }
+
+    if (!input.binaryPath.includes(`${path.sep}.venv${path.sep}`)) {
+        const piperDir = path.dirname(input.binaryPath);
+        const missingLibraries = REQUIRED_PIPER_DYLIBS.filter(
+            (fileName) => !fileExists(path.join(piperDir, fileName)),
+        );
+        if (missingLibraries.length > 0) {
+            throw new ChineseTranscriptionError(
+                "CFG_PIPER_TTS_RUNTIME_MISSING",
+                `Piper runtime is missing dynamic libraries in ${piperDir}: ${missingLibraries.join(", ")}`,
+                500,
+            );
+        }
+    }
 }
 
 export function setPiperSpawnForTest(spawnImpl: PiperSpawn | null) {
-  piperSpawnForTest = spawnImpl;
+    piperSpawnForTest = spawnImpl;
 }
 
 export function setPiperFileExistsForTest(
-  fileExistsImpl: ((filePath: string) => boolean) | null,
+    fileExistsImpl: ((filePath: string) => boolean) | null,
 ) {
-  piperFileExistsForTest = fileExistsImpl;
+    piperFileExistsForTest = fileExistsImpl;
 }
 
 export function setPiperReadFileForTest(
-  readFileImpl: ((filePath: string) => Promise<Buffer>) | null,
+    readFileImpl: ((filePath: string) => Promise<Buffer>) | null,
 ) {
-  piperReadFileForTest = readFileImpl;
+    piperReadFileForTest = readFileImpl;
 }
 
 export function setPiperFfmpegRunnerForTest(
-  runnerImpl: ((args: string[]) => Promise<{ stderr: string }>) | null,
+    runnerImpl: ((args: string[]) => Promise<{ stderr: string }>) | null,
 ) {
-  piperFfmpegRunnerForTest = runnerImpl;
+    piperFfmpegRunnerForTest = runnerImpl;
 }
 
 function trackPiperChildProcess(input: {
-  child: Pick<ChildProcess, "kill"> & { pid?: number };
-  kind: ActivePiperChildProcess["kind"];
-  command: string;
-  args: string[];
+    child: Pick<ChildProcess, "kill"> & { pid?: number };
+    kind: ActivePiperChildProcess["kind"];
+    command: string;
+    args: string[];
 }) {
-  const id = randomUUID();
-  activePiperChildProcesses.set(id, {
-    id,
-    child: input.child,
-    pid: input.child.pid,
-    kind: input.kind,
-    command: input.command,
-    argsPreview: input.args.slice(0, 12),
-    startedAt: new Date().toISOString(),
-    startedAtMs: Date.now(),
-  });
-  return id;
+    const id = randomUUID();
+    activePiperChildProcesses.set(id, {
+        id,
+        child: input.child,
+        pid: input.child.pid,
+        kind: input.kind,
+        command: input.command,
+        argsPreview: input.args.slice(0, 12),
+        startedAt: new Date().toISOString(),
+        startedAtMs: Date.now(),
+    });
+    return id;
 }
 
 function untrackPiperChildProcess(id: string) {
-  activePiperChildProcesses.delete(id);
+    activePiperChildProcesses.delete(id);
 }
 
 export function listActivePiperChildProcesses(): ActivePiperChildProcess[] {
-  return Array.from(activePiperChildProcesses.values()).map((entry) => ({
-    id: entry.id,
-    pid: entry.pid,
-    kind: entry.kind,
-    command: entry.command,
-    argsPreview: entry.argsPreview,
-    startedAt: entry.startedAt,
-    elapsedMs: Date.now() - entry.startedAtMs,
-  }));
+    return Array.from(activePiperChildProcesses.values()).map((entry) => ({
+        id: entry.id,
+        pid: entry.pid,
+        kind: entry.kind,
+        command: entry.command,
+        argsPreview: entry.argsPreview,
+        startedAt: entry.startedAt,
+        elapsedMs: Date.now() - entry.startedAtMs,
+    }));
 }
 
 export function killActivePiperChildProcesses() {
-  const processes = listActivePiperChildProcesses();
-  for (const [id, entry] of activePiperChildProcesses.entries()) {
-    entry.child.kill("SIGTERM");
-    untrackPiperChildProcess(id);
-  }
-  return processes;
+    const processes = listActivePiperChildProcesses();
+    for (const [id, entry] of activePiperChildProcesses.entries()) {
+        entry.child.kill("SIGTERM");
+        untrackPiperChildProcess(id);
+    }
+    return processes;
 }
 
 function normalizeOptionalNumber(value: number | undefined) {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+    return typeof value === "number" && Number.isFinite(value)
+        ? value
+        : undefined;
 }
 
 export function validatePiperTtsInput(input: PiperTtsInput) {
-  const text = input.text.trim();
-  const binaryPath = resolvePiperBinaryPath(input.binaryPath);
-  const modelPath = resolvePiperModelPath(input.modelPath);
+    const text = input.text.trim();
+    const binaryPath = resolvePiperBinaryPath(input.binaryPath);
+    const modelPath = resolvePiperModelPath(input.modelPath);
 
-  if (!text) {
-    throw new ChineseTranscriptionError(
-      "VAL_PIPER_TTS_TEXT_REQUIRED",
-      "Text input is required for Piper TTS.",
-      400,
-    );
-  }
-  if (text.length > MAX_PIPER_TEXT_LENGTH) {
-    throw new ChineseTranscriptionError(
-      "VAL_PIPER_TTS_TEXT_REQUIRED",
-      `Piper TTS sandbox text is limited to ${MAX_PIPER_TEXT_LENGTH} characters.`,
-      400,
-    );
-  }
-  if (!binaryPath) {
-    throw new ChineseTranscriptionError(
-      "VAL_PIPER_TTS_BINARY_REQUIRED",
-      "Piper executable path is required.",
-      400,
-    );
-  }
-  if (!modelPath) {
-    throw new ChineseTranscriptionError(
-      "VAL_PIPER_TTS_MODEL_REQUIRED",
-      "Piper ONNX model path is required.",
-      400,
-    );
-  }
-  const configPath = resolvePiperConfigPath(input.configPath, modelPath);
-  validatePiperRuntimeFiles({ binaryPath, modelPath, configPath });
+    if (!text) {
+        throw new ChineseTranscriptionError(
+            "VAL_PIPER_TTS_TEXT_REQUIRED",
+            "Text input is required for Piper TTS.",
+            400,
+        );
+    }
+    if (text.length > MAX_PIPER_TEXT_LENGTH) {
+        throw new ChineseTranscriptionError(
+            "VAL_PIPER_TTS_TEXT_REQUIRED",
+            `Piper TTS sandbox text is limited to ${MAX_PIPER_TEXT_LENGTH} characters.`,
+            400,
+        );
+    }
+    if (!binaryPath) {
+        throw new ChineseTranscriptionError(
+            "VAL_PIPER_TTS_BINARY_REQUIRED",
+            "Piper executable path is required.",
+            400,
+        );
+    }
+    if (!modelPath) {
+        throw new ChineseTranscriptionError(
+            "VAL_PIPER_TTS_MODEL_REQUIRED",
+            "Piper ONNX model path is required.",
+            400,
+        );
+    }
+    const configPath = resolvePiperConfigPath(input.configPath, modelPath);
+    validatePiperRuntimeFiles({ binaryPath, modelPath, configPath });
 
-  return {
-    ...input,
-    text,
-    binaryPath,
-    modelPath,
-    configPath,
-    speaker: normalizeOptionalNumber(input.speaker),
-    lengthScale: normalizeOptionalNumber(input.lengthScale),
-    noiseScale: normalizeOptionalNumber(input.noiseScale),
-    noiseW: normalizeOptionalNumber(input.noiseW),
-    sentenceSilence: normalizeOptionalNumber(input.sentenceSilence),
-    timeoutMs: input.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-  };
+    return {
+        ...input,
+        text,
+        binaryPath,
+        modelPath,
+        configPath,
+        speaker: normalizeOptionalNumber(input.speaker),
+        lengthScale: normalizeOptionalNumber(input.lengthScale),
+        noiseScale: normalizeOptionalNumber(input.noiseScale),
+        noiseW: normalizeOptionalNumber(input.noiseW),
+        sentenceSilence: normalizeOptionalNumber(input.sentenceSilence),
+        timeoutMs: input.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+    };
 }
 
 export function buildPiperArgs(
-  input: ReturnType<typeof validatePiperTtsInput>,
-  outputPath: string,
+    input: ReturnType<typeof validatePiperTtsInput>,
+    outputPath: string,
 ) {
-  const args = ["--model", input.modelPath, "--output_file", outputPath];
+    const args = ["--model", input.modelPath, "--output_file", outputPath];
 
-  if (input.configPath) args.push("--config", input.configPath);
-  if (input.speaker !== undefined) args.push("--speaker", String(input.speaker));
-  if (input.lengthScale !== undefined) {
-    args.push("--length_scale", String(input.lengthScale));
-  }
-  if (input.noiseScale !== undefined) {
-    args.push("--noise_scale", String(input.noiseScale));
-  }
-  if (input.noiseW !== undefined) args.push("--noise_w", String(input.noiseW));
-  if (input.sentenceSilence !== undefined) {
-    args.push("--sentence_silence", String(input.sentenceSilence));
-  }
+    if (input.configPath) args.push("--config", input.configPath);
+    if (input.speaker !== undefined)
+        args.push("--speaker", String(input.speaker));
+    if (input.lengthScale !== undefined) {
+        args.push("--length_scale", String(input.lengthScale));
+    }
+    if (input.noiseScale !== undefined) {
+        args.push("--noise_scale", String(input.noiseScale));
+    }
+    if (input.noiseW !== undefined)
+        args.push("--noise_w", String(input.noiseW));
+    if (input.sentenceSilence !== undefined) {
+        args.push("--sentence_silence", String(input.sentenceSilence));
+    }
 
-  return args;
+    return args;
 }
 
 export function buildPiperBatchArgs(
-  input: ReturnType<typeof validatePiperTtsInput>,
-  paths: { inputPath: string; outputDir: string },
+    input: ReturnType<typeof validatePiperTtsInput>,
+    paths: { inputPath: string; outputDir: string },
 ) {
-  const args = [
-    "--model",
-    input.modelPath,
-    "--input_file",
-    paths.inputPath,
-    "--output_dir",
-    paths.outputDir,
-  ];
+    const args = [
+        "--model",
+        input.modelPath,
+        "--input_file",
+        paths.inputPath,
+        "--output_dir",
+        paths.outputDir,
+    ];
 
-  if (input.configPath) args.push("--config", input.configPath);
-  if (input.speaker !== undefined) args.push("--speaker", String(input.speaker));
-  if (input.lengthScale !== undefined) {
-    args.push("--length_scale", String(input.lengthScale));
-  }
-  if (input.noiseScale !== undefined) {
-    args.push("--noise_scale", String(input.noiseScale));
-  }
-  if (input.noiseW !== undefined) args.push("--noise_w", String(input.noiseW));
-  if (input.sentenceSilence !== undefined) {
-    args.push("--sentence_silence", String(input.sentenceSilence));
-  }
+    if (input.configPath) args.push("--config", input.configPath);
+    if (input.speaker !== undefined)
+        args.push("--speaker", String(input.speaker));
+    if (input.lengthScale !== undefined) {
+        args.push("--length_scale", String(input.lengthScale));
+    }
+    if (input.noiseScale !== undefined) {
+        args.push("--noise_scale", String(input.noiseScale));
+    }
+    if (input.noiseW !== undefined)
+        args.push("--noise_w", String(input.noiseW));
+    if (input.sentenceSilence !== undefined) {
+        args.push("--sentence_silence", String(input.sentenceSilence));
+    }
 
-  return args;
+    return args;
 }
 
 function buildPiperEnv(binaryPath: string) {
-  if (binaryPath.includes(`${path.sep}.venv${path.sep}`)) {
-    return process.env;
-  }
+    if (binaryPath.includes(`${path.sep}.venv${path.sep}`)) {
+        return process.env;
+    }
 
-  const piperDir = path.dirname(binaryPath);
-  const libraryPath = [piperDir, process.env.DYLD_LIBRARY_PATH]
-    .filter(Boolean)
-    .join(":");
+    const piperDir = path.dirname(binaryPath);
+    const libraryPath = [piperDir, process.env.DYLD_LIBRARY_PATH]
+        .filter(Boolean)
+        .join(":");
 
-  return {
-    ...process.env,
-    DYLD_LIBRARY_PATH: libraryPath,
-    LD_LIBRARY_PATH: [piperDir, process.env.LD_LIBRARY_PATH]
-      .filter(Boolean)
-      .join(":"),
-    PIPER_PHONEMIZE_EXECUTABLE:
-      process.env.PIPER_PHONEMIZE_EXECUTABLE ??
-      path.join(piperDir, "piper_phonemize"),
-    PIPER_ESPEAKNG_DATA_DIRECTORY:
-      process.env.PIPER_ESPEAKNG_DATA_DIRECTORY ??
-      path.join(piperDir, "espeak-ng-data"),
-  };
+    return {
+        ...process.env,
+        DYLD_LIBRARY_PATH: libraryPath,
+        LD_LIBRARY_PATH: [piperDir, process.env.LD_LIBRARY_PATH]
+            .filter(Boolean)
+            .join(":"),
+        PIPER_PHONEMIZE_EXECUTABLE:
+            process.env.PIPER_PHONEMIZE_EXECUTABLE ??
+            path.join(piperDir, "piper_phonemize"),
+        PIPER_ESPEAKNG_DATA_DIRECTORY:
+            process.env.PIPER_ESPEAKNG_DATA_DIRECTORY ??
+            path.join(piperDir, "espeak-ng-data"),
+    };
 }
 
 function clampTimelineSpeedFactor(speedFactor: number) {
-  if (!Number.isFinite(speedFactor) || speedFactor <= 0) return 1;
-  return Math.min(
-    TIMELINE_MAX_SPEED_FACTOR,
-    Math.max(TIMELINE_MIN_SPEED_FACTOR, speedFactor),
-  );
+    if (!Number.isFinite(speedFactor) || speedFactor <= 0) return 1;
+    return Math.min(
+        TIMELINE_MAX_SPEED_FACTOR,
+        Math.max(TIMELINE_MIN_SPEED_FACTOR, speedFactor),
+    );
 }
 
 function buildTimelineSpeedFactor(input: {
-  rawDurationSeconds: number;
-  targetDurationSeconds: number;
+    rawDurationSeconds: number;
+    targetDurationSeconds: number;
 }) {
-  if (
-    !Number.isFinite(input.rawDurationSeconds) ||
-    !Number.isFinite(input.targetDurationSeconds) ||
-    input.rawDurationSeconds <= 0 ||
-    input.targetDurationSeconds <= 0
-  ) {
-    return 1;
-  }
-
-  const requiredSpeedFactor =
-    input.rawDurationSeconds / input.targetDurationSeconds;
-  if (requiredSpeedFactor <= 1.0001) {
-    return 1;
-  }
-
-  return clampTimelineSpeedFactor(requiredSpeedFactor);
-}
-
-function formatPiperFailure(stderr: string, code: number | null) {
-  const message = stderr.trim();
-  if (
-    message.includes("Required inputs") &&
-    message.includes("char_inputs") &&
-    message.includes("diac_inputs")
-  ) {
-    return "Piper model is incompatible with piper-tts. This ONNX expects char_inputs/diac_inputs, but Piper VITS models expect input/input_lengths/scales.";
-  }
-
-  return message || `Piper exited with code ${code}.`;
-}
-
-function piperTimeoutForTextCount(textCount: number) {
-  return Math.min(
-    BATCH_TIMEOUT_MAX_MS,
-    Math.max(
-      DEFAULT_TIMEOUT_MS,
-      BATCH_TIMEOUT_BASE_MS + textCount * BATCH_TIMEOUT_PER_TEXT_MS,
-    ),
-  );
-}
-
-async function runPiperCommand(input: {
-  binaryPath: string;
-  args: string[];
-  stdinText?: string;
-  timeoutMs: number;
-}) {
-  const spawnImpl = piperSpawnForTest ?? spawn;
-
-  return await new Promise<{ stderr: string }>((resolve, reject) => {
-    const child = spawnImpl(input.binaryPath, input.args, {
-      stdio: ["pipe", "pipe", "pipe"],
-      env: buildPiperEnv(input.binaryPath),
-    });
-    const processId = trackPiperChildProcess({
-      child,
-      kind: "piper",
-      command: input.binaryPath,
-      args: input.args,
-    });
-    let stderr = "";
-    let settled = false;
-
-    const finishReject = (error: unknown) => {
-      if (settled) return;
-      settled = true;
-      reject(
-        error instanceof ChineseTranscriptionError
-          ? error
-          : new ChineseTranscriptionError(
-              "PRV_PIPER_TTS_FAILED",
-              error instanceof Error ? error.message : "Piper TTS failed.",
-              500,
-            ),
-      );
-    };
-
-    const timeout = setTimeout(() => {
-      child.kill("SIGTERM");
-      finishReject(
-        new ChineseTranscriptionError(
-          "PRV_PIPER_TTS_FAILED",
-          "Piper TTS timed out.",
-          504,
-        ),
-      );
-    }, input.timeoutMs);
-
-    child.stderr.on("data", (chunk: Buffer) => {
-      stderr += chunk.toString("utf8");
-    });
-    child.on("error", (error) => {
-      clearTimeout(timeout);
-      untrackPiperChildProcess(processId);
-      finishReject(error);
-    });
-    child.on("close", (code) => {
-      clearTimeout(timeout);
-      untrackPiperChildProcess(processId);
-      if (settled) return;
-      settled = true;
-
-      if (code !== 0) {
-        reject(
-          new ChineseTranscriptionError(
-            "PRV_PIPER_TTS_FAILED",
-            formatPiperFailure(stderr, code),
-            502,
-          ),
-        );
-        return;
-      }
-
-      resolve({ stderr });
-    });
-
-    child.stdin.end(input.stdinText ?? "");
-  });
-}
-
-function segmentText(segment: VoiceGenerationSegment) {
-  return segment.text.trim();
-}
-
-function segmentDuration(segment: VoiceGenerationSegment) {
-  if (!Number.isFinite(segment.start) || !Number.isFinite(segment.end)) {
-    return 0;
-  }
-  return Math.max(0, segment.end - segment.start);
-}
-
-function normalizeVoiceSegments(segments: VoiceGenerationSegment[]) {
-  return segments
-    .map((segment, index) => ({
-      id: Number.isFinite(segment.id) ? segment.id : index,
-      sourceSegmentId: Number.isFinite(segment.sourceSegmentId)
-        ? segment.sourceSegmentId
-        : undefined,
-      start: Number.isFinite(segment.start) ? segment.start : 0,
-      end: Number.isFinite(segment.end) ? segment.end : 0,
-      text: segmentText(segment),
-    }))
-    .filter((segment) => segment.text.length > 0)
-    .sort((left, right) => left.start - right.start || left.id - right.id);
-}
-
-export function normalizePiperVoiceSettings(
-  settings?: Partial<VoiceGenerationSettings>,
-): NormalizedPiperVoiceSettings {
-  return {
-    binaryPath:
-      settings?.binaryPath?.trim() || DEFAULT_PIPER_TTS_SETTINGS.binaryPath,
-    modelPath: settings?.modelPath?.trim() || DEFAULT_PIPER_TTS_SETTINGS.modelPath,
-    configPath:
-      settings?.configPath?.trim() || DEFAULT_PIPER_TTS_SETTINGS.configPath,
-    speaker:
-      typeof settings?.speaker === "number" && Number.isFinite(settings.speaker)
-        ? settings.speaker
-        : DEFAULT_PIPER_TTS_SETTINGS.speaker,
-    lengthScale:
-      typeof settings?.lengthScale === "number" &&
-      Number.isFinite(settings.lengthScale)
-        ? settings.lengthScale
-        : DEFAULT_PIPER_TTS_SETTINGS.lengthScale,
-    noiseScale:
-      typeof settings?.noiseScale === "number" &&
-      Number.isFinite(settings.noiseScale)
-        ? settings.noiseScale
-        : DEFAULT_PIPER_TTS_SETTINGS.noiseScale,
-    noiseW:
-      typeof settings?.noiseW === "number" && Number.isFinite(settings.noiseW)
-        ? settings.noiseW
-        : DEFAULT_PIPER_TTS_SETTINGS.noiseW,
-    sentenceSilence:
-      typeof settings?.sentenceSilence === "number" &&
-      Number.isFinite(settings.sentenceSilence)
-        ? settings.sentenceSilence
-        : DEFAULT_PIPER_TTS_SETTINGS.sentenceSilence,
-    preserveTimestampGaps:
-      typeof settings?.preserveTimestampGaps === "boolean"
-        ? settings.preserveTimestampGaps
-        : DEFAULT_PIPER_TTS_SETTINGS.preserveTimestampGaps,
-    alignmentMode:
-      settings?.alignmentMode === "strict" || settings?.alignmentMode === "balanced"
-        ? settings.alignmentMode
-        : DEFAULT_PIPER_TTS_SETTINGS.alignmentMode,
-  };
-}
-
-export function validateVoiceSegments(segments: VoiceGenerationSegment[]) {
-  if (!Array.isArray(segments) || segments.length === 0) {
-    throw new ChineseTranscriptionError(
-      "VAL_TTS_SEGMENTS_REQUIRED",
-      "At least one translated transcript segment is required for voice generation.",
-      400,
-    );
-  }
-
-  const normalized = normalizeVoiceSegments(segments);
-  if (normalized.length === 0) {
-    throw new ChineseTranscriptionError(
-      "VAL_TTS_SEGMENTS_REQUIRED",
-      "At least one translated transcript segment with text is required for voice generation.",
-      400,
-    );
-  }
-
-  return normalized;
-}
-
-function runFfmpeg(args: string[]) {
-  if (piperFfmpegRunnerForTest) {
-    return piperFfmpegRunnerForTest(args);
-  }
-
-  return new Promise<{ stderr: string }>((resolve, reject) => {
-    let ffmpegPath: string;
-    try {
-      ffmpegPath = resolveFfmpegPath();
-    } catch (error) {
-      reject(error);
-      return;
-    }
-
-    const child = spawn(ffmpegPath, args, {
-      stdio: ["ignore", "ignore", "pipe"],
-    });
-    const processId = trackPiperChildProcess({
-      child,
-      kind: "ffmpeg",
-      command: ffmpegPath,
-      args,
-    });
-    let stderr = "";
-    child.stderr.on("data", (chunk: Buffer) => {
-      stderr += chunk.toString("utf8");
-    });
-    child.on("error", (error) => {
-      untrackPiperChildProcess(processId);
-      reject(error);
-    });
-    child.on("close", (code) => {
-      untrackPiperChildProcess(processId);
-      if (code === 0) {
-        resolve({ stderr });
-        return;
-      }
-      reject(new Error(stderr.trim() || `ffmpeg exited with code ${code}`));
-    });
-  });
-}
-
-function parseFfmpegDuration(stderr: string) {
-  const match = /Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/u.exec(stderr);
-  if (!match) return 0;
-  return (
-    Number(match[1]) * 3600 +
-    Number(match[2]) * 60 +
-    Number(match[3])
-  );
-}
-
-async function probeAudioDuration(filePath: string) {
-  const wavDuration = await readWavDurationSeconds(filePath);
-  if (wavDuration !== null) return wavDuration;
-
-  const { stderr } = await runFfmpeg([
-    "-hide_banner",
-    "-i",
-    filePath,
-    "-f",
-    "null",
-    "-",
-  ]);
-  return parseFfmpegDuration(stderr);
-}
-
-function parseWavDurationSeconds(buffer: Buffer) {
-  if (buffer.byteLength < 44) return null;
-  if (buffer.toString("ascii", 0, 4) !== "RIFF") return null;
-  if (buffer.toString("ascii", 8, 12) !== "WAVE") return null;
-
-  let offset = 12;
-  let byteRate: number | null = null;
-  let dataSize: number | null = null;
-
-  while (offset + 8 <= buffer.byteLength) {
-    const chunkId = buffer.toString("ascii", offset, offset + 4);
-    const chunkSize = buffer.readUInt32LE(offset + 4);
-    const chunkDataOffset = offset + 8;
-
-    if (chunkId === "fmt " && chunkSize >= 16 && chunkDataOffset + 12 <= buffer.byteLength) {
-      byteRate = buffer.readUInt32LE(chunkDataOffset + 8);
-    } else if (chunkId === "data") {
-      dataSize = chunkSize;
-      break;
-    }
-
-    offset = chunkDataOffset + chunkSize + (chunkSize % 2);
-  }
-
-  if (!byteRate || !dataSize || byteRate <= 0) return null;
-  return dataSize / byteRate;
-}
-
-async function readWavDurationSeconds(filePath: string) {
-  try {
-    const buffer = piperReadFileForTest
-      ? await piperReadFileForTest(filePath)
-      : await readFile(filePath);
-    return parseWavDurationSeconds(buffer);
-  } catch {
-    return null;
-  }
-}
-
-async function mapWithConcurrency<T, R>(
-  items: T[],
-  concurrency: number,
-  mapper: (item: T, index: number) => Promise<R>,
-) {
-  const results = new Array<R>(items.length);
-  let nextIndex = 0;
-  const workerCount = Math.min(Math.max(1, concurrency), items.length);
-
-  await Promise.all(
-    Array.from({ length: workerCount }, async () => {
-      while (nextIndex < items.length) {
-        const index = nextIndex;
-        nextIndex += 1;
-        results[index] = await mapper(items[index], index);
-      }
-    }),
-  );
-
-  return results;
-}
-
-export function buildAtempoFilterChain(speedFactor: number) {
-  if (!Number.isFinite(speedFactor) || speedFactor <= 1.0001) {
-    return "anull";
-  }
-
-  const filters: string[] = [];
-  let remaining = speedFactor;
-  while (remaining > 2) {
-    filters.push("atempo=2");
-    remaining /= 2;
-  }
-  filters.push(
-    `atempo=${remaining.toFixed(4).replace(/0+$/u, "").replace(/\.$/u, "")}`,
-  );
-  return filters.join(",");
-}
-
-async function concatWavFiles(input: {
-  workDir: string;
-  filePaths: string[];
-  outputPath: string;
-}) {
-  const concatListPath = path.join(input.workDir, "concat.txt");
-  const concatList = input.filePaths
-    .map((filePath) => `file '${filePath.replaceAll("'", "'\\''")}'`)
-    .join("\n");
-  await writeFile(concatListPath, concatList);
-  await runFfmpeg([
-    "-y",
-    "-f",
-    "concat",
-    "-safe",
-    "0",
-    "-i",
-    concatListPath,
-    "-ac",
-    "1",
-    "-ar",
-    "22050",
-    "-c:a",
-    "pcm_s16le",
-    input.outputPath,
-  ]);
-}
-
-async function mixWavFilesOnAbsoluteTimeline(input: {
-  filePaths: string[];
-  startsSeconds: number[];
-  outputPath: string;
-  targetDurationSeconds: number;
-}) {
-  const filterLabels = input.filePaths.map((_, index) => `delayed${index}`);
-  const delayFilters = input.startsSeconds.map((startSeconds, index) => {
-    const delayMs = Math.max(0, Math.round(startSeconds * 1000));
-    return `[${index}:a]adelay=${delayMs}:all=1[${filterLabels[index]}]`;
-  });
-  const mixInputs = filterLabels.map((label) => `[${label}]`).join("");
-  const filterComplex = [
-    ...delayFilters,
-    `${mixInputs}amix=inputs=${input.filePaths.length}:duration=longest:normalize=0,apad,atrim=0:${input.targetDurationSeconds.toFixed(3)},asetpts=PTS-STARTPTS[out]`,
-  ].join(";");
-
-  await runFfmpeg([
-    "-y",
-    ...input.filePaths.flatMap((filePath) => ["-i", filePath]),
-    "-filter_complex",
-    filterComplex,
-    "-map",
-    "[out]",
-    "-ac",
-    "1",
-    "-ar",
-    "22050",
-    "-c:a",
-    "pcm_s16le",
-    input.outputPath,
-  ]);
-}
-
-export function splitTextForPiperSynthesis(text: string) {
-  const normalized = text.replace(/\s+/gu, " ").trim();
-  if (!normalized) return [];
-
-  const chunks = normalized.match(/[^.!?。！？]+[.!?。！？]+|[^.!?。！？]+$/gu) ?? [
-    normalized,
-  ];
-
-  const hasSpeakableToken = (value: string) => /[\p{L}\p{N}]/u.test(value);
-  return chunks
-    .map((chunk) => chunk.trim())
-    .filter(Boolean)
-    .filter(hasSpeakableToken);
-}
-
-async function createSilenceWav(input: {
-  outputPath: string;
-  durationSeconds: number;
-}) {
-  const durationSeconds = Math.min(1.5, Math.max(0.08, input.durationSeconds));
-  await runFfmpeg([
-    "-y",
-    "-f",
-    "lavfi",
-    "-i",
-    "anullsrc=r=22050:cl=mono",
-    "-t",
-    durationSeconds.toFixed(3),
-    "-ac",
-    "1",
-    "-ar",
-    "22050",
-    "-c:a",
-    "pcm_s16le",
-    input.outputPath,
-  ]);
-}
-
-export async function generatePiperSpeech(
-  input: PiperTtsInput,
-): Promise<PiperTtsResult> {
-  const normalized = validatePiperTtsInput(input);
-  const startedAt = Date.now();
-  const workDir = path.join(tmpdir(), `omnivideo-piper-${randomUUID()}`);
-  const outputPath = path.join(workDir, "speech.wav");
-  const args = buildPiperArgs(normalized, outputPath);
-
-  await mkdir(workDir, { recursive: true });
-
-  try {
-    await runPiperCommand({
-      binaryPath: normalized.binaryPath,
-      args,
-      stdinText: `${normalized.text}\n`,
-      timeoutMs: normalized.timeoutMs,
-    });
-
-    let audioBytes: Buffer;
-    try {
-      audioBytes = piperReadFileForTest
-        ? await piperReadFileForTest(outputPath)
-        : await readFile(outputPath);
-    } catch (error) {
-      throw new ChineseTranscriptionError(
-        "PRV_PIPER_TTS_FAILED",
-        error instanceof Error
-          ? `Piper output file could not be read: ${error.message}`
-          : "Piper output file could not be read.",
-        502,
-      );
-    }
-
-    if (audioBytes.byteLength === 0) {
-      throw new ChineseTranscriptionError(
-        "PRV_PIPER_TTS_FAILED",
-        "Piper returned an empty audio payload.",
-        502,
-      );
-    }
-
-    return {
-      audioBase64: audioBytes.toString("base64"),
-      mimeType: "audio/wav",
-      extension: "wav",
-      byteLength: audioBytes.byteLength,
-      durationMs: Date.now() - startedAt,
-      settings: {
-        modelPath: normalized.modelPath,
-        configPath: normalized.configPath,
-        speaker: normalized.speaker,
-        lengthScale: normalized.lengthScale,
-        noiseScale: normalized.noiseScale,
-        noiseW: normalized.noiseW,
-        sentenceSilence: normalized.sentenceSilence,
-      },
-      provider: {
-        name: "piper",
-        mode: "local-cli",
-      },
-    };
-  } finally {
-    await rm(workDir, { force: true, recursive: true });
-  }
-}
-
-function parsePiperBatchOutputPaths(stderr: string) {
-  return stderr
-    .split(/\r?\n/u)
-    .map((line) => {
-      const match = /Wrote\s+(.+\.wav)\s*$/u.exec(line.trim());
-      return match?.[1];
-    })
-    .filter((filePath): filePath is string => Boolean(filePath));
-}
-
-async function generatePiperSpeechBatch(input: {
-  texts: string[];
-  settings: NormalizedPiperVoiceSettings;
-  workDir: string;
-  outputDir: string;
-}) {
-  const texts = input.texts.map((text) => text.replace(/\s+/gu, " ").trim());
-  if (texts.length === 0) return [];
-
-  for (const text of texts) {
-    if (!text) {
-      throw new ChineseTranscriptionError(
-        "VAL_PIPER_TTS_TEXT_REQUIRED",
-        "Text input is required for Piper TTS.",
-        400,
-      );
-    }
-    if (text.length > MAX_PIPER_TEXT_LENGTH) {
-      throw new ChineseTranscriptionError(
-        "VAL_PIPER_TTS_TEXT_REQUIRED",
-        `Piper TTS text chunks are limited to ${MAX_PIPER_TEXT_LENGTH} characters.`,
-        400,
-      );
-    }
-  }
-
-  const normalized = validatePiperTtsInput({
-    text: texts[0],
-    binaryPath: input.settings.binaryPath,
-    modelPath: input.settings.modelPath,
-    configPath: input.settings.configPath,
-    speaker: input.settings.speaker,
-    lengthScale: input.settings.lengthScale,
-    noiseScale: input.settings.noiseScale,
-    noiseW: input.settings.noiseW,
-    sentenceSilence: input.settings.sentenceSilence,
-    timeoutMs: piperTimeoutForTextCount(texts.length),
-  });
-  const inputPath = path.join(input.workDir, "piper-batch-input.txt");
-  await mkdir(input.outputDir, { recursive: true });
-  await writeFile(inputPath, `${texts.join("\n")}\n`);
-
-  const { stderr } = await runPiperCommand({
-    binaryPath: normalized.binaryPath,
-    args: buildPiperBatchArgs(normalized, {
-      inputPath,
-      outputDir: input.outputDir,
-    }),
-    timeoutMs: normalized.timeoutMs,
-  });
-  const outputPaths = parsePiperBatchOutputPaths(stderr);
-
-  if (outputPaths.length !== texts.length) {
-    throw new ChineseTranscriptionError(
-      "PRV_PIPER_TTS_FAILED",
-      `Piper batch generated ${outputPaths.length} file(s) for ${texts.length} text chunk(s).`,
-      502,
-    );
-  }
-
-  return outputPaths;
-}
-
-async function synthesizeSegmentFiles(input: {
-  segments: VoiceGenerationSegment[];
-  settings: NormalizedPiperVoiceSettings;
-  workDir: string;
-  timelineMode?: boolean;
-}) {
-  const filesByIndex = new Array<{
-    segment: VoiceGenerationSegment;
-    filePath: string;
-  } | null>(input.segments.length).fill(null);
-  const batchItems: Array<{
-    segmentIndex: number;
-    segment: VoiceGenerationSegment;
-    outputPath: string;
-    textChunks: string[];
-  }> = [];
-  const sentenceSilence =
-    input.timelineMode && input.settings.sentenceSilence !== undefined
-      ? Math.min(
-          input.settings.sentenceSilence,
-          TIMELINE_SEGMENT_SENTENCE_SILENCE_SECONDS,
-        )
-      : input.settings.sentenceSilence;
-
-  for (const [segmentIndex, segment] of input.segments.entries()) {
-    const textChunks = splitTextForPiperSynthesis(segment.text);
-    const outputPath = path.join(input.workDir, `segment-${segment.id}.wav`);
-    if (textChunks.length === 0) {
-      await createSilenceWav({
-        outputPath,
-        durationSeconds: segmentDuration(segment) || 0.12,
-      });
-      filesByIndex[segmentIndex] = { segment, filePath: outputPath };
-      continue;
-    }
-
-    batchItems.push({
-      segmentIndex,
-      segment,
-      outputPath,
-      textChunks,
-    });
-  }
-  if (batchItems.length === 0) {
-    return filesByIndex.filter(
-      (file): file is { segment: VoiceGenerationSegment; filePath: string } =>
-        Boolean(file),
-    );
-  }
-
-  const batchSettings = { ...input.settings, sentenceSilence };
-  const batchGroups: Array<typeof batchItems> = [];
-  const segmentBatchSize = resolveAdaptiveSegmentBatchSize(
-    input.segments.map((segment) => ({ start: segment.start, end: segment.end })),
-  );
-  for (
-    let index = 0;
-    index < batchItems.length;
-    index += segmentBatchSize
-  ) {
-    batchGroups.push(batchItems.slice(index, index + segmentBatchSize));
-  }
-
-  for (const [groupIndex, groupItems] of batchGroups.entries()) {
-    try {
-      const batchOutputPaths = await generatePiperSpeechBatch({
-        texts: groupItems.flatMap((item) => item.textChunks),
-        settings: batchSettings,
-        workDir: input.workDir,
-        outputDir: path.join(input.workDir, `piper-batch-output-${groupIndex}`),
-      });
-      let batchIndex = 0;
-
-      for (const item of groupItems) {
-        const chunkPaths = batchOutputPaths.slice(
-          batchIndex,
-          batchIndex + item.textChunks.length,
-        );
-        batchIndex += item.textChunks.length;
-
-        if (chunkPaths.length === 1) {
-          await writeFile(
-            item.outputPath,
-            piperReadFileForTest
-              ? await piperReadFileForTest(chunkPaths[0])
-              : await readFile(chunkPaths[0]),
-          );
-        } else {
-          await concatWavFiles({
-            workDir: input.workDir,
-            filePaths: chunkPaths,
-            outputPath: item.outputPath,
-          });
-        }
-        filesByIndex[item.segmentIndex] = {
-          segment: item.segment,
-          filePath: item.outputPath,
-        };
-      }
-    } catch (error) {
-      // Piper batch mode can intermittently fail near the end even after writing
-      // many wav files. Fallback only the failed group to keep large jobs moving.
-      for (const item of groupItems) {
-        const chunkOutputs: string[] = [];
-        for (let index = 0; index < item.textChunks.length; index += 1) {
-          const chunkText = item.textChunks[index];
-          const chunkResult = await generatePiperSpeech({
-            text: chunkText,
-            binaryPath: batchSettings.binaryPath,
-            modelPath: batchSettings.modelPath,
-            configPath: batchSettings.configPath,
-            speaker: batchSettings.speaker,
-            lengthScale: batchSettings.lengthScale,
-            noiseScale: batchSettings.noiseScale,
-            noiseW: batchSettings.noiseW,
-            sentenceSilence: batchSettings.sentenceSilence,
-          });
-          const chunkOutputPath = path.join(
-            input.workDir,
-            `segment-${item.segment.id}-chunk-${index}.wav`,
-          );
-          await writeFile(
-            chunkOutputPath,
-            Buffer.from(chunkResult.audioBase64, "base64"),
-          );
-          chunkOutputs.push(chunkOutputPath);
-        }
-
-        if (chunkOutputs.length === 1) {
-          await writeFile(
-            item.outputPath,
-            piperReadFileForTest
-              ? await piperReadFileForTest(chunkOutputs[0])
-              : await readFile(chunkOutputs[0]),
-          );
-        } else {
-          await concatWavFiles({
-            workDir: input.workDir,
-            filePaths: chunkOutputs,
-            outputPath: item.outputPath,
-          });
-        }
-        filesByIndex[item.segmentIndex] = {
-          segment: item.segment,
-          filePath: item.outputPath,
-        };
-      }
-    }
-  }
-
-  return filesByIndex.filter(
-    (file): file is { segment: VoiceGenerationSegment; filePath: string } =>
-      Boolean(file),
-  );
-}
-
-export function buildTimelineAlignmentChunk(input: {
-  segment: VoiceGenerationSegment;
-  rawDurationSeconds: number;
-  nextSegmentStart?: number;
-  leadBorrowSeconds?: number;
-}) {
-  const slotDurationSeconds = segmentDuration(input.segment);
-  const borrowedLeadSeconds = Math.max(0, input.leadBorrowSeconds ?? 0);
-  const gapAfter =
-    input.nextSegmentStart !== undefined
-      ? Math.max(0, input.nextSegmentStart - input.segment.end)
-      : 0;
-  const maxBorrowedGapSeconds = Math.min(
-    gapAfter * TIMELINE_GAP_BORROW_RATIO,
-    MAX_TIMELINE_GAP_BORROW_SECONDS,
-  );
-  const wantedBorrowSeconds = Math.max(
-    0,
-    input.rawDurationSeconds - slotDurationSeconds,
-  );
-  const borrowedGapSeconds = Math.min(
-    wantedBorrowSeconds,
-    maxBorrowedGapSeconds,
-  );
-  const targetDurationSeconds = slotDurationSeconds + borrowedGapSeconds;
-  const targetDurationWithLeadSeconds =
-    targetDurationSeconds + borrowedLeadSeconds;
-  const speedFactor = buildTimelineSpeedFactor({
-    rawDurationSeconds: input.rawDurationSeconds,
-    targetDurationSeconds: targetDurationWithLeadSeconds,
-  });
-  const tempoFilter = buildAtempoFilterChain(speedFactor);
-  const warningCodes: string[] = [];
-
-  if (speedFactor > HIGH_TIMELINE_SPEED_FACTOR) {
-    warningCodes.push("HIGH_SPEED_FACTOR");
-  }
-  if (
-    input.rawDurationSeconds > targetDurationWithLeadSeconds
-  ) {
-    warningCodes.push("INSUFFICIENT_GAP_FOR_NATURAL_SPEED");
-  }
-
-  return {
-    segmentId: input.segment.id,
-    sourceSegmentId: input.segment.sourceSegmentId,
-    start: input.segment.start,
-    end: input.segment.end,
-    slotDurationSeconds,
-    rawDurationSeconds: input.rawDurationSeconds,
-    targetDurationSeconds: targetDurationWithLeadSeconds,
-    borrowedGapSeconds,
-    borrowedLeadSeconds,
-    speedFactor,
-    tempoFilter,
-    warningCodes,
-  } satisfies TimelineAlignmentChunk;
-}
-
-function timelineItemEndSeconds(item: AlignedTimelineItem) {
-  return (
-    item.chunk.scheduledEndSeconds ??
-    item.start + item.chunk.targetDurationSeconds
-  );
-}
-
-function buildTimelineProcessingChunk(
-  groupItems: AlignedTimelineItem[],
-  groupIndex: number,
-): TimelineProcessingChunk {
-  const start = Math.min(...groupItems.map((item) => item.start));
-  const end = Math.max(...groupItems.map(timelineItemEndSeconds));
-  return {
-    index: groupIndex + 1,
-    segmentCount: groupItems.length,
-    start,
-    end,
-    durationSeconds: Math.max(0, end - start),
-  };
-}
-
-function timelineAudibleDurationSeconds(chunk: TimelineAlignmentChunk) {
-  if (chunk.rawDurationSeconds <= 0 || chunk.speedFactor <= 0) return 0;
-  return Math.min(
-    chunk.targetDurationSeconds,
-    chunk.rawDurationSeconds / chunk.speedFactor,
-  );
-}
-
-async function mixAlignedTimelineItems(input: {
-  items: AlignedTimelineItem[];
-  workDir: string;
-  outputPath: string;
-  targetDurationSeconds: number;
-}) {
-  const segmentBatchSize = resolveAdaptiveSegmentBatchSize(
-    input.items.map((item) => ({
-      start: item.start,
-      end: timelineItemEndSeconds(item),
-    })),
-  );
-  if (input.items.length <= segmentBatchSize) {
-    await mixWavFilesOnAbsoluteTimeline({
-      filePaths: input.items.map((item) => item.path),
-      startsSeconds: input.items.map((item) => item.start),
-      outputPath: input.outputPath,
-      targetDurationSeconds: input.targetDurationSeconds,
-    });
-    return [] as TimelineProcessingChunk[];
-  }
-
-  const groups: AlignedTimelineItem[][] = [];
-  for (
-    let index = 0;
-    index < input.items.length;
-    index += segmentBatchSize
-  ) {
-    groups.push(input.items.slice(index, index + segmentBatchSize));
-  }
-
-  const mixedChunks = await mapWithConcurrency(
-    groups,
-    Math.min(2, ALIGNMENT_FFMPEG_CONCURRENCY),
-    async (groupItems, groupIndex) => {
-      const chunk = buildTimelineProcessingChunk(groupItems, groupIndex);
-      const outputPath = path.join(
-        input.workDir,
-        `timeline-mix-chunk-${groupIndex}.wav`,
-      );
-      await mixWavFilesOnAbsoluteTimeline({
-        filePaths: groupItems.map((item) => item.path),
-        startsSeconds: groupItems.map((item) => item.start - chunk.start),
-        outputPath,
-        targetDurationSeconds: Math.max(0.001, chunk.durationSeconds),
-      });
-      return {
-        path: outputPath,
-        start: chunk.start,
-        chunk,
-      };
-    },
-  );
-
-  await mixWavFilesOnAbsoluteTimeline({
-    filePaths: mixedChunks.map((item) => item.path),
-    startsSeconds: mixedChunks.map((item) => item.start),
-    outputPath: input.outputPath,
-    targetDurationSeconds: input.targetDurationSeconds,
-  });
-
-  return mixedChunks.map((item) => item.chunk);
-}
-
-async function alignPiperFilesToTimeline(input: {
-  files: Array<{ segment: VoiceGenerationSegment; filePath: string }>;
-  workDir: string;
-  outputPath: string;
-}) {
-  const rawDurations = await mapWithConcurrency(
-    input.files,
-    ALIGNMENT_FFMPEG_CONCURRENCY,
-    async (item) => probeAudioDuration(item.filePath),
-  );
-  const alignedItems: AlignedTimelineItem[] = [];
-  const ffmpegOperations: Array<{
-    args: string[];
-    outputPath: string;
-  }> = [];
-  let previousAudibleEndSeconds = 0;
-
-  for (const [index, item] of input.files.entries()) {
-    const duration = segmentDuration(item.segment);
-    if (duration <= 0) continue;
-
-    const rawDuration = rawDurations[index] ?? 0;
-    const baseChunk = buildTimelineAlignmentChunk({
-      segment: item.segment,
-      rawDurationSeconds: rawDuration,
-      nextSegmentStart: input.files[index + 1]?.segment.start,
-    });
-    const requiredLeadForMinSpeed = Math.max(
-      0,
-      rawDuration / TIMELINE_MIN_SPEED_FACTOR -
-        baseChunk.targetDurationSeconds,
-    );
-    const availableLeadSeconds =
-      alignedItems.length > 0
-        ? Math.max(
-            0,
-            item.segment.start -
-              previousAudibleEndSeconds -
-              TIMELINE_MIN_INTER_SPEECH_GAP_SECONDS,
-          )
-        : 0;
-    const leadBorrowSeconds =
-      baseChunk.speedFactor > TIMELINE_MIN_SPEED_FACTOR + 0.0001
-        ? Math.min(
-            requiredLeadForMinSpeed,
-            availableLeadSeconds * TIMELINE_LEAD_BORROW_RATIO,
-            MAX_TIMELINE_LEAD_BORROW_SECONDS,
-          )
-        : 0;
-    const chunk =
-      leadBorrowSeconds > 0.005
-        ? buildTimelineAlignmentChunk({
-            segment: item.segment,
-            rawDurationSeconds: rawDuration,
-            nextSegmentStart: input.files[index + 1]?.segment.start,
-            leadBorrowSeconds,
-          })
-        : baseChunk;
-    const scheduledStartSeconds =
-      item.segment.start - (chunk.borrowedLeadSeconds ?? 0);
-    const scheduledEndSeconds =
-      scheduledStartSeconds + chunk.targetDurationSeconds;
-    const alignedPath = path.join(
-      input.workDir,
-      `aligned-${item.segment.id}.wav`,
-    );
-
-    ffmpegOperations.push({
-      outputPath: alignedPath,
-      args: [
-        "-y",
-        "-i",
-        item.filePath,
-        "-af",
-        `${chunk.tempoFilter},apad,atrim=0:${chunk.targetDurationSeconds.toFixed(3)},asetpts=PTS-STARTPTS`,
-        "-ac",
-        "1",
-        "-ar",
-        "22050",
-        "-c:a",
-        "pcm_s16le",
-        alignedPath,
-      ],
-    });
-    alignedItems.push({
-      path: alignedPath,
-      start: scheduledStartSeconds,
-      chunk: {
-        ...chunk,
-        scheduledStartSeconds,
-        scheduledEndSeconds,
-        pauseBeforeSeconds: scheduledStartSeconds,
-        driftSeconds: scheduledStartSeconds - item.segment.start,
-      },
-    });
-    previousAudibleEndSeconds = Math.max(
-      previousAudibleEndSeconds,
-      scheduledStartSeconds + timelineAudibleDurationSeconds(chunk),
-    );
-  }
-  const timelinePaths = alignedItems.map((item) => item.path);
-  const chunks = alignedItems.map((item) => item.chunk);
-  const targetDurationSeconds = Math.max(
-    ...input.files.map((file) => file.segment.end),
-  );
-
-  if (timelinePaths.length === 0) {
-    await concatWavFiles({
-      workDir: input.workDir,
-      filePaths: input.files.map((file) => file.filePath),
-      outputPath: input.outputPath,
-    });
-    return { chunks: [], warnings: [], processingChunks: [] };
-  }
-
-  await mapWithConcurrency(
-    ffmpegOperations,
-    ALIGNMENT_FFMPEG_CONCURRENCY,
-    async (operation) => {
-      await runFfmpeg(operation.args);
-      return operation.outputPath;
-    },
-  );
-
-  const processingChunks = await mixAlignedTimelineItems({
-    items: alignedItems,
-    workDir: input.workDir,
-    outputPath: input.outputPath,
-    targetDurationSeconds,
-  });
-  return {
-    chunks,
-    processingChunks,
-    warnings: Array.from(
-      new Set(chunks.flatMap((chunk) => chunk.warningCodes)),
-    ),
-  };
-}
-
-async function alignPiperFilesToBalancedTimeline(input: {
-  files: Array<{ segment: VoiceGenerationSegment; filePath: string }>;
-  workDir: string;
-  outputPath: string;
-}) {
-  const concatPaths: string[] = [];
-  const chunks: TimelineAlignmentChunk[] = [];
-  const ffmpegOperations: Array<{
-    filePath: string;
-    args: string[];
-  }> = [];
-  let cursor = 0;
-  const rawDurations = await mapWithConcurrency(
-    input.files,
-    ALIGNMENT_FFMPEG_CONCURRENCY,
-    async (item) => probeAudioDuration(item.filePath),
-  );
-
-  for (const [index, item] of input.files.entries()) {
-    const slotDurationSeconds = segmentDuration(item.segment);
-    if (slotDurationSeconds <= 0) continue;
-
-    const rawDurationSeconds = rawDurations[index];
-    const naturalGapSeconds = Math.max(0, item.segment.start - cursor);
-    const pauseBeforeSeconds =
-      naturalGapSeconds > 0
-        ? Math.min(naturalGapSeconds, BALANCED_MAX_PAUSE_SECONDS)
-        : 0;
-
-    if (pauseBeforeSeconds > 0.01) {
-      const silencePath = path.join(
-        input.workDir,
-        `balanced-silence-${item.segment.id}.wav`,
-      );
-      ffmpegOperations.push({
-        filePath: silencePath,
-        args: [
-          "-y",
-          "-f",
-          "lavfi",
-          "-i",
-          "anullsrc=r=22050:cl=mono",
-          "-t",
-          pauseBeforeSeconds.toFixed(3),
-          "-c:a",
-          "pcm_s16le",
-          silencePath,
-        ],
-      });
-      concatPaths.push(silencePath);
-      cursor += pauseBeforeSeconds;
+    if (
+        !Number.isFinite(input.rawDurationSeconds) ||
+        !Number.isFinite(input.targetDurationSeconds) ||
+        input.rawDurationSeconds <= 0 ||
+        input.targetDurationSeconds <= 0
+    ) {
+        return 1;
     }
 
     const requiredSpeedFactor =
-      rawDurationSeconds > slotDurationSeconds && slotDurationSeconds > 0
-        ? rawDurationSeconds / slotDurationSeconds
-        : 1;
-    const speedFactor =
-      rawDurationSeconds > 0
-        ? buildTimelineSpeedFactor({
-            rawDurationSeconds,
-            targetDurationSeconds:
-              requiredSpeedFactor > BALANCED_MAX_SPEED_FACTOR
-                ? rawDurationSeconds / BALANCED_MAX_SPEED_FACTOR
-                : slotDurationSeconds,
-          })
-        : 1;
-    const targetDurationSeconds =
-      speedFactor > 1 ? rawDurationSeconds / speedFactor : rawDurationSeconds;
-    const scheduledStartSeconds = cursor;
-    const scheduledEndSeconds = scheduledStartSeconds + targetDurationSeconds;
-    const driftSeconds = scheduledStartSeconds - item.segment.start;
-    const tempoFilter = buildAtempoFilterChain(speedFactor);
-    const warningCodes: string[] = [];
-
-    if (naturalGapSeconds > BALANCED_LONG_PAUSE_SECONDS) {
-      warningCodes.push("COMPRESSED_LONG_PAUSE");
-    }
-    if (requiredSpeedFactor > BALANCED_MAX_SPEED_FACTOR) {
-      warningCodes.push("SPILLOVER_TO_KEEP_NATURAL_SPEED");
-    }
-    if (driftSeconds > BALANCED_DRIFT_WARNING_SECONDS) {
-      warningCodes.push("START_DELAYED_BY_PREVIOUS_SEGMENT");
+        input.rawDurationSeconds / input.targetDurationSeconds;
+    if (requiredSpeedFactor <= 1.0001) {
+        return 1;
     }
 
-    const alignedPath = path.join(
-      input.workDir,
-      `balanced-${item.segment.id}.wav`,
+    return clampTimelineSpeedFactor(requiredSpeedFactor);
+}
+
+function formatPiperFailure(stderr: string, code: number | null) {
+    const message = stderr.trim();
+    if (
+        message.includes("Required inputs") &&
+        message.includes("char_inputs") &&
+        message.includes("diac_inputs")
+    ) {
+        return "Piper model is incompatible with piper-tts. This ONNX expects char_inputs/diac_inputs, but Piper VITS models expect input/input_lengths/scales.";
+    }
+
+    return message || `Piper exited with code ${code}.`;
+}
+
+function piperTimeoutForTextCount(textCount: number) {
+    return Math.min(
+        BATCH_TIMEOUT_MAX_MS,
+        Math.max(
+            DEFAULT_TIMEOUT_MS,
+            BATCH_TIMEOUT_BASE_MS + textCount * BATCH_TIMEOUT_PER_TEXT_MS,
+        ),
     );
-    ffmpegOperations.push({
-      filePath: alignedPath,
-      args: [
-        "-y",
+}
+
+async function runPiperCommand(input: {
+    binaryPath: string;
+    args: string[];
+    stdinText?: string;
+    timeoutMs: number;
+}) {
+    const spawnImpl = piperSpawnForTest ?? spawn;
+
+    return await new Promise<{ stderr: string }>((resolve, reject) => {
+        const child = spawnImpl(input.binaryPath, input.args, {
+            stdio: ["pipe", "pipe", "pipe"],
+            env: buildPiperEnv(input.binaryPath),
+        });
+        const processId = trackPiperChildProcess({
+            child,
+            kind: "piper",
+            command: input.binaryPath,
+            args: input.args,
+        });
+        let stderr = "";
+        let settled = false;
+
+        const finishReject = (error: unknown) => {
+            if (settled) return;
+            settled = true;
+            reject(
+                error instanceof ChineseTranscriptionError
+                    ? error
+                    : new ChineseTranscriptionError(
+                          "PRV_PIPER_TTS_FAILED",
+                          error instanceof Error
+                              ? error.message
+                              : "Piper TTS failed.",
+                          500,
+                      ),
+            );
+        };
+
+        const timeout = setTimeout(() => {
+            child.kill("SIGTERM");
+            finishReject(
+                new ChineseTranscriptionError(
+                    "PRV_PIPER_TTS_FAILED",
+                    "Piper TTS timed out.",
+                    504,
+                ),
+            );
+        }, input.timeoutMs);
+
+        child.stderr.on("data", (chunk: Buffer) => {
+            stderr += chunk.toString("utf8");
+        });
+        child.on("error", (error) => {
+            clearTimeout(timeout);
+            untrackPiperChildProcess(processId);
+            finishReject(error);
+        });
+        child.on("close", (code) => {
+            clearTimeout(timeout);
+            untrackPiperChildProcess(processId);
+            if (settled) return;
+            settled = true;
+
+            if (code !== 0) {
+                reject(
+                    new ChineseTranscriptionError(
+                        "PRV_PIPER_TTS_FAILED",
+                        formatPiperFailure(stderr, code),
+                        502,
+                    ),
+                );
+                return;
+            }
+
+            resolve({ stderr });
+        });
+
+        child.stdin.end(input.stdinText ?? "");
+    });
+}
+
+function segmentText(segment: VoiceGenerationSegment) {
+    return segment.text.trim();
+}
+
+function segmentDuration(segment: VoiceGenerationSegment) {
+    if (!Number.isFinite(segment.start) || !Number.isFinite(segment.end)) {
+        return 0;
+    }
+    return Math.max(0, segment.end - segment.start);
+}
+
+function normalizeVoiceSegments(segments: VoiceGenerationSegment[]) {
+    return segments
+        .map((segment, index) => ({
+            id: Number.isFinite(segment.id) ? segment.id : index,
+            sourceSegmentId: Number.isFinite(segment.sourceSegmentId)
+                ? segment.sourceSegmentId
+                : undefined,
+            start: Number.isFinite(segment.start) ? segment.start : 0,
+            end: Number.isFinite(segment.end) ? segment.end : 0,
+            text: segmentText(segment),
+        }))
+        .filter((segment) => segment.text.length > 0)
+        .sort((left, right) => left.start - right.start || left.id - right.id);
+}
+
+export function normalizePiperVoiceSettings(
+    settings?: Partial<VoiceGenerationSettings>,
+): NormalizedPiperVoiceSettings {
+    return {
+        binaryPath:
+            settings?.binaryPath?.trim() ||
+            DEFAULT_PIPER_TTS_SETTINGS.binaryPath,
+        modelPath:
+            settings?.modelPath?.trim() || DEFAULT_PIPER_TTS_SETTINGS.modelPath,
+        configPath:
+            settings?.configPath?.trim() ||
+            DEFAULT_PIPER_TTS_SETTINGS.configPath,
+        speaker:
+            typeof settings?.speaker === "number" &&
+            Number.isFinite(settings.speaker)
+                ? settings.speaker
+                : DEFAULT_PIPER_TTS_SETTINGS.speaker,
+        lengthScale:
+            typeof settings?.lengthScale === "number" &&
+            Number.isFinite(settings.lengthScale)
+                ? settings.lengthScale
+                : DEFAULT_PIPER_TTS_SETTINGS.lengthScale,
+        noiseScale:
+            typeof settings?.noiseScale === "number" &&
+            Number.isFinite(settings.noiseScale)
+                ? settings.noiseScale
+                : DEFAULT_PIPER_TTS_SETTINGS.noiseScale,
+        noiseW:
+            typeof settings?.noiseW === "number" &&
+            Number.isFinite(settings.noiseW)
+                ? settings.noiseW
+                : DEFAULT_PIPER_TTS_SETTINGS.noiseW,
+        sentenceSilence:
+            typeof settings?.sentenceSilence === "number" &&
+            Number.isFinite(settings.sentenceSilence)
+                ? settings.sentenceSilence
+                : DEFAULT_PIPER_TTS_SETTINGS.sentenceSilence,
+        preserveTimestampGaps:
+            typeof settings?.preserveTimestampGaps === "boolean"
+                ? settings.preserveTimestampGaps
+                : DEFAULT_PIPER_TTS_SETTINGS.preserveTimestampGaps,
+        alignmentMode:
+            settings?.alignmentMode === "strict" ||
+            settings?.alignmentMode === "balanced"
+                ? settings.alignmentMode
+                : DEFAULT_PIPER_TTS_SETTINGS.alignmentMode,
+    };
+}
+
+export function validateVoiceSegments(segments: VoiceGenerationSegment[]) {
+    if (!Array.isArray(segments) || segments.length === 0) {
+        throw new ChineseTranscriptionError(
+            "VAL_TTS_SEGMENTS_REQUIRED",
+            "At least one translated transcript segment is required for voice generation.",
+            400,
+        );
+    }
+
+    const normalized = normalizeVoiceSegments(segments);
+    if (normalized.length === 0) {
+        throw new ChineseTranscriptionError(
+            "VAL_TTS_SEGMENTS_REQUIRED",
+            "At least one translated transcript segment with text is required for voice generation.",
+            400,
+        );
+    }
+
+    return normalized;
+}
+
+function runFfmpeg(args: string[]) {
+    if (piperFfmpegRunnerForTest) {
+        return piperFfmpegRunnerForTest(args);
+    }
+
+    return new Promise<{ stderr: string }>((resolve, reject) => {
+        let ffmpegPath: string;
+        try {
+            ffmpegPath = resolveFfmpegPath();
+        } catch (error) {
+            reject(error);
+            return;
+        }
+
+        const child = spawn(ffmpegPath, args, {
+            stdio: ["ignore", "ignore", "pipe"],
+        });
+        const processId = trackPiperChildProcess({
+            child,
+            kind: "ffmpeg",
+            command: ffmpegPath,
+            args,
+        });
+        let stderr = "";
+        child.stderr.on("data", (chunk: Buffer) => {
+            stderr += chunk.toString("utf8");
+        });
+        child.on("error", (error) => {
+            untrackPiperChildProcess(processId);
+            reject(error);
+        });
+        child.on("close", (code) => {
+            untrackPiperChildProcess(processId);
+            if (code === 0) {
+                resolve({ stderr });
+                return;
+            }
+            reject(
+                new Error(stderr.trim() || `ffmpeg exited with code ${code}`),
+            );
+        });
+    });
+}
+
+function parseFfmpegDuration(stderr: string) {
+    const match = /Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/u.exec(stderr);
+    if (!match) return 0;
+    return Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3]);
+}
+
+async function probeAudioDuration(filePath: string) {
+    const wavDuration = await readWavDurationSeconds(filePath);
+    if (wavDuration !== null) return wavDuration;
+
+    const { stderr } = await runFfmpeg([
+        "-hide_banner",
         "-i",
-        item.filePath,
-        "-af",
-        `${tempoFilter},atrim=0:${targetDurationSeconds.toFixed(3)},asetpts=PTS-STARTPTS`,
+        filePath,
+        "-f",
+        "null",
+        "-",
+    ]);
+    return parseFfmpegDuration(stderr);
+}
+
+function parseWavDurationSeconds(buffer: Buffer) {
+    if (buffer.byteLength < 44) return null;
+    if (buffer.toString("ascii", 0, 4) !== "RIFF") return null;
+    if (buffer.toString("ascii", 8, 12) !== "WAVE") return null;
+
+    let offset = 12;
+    let byteRate: number | null = null;
+    let dataSize: number | null = null;
+
+    while (offset + 8 <= buffer.byteLength) {
+        const chunkId = buffer.toString("ascii", offset, offset + 4);
+        const chunkSize = buffer.readUInt32LE(offset + 4);
+        const chunkDataOffset = offset + 8;
+
+        if (
+            chunkId === "fmt " &&
+            chunkSize >= 16 &&
+            chunkDataOffset + 12 <= buffer.byteLength
+        ) {
+            byteRate = buffer.readUInt32LE(chunkDataOffset + 8);
+        } else if (chunkId === "data") {
+            dataSize = chunkSize;
+            break;
+        }
+
+        offset = chunkDataOffset + chunkSize + (chunkSize % 2);
+    }
+
+    if (!byteRate || !dataSize || byteRate <= 0) return null;
+    return dataSize / byteRate;
+}
+
+async function readWavDurationSeconds(filePath: string) {
+    try {
+        const buffer = piperReadFileForTest
+            ? await piperReadFileForTest(filePath)
+            : await readFile(filePath);
+        return parseWavDurationSeconds(buffer);
+    } catch {
+        return null;
+    }
+}
+
+async function mapWithConcurrency<T, R>(
+    items: T[],
+    concurrency: number,
+    mapper: (item: T, index: number) => Promise<R>,
+) {
+    const results = new Array<R>(items.length);
+    let nextIndex = 0;
+    const workerCount = Math.min(Math.max(1, concurrency), items.length);
+
+    await Promise.all(
+        Array.from({ length: workerCount }, async () => {
+            while (nextIndex < items.length) {
+                const index = nextIndex;
+                nextIndex += 1;
+                results[index] = await mapper(items[index], index);
+            }
+        }),
+    );
+
+    return results;
+}
+
+export function buildAtempoFilterChain(speedFactor: number) {
+    if (!Number.isFinite(speedFactor) || speedFactor <= 1.0001) {
+        return "anull";
+    }
+
+    const filters: string[] = [];
+    let remaining = speedFactor;
+    while (remaining > 2) {
+        filters.push("atempo=2");
+        remaining /= 2;
+    }
+    filters.push(
+        `atempo=${remaining.toFixed(4).replace(/0+$/u, "").replace(/\.$/u, "")}`,
+    );
+    return filters.join(",");
+}
+
+async function concatWavFiles(input: {
+    workDir: string;
+    filePaths: string[];
+    outputPath: string;
+}) {
+    const concatListPath = path.join(input.workDir, "concat.txt");
+    const concatList = input.filePaths
+        .map((filePath) => `file '${filePath.replaceAll("'", "'\\''")}'`)
+        .join("\n");
+    await writeFile(concatListPath, concatList);
+    await runFfmpeg([
+        "-y",
+        "-f",
+        "concat",
+        "-safe",
+        "0",
+        "-i",
+        concatListPath,
         "-ac",
         "1",
         "-ar",
         "22050",
         "-c:a",
         "pcm_s16le",
-        alignedPath,
-      ],
-    });
-    concatPaths.push(alignedPath);
-    chunks.push({
-      segmentId: item.segment.id,
-      start: item.segment.start,
-      end: item.segment.end,
-      slotDurationSeconds,
-      rawDurationSeconds,
-      targetDurationSeconds,
-      borrowedGapSeconds: 0,
-      borrowedLeadSeconds: 0,
-      speedFactor,
-      tempoFilter,
-      scheduledStartSeconds,
-      scheduledEndSeconds,
-      pauseBeforeSeconds,
-      driftSeconds,
-      warningCodes,
-    });
-    cursor = scheduledEndSeconds;
-  }
+        input.outputPath,
+    ]);
+}
 
-  if (concatPaths.length === 0) {
+async function mixWavFilesOnAbsoluteTimeline(input: {
+    filePaths: string[];
+    startsSeconds: number[];
+    outputPath: string;
+    targetDurationSeconds: number;
+}) {
+    const filterLabels = input.filePaths.map((_, index) => `delayed${index}`);
+    const delayFilters = input.startsSeconds.map((startSeconds, index) => {
+        const delayMs = Math.max(0, Math.round(startSeconds * 1000));
+        return `[${index}:a]adelay=${delayMs}:all=1[${filterLabels[index]}]`;
+    });
+    const mixInputs = filterLabels.map((label) => `[${label}]`).join("");
+    const filterComplex = [
+        ...delayFilters,
+        `${mixInputs}amix=inputs=${input.filePaths.length}:duration=longest:normalize=0,apad,atrim=0:${input.targetDurationSeconds.toFixed(3)},asetpts=PTS-STARTPTS[out]`,
+    ].join(";");
+
+    await runFfmpeg([
+        "-y",
+        ...input.filePaths.flatMap((filePath) => ["-i", filePath]),
+        "-filter_complex",
+        filterComplex,
+        "-map",
+        "[out]",
+        "-ac",
+        "1",
+        "-ar",
+        "22050",
+        "-c:a",
+        "pcm_s16le",
+        input.outputPath,
+    ]);
+}
+
+export function splitTextForPiperSynthesis(text: string) {
+    const normalized = text.replace(/\s+/gu, " ").trim();
+    if (!normalized) return [];
+
+    const chunks = normalized.match(
+        /[^.!?。！？]+[.!?。！？]+|[^.!?。！？]+$/gu,
+    ) ?? [normalized];
+
+    const hasSpeakableToken = (value: string) => /[\p{L}\p{N}]/u.test(value);
+    return chunks
+        .map((chunk) => chunk.trim())
+        .filter(Boolean)
+        .filter(hasSpeakableToken);
+}
+
+async function createSilenceWav(input: {
+    outputPath: string;
+    durationSeconds: number;
+}) {
+    const durationSeconds = Math.min(
+        1.5,
+        Math.max(0.08, input.durationSeconds),
+    );
+    await runFfmpeg([
+        "-y",
+        "-f",
+        "lavfi",
+        "-i",
+        "anullsrc=r=22050:cl=mono",
+        "-t",
+        durationSeconds.toFixed(3),
+        "-ac",
+        "1",
+        "-ar",
+        "22050",
+        "-c:a",
+        "pcm_s16le",
+        input.outputPath,
+    ]);
+}
+
+export async function generatePiperSpeech(
+    input: PiperTtsInput,
+): Promise<PiperTtsResult> {
+    const normalized = validatePiperTtsInput(input);
+    const startedAt = Date.now();
+    const workDir = path.join(tmpdir(), `omnivideo-piper-${randomUUID()}`);
+    const outputPath = path.join(workDir, "speech.wav");
+    const args = buildPiperArgs(normalized, outputPath);
+
+    await mkdir(workDir, { recursive: true });
+
+    try {
+        await runPiperCommand({
+            binaryPath: normalized.binaryPath,
+            args,
+            stdinText: `${normalized.text}\n`,
+            timeoutMs: normalized.timeoutMs,
+        });
+
+        let audioBytes: Buffer;
+        try {
+            audioBytes = piperReadFileForTest
+                ? await piperReadFileForTest(outputPath)
+                : await readFile(outputPath);
+        } catch (error) {
+            throw new ChineseTranscriptionError(
+                "PRV_PIPER_TTS_FAILED",
+                error instanceof Error
+                    ? `Piper output file could not be read: ${error.message}`
+                    : "Piper output file could not be read.",
+                502,
+            );
+        }
+
+        if (audioBytes.byteLength === 0) {
+            throw new ChineseTranscriptionError(
+                "PRV_PIPER_TTS_FAILED",
+                "Piper returned an empty audio payload.",
+                502,
+            );
+        }
+
+        return {
+            audioBase64: audioBytes.toString("base64"),
+            mimeType: "audio/wav",
+            extension: "wav",
+            byteLength: audioBytes.byteLength,
+            durationMs: Date.now() - startedAt,
+            settings: {
+                modelPath: normalized.modelPath,
+                configPath: normalized.configPath,
+                speaker: normalized.speaker,
+                lengthScale: normalized.lengthScale,
+                noiseScale: normalized.noiseScale,
+                noiseW: normalized.noiseW,
+                sentenceSilence: normalized.sentenceSilence,
+            },
+            provider: {
+                name: "piper",
+                mode: "local-cli",
+            },
+        };
+    } finally {
+        await rm(workDir, { force: true, recursive: true });
+    }
+}
+
+function parsePiperBatchOutputPaths(stderr: string) {
+    return stderr
+        .split(/\r?\n/u)
+        .map((line) => {
+            const match = /Wrote\s+(.+\.wav)\s*$/u.exec(line.trim());
+            return match?.[1];
+        })
+        .filter((filePath): filePath is string => Boolean(filePath));
+}
+
+async function generatePiperSpeechBatch(input: {
+    texts: string[];
+    settings: NormalizedPiperVoiceSettings;
+    workDir: string;
+    outputDir: string;
+}) {
+    const texts = input.texts.map((text) => text.replace(/\s+/gu, " ").trim());
+    if (texts.length === 0) return [];
+
+    for (const text of texts) {
+        if (!text) {
+            throw new ChineseTranscriptionError(
+                "VAL_PIPER_TTS_TEXT_REQUIRED",
+                "Text input is required for Piper TTS.",
+                400,
+            );
+        }
+        if (text.length > MAX_PIPER_TEXT_LENGTH) {
+            throw new ChineseTranscriptionError(
+                "VAL_PIPER_TTS_TEXT_REQUIRED",
+                `Piper TTS text chunks are limited to ${MAX_PIPER_TEXT_LENGTH} characters.`,
+                400,
+            );
+        }
+    }
+
+    const normalized = validatePiperTtsInput({
+        text: texts[0],
+        binaryPath: input.settings.binaryPath,
+        modelPath: input.settings.modelPath,
+        configPath: input.settings.configPath,
+        speaker: input.settings.speaker,
+        lengthScale: input.settings.lengthScale,
+        noiseScale: input.settings.noiseScale,
+        noiseW: input.settings.noiseW,
+        sentenceSilence: input.settings.sentenceSilence,
+        timeoutMs: piperTimeoutForTextCount(texts.length),
+    });
+    const inputPath = path.join(input.workDir, "piper-batch-input.txt");
+    await mkdir(input.outputDir, { recursive: true });
+    await writeFile(inputPath, `${texts.join("\n")}\n`);
+
+    const { stderr } = await runPiperCommand({
+        binaryPath: normalized.binaryPath,
+        args: buildPiperBatchArgs(normalized, {
+            inputPath,
+            outputDir: input.outputDir,
+        }),
+        timeoutMs: normalized.timeoutMs,
+    });
+    const outputPaths = parsePiperBatchOutputPaths(stderr);
+
+    if (outputPaths.length !== texts.length) {
+        throw new ChineseTranscriptionError(
+            "PRV_PIPER_TTS_FAILED",
+            `Piper batch generated ${outputPaths.length} file(s) for ${texts.length} text chunk(s).`,
+            502,
+        );
+    }
+
+    return outputPaths;
+}
+
+async function synthesizeSegmentFiles(input: {
+    segments: VoiceGenerationSegment[];
+    settings: NormalizedPiperVoiceSettings;
+    workDir: string;
+    timelineMode?: boolean;
+}) {
+    const filesByIndex = new Array<{
+        segment: VoiceGenerationSegment;
+        filePath: string;
+    } | null>(input.segments.length).fill(null);
+    const batchItems: Array<{
+        segmentIndex: number;
+        segment: VoiceGenerationSegment;
+        outputPath: string;
+        textChunks: string[];
+    }> = [];
+    const sentenceSilence =
+        input.timelineMode && input.settings.sentenceSilence !== undefined
+            ? Math.min(
+                  input.settings.sentenceSilence,
+                  TIMELINE_SEGMENT_SENTENCE_SILENCE_SECONDS,
+              )
+            : input.settings.sentenceSilence;
+
+    for (const [segmentIndex, segment] of input.segments.entries()) {
+        const textChunks = splitTextForPiperSynthesis(segment.text);
+        const outputPath = path.join(
+            input.workDir,
+            `segment-${segment.id}.wav`,
+        );
+        if (textChunks.length === 0) {
+            await createSilenceWav({
+                outputPath,
+                durationSeconds: segmentDuration(segment) || 0.12,
+            });
+            filesByIndex[segmentIndex] = { segment, filePath: outputPath };
+            continue;
+        }
+
+        batchItems.push({
+            segmentIndex,
+            segment,
+            outputPath,
+            textChunks,
+        });
+    }
+    if (batchItems.length === 0) {
+        return filesByIndex.filter(
+            (
+                file,
+            ): file is { segment: VoiceGenerationSegment; filePath: string } =>
+                Boolean(file),
+        );
+    }
+
+    const batchSettings = { ...input.settings, sentenceSilence };
+    const batchGroups: Array<typeof batchItems> = [];
+    const segmentBatchSize = resolveAdaptiveSegmentBatchSize(
+        input.segments.map((segment) => ({
+            start: segment.start,
+            end: segment.end,
+        })),
+    );
+    for (let index = 0; index < batchItems.length; index += segmentBatchSize) {
+        batchGroups.push(batchItems.slice(index, index + segmentBatchSize));
+    }
+
+    for (const [groupIndex, groupItems] of batchGroups.entries()) {
+        try {
+            const batchOutputPaths = await generatePiperSpeechBatch({
+                texts: groupItems.flatMap((item) => item.textChunks),
+                settings: batchSettings,
+                workDir: input.workDir,
+                outputDir: path.join(
+                    input.workDir,
+                    `piper-batch-output-${groupIndex}`,
+                ),
+            });
+            let batchIndex = 0;
+
+            for (const item of groupItems) {
+                const chunkPaths = batchOutputPaths.slice(
+                    batchIndex,
+                    batchIndex + item.textChunks.length,
+                );
+                batchIndex += item.textChunks.length;
+
+                if (chunkPaths.length === 1) {
+                    await writeFile(
+                        item.outputPath,
+                        piperReadFileForTest
+                            ? await piperReadFileForTest(chunkPaths[0])
+                            : await readFile(chunkPaths[0]),
+                    );
+                } else {
+                    await concatWavFiles({
+                        workDir: input.workDir,
+                        filePaths: chunkPaths,
+                        outputPath: item.outputPath,
+                    });
+                }
+                filesByIndex[item.segmentIndex] = {
+                    segment: item.segment,
+                    filePath: item.outputPath,
+                };
+            }
+        } catch (error) {
+            // Piper batch mode can intermittently fail near the end even after writing
+            // many wav files. Fallback only the failed group to keep large jobs moving.
+            for (const item of groupItems) {
+                const chunkOutputs: string[] = [];
+                for (
+                    let index = 0;
+                    index < item.textChunks.length;
+                    index += 1
+                ) {
+                    const chunkText = item.textChunks[index];
+                    const chunkResult = await generatePiperSpeech({
+                        text: chunkText,
+                        binaryPath: batchSettings.binaryPath,
+                        modelPath: batchSettings.modelPath,
+                        configPath: batchSettings.configPath,
+                        speaker: batchSettings.speaker,
+                        lengthScale: batchSettings.lengthScale,
+                        noiseScale: batchSettings.noiseScale,
+                        noiseW: batchSettings.noiseW,
+                        sentenceSilence: batchSettings.sentenceSilence,
+                    });
+                    const chunkOutputPath = path.join(
+                        input.workDir,
+                        `segment-${item.segment.id}-chunk-${index}.wav`,
+                    );
+                    await writeFile(
+                        chunkOutputPath,
+                        Buffer.from(chunkResult.audioBase64, "base64"),
+                    );
+                    chunkOutputs.push(chunkOutputPath);
+                }
+
+                if (chunkOutputs.length === 1) {
+                    await writeFile(
+                        item.outputPath,
+                        piperReadFileForTest
+                            ? await piperReadFileForTest(chunkOutputs[0])
+                            : await readFile(chunkOutputs[0]),
+                    );
+                } else {
+                    await concatWavFiles({
+                        workDir: input.workDir,
+                        filePaths: chunkOutputs,
+                        outputPath: item.outputPath,
+                    });
+                }
+                filesByIndex[item.segmentIndex] = {
+                    segment: item.segment,
+                    filePath: item.outputPath,
+                };
+            }
+        }
+    }
+
+    return filesByIndex.filter(
+        (file): file is { segment: VoiceGenerationSegment; filePath: string } =>
+            Boolean(file),
+    );
+}
+
+export function buildTimelineAlignmentChunk(input: {
+    segment: VoiceGenerationSegment;
+    rawDurationSeconds: number;
+    nextSegmentStart?: number;
+    leadBorrowSeconds?: number;
+}) {
+    const slotDurationSeconds = segmentDuration(input.segment);
+    const borrowedLeadSeconds = Math.max(0, input.leadBorrowSeconds ?? 0);
+    const gapAfter =
+        input.nextSegmentStart !== undefined
+            ? Math.max(0, input.nextSegmentStart - input.segment.end)
+            : 0;
+    const maxBorrowedGapSeconds = Math.min(
+        gapAfter * TIMELINE_GAP_BORROW_RATIO,
+        MAX_TIMELINE_GAP_BORROW_SECONDS,
+    );
+    const wantedBorrowSeconds = Math.max(
+        0,
+        input.rawDurationSeconds - slotDurationSeconds,
+    );
+    const borrowedGapSeconds = Math.min(
+        wantedBorrowSeconds,
+        maxBorrowedGapSeconds,
+    );
+    const targetDurationSeconds = slotDurationSeconds + borrowedGapSeconds;
+    const targetDurationWithLeadSeconds =
+        targetDurationSeconds + borrowedLeadSeconds;
+    const speedFactor = buildTimelineSpeedFactor({
+        rawDurationSeconds: input.rawDurationSeconds,
+        targetDurationSeconds: targetDurationWithLeadSeconds,
+    });
+    const tempoFilter = buildAtempoFilterChain(speedFactor);
+    const warningCodes: string[] = [];
+
+    if (speedFactor > HIGH_TIMELINE_SPEED_FACTOR) {
+        warningCodes.push("HIGH_SPEED_FACTOR");
+    }
+    if (input.rawDurationSeconds > targetDurationWithLeadSeconds) {
+        warningCodes.push("GAP");
+    }
+
+    return {
+        segmentId: input.segment.id,
+        sourceSegmentId: input.segment.sourceSegmentId,
+        start: input.segment.start,
+        end: input.segment.end,
+        slotDurationSeconds,
+        rawDurationSeconds: input.rawDurationSeconds,
+        targetDurationSeconds: targetDurationWithLeadSeconds,
+        borrowedGapSeconds,
+        borrowedLeadSeconds,
+        speedFactor,
+        tempoFilter,
+        warningCodes,
+    } satisfies TimelineAlignmentChunk;
+}
+
+function timelineItemEndSeconds(item: AlignedTimelineItem) {
+    return (
+        item.chunk.scheduledEndSeconds ??
+        item.start + item.chunk.targetDurationSeconds
+    );
+}
+
+function buildTimelineProcessingChunk(
+    groupItems: AlignedTimelineItem[],
+    groupIndex: number,
+): TimelineProcessingChunk {
+    const start = Math.min(...groupItems.map((item) => item.start));
+    const end = Math.max(...groupItems.map(timelineItemEndSeconds));
+    return {
+        index: groupIndex + 1,
+        segmentCount: groupItems.length,
+        start,
+        end,
+        durationSeconds: Math.max(0, end - start),
+    };
+}
+
+function timelineAudibleDurationSeconds(chunk: TimelineAlignmentChunk) {
+    if (chunk.rawDurationSeconds <= 0 || chunk.speedFactor <= 0) return 0;
+    return Math.min(
+        chunk.targetDurationSeconds,
+        chunk.rawDurationSeconds / chunk.speedFactor,
+    );
+}
+
+async function mixAlignedTimelineItems(input: {
+    items: AlignedTimelineItem[];
+    workDir: string;
+    outputPath: string;
+    targetDurationSeconds: number;
+}) {
+    const segmentBatchSize = resolveAdaptiveSegmentBatchSize(
+        input.items.map((item) => ({
+            start: item.start,
+            end: timelineItemEndSeconds(item),
+        })),
+    );
+    if (input.items.length <= segmentBatchSize) {
+        await mixWavFilesOnAbsoluteTimeline({
+            filePaths: input.items.map((item) => item.path),
+            startsSeconds: input.items.map((item) => item.start),
+            outputPath: input.outputPath,
+            targetDurationSeconds: input.targetDurationSeconds,
+        });
+        return [] as TimelineProcessingChunk[];
+    }
+
+    const groups: AlignedTimelineItem[][] = [];
+    for (let index = 0; index < input.items.length; index += segmentBatchSize) {
+        groups.push(input.items.slice(index, index + segmentBatchSize));
+    }
+
+    const mixedChunks = await mapWithConcurrency(
+        groups,
+        Math.min(2, ALIGNMENT_FFMPEG_CONCURRENCY),
+        async (groupItems, groupIndex) => {
+            const chunk = buildTimelineProcessingChunk(groupItems, groupIndex);
+            const outputPath = path.join(
+                input.workDir,
+                `timeline-mix-chunk-${groupIndex}.wav`,
+            );
+            await mixWavFilesOnAbsoluteTimeline({
+                filePaths: groupItems.map((item) => item.path),
+                startsSeconds: groupItems.map(
+                    (item) => item.start - chunk.start,
+                ),
+                outputPath,
+                targetDurationSeconds: Math.max(0.001, chunk.durationSeconds),
+            });
+            return {
+                path: outputPath,
+                start: chunk.start,
+                chunk,
+            };
+        },
+    );
+
+    await mixWavFilesOnAbsoluteTimeline({
+        filePaths: mixedChunks.map((item) => item.path),
+        startsSeconds: mixedChunks.map((item) => item.start),
+        outputPath: input.outputPath,
+        targetDurationSeconds: input.targetDurationSeconds,
+    });
+
+    return mixedChunks.map((item) => item.chunk);
+}
+
+async function alignPiperFilesToTimeline(input: {
+    files: Array<{ segment: VoiceGenerationSegment; filePath: string }>;
+    workDir: string;
+    outputPath: string;
+}) {
+    const rawDurations = await mapWithConcurrency(
+        input.files,
+        ALIGNMENT_FFMPEG_CONCURRENCY,
+        async (item) => probeAudioDuration(item.filePath),
+    );
+    const alignedItems: AlignedTimelineItem[] = [];
+    const ffmpegOperations: Array<{
+        args: string[];
+        outputPath: string;
+    }> = [];
+    let previousAudibleEndSeconds = 0;
+
+    for (const [index, item] of input.files.entries()) {
+        const duration = segmentDuration(item.segment);
+        if (duration <= 0) continue;
+
+        const rawDuration = rawDurations[index] ?? 0;
+        const baseChunk = buildTimelineAlignmentChunk({
+            segment: item.segment,
+            rawDurationSeconds: rawDuration,
+            nextSegmentStart: input.files[index + 1]?.segment.start,
+        });
+        const requiredLeadForMinSpeed = Math.max(
+            0,
+            rawDuration / TIMELINE_MIN_SPEED_FACTOR -
+                baseChunk.targetDurationSeconds,
+        );
+        const availableLeadSeconds =
+            alignedItems.length > 0
+                ? Math.max(
+                      0,
+                      item.segment.start -
+                          previousAudibleEndSeconds -
+                          TIMELINE_MIN_INTER_SPEECH_GAP_SECONDS,
+                  )
+                : 0;
+        const leadBorrowSeconds =
+            baseChunk.speedFactor > TIMELINE_MIN_SPEED_FACTOR + 0.0001
+                ? Math.min(
+                      requiredLeadForMinSpeed,
+                      availableLeadSeconds * TIMELINE_LEAD_BORROW_RATIO,
+                      MAX_TIMELINE_LEAD_BORROW_SECONDS,
+                  )
+                : 0;
+        const chunk =
+            leadBorrowSeconds > 0.005
+                ? buildTimelineAlignmentChunk({
+                      segment: item.segment,
+                      rawDurationSeconds: rawDuration,
+                      nextSegmentStart: input.files[index + 1]?.segment.start,
+                      leadBorrowSeconds,
+                  })
+                : baseChunk;
+        const scheduledStartSeconds =
+            item.segment.start - (chunk.borrowedLeadSeconds ?? 0);
+        const scheduledEndSeconds =
+            scheduledStartSeconds + chunk.targetDurationSeconds;
+        const alignedPath = path.join(
+            input.workDir,
+            `aligned-${item.segment.id}.wav`,
+        );
+
+        ffmpegOperations.push({
+            outputPath: alignedPath,
+            args: [
+                "-y",
+                "-i",
+                item.filePath,
+                "-af",
+                `${chunk.tempoFilter},apad,atrim=0:${chunk.targetDurationSeconds.toFixed(3)},asetpts=PTS-STARTPTS`,
+                "-ac",
+                "1",
+                "-ar",
+                "22050",
+                "-c:a",
+                "pcm_s16le",
+                alignedPath,
+            ],
+        });
+        alignedItems.push({
+            path: alignedPath,
+            start: scheduledStartSeconds,
+            chunk: {
+                ...chunk,
+                scheduledStartSeconds,
+                scheduledEndSeconds,
+                pauseBeforeSeconds: scheduledStartSeconds,
+                driftSeconds: scheduledStartSeconds - item.segment.start,
+            },
+        });
+        previousAudibleEndSeconds = Math.max(
+            previousAudibleEndSeconds,
+            scheduledStartSeconds + timelineAudibleDurationSeconds(chunk),
+        );
+    }
+    const timelinePaths = alignedItems.map((item) => item.path);
+    const chunks = alignedItems.map((item) => item.chunk);
+    const targetDurationSeconds = Math.max(
+        ...input.files.map((file) => file.segment.end),
+    );
+
+    if (timelinePaths.length === 0) {
+        await concatWavFiles({
+            workDir: input.workDir,
+            filePaths: input.files.map((file) => file.filePath),
+            outputPath: input.outputPath,
+        });
+        return { chunks: [], warnings: [], processingChunks: [] };
+    }
+
+    await mapWithConcurrency(
+        ffmpegOperations,
+        ALIGNMENT_FFMPEG_CONCURRENCY,
+        async (operation) => {
+            await runFfmpeg(operation.args);
+            return operation.outputPath;
+        },
+    );
+
+    const processingChunks = await mixAlignedTimelineItems({
+        items: alignedItems,
+        workDir: input.workDir,
+        outputPath: input.outputPath,
+        targetDurationSeconds,
+    });
+    return {
+        chunks,
+        processingChunks,
+        warnings: Array.from(
+            new Set(chunks.flatMap((chunk) => chunk.warningCodes)),
+        ),
+    };
+}
+
+async function alignPiperFilesToBalancedTimeline(input: {
+    files: Array<{ segment: VoiceGenerationSegment; filePath: string }>;
+    workDir: string;
+    outputPath: string;
+}) {
+    const concatPaths: string[] = [];
+    const chunks: TimelineAlignmentChunk[] = [];
+    const ffmpegOperations: Array<{
+        filePath: string;
+        args: string[];
+    }> = [];
+    let cursor = 0;
+    const rawDurations = await mapWithConcurrency(
+        input.files,
+        ALIGNMENT_FFMPEG_CONCURRENCY,
+        async (item) => probeAudioDuration(item.filePath),
+    );
+
+    for (const [index, item] of input.files.entries()) {
+        const slotDurationSeconds = segmentDuration(item.segment);
+        if (slotDurationSeconds <= 0) continue;
+
+        const rawDurationSeconds = rawDurations[index];
+        const naturalGapSeconds = Math.max(0, item.segment.start - cursor);
+        const pauseBeforeSeconds =
+            naturalGapSeconds > 0
+                ? Math.min(naturalGapSeconds, BALANCED_MAX_PAUSE_SECONDS)
+                : 0;
+
+        if (pauseBeforeSeconds > 0.01) {
+            const silencePath = path.join(
+                input.workDir,
+                `balanced-silence-${item.segment.id}.wav`,
+            );
+            ffmpegOperations.push({
+                filePath: silencePath,
+                args: [
+                    "-y",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "anullsrc=r=22050:cl=mono",
+                    "-t",
+                    pauseBeforeSeconds.toFixed(3),
+                    "-c:a",
+                    "pcm_s16le",
+                    silencePath,
+                ],
+            });
+            concatPaths.push(silencePath);
+            cursor += pauseBeforeSeconds;
+        }
+
+        const requiredSpeedFactor =
+            rawDurationSeconds > slotDurationSeconds && slotDurationSeconds > 0
+                ? rawDurationSeconds / slotDurationSeconds
+                : 1;
+        const speedFactor =
+            rawDurationSeconds > 0
+                ? buildTimelineSpeedFactor({
+                      rawDurationSeconds,
+                      targetDurationSeconds:
+                          requiredSpeedFactor > BALANCED_MAX_SPEED_FACTOR
+                              ? rawDurationSeconds / BALANCED_MAX_SPEED_FACTOR
+                              : slotDurationSeconds,
+                  })
+                : 1;
+        const targetDurationSeconds =
+            speedFactor > 1
+                ? rawDurationSeconds / speedFactor
+                : rawDurationSeconds;
+        const scheduledStartSeconds = cursor;
+        const scheduledEndSeconds =
+            scheduledStartSeconds + targetDurationSeconds;
+        const driftSeconds = scheduledStartSeconds - item.segment.start;
+        const tempoFilter = buildAtempoFilterChain(speedFactor);
+        const warningCodes: string[] = [];
+
+        if (naturalGapSeconds > BALANCED_LONG_PAUSE_SECONDS) {
+            warningCodes.push("COMPRESSED_LONG_PAUSE");
+        }
+        if (requiredSpeedFactor > BALANCED_MAX_SPEED_FACTOR) {
+            warningCodes.push("SPILLOVER_TO_KEEP_NATURAL_SPEED");
+        }
+        if (driftSeconds > BALANCED_DRIFT_WARNING_SECONDS) {
+            warningCodes.push("START_DELAYED_BY_PREVIOUS_SEGMENT");
+        }
+
+        const alignedPath = path.join(
+            input.workDir,
+            `balanced-${item.segment.id}.wav`,
+        );
+        ffmpegOperations.push({
+            filePath: alignedPath,
+            args: [
+                "-y",
+                "-i",
+                item.filePath,
+                "-af",
+                `${tempoFilter},atrim=0:${targetDurationSeconds.toFixed(3)},asetpts=PTS-STARTPTS`,
+                "-ac",
+                "1",
+                "-ar",
+                "22050",
+                "-c:a",
+                "pcm_s16le",
+                alignedPath,
+            ],
+        });
+        concatPaths.push(alignedPath);
+        chunks.push({
+            segmentId: item.segment.id,
+            start: item.segment.start,
+            end: item.segment.end,
+            slotDurationSeconds,
+            rawDurationSeconds,
+            targetDurationSeconds,
+            borrowedGapSeconds: 0,
+            borrowedLeadSeconds: 0,
+            speedFactor,
+            tempoFilter,
+            scheduledStartSeconds,
+            scheduledEndSeconds,
+            pauseBeforeSeconds,
+            driftSeconds,
+            warningCodes,
+        });
+        cursor = scheduledEndSeconds;
+    }
+
+    if (concatPaths.length === 0) {
+        await concatWavFiles({
+            workDir: input.workDir,
+            filePaths: input.files.map((file) => file.filePath),
+            outputPath: input.outputPath,
+        });
+        return { chunks: [], warnings: [], processingChunks: [] };
+    }
+
+    await mapWithConcurrency(
+        ffmpegOperations,
+        ALIGNMENT_FFMPEG_CONCURRENCY,
+        async (operation) => {
+            await runFfmpeg(operation.args);
+            return operation.filePath;
+        },
+    );
+
     await concatWavFiles({
-      workDir: input.workDir,
-      filePaths: input.files.map((file) => file.filePath),
-      outputPath: input.outputPath,
+        workDir: input.workDir,
+        filePaths: concatPaths,
+        outputPath: input.outputPath,
     });
-    return { chunks: [], warnings: [], processingChunks: [] };
-  }
-
-  await mapWithConcurrency(
-    ffmpegOperations,
-    ALIGNMENT_FFMPEG_CONCURRENCY,
-    async (operation) => {
-      await runFfmpeg(operation.args);
-      return operation.filePath;
-    },
-  );
-
-  await concatWavFiles({
-    workDir: input.workDir,
-    filePaths: concatPaths,
-    outputPath: input.outputPath,
-  });
-  return {
-    chunks,
-    processingChunks: [],
-    warnings: Array.from(
-      new Set(chunks.flatMap((chunk) => chunk.warningCodes)),
-    ),
-  };
+    return {
+        chunks,
+        processingChunks: [],
+        warnings: Array.from(
+            new Set(chunks.flatMap((chunk) => chunk.warningCodes)),
+        ),
+    };
 }
 
 export async function generateVoiceFromSegments(input: {
-  segments: VoiceGenerationSegment[];
-  settings?: Partial<VoiceGenerationSettings>;
+    segments: VoiceGenerationSegment[];
+    settings?: Partial<VoiceGenerationSettings>;
 }): Promise<VoiceGenerationResult> {
-  const startedAt = Date.now();
-  const segments = validateVoiceSegments(input.segments);
-  const settings = normalizePiperVoiceSettings(input.settings);
-  const workDir = path.join(tmpdir(), `omnivideo-piper-voice-${randomUUID()}`);
-  const outputPath = path.join(workDir, "voice.wav");
-  let timelineAlignment:
-    | Awaited<ReturnType<typeof alignPiperFilesToTimeline>>
-    | Awaited<ReturnType<typeof alignPiperFilesToBalancedTimeline>>
-    | undefined;
-
-  try {
-    await mkdir(workDir, { recursive: true });
-    const files = await synthesizeSegmentFiles({
-      segments,
-      settings,
-      workDir,
-      timelineMode: settings.preserveTimestampGaps,
-    });
-
-    if (settings.preserveTimestampGaps) {
-      timelineAlignment =
-        settings.alignmentMode === "strict"
-          ? await alignPiperFilesToTimeline({
-              files,
-              workDir,
-              outputPath,
-            })
-          : await alignPiperFilesToBalancedTimeline({
-              files,
-              workDir,
-              outputPath,
-            });
-    } else {
-      await concatWavFiles({
-        workDir,
-        filePaths: files.map((file) => file.filePath),
-        outputPath,
-      });
-    }
-
-    const audioBytes = piperReadFileForTest
-      ? await piperReadFileForTest(outputPath)
-      : await readFile(outputPath);
-    const targetDurationSeconds =
-      settings.preserveTimestampGaps && segments.length > 0
-        ? Math.max(...segments.map((segment) => segment.end))
-        : undefined;
-
-    return {
-      audioBase64: audioBytes.toString("base64"),
-      mimeType: "audio/wav",
-      extension: "wav",
-      fileName: "omnivideo-piper-voice.wav",
-      byteLength: audioBytes.byteLength,
-      segmentCount: segments.length,
-      generationDurationMs: Date.now() - startedAt,
-      alignment: {
-        mode: settings.preserveTimestampGaps
-          ? settings.alignmentMode === "strict"
-            ? "timeline"
-            : "balanced"
-          : "natural",
-        targetDurationSeconds,
-        chunks: segments.length,
-        timeline: timelineAlignment?.chunks,
-        processingChunks: timelineAlignment?.processingChunks,
-        warnings: timelineAlignment?.warnings,
-      },
-      settings,
-      provider: {
-        name: "piper",
-        mode: "local-cli",
-      },
-    };
-  } catch (error) {
-    if (error instanceof ChineseTranscriptionError) throw error;
-    throw new ChineseTranscriptionError(
-      "PRV_PIPER_TTS_FAILED",
-      error instanceof Error ? error.message : "Piper voice generation failed.",
-      500,
+    const startedAt = Date.now();
+    const segments = validateVoiceSegments(input.segments);
+    const settings = normalizePiperVoiceSettings(input.settings);
+    const workDir = path.join(
+        tmpdir(),
+        `omnivideo-piper-voice-${randomUUID()}`,
     );
-  } finally {
-    await rm(workDir, { force: true, recursive: true });
-  }
+    const outputPath = path.join(workDir, "voice.wav");
+    let timelineAlignment:
+        | Awaited<ReturnType<typeof alignPiperFilesToTimeline>>
+        | Awaited<ReturnType<typeof alignPiperFilesToBalancedTimeline>>
+        | undefined;
+
+    try {
+        await mkdir(workDir, { recursive: true });
+        const files = await synthesizeSegmentFiles({
+            segments,
+            settings,
+            workDir,
+            timelineMode: settings.preserveTimestampGaps,
+        });
+
+        if (settings.preserveTimestampGaps) {
+            timelineAlignment =
+                settings.alignmentMode === "strict"
+                    ? await alignPiperFilesToTimeline({
+                          files,
+                          workDir,
+                          outputPath,
+                      })
+                    : await alignPiperFilesToBalancedTimeline({
+                          files,
+                          workDir,
+                          outputPath,
+                      });
+        } else {
+            await concatWavFiles({
+                workDir,
+                filePaths: files.map((file) => file.filePath),
+                outputPath,
+            });
+        }
+
+        const audioBytes = piperReadFileForTest
+            ? await piperReadFileForTest(outputPath)
+            : await readFile(outputPath);
+        const targetDurationSeconds =
+            settings.preserveTimestampGaps && segments.length > 0
+                ? Math.max(...segments.map((segment) => segment.end))
+                : undefined;
+
+        return {
+            audioBase64: audioBytes.toString("base64"),
+            mimeType: "audio/wav",
+            extension: "wav",
+            fileName: "omnivideo-piper-voice.wav",
+            byteLength: audioBytes.byteLength,
+            segmentCount: segments.length,
+            generationDurationMs: Date.now() - startedAt,
+            alignment: {
+                mode: settings.preserveTimestampGaps
+                    ? settings.alignmentMode === "strict"
+                        ? "timeline"
+                        : "balanced"
+                    : "natural",
+                targetDurationSeconds,
+                chunks: segments.length,
+                timeline: timelineAlignment?.chunks,
+                processingChunks: timelineAlignment?.processingChunks,
+                warnings: timelineAlignment?.warnings,
+            },
+            settings,
+            provider: {
+                name: "piper",
+                mode: "local-cli",
+            },
+        };
+    } catch (error) {
+        if (error instanceof ChineseTranscriptionError) throw error;
+        throw new ChineseTranscriptionError(
+            "PRV_PIPER_TTS_FAILED",
+            error instanceof Error
+                ? error.message
+                : "Piper voice generation failed.",
+            500,
+        );
+    } finally {
+        await rm(workDir, { force: true, recursive: true });
+    }
 }

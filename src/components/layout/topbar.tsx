@@ -1989,6 +1989,10 @@ function ProgressSegmentsPanel({
     const [editedTextBySegmentId, setEditedTextBySegmentId] = useState<
         Record<string, string | undefined>
     >({});
+    const [
+        transcriptRetrySelectedBySegmentId,
+        setTranscriptRetrySelectedBySegmentId,
+    ] = useState<Record<string, boolean | undefined>>({});
     const segments = lines.map(parseProgressSegmentLine);
     const vipStepId = step.id.split(":")[0] ?? "";
     const vipNodeId = vipStepId.startsWith("vip-")
@@ -2017,10 +2021,17 @@ function ProgressSegmentsPanel({
         const edited = editedTextBySegmentId[String(segment.id)];
         return edited !== undefined && edited.trim().length === 0;
     });
+    const selectedTranscriptRetryIds = editableSegments
+        .filter(
+            (segment) =>
+                transcriptRetrySelectedBySegmentId[String(segment.id)] === true,
+        )
+        .map((segment) => segment.id);
 
     useEffect(() => {
         setIsEditingTranslations(false);
         setEditedTextBySegmentId({});
+        setTranscriptRetrySelectedBySegmentId({});
     }, [step.id, segmentSignature]);
 
     const updateEditedSegmentText = (segmentId: number, value: string) => {
@@ -2038,6 +2049,13 @@ function ProgressSegmentsPanel({
         });
     };
 
+    const toggleTranscriptRetrySegment = (segmentId: number) => {
+        setTranscriptRetrySelectedBySegmentId((current) => ({
+            ...current,
+            [String(segmentId)]: !current[String(segmentId)],
+        }));
+    };
+
     const runCorrectedVip = () => {
         if (
             !canEditVipTranslations ||
@@ -2048,6 +2066,26 @@ function ProgressSegmentsPanel({
         }
         dispatchWorkspaceVipTranslationCorrection({
             vipNodeId,
+            segments: editableSegments.map((segment) => ({
+                id: segment.id,
+                translatedText:
+                    editedTextBySegmentId[String(segment.id)] ??
+                    segment.translatedText,
+            })),
+        });
+        setIsEditingTranslations(false);
+    };
+
+    const runTranscriptRetry = () => {
+        if (
+            !canEditVipTranslations ||
+            selectedTranscriptRetryIds.length === 0
+        ) {
+            return;
+        }
+        dispatchWorkspaceVipTranslationCorrection({
+            vipNodeId,
+            transcriptRetrySegmentIds: selectedTranscriptRetryIds,
             segments: editableSegments.map((segment) => ({
                 id: segment.id,
                 translatedText:
@@ -2075,7 +2113,7 @@ function ProgressSegmentsPanel({
                         >
                             {hasEmptyEditedText
                                 ? "Empty segment"
-                                : `${changedCount} edited`}
+                                : `${changedCount} edited · ${selectedTranscriptRetryIds.length} retry`}
                         </span>
                     ) : null}
                     <button
@@ -2102,13 +2140,31 @@ function ProgressSegmentsPanel({
                         <>
                             <button
                                 type="button"
-                                onClick={() => setEditedTextBySegmentId({})}
-                                disabled={changedCount === 0}
+                                onClick={() => {
+                                    setEditedTextBySegmentId({});
+                                    setTranscriptRetrySelectedBySegmentId({});
+                                }}
+                                disabled={
+                                    changedCount === 0 &&
+                                    selectedTranscriptRetryIds.length === 0
+                                }
                                 className="inline-flex items-center gap-1 border border-main bg-main px-2 py-1 text-[10px] font-semibold text-main hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-50"
-                                title="Reset edited segment text"
+                                title="Reset edited segment text and transcript retry selection"
                             >
                                 <RotateCcw className="h-3 w-3" />
                                 Reset
+                            </button>
+                            <button
+                                type="button"
+                                onClick={runTranscriptRetry}
+                                disabled={
+                                    selectedTranscriptRetryIds.length === 0
+                                }
+                                className="inline-flex items-center gap-1 border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-[10px] font-semibold text-amber-700 hover:bg-amber-500/15 disabled:cursor-not-allowed disabled:opacity-50"
+                                title="Retry selected transcript segments and translate again"
+                            >
+                                <RefreshCw className="h-3 w-3" />
+                                Retry transcript + translate
                             </button>
                             <button
                                 type="button"
@@ -2184,6 +2240,26 @@ function ProgressSegmentsPanel({
                                         )}
                                         s
                                     </span>
+                                ) : null}
+                                {isEditingTranslations &&
+                                editableSegmentId !== null ? (
+                                    <label className="inline-flex items-center gap-1 border border-main bg-main px-1.5 py-0.5 text-[9px] font-semibold text-main">
+                                        <input
+                                            type="checkbox"
+                                            checked={
+                                                transcriptRetrySelectedBySegmentId[
+                                                    String(editableSegmentId)
+                                                ] === true
+                                            }
+                                            onChange={() =>
+                                                toggleTranscriptRetrySegment(
+                                                    editableSegmentId,
+                                                )
+                                            }
+                                            className="h-3 w-3 accent-amber-600"
+                                        />
+                                        Retry transcript
+                                    </label>
                                 ) : null}
                             </div>
                             <div

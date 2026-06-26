@@ -97,6 +97,7 @@ import {
 import type { VideoDubbingResult } from "@/lib/multilingual-audio/video-dubbing";
 import type { VideoVipProcessingResult } from "@/lib/multilingual-audio/video-vip-processing";
 import { buildWordAwareVoiceSegments } from "@/lib/multilingual-audio/voice-segment-timing";
+import { buildTranscriptRetryOverride } from "@/lib/multilingual-audio/transcript-segment-retry";
 import {
     DEFAULT_VIDEO_BACKGROUND_MUSIC_VOLUME,
     normalizeVideoBackgroundMusicConfig,
@@ -318,10 +319,19 @@ type VipTranslationOverride = {
     transcript: ChineseTranscriptionResult;
     translation: TranscriptTranslationResult;
 };
+type VipTranscriptRetryOverride = {
+    transcript: ChineseTranscriptionResult;
+    retriedSegmentIds: number[];
+    splitSegmentCount: number;
+};
 type WorkspaceRunOptions = {
     vipTranslationOverridesByNodeId?: Record<
         string,
         VipTranslationOverride | undefined
+    >;
+    vipTranscriptRetryOverridesByNodeId?: Record<
+        string,
+        VipTranscriptRetryOverride | undefined
     >;
 };
 const MAX_RESUME_TEXT_LENGTH = 4000;
@@ -4470,6 +4480,13 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     });
                     const vipTranslationOverride =
                         options.vipTranslationOverridesByNodeId?.[step.vipNodeId];
+                    const vipTranscriptRetryOverride =
+                        options.vipTranscriptRetryOverridesByNodeId?.[
+                            step.vipNodeId
+                        ];
+                    const vipTranscriptOverride =
+                        vipTranslationOverride?.transcript ??
+                        vipTranscriptRetryOverride?.transcript;
                     const vipResumeKey = [
                         "workspace-vip",
                         vipNode.id,
@@ -4480,6 +4497,8 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         String(getNumberConfig(vipNode, "speedFactor", 0.75)),
                         vipTranslationOverride
                             ? "corrected-import"
+                            : vipTranscriptRetryOverride
+                              ? `transcript-retry:${vipTranscriptRetryOverride.retriedSegmentIds.join(",")}:${vipTranscriptRetryOverride.splitSegmentCount}`
                             : getStringConfig(vipNode, "translationMode", "ai"),
                         getStringConfig(vipNode, "language", "zh"),
                         getStringConfig(vipNode, "targetLanguage", "vi"),
@@ -4494,23 +4513,34 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     );
                     const hasVipTranslationOverride =
                         Boolean(vipTranslationOverride);
+                    const hasVipTranscriptRetryOverride = Boolean(
+                        vipTranscriptRetryOverride,
+                    );
                     const vipTranslationMode =
-                        hasVipTranslationOverride ||
-                        getStringConfig(vipNode, "translationMode", "ai") ===
-                            "import"
+                        hasVipTranslationOverride
                             ? "import"
-                            : "ai";
+                            : hasVipTranscriptRetryOverride
+                              ? "ai"
+                              : getStringConfig(
+                                    vipNode,
+                                    "translationMode",
+                                    "ai",
+                                ) === "import"
+                                ? "import"
+                                : "ai";
                     formData.set("translationMode", vipTranslationMode);
+                    if (vipTranscriptOverride) {
+                        formData.set(
+                            "transcriptOverrideJson",
+                            JSON.stringify(vipTranscriptOverride),
+                        );
+                    }
                     const importedTranslationText = getStringConfig(
                         vipNode,
                         "importedTranslationText",
                     );
                     if (vipTranslationMode === "import") {
                         if (vipTranslationOverride) {
-                            formData.set(
-                                "transcriptOverrideJson",
-                                JSON.stringify(vipTranslationOverride.transcript),
-                            );
                             formData.set(
                                 "importedTranslationSegmentsJson",
                                 buildVipImportedTranslationSegmentsJson(
@@ -4903,6 +4933,11 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                                 : "Import mode enabled: VIP will use manual translated lines instead of AI translate API.",
                         );
                     }
+                    if (vipTranscriptRetryOverride) {
+                        appendVipStageLog(
+                            `Transcript retry mode enabled: VIP will use ${vipTranscriptRetryOverride.splitSegmentCount} extra split segment(s) from ${vipTranscriptRetryOverride.retriedSegmentIds.length} selected segment(s), skip STT, and run AI translation again.`,
+                        );
+                    }
                     if (mode === "resume") {
                         appendVipStageLog(
                             "Continue mode: server-side VIP checkpoints will be reused when the source/config match.",
@@ -4916,6 +4951,8 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         "transcript",
                         vipTranslationOverride
                             ? "Reusing current transcript for corrected VIP rerun..."
+                            : vipTranscriptRetryOverride
+                              ? "Using corrected split transcript for selected retry segment(s)..."
                             : "Transcribing source speech...",
                     );
                     let isPolling = true;
@@ -6517,9 +6554,45 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
 
             const transcript = runtimeTranscriptsByNodeId[detail.vipNodeId];
             const translation = runtimeTranslationsByNodeId[detail.vipNodeId];
-            if (!transcript || !translation?.translatedSegments.length) {
+            const transcriptRetrySegmentIds =
+                detail.transcriptRetrySegmentIds ?? [];
+            const hasTranscriptRetry = transcriptRetrySegmentIds.length > 0;
+            if (
+                !transcript ||
+                (!hasTranscriptRetry && !translation?.translatedSegments.length)
+            ) {
                 setRunError(
                     "Cannot rerun corrected VIP because this Workspace session no longer has transcript/translation data. Run the VIP flow once again first.",
+                );
+                return;
+            }
+
+            if (hasTranscriptRetry) {
+                const retryOverride = buildTranscriptRetryOverride({
+                    transcript,
+                    retrySegmentIds: transcriptRetrySegmentIds,
+                });
+                if (!retryOverride.changed) {
+                    setRunError(
+                        "Selected transcript segment(s) could not be split. Pick longer merged segments with punctuation or more source text.",
+                    );
+                    return;
+                }
+                setRunError(null);
+                void runWorkspaceFlow("fresh", {
+                    vipTranscriptRetryOverridesByNodeId: {
+                        [detail.vipNodeId]: {
+                            transcript: retryOverride.transcript,
+                            retriedSegmentIds: retryOverride.retriedSegmentIds,
+                            splitSegmentCount: retryOverride.splitSegmentCount,
+                        },
+                    },
+                });
+                return;
+            }
+            if (!translation?.translatedSegments.length) {
+                setRunError(
+                    "Cannot rerun corrected VIP because this Workspace session no longer has translation data. Run the VIP flow once again first.",
                 );
                 return;
             }

@@ -4,870 +4,899 @@ import { PassThrough } from "node:stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
-  buildPiperBatchArgs,
-  buildPiperArgs,
-  buildAtempoFilterChain,
-  buildTimelineAlignmentChunk,
-  generateVoiceFromSegments,
-  generatePiperSpeech,
-  resolvePiperBinaryPath,
-  setPiperFfmpegRunnerForTest,
-  setPiperFileExistsForTest,
-  setPiperReadFileForTest,
-  setPiperSpawnForTest,
-  splitTextForPiperSynthesis,
-  validatePiperTtsInput,
-  validatePiperRuntimeFiles,
-  validateVoiceSegments,
+    buildPiperBatchArgs,
+    buildPiperArgs,
+    buildAtempoFilterChain,
+    buildTimelineAlignmentChunk,
+    generateVoiceFromSegments,
+    generatePiperSpeech,
+    resolvePiperBinaryPath,
+    setPiperFfmpegRunnerForTest,
+    setPiperFileExistsForTest,
+    setPiperReadFileForTest,
+    setPiperSpawnForTest,
+    splitTextForPiperSynthesis,
+    validatePiperTtsInput,
+    validatePiperRuntimeFiles,
+    validateVoiceSegments,
 } from "./piper-tts";
 
 function createMockSpawn(output = "wav-bytes", exitCode = 0) {
-  return vi.fn((_command: string, args: string[]) => {
-    const child = new EventEmitter() as EventEmitter & {
-      stdin: PassThrough;
-      stdout: PassThrough;
-      stderr: PassThrough;
-      kill: ReturnType<typeof vi.fn>;
-    };
-    child.stdin = new PassThrough();
-    child.stdout = new PassThrough();
-    child.stderr = new PassThrough();
-    child.kill = vi.fn();
+    return vi.fn((_command: string, args: string[]) => {
+        const child = new EventEmitter() as EventEmitter & {
+            stdin: PassThrough;
+            stdout: PassThrough;
+            stderr: PassThrough;
+            kill: ReturnType<typeof vi.fn>;
+        };
+        child.stdin = new PassThrough();
+        child.stdout = new PassThrough();
+        child.stderr = new PassThrough();
+        child.kill = vi.fn();
 
-    setTimeout(() => {
-      if (exitCode !== 0) child.stderr.write("piper failed");
-      const inputPathIndex = args.indexOf("--input_file");
-      const outputDirIndex = args.indexOf("--output_dir");
-      const inputPath =
-        inputPathIndex >= 0 ? args[inputPathIndex + 1] : undefined;
-      const outputDir =
-        outputDirIndex >= 0 ? args[outputDirIndex + 1] : undefined;
-      if (inputPath && outputDir) {
-        const lineCount = readFileSync(inputPath, "utf8")
-          .split(/\r?\n/u)
-          .filter(Boolean).length;
-        for (let index = 0; index < lineCount; index += 1) {
-          child.stderr.write(`INFO:__main__:Wrote ${outputDir}/${index}.wav\n`);
-        }
-      }
-      child.stdout.write(Buffer.from(output));
-      child.emit("close", exitCode);
-    }, 0);
+        setTimeout(() => {
+            if (exitCode !== 0) child.stderr.write("piper failed");
+            const inputPathIndex = args.indexOf("--input_file");
+            const outputDirIndex = args.indexOf("--output_dir");
+            const inputPath =
+                inputPathIndex >= 0 ? args[inputPathIndex + 1] : undefined;
+            const outputDir =
+                outputDirIndex >= 0 ? args[outputDirIndex + 1] : undefined;
+            if (inputPath && outputDir) {
+                const lineCount = readFileSync(inputPath, "utf8")
+                    .split(/\r?\n/u)
+                    .filter(Boolean).length;
+                for (let index = 0; index < lineCount; index += 1) {
+                    child.stderr.write(
+                        `INFO:__main__:Wrote ${outputDir}/${index}.wav\n`,
+                    );
+                }
+            }
+            child.stdout.write(Buffer.from(output));
+            child.emit("close", exitCode);
+        }, 0);
 
-    return child;
-  });
+        return child;
+    });
 }
 
 function createPcmWavBuffer(durationSeconds: number) {
-  const sampleRate = 22050;
-  const channels = 1;
-  const bitsPerSample = 16;
-  const bytesPerSample = bitsPerSample / 8;
-  const sampleCount = Math.max(1, Math.round(durationSeconds * sampleRate));
-  const dataSize = sampleCount * channels * bytesPerSample;
-  const buffer = Buffer.alloc(44 + dataSize);
+    const sampleRate = 22050;
+    const channels = 1;
+    const bitsPerSample = 16;
+    const bytesPerSample = bitsPerSample / 8;
+    const sampleCount = Math.max(1, Math.round(durationSeconds * sampleRate));
+    const dataSize = sampleCount * channels * bytesPerSample;
+    const buffer = Buffer.alloc(44 + dataSize);
 
-  buffer.write("RIFF", 0, "ascii");
-  buffer.writeUInt32LE(36 + dataSize, 4);
-  buffer.write("WAVE", 8, "ascii");
-  buffer.write("fmt ", 12, "ascii");
-  buffer.writeUInt32LE(16, 16);
-  buffer.writeUInt16LE(1, 20);
-  buffer.writeUInt16LE(channels, 22);
-  buffer.writeUInt32LE(sampleRate, 24);
-  buffer.writeUInt32LE(sampleRate * channels * bytesPerSample, 28);
-  buffer.writeUInt16LE(channels * bytesPerSample, 32);
-  buffer.writeUInt16LE(bitsPerSample, 34);
-  buffer.write("data", 36, "ascii");
-  buffer.writeUInt32LE(dataSize, 40);
+    buffer.write("RIFF", 0, "ascii");
+    buffer.writeUInt32LE(36 + dataSize, 4);
+    buffer.write("WAVE", 8, "ascii");
+    buffer.write("fmt ", 12, "ascii");
+    buffer.writeUInt32LE(16, 16);
+    buffer.writeUInt16LE(1, 20);
+    buffer.writeUInt16LE(channels, 22);
+    buffer.writeUInt32LE(sampleRate, 24);
+    buffer.writeUInt32LE(sampleRate * channels * bytesPerSample, 28);
+    buffer.writeUInt16LE(channels * bytesPerSample, 32);
+    buffer.writeUInt16LE(bitsPerSample, 34);
+    buffer.write("data", 36, "ascii");
+    buffer.writeUInt32LE(dataSize, 40);
 
-  return buffer;
+    return buffer;
 }
 
 function createFailingModelSpawn() {
-  return vi.fn(() => {
-    const child = new EventEmitter() as EventEmitter & {
-      stdin: PassThrough;
-      stdout: PassThrough;
-      stderr: PassThrough;
-      kill: ReturnType<typeof vi.fn>;
-    };
-    child.stdin = new PassThrough();
-    child.stdout = new PassThrough();
-    child.stderr = new PassThrough();
-    child.kill = vi.fn();
+    return vi.fn(() => {
+        const child = new EventEmitter() as EventEmitter & {
+            stdin: PassThrough;
+            stdout: PassThrough;
+            stderr: PassThrough;
+            kill: ReturnType<typeof vi.fn>;
+        };
+        child.stdin = new PassThrough();
+        child.stdout = new PassThrough();
+        child.stderr = new PassThrough();
+        child.kill = vi.fn();
 
-    setTimeout(() => {
-      child.stderr.write(
-        "ValueError: Required inputs (['char_inputs', 'diac_inputs']) are missing from input feed (['input', 'input_lengths', 'scales']).",
-      );
-      child.emit("close", 1);
-    }, 0);
+        setTimeout(() => {
+            child.stderr.write(
+                "ValueError: Required inputs (['char_inputs', 'diac_inputs']) are missing from input feed (['input', 'input_lengths', 'scales']).",
+            );
+            child.emit("close", 1);
+        }, 0);
 
-    return child;
-  });
+        return child;
+    });
 }
 
 describe("Piper TTS adapter", () => {
-  afterEach(() => {
-    setPiperSpawnForTest(null);
-    setPiperFileExistsForTest(null);
-    setPiperReadFileForTest(null);
-    setPiperFfmpegRunnerForTest(null);
-  });
-
-  it("validates required text, binary, and model paths", () => {
-    setPiperFileExistsForTest((filePath) => !filePath.includes("missing"));
-
-    expect(() =>
-      validatePiperTtsInput({
-        text: "",
-        binaryPath: "piper",
-        modelPath: "/voice.onnx",
-      }),
-    ).toThrow("Text input");
-    expect(() =>
-      validatePiperTtsInput({
-        text: "Hello",
-        binaryPath: "piper",
-        modelPath: "/missing/voice.onnx",
-      }),
-    ).toThrow("not found");
-  });
-
-  it("fails fast when bundled Piper dynamic libraries are missing", () => {
-    setPiperFileExistsForTest((filePath) => {
-      return !filePath.endsWith("libespeak-ng.1.dylib");
+    afterEach(() => {
+        setPiperSpawnForTest(null);
+        setPiperFileExistsForTest(null);
+        setPiperReadFileForTest(null);
+        setPiperFfmpegRunnerForTest(null);
     });
 
-    expect(() =>
-      validatePiperRuntimeFiles({
-        binaryPath: "/repo/piper/piper",
-        modelPath: "/repo/piper/model.onnx",
-        configPath: "/repo/piper/model.onnx.json",
-      }),
-    ).toThrow("libespeak-ng.1.dylib");
-  });
+    it("validates required text, binary, and model paths", () => {
+        setPiperFileExistsForTest((filePath) => !filePath.includes("missing"));
 
-  it("maps default `piper` command to bundled binary when runtime libs exist", () => {
-    setPiperFileExistsForTest((filePath) => {
-      if (filePath.includes(".venv")) return true;
-      if (filePath.endsWith("/piper/piper")) return true;
-      if (filePath.endsWith("libespeak-ng.1.dylib")) return true;
-      if (filePath.endsWith("libpiper_phonemize.1.dylib")) return true;
-      if (filePath.endsWith("libonnxruntime.1.14.1.dylib")) return true;
-      return false;
+        expect(() =>
+            validatePiperTtsInput({
+                text: "",
+                binaryPath: "piper",
+                modelPath: "/voice.onnx",
+            }),
+        ).toThrow("Text input");
+        expect(() =>
+            validatePiperTtsInput({
+                text: "Hello",
+                binaryPath: "piper",
+                modelPath: "/missing/voice.onnx",
+            }),
+        ).toThrow("not found");
     });
 
-    expect(resolvePiperBinaryPath("piper")).toBe(
-      `${process.cwd()}/piper/piper`,
-    );
-  });
+    it("fails fast when bundled Piper dynamic libraries are missing", () => {
+        setPiperFileExistsForTest((filePath) => {
+            return !filePath.endsWith("libespeak-ng.1.dylib");
+        });
 
-  it("falls back to .venv piper when bundled binary misses dylibs", () => {
-    setPiperFileExistsForTest((filePath) => {
-      if (filePath.includes(".venv")) return true;
-      if (filePath.endsWith("/piper/piper")) return true;
-      // Simulate missing bundled dylibs.
-      return false;
+        expect(() =>
+            validatePiperRuntimeFiles({
+                binaryPath: "/repo/piper/piper",
+                modelPath: "/repo/piper/model.onnx",
+                configPath: "/repo/piper/model.onnx.json",
+            }),
+        ).toThrow("libespeak-ng.1.dylib");
     });
 
-    expect(resolvePiperBinaryPath("piper")).toBe(
-      `${process.cwd()}/piper/.venv/bin/piper`,
-    );
-  });
+    it("maps default `piper` command to bundled binary when runtime libs exist", () => {
+        setPiperFileExistsForTest((filePath) => {
+            if (filePath.includes(".venv")) return true;
+            if (filePath.endsWith("/piper/piper")) return true;
+            if (filePath.endsWith("libespeak-ng.1.dylib")) return true;
+            if (filePath.endsWith("libpiper_phonemize.1.dylib")) return true;
+            if (filePath.endsWith("libonnxruntime.1.14.1.dylib")) return true;
+            return false;
+        });
 
-  it("builds low-resource Piper CLI args for stdout WAV output", () => {
-    setPiperFileExistsForTest(() => true);
-
-    const input = validatePiperTtsInput({
-      text: "Hello",
-      binaryPath: "piper",
-      modelPath: "/models/voice.onnx",
-      configPath: "/models/voice.onnx.json",
-      speaker: 0,
-      lengthScale: 1,
-      noiseScale: 0.667,
-      noiseW: 0.8,
-      sentenceSilence: 0.2,
+        expect(resolvePiperBinaryPath("piper")).toBe(
+            `${process.cwd()}/piper/piper`,
+        );
     });
 
-    expect(buildPiperArgs(input, "/tmp/speech.wav")).toEqual([
-      "--model",
-      "/models/voice.onnx",
-      "--output_file",
-      "/tmp/speech.wav",
-      "--config",
-      "/models/voice.onnx.json",
-      "--speaker",
-      "0",
-      "--length_scale",
-      "1",
-      "--noise_scale",
-      "0.667",
-      "--noise_w",
-      "0.8",
-      "--sentence_silence",
-      "0.2",
-    ]);
-  });
+    it("falls back to .venv piper when bundled binary misses dylibs", () => {
+        setPiperFileExistsForTest((filePath) => {
+            if (filePath.includes(".venv")) return true;
+            if (filePath.endsWith("/piper/piper")) return true;
+            // Simulate missing bundled dylibs.
+            return false;
+        });
 
-  it("builds batch Piper CLI args for one model load across many text chunks", () => {
-    setPiperFileExistsForTest(() => true);
-
-    const input = validatePiperTtsInput({
-      text: "Hello",
-      binaryPath: "piper",
-      modelPath: "/models/voice.onnx",
-      configPath: "/models/voice.onnx.json",
-      speaker: 0,
-      lengthScale: 1,
-      noiseScale: 0.667,
-      noiseW: 0.8,
-      sentenceSilence: 0.2,
+        expect(resolvePiperBinaryPath("piper")).toBe(
+            `${process.cwd()}/piper/.venv/bin/piper`,
+        );
     });
 
-    expect(
-      buildPiperBatchArgs(input, {
-        inputPath: "/tmp/input.txt",
-        outputDir: "/tmp/out",
-      }),
-    ).toEqual([
-      "--model",
-      "/models/voice.onnx",
-      "--input_file",
-      "/tmp/input.txt",
-      "--output_dir",
-      "/tmp/out",
-      "--config",
-      "/models/voice.onnx.json",
-      "--speaker",
-      "0",
-      "--length_scale",
-      "1",
-      "--noise_scale",
-      "0.667",
-      "--noise_w",
-      "0.8",
-      "--sentence_silence",
-      "0.2",
-    ]);
-  });
+    it("builds low-resource Piper CLI args for stdout WAV output", () => {
+        setPiperFileExistsForTest(() => true);
 
-  it("returns synthesized WAV audio from Piper stdout", async () => {
-    const spawnMock = createMockSpawn("route-audio");
-    setPiperSpawnForTest(spawnMock as never);
-    setPiperFileExistsForTest(() => true);
-    setPiperReadFileForTest(async () => Buffer.from("route-audio"));
+        const input = validatePiperTtsInput({
+            text: "Hello",
+            binaryPath: "piper",
+            modelPath: "/models/voice.onnx",
+            configPath: "/models/voice.onnx.json",
+            speaker: 0,
+            lengthScale: 1,
+            noiseScale: 0.667,
+            noiseW: 0.8,
+            sentenceSilence: 0.2,
+        });
 
-    const result = await generatePiperSpeech({
-      text: "Hello Piper",
-      binaryPath: "piper",
-      modelPath: "/models/voice.onnx",
+        expect(buildPiperArgs(input, "/tmp/speech.wav")).toEqual([
+            "--model",
+            "/models/voice.onnx",
+            "--output_file",
+            "/tmp/speech.wav",
+            "--config",
+            "/models/voice.onnx.json",
+            "--speaker",
+            "0",
+            "--length_scale",
+            "1",
+            "--noise_scale",
+            "0.667",
+            "--noise_w",
+            "0.8",
+            "--sentence_silence",
+            "0.2",
+        ]);
     });
 
-    expect(spawnMock).toHaveBeenCalledWith(
-      `${process.cwd()}/piper/piper`,
-      expect.arrayContaining(["--model", "/models/voice.onnx"]),
-      expect.objectContaining({
-        stdio: ["pipe", "pipe", "pipe"],
-      }),
-    );
-    expect(result).toMatchObject({
-      mimeType: "audio/wav",
-      extension: "wav",
-      byteLength: "route-audio".length,
-      provider: { name: "piper", mode: "local-cli" },
-    });
-    expect(Buffer.from(result.audioBase64, "base64").toString()).toBe(
-      "route-audio",
-    );
-  });
+    it("builds batch Piper CLI args for one model load across many text chunks", () => {
+        setPiperFileExistsForTest(() => true);
 
-  it("maps non-zero Piper exits to provider errors", async () => {
-    setPiperSpawnForTest(createMockSpawn("", 1) as never);
-    setPiperFileExistsForTest(() => true);
-    setPiperReadFileForTest(async () => Buffer.from(""));
+        const input = validatePiperTtsInput({
+            text: "Hello",
+            binaryPath: "piper",
+            modelPath: "/models/voice.onnx",
+            configPath: "/models/voice.onnx.json",
+            speaker: 0,
+            lengthScale: 1,
+            noiseScale: 0.667,
+            noiseW: 0.8,
+            sentenceSilence: 0.2,
+        });
 
-    await expect(
-      generatePiperSpeech({
-        text: "Hello Piper",
-        binaryPath: "piper",
-        modelPath: "/models/voice.onnx",
-      }),
-    ).rejects.toThrow("piper failed");
-  });
-
-  it("maps incompatible ONNX model errors to a concise message", async () => {
-    setPiperSpawnForTest(createFailingModelSpawn() as never);
-    setPiperFileExistsForTest(() => true);
-
-    await expect(
-      generatePiperSpeech({
-        text: "Hello Piper",
-        binaryPath: "piper",
-        modelPath: "/models/voice.onnx",
-      }),
-    ).rejects.toThrow("model is incompatible");
-  });
-
-  it("validates translated voice segments", () => {
-    expect(() => validateVoiceSegments([])).toThrow(
-      "At least one translated transcript segment",
-    );
-
-    expect(
-      validateVoiceSegments([
-        { id: 1, start: 1.4, end: 2, text: " Sau " },
-        { id: 0, start: 0, end: 1, text: "" },
-        { id: 2, start: 0.2, end: 0.8, text: "Trước" },
-      ]),
-    ).toEqual([
-      { id: 2, start: 0.2, end: 0.8, text: "Trước" },
-      { id: 1, start: 1.4, end: 2, text: "Sau" },
-    ]);
-  });
-
-  it("builds ffmpeg atempo chains for large speedups", () => {
-    expect(buildAtempoFilterChain(1)).toBe("anull");
-    expect(buildAtempoFilterChain(5)).toBe("atempo=2,atempo=2,atempo=1.25");
-  });
-
-  it("splits multi-sentence text before Piper synthesis", () => {
-    expect(
-      splitTextForPiperSynthesis(
-        "mạch máu bị cắt đứt ngay. Mất nguồn máu và dinh dưỡng, các tế bào chết đi.",
-      ),
-    ).toEqual([
-      "mạch máu bị cắt đứt ngay.",
-      "Mất nguồn máu và dinh dưỡng, các tế bào chết đi.",
-    ]);
-
-    expect(splitTextForPiperSynthesis("... !!! ???")).toEqual([]);
-  });
-
-  it("keeps voice generation alive when a segment has only punctuation", async () => {
-    const spawnMock = createMockSpawn();
-    setPiperSpawnForTest(spawnMock as never);
-    setPiperFileExistsForTest(() => true);
-    setPiperReadFileForTest(async () => Buffer.from("silence-safe-audio"));
-    setPiperFfmpegRunnerForTest(async () => ({
-      stderr: "Duration: 00:00:00.120",
-    }));
-
-    const result = await generateVoiceFromSegments({
-      segments: [{ id: 0, start: 0, end: 0.8, text: "... !!! ???" }],
-      settings: {
-        binaryPath: "piper",
-        modelPath: "/models/voice.onnx",
-        preserveTimestampGaps: false,
-      },
+        expect(
+            buildPiperBatchArgs(input, {
+                inputPath: "/tmp/input.txt",
+                outputDir: "/tmp/out",
+            }),
+        ).toEqual([
+            "--model",
+            "/models/voice.onnx",
+            "--input_file",
+            "/tmp/input.txt",
+            "--output_dir",
+            "/tmp/out",
+            "--config",
+            "/models/voice.onnx.json",
+            "--speaker",
+            "0",
+            "--length_scale",
+            "1",
+            "--noise_scale",
+            "0.667",
+            "--noise_w",
+            "0.8",
+            "--sentence_silence",
+            "0.2",
+        ]);
     });
 
-    expect(spawnMock).not.toHaveBeenCalled();
-    expect(result.byteLength).toBe("silence-safe-audio".length);
-    expect(result.segmentCount).toBe(1);
-  });
+    it("returns synthesized WAV audio from Piper stdout", async () => {
+        const spawnMock = createMockSpawn("route-audio");
+        setPiperSpawnForTest(spawnMock as never);
+        setPiperFileExistsForTest(() => true);
+        setPiperReadFileForTest(async () => Buffer.from("route-audio"));
 
-  it("borrows safe following gaps before speeding up timeline segments", () => {
-    expect(
-      buildTimelineAlignmentChunk({
-        segment: { id: 7, start: 0, end: 1, text: "Một câu hơi dài" },
-        rawDurationSeconds: 1.5,
-        nextSegmentStart: 2,
-      }),
-    ).toMatchObject({
-      segmentId: 7,
-      slotDurationSeconds: 1,
-      rawDurationSeconds: 1.5,
-      targetDurationSeconds: 1.5,
-      borrowedGapSeconds: 0.5,
-      speedFactor: 1,
-      tempoFilter: "anull",
-      warningCodes: [],
-    });
-  });
+        const result = await generatePiperSpeech({
+            text: "Hello Piper",
+            binaryPath: "piper",
+            modelPath: "/models/voice.onnx",
+        });
 
-  it("flags timeline segments that still need aggressive speed-up", () => {
-    expect(
-      buildTimelineAlignmentChunk({
-        segment: { id: 8, start: 0, end: 1, text: "Một câu quá dài" },
-        rawDurationSeconds: 3,
-        nextSegmentStart: 1.2,
-      }),
-    ).toMatchObject({
-      targetDurationSeconds: 1.15,
-      borrowedGapSeconds: expect.closeTo(0.15, 4),
-      speedFactor: 1.75,
-      warningCodes: [
-        "HIGH_SPEED_FACTOR",
-        "INSUFFICIENT_GAP_FOR_NATURAL_SPEED",
-      ],
-    });
-  });
-
-  it("uses a 1.25x speed floor when timeline acceleration is needed", () => {
-    expect(
-      buildTimelineAlignmentChunk({
-        segment: { id: 9, start: 0, end: 1, text: "Nhanh hơn một chút" },
-        rawDurationSeconds: 1.1,
-        nextSegmentStart: 1,
-      }),
-    ).toMatchObject({
-      targetDurationSeconds: 1,
-      speedFactor: 1.25,
-      tempoFilter: "atempo=1.25",
-    });
-  });
-
-  it("batches balanced timeline Piper voice synthesis into one model load", async () => {
-    const spawnMock = createMockSpawn();
-    setPiperSpawnForTest(spawnMock as never);
-    setPiperFileExistsForTest(() => true);
-    setPiperReadFileForTest(async () => Buffer.from("aligned-audio"));
-    setPiperFfmpegRunnerForTest(async () => ({
-      stderr: "Duration: 00:00:00.500",
-    }));
-
-    const result = await generateVoiceFromSegments({
-      segments: [
-        { id: 0, start: 0, end: 0.75, text: "Xin chào" },
-        { id: 1, start: 1, end: 1.5, text: "Tạm biệt" },
-      ],
-      settings: {
-        binaryPath: "piper",
-        modelPath: "/models/voice.onnx",
-        preserveTimestampGaps: true,
-      },
+        expect(spawnMock).toHaveBeenCalledWith(
+            `${process.cwd()}/piper/piper`,
+            expect.arrayContaining(["--model", "/models/voice.onnx"]),
+            expect.objectContaining({
+                stdio: ["pipe", "pipe", "pipe"],
+            }),
+        );
+        expect(result).toMatchObject({
+            mimeType: "audio/wav",
+            extension: "wav",
+            byteLength: "route-audio".length,
+            provider: { name: "piper", mode: "local-cli" },
+        });
+        expect(Buffer.from(result.audioBase64, "base64").toString()).toBe(
+            "route-audio",
+        );
     });
 
-    expect(spawnMock).toHaveBeenCalledTimes(1);
-    expect(spawnMock).toHaveBeenCalledWith(
-      expect.any(String),
-      expect.arrayContaining([
-        "--input_file",
-        expect.any(String),
-        "--output_dir",
-        expect.any(String),
-        "--sentence_silence",
-        "0.05",
-      ]),
-      expect.any(Object),
-    );
-    expect(result).toMatchObject({
-      mimeType: "audio/wav",
-      extension: "wav",
-      byteLength: "aligned-audio".length,
-      segmentCount: 2,
-      generationDurationMs: expect.any(Number),
-      alignment: {
-        mode: "balanced",
-        targetDurationSeconds: 1.5,
-        chunks: 2,
-        timeline: [
-          expect.objectContaining({
-            segmentId: 0,
-            rawDurationSeconds: 0.5,
-            targetDurationSeconds: expect.closeTo(0.5, 4),
-            scheduledStartSeconds: 0,
+    it("maps non-zero Piper exits to provider errors", async () => {
+        setPiperSpawnForTest(createMockSpawn("", 1) as never);
+        setPiperFileExistsForTest(() => true);
+        setPiperReadFileForTest(async () => Buffer.from(""));
+
+        await expect(
+            generatePiperSpeech({
+                text: "Hello Piper",
+                binaryPath: "piper",
+                modelPath: "/models/voice.onnx",
+            }),
+        ).rejects.toThrow("piper failed");
+    });
+
+    it("maps incompatible ONNX model errors to a concise message", async () => {
+        setPiperSpawnForTest(createFailingModelSpawn() as never);
+        setPiperFileExistsForTest(() => true);
+
+        await expect(
+            generatePiperSpeech({
+                text: "Hello Piper",
+                binaryPath: "piper",
+                modelPath: "/models/voice.onnx",
+            }),
+        ).rejects.toThrow("model is incompatible");
+    });
+
+    it("validates translated voice segments", () => {
+        expect(() => validateVoiceSegments([])).toThrow(
+            "At least one translated transcript segment",
+        );
+
+        expect(
+            validateVoiceSegments([
+                { id: 1, start: 1.4, end: 2, text: " Sau " },
+                { id: 0, start: 0, end: 1, text: "" },
+                { id: 2, start: 0.2, end: 0.8, text: "Trước" },
+            ]),
+        ).toEqual([
+            { id: 2, start: 0.2, end: 0.8, text: "Trước" },
+            { id: 1, start: 1.4, end: 2, text: "Sau" },
+        ]);
+    });
+
+    it("builds ffmpeg atempo chains for large speedups", () => {
+        expect(buildAtempoFilterChain(1)).toBe("anull");
+        expect(buildAtempoFilterChain(5)).toBe("atempo=2,atempo=2,atempo=1.25");
+    });
+
+    it("splits multi-sentence text before Piper synthesis", () => {
+        expect(
+            splitTextForPiperSynthesis(
+                "mạch máu bị cắt đứt ngay. Mất nguồn máu và dinh dưỡng, các tế bào chết đi.",
+            ),
+        ).toEqual([
+            "mạch máu bị cắt đứt ngay.",
+            "Mất nguồn máu và dinh dưỡng, các tế bào chết đi.",
+        ]);
+
+        expect(splitTextForPiperSynthesis("... !!! ???")).toEqual([]);
+    });
+
+    it("keeps voice generation alive when a segment has only punctuation", async () => {
+        const spawnMock = createMockSpawn();
+        setPiperSpawnForTest(spawnMock as never);
+        setPiperFileExistsForTest(() => true);
+        setPiperReadFileForTest(async () => Buffer.from("silence-safe-audio"));
+        setPiperFfmpegRunnerForTest(async () => ({
+            stderr: "Duration: 00:00:00.120",
+        }));
+
+        const result = await generateVoiceFromSegments({
+            segments: [{ id: 0, start: 0, end: 0.8, text: "... !!! ???" }],
+            settings: {
+                binaryPath: "piper",
+                modelPath: "/models/voice.onnx",
+                preserveTimestampGaps: false,
+            },
+        });
+
+        expect(spawnMock).not.toHaveBeenCalled();
+        expect(result.byteLength).toBe("silence-safe-audio".length);
+        expect(result.segmentCount).toBe(1);
+    });
+
+    it("borrows safe following gaps before speeding up timeline segments", () => {
+        expect(
+            buildTimelineAlignmentChunk({
+                segment: { id: 7, start: 0, end: 1, text: "Một câu hơi dài" },
+                rawDurationSeconds: 1.5,
+                nextSegmentStart: 2,
+            }),
+        ).toMatchObject({
+            segmentId: 7,
+            slotDurationSeconds: 1,
+            rawDurationSeconds: 1.5,
+            targetDurationSeconds: 1.5,
+            borrowedGapSeconds: 0.5,
             speedFactor: 1,
-          }),
-          expect.objectContaining({
+            tempoFilter: "anull",
+            warningCodes: [],
+        });
+    });
+
+    it("flags timeline segments that still need aggressive speed-up", () => {
+        expect(
+            buildTimelineAlignmentChunk({
+                segment: { id: 8, start: 0, end: 1, text: "Một câu quá dài" },
+                rawDurationSeconds: 3,
+                nextSegmentStart: 1.2,
+            }),
+        ).toMatchObject({
+            targetDurationSeconds: 1.15,
+            borrowedGapSeconds: expect.closeTo(0.15, 4),
+            speedFactor: 1.75,
+            warningCodes: ["HIGH_SPEED_FACTOR", "GAP"],
+        });
+    });
+
+    it("uses a 1.25x speed floor when timeline acceleration is needed", () => {
+        expect(
+            buildTimelineAlignmentChunk({
+                segment: {
+                    id: 9,
+                    start: 0,
+                    end: 1,
+                    text: "Nhanh hơn một chút",
+                },
+                rawDurationSeconds: 1.1,
+                nextSegmentStart: 1,
+            }),
+        ).toMatchObject({
+            targetDurationSeconds: 1,
+            speedFactor: 1.25,
+            tempoFilter: "atempo=1.25",
+        });
+    });
+
+    it("batches balanced timeline Piper voice synthesis into one model load", async () => {
+        const spawnMock = createMockSpawn();
+        setPiperSpawnForTest(spawnMock as never);
+        setPiperFileExistsForTest(() => true);
+        setPiperReadFileForTest(async () => Buffer.from("aligned-audio"));
+        setPiperFfmpegRunnerForTest(async () => ({
+            stderr: "Duration: 00:00:00.500",
+        }));
+
+        const result = await generateVoiceFromSegments({
+            segments: [
+                { id: 0, start: 0, end: 0.75, text: "Xin chào" },
+                { id: 1, start: 1, end: 1.5, text: "Tạm biệt" },
+            ],
+            settings: {
+                binaryPath: "piper",
+                modelPath: "/models/voice.onnx",
+                preserveTimestampGaps: true,
+            },
+        });
+
+        expect(spawnMock).toHaveBeenCalledTimes(1);
+        expect(spawnMock).toHaveBeenCalledWith(
+            expect.any(String),
+            expect.arrayContaining([
+                "--input_file",
+                expect.any(String),
+                "--output_dir",
+                expect.any(String),
+                "--sentence_silence",
+                "0.05",
+            ]),
+            expect.any(Object),
+        );
+        expect(result).toMatchObject({
+            mimeType: "audio/wav",
+            extension: "wav",
+            byteLength: "aligned-audio".length,
+            segmentCount: 2,
+            generationDurationMs: expect.any(Number),
+            alignment: {
+                mode: "balanced",
+                targetDurationSeconds: 1.5,
+                chunks: 2,
+                timeline: [
+                    expect.objectContaining({
+                        segmentId: 0,
+                        rawDurationSeconds: 0.5,
+                        targetDurationSeconds: expect.closeTo(0.5, 4),
+                        scheduledStartSeconds: 0,
+                        speedFactor: 1,
+                    }),
+                    expect.objectContaining({
+                        segmentId: 1,
+                        rawDurationSeconds: 0.5,
+                        targetDurationSeconds: expect.closeTo(0.5, 4),
+                        scheduledStartSeconds: expect.closeTo(0.6, 4),
+                        pauseBeforeSeconds: 0.1,
+                        speedFactor: 1,
+                    }),
+                ],
+                warnings: [],
+            },
+            provider: { name: "piper", mode: "local-cli" },
+        });
+    });
+
+    it("keeps strict timeline metadata on original segment timestamps", async () => {
+        const spawnMock = createMockSpawn();
+        setPiperSpawnForTest(spawnMock as never);
+        setPiperFileExistsForTest(() => true);
+        setPiperReadFileForTest(async () => Buffer.from("strict-audio"));
+        setPiperFfmpegRunnerForTest(async () => ({
+            stderr: "Duration: 00:00:00.500",
+        }));
+
+        const result = await generateVoiceFromSegments({
+            segments: [
+                { id: 217, start: 420.432, end: 421.532, text: "Đoạn cuối" },
+            ],
+            settings: {
+                binaryPath: "piper",
+                modelPath: "/models/voice.onnx",
+                preserveTimestampGaps: true,
+                alignmentMode: "strict",
+            },
+        });
+
+        expect(spawnMock).toHaveBeenCalledTimes(1);
+        expect(result.alignment).toMatchObject({
+            mode: "timeline",
+            targetDurationSeconds: 421.532,
+            timeline: [
+                expect.objectContaining({
+                    segmentId: 217,
+                    scheduledStartSeconds: 420.432,
+                    scheduledEndSeconds: 421.532,
+                    pauseBeforeSeconds: 420.432,
+                    driftSeconds: 0,
+                }),
+            ],
+        });
+    });
+
+    it("lets strict timeline segments borrow safe previous audible slack", async () => {
+        const spawnMock = createMockSpawn();
+        const ffmpegCalls: string[][] = [];
+        setPiperSpawnForTest(spawnMock as never);
+        setPiperFileExistsForTest(() => true);
+        setPiperReadFileForTest(async (filePath) => {
+            if (
+                /\/0\.wav$/u.test(filePath) ||
+                /segment-0\.wav$/u.test(filePath)
+            ) {
+                return createPcmWavBuffer(2);
+            }
+            if (
+                /\/1\.wav$/u.test(filePath) ||
+                /segment-1\.wav$/u.test(filePath)
+            ) {
+                return createPcmWavBuffer(7);
+            }
+            return Buffer.from("strict-lead-borrow-audio");
+        });
+        setPiperFfmpegRunnerForTest(async (args) => {
+            ffmpegCalls.push(args);
+            return { stderr: "" };
+        });
+
+        const result = await generateVoiceFromSegments({
+            segments: [
+                { id: 0, start: 0, end: 5, text: "Câu trước dư thời gian" },
+                {
+                    id: 1,
+                    start: 5,
+                    end: 10,
+                    text: "Câu sau dài hơn và cần mượn nhẹ",
+                },
+            ],
+            settings: {
+                binaryPath: "piper",
+                modelPath: "/models/voice.onnx",
+                preserveTimestampGaps: true,
+                alignmentMode: "strict",
+            },
+        });
+
+        expect(result.alignment.timeline?.[1]).toMatchObject({
             segmentId: 1,
-            rawDurationSeconds: 0.5,
-            targetDurationSeconds: expect.closeTo(0.5, 4),
-            scheduledStartSeconds: expect.closeTo(0.6, 4),
-            pauseBeforeSeconds: 0.1,
-            speedFactor: 1,
-          }),
-        ],
-        warnings: [],
-      },
-      provider: { name: "piper", mode: "local-cli" },
-    });
-  });
-
-  it("keeps strict timeline metadata on original segment timestamps", async () => {
-    const spawnMock = createMockSpawn();
-    setPiperSpawnForTest(spawnMock as never);
-    setPiperFileExistsForTest(() => true);
-    setPiperReadFileForTest(async () => Buffer.from("strict-audio"));
-    setPiperFfmpegRunnerForTest(async () => ({
-      stderr: "Duration: 00:00:00.500",
-    }));
-
-    const result = await generateVoiceFromSegments({
-      segments: [
-        { id: 217, start: 420.432, end: 421.532, text: "Đoạn cuối" },
-      ],
-      settings: {
-        binaryPath: "piper",
-        modelPath: "/models/voice.onnx",
-        preserveTimestampGaps: true,
-        alignmentMode: "strict",
-      },
+            targetDurationSeconds: expect.closeTo(5.35, 4),
+            borrowedLeadSeconds: expect.closeTo(0.35, 4),
+            speedFactor: expect.closeTo(7 / 5.35, 4),
+            scheduledStartSeconds: expect.closeTo(4.65, 4),
+            scheduledEndSeconds: expect.closeTo(10, 4),
+            driftSeconds: expect.closeTo(-0.35, 4),
+        });
+        const finalMixCall = ffmpegCalls.at(-1) ?? [];
+        const filterComplex =
+            finalMixCall[finalMixCall.indexOf("-filter_complex") + 1] ?? "";
+        expect(filterComplex).toContain("adelay=0:all=1");
+        expect(filterComplex).toContain("adelay=4650:all=1");
     });
 
-    expect(spawnMock).toHaveBeenCalledTimes(1);
-    expect(result.alignment).toMatchObject({
-      mode: "timeline",
-      targetDurationSeconds: 421.532,
-      timeline: [
-        expect.objectContaining({
-          segmentId: 217,
-          scheduledStartSeconds: 420.432,
-          scheduledEndSeconds: 421.532,
-          pauseBeforeSeconds: 420.432,
-          driftSeconds: 0,
-        }),
-      ],
-    });
-  });
+    it("places strict timeline chunks by absolute timestamp instead of serial concat", async () => {
+        const spawnMock = createMockSpawn();
+        const ffmpegCalls: string[][] = [];
+        setPiperSpawnForTest(spawnMock as never);
+        setPiperFileExistsForTest(() => true);
+        setPiperReadFileForTest(async () => createPcmWavBuffer(0.5));
+        setPiperFfmpegRunnerForTest(async (args) => {
+            ffmpegCalls.push(args);
+            return { stderr: "" };
+        });
 
-  it("lets strict timeline segments borrow safe previous audible slack", async () => {
-    const spawnMock = createMockSpawn();
-    const ffmpegCalls: string[][] = [];
-    setPiperSpawnForTest(spawnMock as never);
-    setPiperFileExistsForTest(() => true);
-    setPiperReadFileForTest(async (filePath) => {
-      if (/\/0\.wav$/u.test(filePath) || /segment-0\.wav$/u.test(filePath)) {
-        return createPcmWavBuffer(2);
-      }
-      if (/\/1\.wav$/u.test(filePath) || /segment-1\.wav$/u.test(filePath)) {
-        return createPcmWavBuffer(7);
-      }
-      return Buffer.from("strict-lead-borrow-audio");
-    });
-    setPiperFfmpegRunnerForTest(async (args) => {
-      ffmpegCalls.push(args);
-      return { stderr: "" };
-    });
+        await generateVoiceFromSegments({
+            segments: [
+                { id: 16, start: 16.6, end: 18, text: "Câu trước rất dài" },
+                {
+                    id: 17,
+                    start: 18.8,
+                    end: 19.8,
+                    text: "Thằng ngốc, lại đây!",
+                },
+                {
+                    id: 18,
+                    start: 20.1,
+                    end: 20.86,
+                    text: "Sợ thì gọi thêm hai đứa xuống!",
+                },
+            ],
+            settings: {
+                binaryPath: "piper",
+                modelPath: "/models/voice.onnx",
+                preserveTimestampGaps: true,
+                alignmentMode: "strict",
+            },
+        });
 
-    const result = await generateVoiceFromSegments({
-      segments: [
-        { id: 0, start: 0, end: 5, text: "Câu trước dư thời gian" },
-        { id: 1, start: 5, end: 10, text: "Câu sau dài hơn và cần mượn nhẹ" },
-      ],
-      settings: {
-        binaryPath: "piper",
-        modelPath: "/models/voice.onnx",
-        preserveTimestampGaps: true,
-        alignmentMode: "strict",
-      },
-    });
+        const finalMixCall = ffmpegCalls.at(-1) ?? [];
+        const filterComplex =
+            finalMixCall[finalMixCall.indexOf("-filter_complex") + 1] ?? "";
 
-    expect(result.alignment.timeline?.[1]).toMatchObject({
-      segmentId: 1,
-      targetDurationSeconds: expect.closeTo(5.35, 4),
-      borrowedLeadSeconds: expect.closeTo(0.35, 4),
-      speedFactor: expect.closeTo(7 / 5.35, 4),
-      scheduledStartSeconds: expect.closeTo(4.65, 4),
-      scheduledEndSeconds: expect.closeTo(10, 4),
-      driftSeconds: expect.closeTo(-0.35, 4),
-    });
-    const finalMixCall = ffmpegCalls.at(-1) ?? [];
-    const filterComplex =
-      finalMixCall[finalMixCall.indexOf("-filter_complex") + 1] ?? "";
-    expect(filterComplex).toContain("adelay=0:all=1");
-    expect(filterComplex).toContain("adelay=4650:all=1");
-  });
-
-  it("places strict timeline chunks by absolute timestamp instead of serial concat", async () => {
-    const spawnMock = createMockSpawn();
-    const ffmpegCalls: string[][] = [];
-    setPiperSpawnForTest(spawnMock as never);
-    setPiperFileExistsForTest(() => true);
-    setPiperReadFileForTest(async () => createPcmWavBuffer(0.5));
-    setPiperFfmpegRunnerForTest(async (args) => {
-      ffmpegCalls.push(args);
-      return { stderr: "" };
+        expect(finalMixCall).not.toContain("concat");
+        expect(filterComplex).toContain("adelay=16600:all=1");
+        expect(filterComplex).toContain("adelay=18800:all=1");
+        expect(filterComplex).toContain("adelay=20100:all=1");
+        expect(filterComplex).toContain("amix=inputs=3");
+        expect(filterComplex).toContain("atrim=0:20.860");
     });
 
-    await generateVoiceFromSegments({
-      segments: [
-        { id: 16, start: 16.6, end: 18, text: "Câu trước rất dài" },
-        { id: 17, start: 18.8, end: 19.8, text: "Thằng ngốc, lại đây!" },
-        {
-          id: 18,
-          start: 20.1,
-          end: 20.86,
-          text: "Sợ thì gọi thêm hai đứa xuống!",
-        },
-      ],
-      settings: {
-        binaryPath: "piper",
-        modelPath: "/models/voice.onnx",
-        preserveTimestampGaps: true,
-        alignmentMode: "strict",
-      },
+    it("keeps multi-sentence chunking without spawning Piper for every chunk", async () => {
+        const spawnMock = createMockSpawn();
+        setPiperSpawnForTest(spawnMock as never);
+        setPiperFileExistsForTest(() => true);
+        setPiperReadFileForTest(async () => Buffer.from("chunked-audio"));
+        setPiperFfmpegRunnerForTest(async () => ({
+            stderr: "Duration: 00:00:01.000",
+        }));
+
+        await generateVoiceFromSegments({
+            segments: [
+                {
+                    id: 0,
+                    start: 0,
+                    end: 3,
+                    text: "Câu đầu bình thường. Câu sau từng gây rè rất nặng.",
+                },
+            ],
+            settings: {
+                binaryPath: "piper",
+                modelPath: "/models/voice.onnx",
+                preserveTimestampGaps: true,
+            },
+        });
+
+        expect(spawnMock).toHaveBeenCalledTimes(1);
     });
 
-    const finalMixCall = ffmpegCalls.at(-1) ?? [];
-    const filterComplex =
-      finalMixCall[finalMixCall.indexOf("-filter_complex") + 1] ?? "";
+    it("reads generated WAV durations directly instead of spawning ffmpeg probes", async () => {
+        const spawnMock = createMockSpawn();
+        const ffmpegCalls: string[][] = [];
+        setPiperSpawnForTest(spawnMock as never);
+        setPiperFileExistsForTest(() => true);
+        setPiperReadFileForTest(async () => createPcmWavBuffer(0.5));
+        setPiperFfmpegRunnerForTest(async (args) => {
+            ffmpegCalls.push(args);
+            return { stderr: "" };
+        });
 
-    expect(finalMixCall).not.toContain("concat");
-    expect(filterComplex).toContain("adelay=16600:all=1");
-    expect(filterComplex).toContain("adelay=18800:all=1");
-    expect(filterComplex).toContain("adelay=20100:all=1");
-    expect(filterComplex).toContain("amix=inputs=3");
-    expect(filterComplex).toContain("atrim=0:20.860");
-  });
+        await generateVoiceFromSegments({
+            segments: [
+                { id: 0, start: 0, end: 0.75, text: "Xin chào" },
+                { id: 1, start: 1, end: 1.5, text: "Tạm biệt" },
+            ],
+            settings: {
+                binaryPath: "piper",
+                modelPath: "/models/voice.onnx",
+                preserveTimestampGaps: true,
+            },
+        });
 
-  it("keeps multi-sentence chunking without spawning Piper for every chunk", async () => {
-    const spawnMock = createMockSpawn();
-    setPiperSpawnForTest(spawnMock as never);
-    setPiperFileExistsForTest(() => true);
-    setPiperReadFileForTest(async () => Buffer.from("chunked-audio"));
-    setPiperFfmpegRunnerForTest(async () => ({
-      stderr: "Duration: 00:00:01.000",
-    }));
-
-    await generateVoiceFromSegments({
-      segments: [
-        {
-          id: 0,
-          start: 0,
-          end: 3,
-          text: "Câu đầu bình thường. Câu sau từng gây rè rất nặng.",
-        },
-      ],
-      settings: {
-        binaryPath: "piper",
-        modelPath: "/models/voice.onnx",
-        preserveTimestampGaps: true,
-      },
+        expect(ffmpegCalls.some((args) => args.includes("-hide_banner"))).toBe(
+            false,
+        );
+        expect(ffmpegCalls.some((args) => args.includes("-af"))).toBe(true);
+        expect(spawnMock).toHaveBeenCalledTimes(1);
     });
 
-    expect(spawnMock).toHaveBeenCalledTimes(1);
-  });
+    it("runs independent balanced alignment transforms concurrently", async () => {
+        const spawnMock = createMockSpawn();
+        let activeTransforms = 0;
+        let maxActiveTransforms = 0;
+        setPiperSpawnForTest(spawnMock as never);
+        setPiperFileExistsForTest(() => true);
+        setPiperReadFileForTest(async () => createPcmWavBuffer(2));
+        setPiperFfmpegRunnerForTest(async (args) => {
+            if (args.includes("-af")) {
+                activeTransforms += 1;
+                maxActiveTransforms = Math.max(
+                    maxActiveTransforms,
+                    activeTransforms,
+                );
+                await new Promise((resolve) => setTimeout(resolve, 20));
+                activeTransforms -= 1;
+            }
+            return { stderr: "" };
+        });
 
-  it("reads generated WAV durations directly instead of spawning ffmpeg probes", async () => {
-    const spawnMock = createMockSpawn();
-    const ffmpegCalls: string[][] = [];
-    setPiperSpawnForTest(spawnMock as never);
-    setPiperFileExistsForTest(() => true);
-    setPiperReadFileForTest(async () => createPcmWavBuffer(0.5));
-    setPiperFfmpegRunnerForTest(async (args) => {
-      ffmpegCalls.push(args);
-      return { stderr: "" };
+        await generateVoiceFromSegments({
+            segments: [
+                { id: 0, start: 0, end: 1, text: "Một" },
+                { id: 1, start: 1, end: 2, text: "Hai" },
+                { id: 2, start: 2, end: 3, text: "Ba" },
+                { id: 3, start: 3, end: 4, text: "Bốn" },
+            ],
+            settings: {
+                binaryPath: "piper",
+                modelPath: "/models/voice.onnx",
+                preserveTimestampGaps: true,
+            },
+        });
+
+        expect(maxActiveTransforms).toBeGreaterThan(1);
+        expect(spawnMock).toHaveBeenCalledTimes(1);
     });
 
-    await generateVoiceFromSegments({
-      segments: [
-        { id: 0, start: 0, end: 0.75, text: "Xin chào" },
-        { id: 1, start: 1, end: 1.5, text: "Tạm biệt" },
-      ],
-      settings: {
-        binaryPath: "piper",
-        modelPath: "/models/voice.onnx",
-        preserveTimestampGaps: true,
-      },
+    it("chunks large Piper batch synthesis into 200-segment groups", async () => {
+        const spawnMock = createMockSpawn();
+        setPiperSpawnForTest(spawnMock as never);
+        setPiperFileExistsForTest(() => true);
+        setPiperReadFileForTest(async () => createPcmWavBuffer(0.2));
+        setPiperFfmpegRunnerForTest(async () => ({ stderr: "" }));
+
+        await generateVoiceFromSegments({
+            segments: Array.from({ length: 450 }, (_, index) => ({
+                id: index,
+                start: index,
+                end: index + 0.5,
+                text: `Câu ${index}`,
+            })),
+            settings: {
+                binaryPath: "piper",
+                modelPath: "/models/voice.onnx",
+                preserveTimestampGaps: false,
+            },
+        });
+
+        expect(spawnMock).toHaveBeenCalledTimes(3);
+        expect(
+            spawnMock.mock.calls.map(([, args]) => {
+                const outputDirIndex = args.indexOf("--output_dir");
+                return args[outputDirIndex + 1];
+            }),
+        ).toEqual([
+            expect.stringContaining("piper-batch-output-0"),
+            expect.stringContaining("piper-batch-output-1"),
+            expect.stringContaining("piper-batch-output-2"),
+        ]);
     });
 
-    expect(ffmpegCalls.some((args) => args.includes("-hide_banner"))).toBe(false);
-    expect(ffmpegCalls.some((args) => args.includes("-af"))).toBe(true);
-    expect(spawnMock).toHaveBeenCalledTimes(1);
-  });
+    it("adapts Piper batch chunk size to about six chunks for one-hour timelines", async () => {
+        const spawnMock = createMockSpawn();
+        setPiperSpawnForTest(spawnMock as never);
+        setPiperFileExistsForTest(() => true);
+        setPiperReadFileForTest(async () => createPcmWavBuffer(0.2));
+        setPiperFfmpegRunnerForTest(async () => ({ stderr: "" }));
 
-  it("runs independent balanced alignment transforms concurrently", async () => {
-    const spawnMock = createMockSpawn();
-    let activeTransforms = 0;
-    let maxActiveTransforms = 0;
-    setPiperSpawnForTest(spawnMock as never);
-    setPiperFileExistsForTest(() => true);
-    setPiperReadFileForTest(async () => createPcmWavBuffer(2));
-    setPiperFfmpegRunnerForTest(async (args) => {
-      if (args.includes("-af")) {
-        activeTransforms += 1;
-        maxActiveTransforms = Math.max(maxActiveTransforms, activeTransforms);
-        await new Promise((resolve) => setTimeout(resolve, 20));
-        activeTransforms -= 1;
-      }
-      return { stderr: "" };
+        await generateVoiceFromSegments({
+            segments: Array.from({ length: 1200 }, (_, index) => {
+                const start = index * 3;
+                return {
+                    id: index,
+                    start,
+                    end: start + 1.2,
+                    text: `Câu ${index}`,
+                };
+            }),
+            settings: {
+                binaryPath: "piper",
+                modelPath: "/models/voice.onnx",
+                preserveTimestampGaps: false,
+            },
+        });
+
+        expect(spawnMock).toHaveBeenCalledTimes(6);
     });
 
-    await generateVoiceFromSegments({
-      segments: [
-        { id: 0, start: 0, end: 1, text: "Một" },
-        { id: 1, start: 1, end: 2, text: "Hai" },
-        { id: 2, start: 2, end: 3, text: "Ba" },
-        { id: 3, start: 3, end: 4, text: "Bốn" },
-      ],
-      settings: {
-        binaryPath: "piper",
-        modelPath: "/models/voice.onnx",
-        preserveTimestampGaps: true,
-      },
+    it("preserves segment order when chunked synthesis includes silence segments", async () => {
+        const spawnMock = createMockSpawn();
+        const ffmpegCalls: string[][] = [];
+        setPiperSpawnForTest(spawnMock as never);
+        setPiperFileExistsForTest(() => true);
+        setPiperReadFileForTest(async () => createPcmWavBuffer(0.2));
+        setPiperFfmpegRunnerForTest(async (args) => {
+            ffmpegCalls.push(args);
+            return { stderr: "" };
+        });
+
+        await generateVoiceFromSegments({
+            segments: [
+                { id: 0, start: 0, end: 0.5, text: "... !!!" },
+                { id: 1, start: 1, end: 1.5, text: "Câu nói ở giữa" },
+                { id: 2, start: 2, end: 2.5, text: "???" },
+            ],
+            settings: {
+                binaryPath: "piper",
+                modelPath: "/models/voice.onnx",
+                preserveTimestampGaps: true,
+                alignmentMode: "strict",
+            },
+        });
+
+        const finalMixCall = ffmpegCalls.at(-1) ?? [];
+        const filterComplex =
+            finalMixCall[finalMixCall.indexOf("-filter_complex") + 1] ?? "";
+
+        expect(spawnMock).toHaveBeenCalledTimes(1);
+        expect(filterComplex.indexOf("adelay=0:all=1")).toBeLessThan(
+            filterComplex.indexOf("adelay=1000:all=1"),
+        );
+        expect(filterComplex.indexOf("adelay=1000:all=1")).toBeLessThan(
+            filterComplex.indexOf("adelay=2000:all=1"),
+        );
     });
 
-    expect(maxActiveTransforms).toBeGreaterThan(1);
-    expect(spawnMock).toHaveBeenCalledTimes(1);
-  });
+    it("chunks large strict timeline mixes before the final absolute mix", async () => {
+        const spawnMock = createMockSpawn();
+        const ffmpegCalls: string[][] = [];
+        setPiperSpawnForTest(spawnMock as never);
+        setPiperFileExistsForTest(() => true);
+        setPiperReadFileForTest(async () => createPcmWavBuffer(0.2));
+        setPiperFfmpegRunnerForTest(async (args) => {
+            ffmpegCalls.push(args);
+            return { stderr: "" };
+        });
 
-  it("chunks large Piper batch synthesis into 200-segment groups", async () => {
-    const spawnMock = createMockSpawn();
-    setPiperSpawnForTest(spawnMock as never);
-    setPiperFileExistsForTest(() => true);
-    setPiperReadFileForTest(async () => createPcmWavBuffer(0.2));
-    setPiperFfmpegRunnerForTest(async () => ({ stderr: "" }));
+        const result = await generateVoiceFromSegments({
+            segments: Array.from({ length: 450 }, (_, index) => ({
+                id: index,
+                start: index,
+                end: index + 0.5,
+                text: `Câu ${index}`,
+            })),
+            settings: {
+                binaryPath: "piper",
+                modelPath: "/models/voice.onnx",
+                preserveTimestampGaps: true,
+                alignmentMode: "strict",
+            },
+        });
 
-    await generateVoiceFromSegments({
-      segments: Array.from({ length: 450 }, (_, index) => ({
-        id: index,
-        start: index,
-        end: index + 0.5,
-        text: `Câu ${index}`,
-      })),
-      settings: {
-        binaryPath: "piper",
-        modelPath: "/models/voice.onnx",
-        preserveTimestampGaps: false,
-      },
+        const filterComplexes = ffmpegCalls
+            .map((args) => args[args.indexOf("-filter_complex") + 1])
+            .filter((value): value is string => Boolean(value));
+        const finalMix = filterComplexes.at(-1) ?? "";
+
+        expect(spawnMock).toHaveBeenCalledTimes(3);
+        expect(
+            filterComplexes.filter((filter) =>
+                filter.includes("amix=inputs=200"),
+            ),
+        ).toHaveLength(2);
+        expect(
+            filterComplexes.filter((filter) =>
+                filter.includes("amix=inputs=50"),
+            ),
+        ).toHaveLength(1);
+        expect(finalMix).toContain("amix=inputs=3");
+        expect(finalMix).toContain("adelay=0:all=1");
+        expect(finalMix).toContain("adelay=200000:all=1");
+        expect(finalMix).toContain("adelay=400000:all=1");
+        expect(result.alignment.processingChunks).toEqual([
+            {
+                index: 1,
+                segmentCount: 200,
+                start: 0,
+                end: 199.5,
+                durationSeconds: 199.5,
+            },
+            {
+                index: 2,
+                segmentCount: 200,
+                start: 200,
+                end: 399.5,
+                durationSeconds: 199.5,
+            },
+            {
+                index: 3,
+                segmentCount: 50,
+                start: 400,
+                end: 449.5,
+                durationSeconds: 49.5,
+            },
+        ]);
     });
-
-    expect(spawnMock).toHaveBeenCalledTimes(3);
-    expect(
-      spawnMock.mock.calls.map(([, args]) => {
-        const outputDirIndex = args.indexOf("--output_dir");
-        return args[outputDirIndex + 1];
-      }),
-    ).toEqual([
-      expect.stringContaining("piper-batch-output-0"),
-      expect.stringContaining("piper-batch-output-1"),
-      expect.stringContaining("piper-batch-output-2"),
-    ]);
-  });
-
-  it("adapts Piper batch chunk size to about six chunks for one-hour timelines", async () => {
-    const spawnMock = createMockSpawn();
-    setPiperSpawnForTest(spawnMock as never);
-    setPiperFileExistsForTest(() => true);
-    setPiperReadFileForTest(async () => createPcmWavBuffer(0.2));
-    setPiperFfmpegRunnerForTest(async () => ({ stderr: "" }));
-
-    await generateVoiceFromSegments({
-      segments: Array.from({ length: 1200 }, (_, index) => {
-        const start = index * 3;
-        return {
-          id: index,
-          start,
-          end: start + 1.2,
-          text: `Câu ${index}`,
-        };
-      }),
-      settings: {
-        binaryPath: "piper",
-        modelPath: "/models/voice.onnx",
-        preserveTimestampGaps: false,
-      },
-    });
-
-    expect(spawnMock).toHaveBeenCalledTimes(6);
-  });
-
-  it("preserves segment order when chunked synthesis includes silence segments", async () => {
-    const spawnMock = createMockSpawn();
-    const ffmpegCalls: string[][] = [];
-    setPiperSpawnForTest(spawnMock as never);
-    setPiperFileExistsForTest(() => true);
-    setPiperReadFileForTest(async () => createPcmWavBuffer(0.2));
-    setPiperFfmpegRunnerForTest(async (args) => {
-      ffmpegCalls.push(args);
-      return { stderr: "" };
-    });
-
-    await generateVoiceFromSegments({
-      segments: [
-        { id: 0, start: 0, end: 0.5, text: "... !!!" },
-        { id: 1, start: 1, end: 1.5, text: "Câu nói ở giữa" },
-        { id: 2, start: 2, end: 2.5, text: "???" },
-      ],
-      settings: {
-        binaryPath: "piper",
-        modelPath: "/models/voice.onnx",
-        preserveTimestampGaps: true,
-        alignmentMode: "strict",
-      },
-    });
-
-    const finalMixCall = ffmpegCalls.at(-1) ?? [];
-    const filterComplex =
-      finalMixCall[finalMixCall.indexOf("-filter_complex") + 1] ?? "";
-
-    expect(spawnMock).toHaveBeenCalledTimes(1);
-    expect(filterComplex.indexOf("adelay=0:all=1")).toBeLessThan(
-      filterComplex.indexOf("adelay=1000:all=1"),
-    );
-    expect(filterComplex.indexOf("adelay=1000:all=1")).toBeLessThan(
-      filterComplex.indexOf("adelay=2000:all=1"),
-    );
-  });
-
-  it("chunks large strict timeline mixes before the final absolute mix", async () => {
-    const spawnMock = createMockSpawn();
-    const ffmpegCalls: string[][] = [];
-    setPiperSpawnForTest(spawnMock as never);
-    setPiperFileExistsForTest(() => true);
-    setPiperReadFileForTest(async () => createPcmWavBuffer(0.2));
-    setPiperFfmpegRunnerForTest(async (args) => {
-      ffmpegCalls.push(args);
-      return { stderr: "" };
-    });
-
-    const result = await generateVoiceFromSegments({
-      segments: Array.from({ length: 450 }, (_, index) => ({
-        id: index,
-        start: index,
-        end: index + 0.5,
-        text: `Câu ${index}`,
-      })),
-      settings: {
-        binaryPath: "piper",
-        modelPath: "/models/voice.onnx",
-        preserveTimestampGaps: true,
-        alignmentMode: "strict",
-      },
-    });
-
-    const filterComplexes = ffmpegCalls
-      .map((args) => args[args.indexOf("-filter_complex") + 1])
-      .filter((value): value is string => Boolean(value));
-    const finalMix = filterComplexes.at(-1) ?? "";
-
-    expect(spawnMock).toHaveBeenCalledTimes(3);
-    expect(
-      filterComplexes.filter((filter) => filter.includes("amix=inputs=200")),
-    ).toHaveLength(2);
-    expect(
-      filterComplexes.filter((filter) => filter.includes("amix=inputs=50")),
-    ).toHaveLength(1);
-    expect(finalMix).toContain("amix=inputs=3");
-    expect(finalMix).toContain("adelay=0:all=1");
-    expect(finalMix).toContain("adelay=200000:all=1");
-    expect(finalMix).toContain("adelay=400000:all=1");
-    expect(result.alignment.processingChunks).toEqual([
-      {
-        index: 1,
-        segmentCount: 200,
-        start: 0,
-        end: 199.5,
-        durationSeconds: 199.5,
-      },
-      {
-        index: 2,
-        segmentCount: 200,
-        start: 200,
-        end: 399.5,
-        durationSeconds: 199.5,
-      },
-      {
-        index: 3,
-        segmentCount: 50,
-        start: 400,
-        end: 449.5,
-        durationSeconds: 49.5,
-      },
-    ]);
-  });
 });

@@ -1,5 +1,18 @@
 # OmniVideo Changelog
 
+## FAST-VIDEO-057 - Add VIP segment transcript retry and Vietnamese name guard
+
+- Bumped app version from `0.11.44` to `0.11.45` as a patch release for Workspace VIP segment review.
+- Added transcript retry selection inside Background Progress `Segments (...)` edit mode, allowing multiple completed VIP segments to be marked for transcript splitting and AI retranslation.
+- Added a transcript retry override helper that splits selected merged source segments by punctuation/timing, reindexes transcript segments, and feeds the corrected transcript back into VIP reruns.
+- Updated Workspace VIP reruns so transcript retry uses `transcriptOverrideJson` while keeping `translationMode=ai`, forcing translation to run again from the corrected transcript instead of reusing imported translated lines.
+- Hardened Vietnamese translation prompts and TTS normalization against Pinyin/latinized Chinese names such as `Zhūzhū` and `Xǔ Shí`.
+- Verification (FAST-VIDEO-057):
+  - `npm run test -- --run src/components/layout/topbar.test.ts src/features/workspace/workspace-canvas-panel.test.ts src/lib/workspace/vip-translation-correction-events.test.ts src/lib/multilingual-audio/transcript-segment-retry.test.ts src/lib/multilingual-audio/transcript-translation.test.ts src/app/api/audio/video-vip-processing/route.test.ts src/lib/multilingual-audio/video-vip-processing.test.ts` pass (7 files / 104 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+
 ## FAST-VIDEO-056 - Move VIP translation corrections into Background Progress
 
 - Bumped app version from `0.11.43` to `0.11.44` as a patch release for Workspace VIP correction UX.

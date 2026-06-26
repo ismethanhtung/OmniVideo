@@ -177,6 +177,7 @@
 
 ## Done
 
+- `FAST-VIDEO-057` - Add VIP segment transcript retry and Vietnamese name guard
 - `FAST-VIDEO-056` - Move VIP translation corrections into Background Progress
 - `FAST-VIDEO-055` - Add VIP translation correction rerun
 - `FAST-VIDEO-054` - Fix VIP background music render failure

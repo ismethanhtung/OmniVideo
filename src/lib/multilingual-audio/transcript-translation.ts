@@ -41,7 +41,7 @@ const DEFAULT_MAX_TRANSIENT_CHUNK_RETRIES = 4;
 const DEFAULT_TRANSIENT_CHUNK_RETRY_BASE_MS = 1000;
 const DEFAULT_TRANSIENT_CHUNK_RETRY_MAX_MS = 15000;
 const INVALID_JSON_SNIPPET_MAX_CHARS = 220;
-const TRANSLATION_PROMPT_VERSION = "transcript-translation-v3-compact-guide";
+const TRANSLATION_PROMPT_VERSION = "transcript-translation-v4-vietnamese-name-guard";
 const TRANSLATION_GUIDE_SOURCE_MAX_CHARS = 32000;
 const TRANSLATION_GUIDE_MAX_CHARS = 3500;
 const NEARBY_CONTEXT_SEGMENT_COUNT = 8;
@@ -321,7 +321,7 @@ function containsCjk(value: string) {
 }
 
 export function normalizeVietnameseTtsText(value: string) {
-    return value
+    return normalizePinyinToneMarkedNames(value)
         .replace(/\bwasabi\b/giu, "wa sa bi")
         .replace(/\bisothiocyanate\b/giu, "ai sô thio xai a nết")
         .replace(/\bmyrosinase\b/giu, "mai rô si nâyz")
@@ -338,6 +338,20 @@ export function normalizeVietnameseTtsText(value: string) {
         .replace(/(\d+(?:[.,]\d+)?)\s*%/gu, "$1 phần trăm")
         .replace(/\s{2,}/gu, " ")
         .trim();
+}
+
+const PINYIN_TONE_MARKED_TOKEN_RE =
+    /[A-Za-zĀāǍǎĒēĚěĪīǏǐŌōǑǒŪūǓǔǕǖǗǘǙǚǛǜÜü]+/gu;
+const PINYIN_TONE_MARK_RE =
+    /[ĀāǍǎĒēĚěĪīǏǐŌōǑǒŪūǓǔǕǖǗǘǙǚǛǜÜü]/u;
+
+function normalizePinyinToneMarkedNames(value: string) {
+    return value
+        .replace(/Zhū\s*zhū/giu, "Trư Trư")
+        .replace(/Xǔ\s+Shí/giu, "Hứa Thời")
+        .replace(PINYIN_TONE_MARKED_TOKEN_RE, (match) =>
+            PINYIN_TONE_MARK_RE.test(match) ? "người đó" : match,
+        );
 }
 
 const BUMPER_KEYWORDS =
@@ -621,6 +635,7 @@ function buildTranslationPrompt(input: {
         "Rules: preserve meaning, names, tone, timeline alignment, and segment IDs. Do not merge, split, reorder, or drop segments.",
         "Use the Translation guide as the main continuity source. Use Nearby context only for pronouns, names, relationships, and tone; do not output nearby context unless its IDs appear in Segments.",
         "Pronouns: resolve Chinese 他/她 from names, titles, actions, and guide. Female cues include 她/师妹/师姐/圣女/姑娘/小姐/女子/女修/仙子/美人/绝美. Male cues include 他/师兄/师弟/公子/少年/男子/男修. If unclear, avoid gendered Vietnamese pronouns.",
+        "Names for Vietnamese voice: never output Pinyin/latinized Chinese names or tone-marked romanization such as Zhūzhū, Xǔ Shí, Lǐ, Wáng. Convert Chinese names/titles to natural Vietnamese or Sino-Vietnamese when possible; if unsure, use a Vietnamese role/pronoun instead of Pinyin.",
         "Vietnamese style: concise spoken language that can fit the source timing. Short source lines need short Vietnamese. Avoid explanations and filler.",
         "TTS normalization: spell standalone numbers as Vietnamese words unless codes/measurements; expand units like 50cm -> 50 xen ti mét, 12kg -> 12 ki lô gam, 5ml -> 5 mi li lít; render wasabi -> wa sa bi, isothiocyanate -> ai sô thio xai a nết, myrosinase -> mai rô si nâyz, enzyme/enzym -> en zim.",
         'Production/channel bumper text like "YoYo Television Series Exclusive" should become a short neutral phrase such as "Phim ngắn."',
@@ -951,7 +966,7 @@ async function requestSingleSegmentPlainTextFallback(input: {
             {
                 role: "system",
                 content:
-                    "You are a translator. Return only Vietnamese translated text with no explanations or markdown. Keep gender pronouns consistent with Chinese context cues.",
+                    "You are a translator. Return only Vietnamese translated text with no explanations or markdown. Keep gender pronouns consistent with Chinese context cues. Never output Pinyin or tone-marked romanized Chinese names; use natural Vietnamese/Sino-Vietnamese names or Vietnamese pronouns.",
             },
             {
                 role: "user",
@@ -962,6 +977,7 @@ async function requestSingleSegmentPlainTextFallback(input: {
                     nearbyContext ? "Nearby context:" : "",
                     nearbyContext,
                     "Translate this one transcript segment into concise natural Vietnamese for TTS.",
+                    "Do not output Pinyin/latinized Chinese names. Convert names/titles to Vietnamese when possible; if unsure, use a Vietnamese role/pronoun.",
                     `Source text: ${input.segment.text}`,
                 ].join("\n"),
             },

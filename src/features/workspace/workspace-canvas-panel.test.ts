@@ -294,6 +294,11 @@ describe("WorkspaceCanvasPanel canvas interactions", () => {
         expect(source).toContain(
             "isWorkspaceVipTranslationCorrectionDetail(detail)",
         );
+        expect(source).toContain("buildTranscriptRetryOverride");
+        expect(source).toContain("vipTranscriptRetryOverridesByNodeId");
+        expect(source).toContain("Transcript retry mode enabled");
+        expect(source).toContain("skip STT, and run AI translation again");
+        expect(source).toContain("Selected transcript segment(s) could not be split");
         expect(source).toContain("window.addEventListener(");
         expect(source).toContain("No corrected VIP segment changes were found.");
         expect(source).toContain("Correction mode enabled");

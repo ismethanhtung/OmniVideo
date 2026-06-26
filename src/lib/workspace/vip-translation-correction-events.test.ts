@@ -7,6 +7,7 @@ describe("VIP translation correction events", () => {
         expect(
             isWorkspaceVipTranslationCorrectionDetail({
                 vipNodeId: "vip-node-1",
+                transcriptRetrySegmentIds: [0, 1],
                 segments: [
                     { id: 0, translatedText: "Nàng đẹp quá." },
                     { id: 1, translatedText: "Chúng ta đi thôi." },
@@ -32,6 +33,13 @@ describe("VIP translation correction events", () => {
             isWorkspaceVipTranslationCorrectionDetail({
                 vipNodeId: "vip-node-1",
                 segments: [{ id: "0", translatedText: "Nàng đẹp quá." }],
+            }),
+        ).toBe(false);
+        expect(
+            isWorkspaceVipTranslationCorrectionDetail({
+                vipNodeId: "vip-node-1",
+                transcriptRetrySegmentIds: [-1],
+                segments: [{ id: 0, translatedText: "Nàng đẹp quá." }],
             }),
         ).toBe(false);
     });
