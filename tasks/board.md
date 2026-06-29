@@ -9,6 +9,7 @@
 - (none)
 
 ## In Progress
+- `FAST-WORKSPACE-096` - Fix Background Progress segment render performance
 - `FAST-VIDEO-032` - Add subtitle display modes (Standard, Word Reveal, Karaoke) to Video Narrator and support alignment customization
 - `FAST-WORKSPACE-053` - Prioritize saved Video Tools setup over node defaults in VIP flow.
 - `FAST-WORKSPACE-052` - Add Seed Asset VIP Processing 2 for upload->storage->local flow.
@@ -177,6 +178,7 @@
 
 ## Done
 
+- `FAST-VIDEO-058` - Add VIP original vocals isolation
 - `FAST-VIDEO-057` - Add VIP segment transcript retry and Vietnamese name guard
 - `FAST-VIDEO-056` - Move VIP translation corrections into Background Progress
 - `FAST-VIDEO-055` - Add VIP translation correction rerun

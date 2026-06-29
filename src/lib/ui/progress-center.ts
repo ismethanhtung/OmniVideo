@@ -61,6 +61,7 @@ let snapshotCache: ProgressTask[] | null = null;
 let hydrated = false;
 
 const PROGRESS_TASKS_STORAGE_KEY = "omnivideo-progress-tasks";
+const PERSISTED_SEGMENT_LINE_LIMIT = 80;
 
 function getBrowserStorage() {
   try {
@@ -184,7 +185,9 @@ function persistProgressTasks() {
     return;
   }
 
-  const progressTasks = Array.from(tasks.values());
+  const progressTasks = Array.from(tasks.values()).map(
+    compactProgressTaskForStorage,
+  );
 
   try {
     if (progressTasks.length === 0) {
@@ -199,6 +202,61 @@ function persistProgressTasks() {
   } catch {
     // Browser storage is best-effort; progress tracking should keep working.
   }
+}
+
+function compactProgressTaskForStorage(task: ProgressTask): ProgressTask {
+  return {
+    ...task,
+    description: compactProgressDescriptionForStorage(task.description),
+    steps: task.steps.map((step) => ({
+      ...step,
+      description: compactProgressDescriptionForStorage(step.description),
+    })),
+  };
+}
+
+function compactProgressDescriptionForStorage(description?: string) {
+  if (!description || !/Segments\s*\(|SEGMENT_JSON /u.test(description)) {
+    return description;
+  }
+
+  const lines = description.split("\n");
+  const compacted: string[] = [];
+  let insideSegments = false;
+  let keptSegmentLines = 0;
+  let skippedSegmentLines = 0;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (/^Segments\s*\(/iu.test(trimmed)) {
+      insideSegments = true;
+      compacted.push(line);
+      continue;
+    }
+
+    const isSegmentLine =
+      insideSegments &&
+      (trimmed.startsWith("SEGMENT_JSON ") || /^\[[^\]]+\]\s+/u.test(trimmed));
+    if (!isSegmentLine) {
+      compacted.push(line);
+      continue;
+    }
+
+    if (keptSegmentLines < PERSISTED_SEGMENT_LINE_LIMIT) {
+      compacted.push(line);
+      keptSegmentLines += 1;
+    } else {
+      skippedSegmentLines += 1;
+    }
+  }
+
+  if (skippedSegmentLines > 0) {
+    compacted.push(
+      `Segment list compacted for storage: kept ${keptSegmentLines}, skipped ${skippedSegmentLines}. Reopen the current session result to review every segment.`,
+    );
+  }
+
+  return compacted.join("\n");
 }
 
 function clampProgress(value: number) {

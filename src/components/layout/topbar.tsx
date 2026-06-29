@@ -1,6 +1,7 @@
 "use client";
 
 import {
+    memo,
     useCallback,
     useEffect,
     useMemo,
@@ -62,6 +63,8 @@ type TopbarProps = {
 };
 
 const HIGH_PROGRESS_VOICE_SPEED_FACTOR = 1.35;
+const INITIAL_PROGRESS_SEGMENT_RENDER_LIMIT = 120;
+const PROGRESS_SEGMENT_RENDER_BATCH_SIZE = 120;
 
 export function Topbar({
     activeSection,
@@ -1858,20 +1861,24 @@ function ProgressTaskDetails({
     task: ProgressTask;
     now: number;
 }) {
+    const richStep = useMemo(
+        () =>
+            task.steps
+                .map((step) => ({
+                    step,
+                    detail: parseStepDescription(step.description),
+                }))
+                .find(
+                    ({ detail }) =>
+                        detail.metadataLines.length > 0 ||
+                        detail.timelineLines.length > 0,
+                ),
+        [task.steps],
+    );
+
     if (task.steps.length === 0) {
         return null;
     }
-
-    const richStep = task.steps
-        .map((step) => ({
-            step,
-            detail: parseStepDescription(step.description),
-        }))
-        .find(
-            ({ detail }) =>
-                detail.metadataLines.length > 0 ||
-                detail.timelineLines.length > 0,
-        );
 
     return (
         <div
@@ -1902,7 +1909,7 @@ function ProgressTaskDetails({
                     </div>
                 </div>
                 {richStep ? (
-                    <ProgressRichStepPanel
+                    <MemoizedProgressRichStepPanel
                         step={richStep.step}
                         detail={richStep.detail}
                     />
@@ -1911,7 +1918,7 @@ function ProgressTaskDetails({
             {richStep?.detail.timelineHeader &&
             richStep.detail.timelineLines.length > 0 ? (
                 <div className="relative min-h-0">
-                    <ProgressSegmentsPanel
+                    <MemoizedProgressSegmentsPanel
                         step={richStep.step}
                         header={richStep.detail.timelineHeader}
                         lines={richStep.detail.timelineLines}
@@ -1975,6 +1982,14 @@ function ProgressRichStepPanel({
     );
 }
 
+const MemoizedProgressRichStepPanel = memo(
+    ProgressRichStepPanel,
+    (previous, next) =>
+        previous.step.id === next.step.id &&
+        previous.step.status === next.step.status &&
+        previous.detail === next.detail,
+);
+
 function ProgressSegmentsPanel({
     step,
     header,
@@ -1993,48 +2008,83 @@ function ProgressSegmentsPanel({
         transcriptRetrySelectedBySegmentId,
         setTranscriptRetrySelectedBySegmentId,
     ] = useState<Record<string, boolean | undefined>>({});
-    const segments = lines.map(parseProgressSegmentLine);
+    const [visibleSegmentCount, setVisibleSegmentCount] = useState(
+        INITIAL_PROGRESS_SEGMENT_RENDER_LIMIT,
+    );
+    const segments = useMemo(
+        () => lines.map(parseProgressSegmentLine),
+        [lines],
+    );
     const vipStepId = step.id.split(":")[0] ?? "";
     const vipNodeId = vipStepId.startsWith("vip-")
         ? vipStepId.slice("vip-".length)
         : "";
-    const editableSegments = segments.filter(
-        (
-            segment,
-        ): segment is ParsedProgressSegment & {
-            id: number;
-        } => typeof segment.id === "number",
+    const editableSegments = useMemo(
+        () =>
+            segments.filter(
+                (
+                    segment,
+                ): segment is ParsedProgressSegment & {
+                    id: number;
+                } => typeof segment.id === "number",
+            ),
+        [segments],
     );
     const canEditVipTranslations =
         step.status === "success" &&
         vipNodeId.length > 0 &&
         editableSegments.length > 0;
-    const segmentSignature = lines.join("\n");
-    const changedCount = editableSegments.filter((segment) => {
-        const edited = editedTextBySegmentId[String(segment.id)];
-        return (
-            edited !== undefined &&
-            edited.trim() !== segment.translatedText.trim()
-        );
-    }).length;
-    const hasEmptyEditedText = editableSegments.some((segment) => {
-        const edited = editedTextBySegmentId[String(segment.id)];
-        return edited !== undefined && edited.trim().length === 0;
-    });
-    const selectedTranscriptRetryIds = editableSegments
-        .filter(
-            (segment) =>
-                transcriptRetrySelectedBySegmentId[String(segment.id)] === true,
-        )
-        .map((segment) => segment.id);
+    const visibleSegments = useMemo(
+        () =>
+            isEditingTranslations
+                ? segments
+                : segments.slice(0, visibleSegmentCount),
+        [isEditingTranslations, segments, visibleSegmentCount],
+    );
+    const hiddenSegmentCount = Math.max(
+        0,
+        segments.length - visibleSegments.length,
+    );
+    const changedCount = useMemo(
+        () =>
+            editableSegments.filter((segment) => {
+                const edited = editedTextBySegmentId[String(segment.id)];
+                return (
+                    edited !== undefined &&
+                    edited.trim() !== segment.translatedText.trim()
+                );
+            }).length,
+        [editableSegments, editedTextBySegmentId],
+    );
+    const hasEmptyEditedText = useMemo(
+        () =>
+            editableSegments.some((segment) => {
+                const edited = editedTextBySegmentId[String(segment.id)];
+                return edited !== undefined && edited.trim().length === 0;
+            }),
+        [editableSegments, editedTextBySegmentId],
+    );
+    const selectedTranscriptRetryIds = useMemo(
+        () =>
+            editableSegments
+                .filter(
+                    (segment) =>
+                        transcriptRetrySelectedBySegmentId[
+                            String(segment.id)
+                        ] === true,
+                )
+                .map((segment) => segment.id),
+        [editableSegments, transcriptRetrySelectedBySegmentId],
+    );
 
     useEffect(() => {
         setIsEditingTranslations(false);
         setEditedTextBySegmentId({});
         setTranscriptRetrySelectedBySegmentId({});
-    }, [step.id, segmentSignature]);
+        setVisibleSegmentCount(INITIAL_PROGRESS_SEGMENT_RENDER_LIMIT);
+    }, [step.id, lines]);
 
-    const updateEditedSegmentText = (segmentId: number, value: string) => {
+    const updateEditedSegmentText = useCallback((segmentId: number, value: string) => {
         setEditedTextBySegmentId((current) => {
             const next = { ...current };
             const original = editableSegments.find(
@@ -2047,16 +2097,29 @@ function ProgressSegmentsPanel({
             }
             return next;
         });
-    };
+    }, [editableSegments]);
 
-    const toggleTranscriptRetrySegment = (segmentId: number) => {
+    const toggleTranscriptRetrySegment = useCallback((segmentId: number) => {
         setTranscriptRetrySelectedBySegmentId((current) => ({
             ...current,
             [String(segmentId)]: !current[String(segmentId)],
         }));
-    };
+    }, []);
 
-    const runCorrectedVip = () => {
+    const showMoreSegments = useCallback(() => {
+        setVisibleSegmentCount((current) =>
+            Math.min(
+                segments.length,
+                current + PROGRESS_SEGMENT_RENDER_BATCH_SIZE,
+            ),
+        );
+    }, [segments.length]);
+
+    const showAllSegments = useCallback(() => {
+        setVisibleSegmentCount(segments.length);
+    }, [segments.length]);
+
+    const runCorrectedVip = useCallback(() => {
         if (
             !canEditVipTranslations ||
             changedCount === 0 ||
@@ -2074,9 +2137,16 @@ function ProgressSegmentsPanel({
             })),
         });
         setIsEditingTranslations(false);
-    };
+    }, [
+        canEditVipTranslations,
+        changedCount,
+        editableSegments,
+        editedTextBySegmentId,
+        hasEmptyEditedText,
+        vipNodeId,
+    ]);
 
-    const runTranscriptRetry = () => {
+    const runTranscriptRetry = useCallback(() => {
         if (
             !canEditVipTranslations ||
             selectedTranscriptRetryIds.length === 0
@@ -2094,7 +2164,13 @@ function ProgressSegmentsPanel({
             })),
         });
         setIsEditingTranslations(false);
-    };
+    }, [
+        canEditVipTranslations,
+        editableSegments,
+        editedTextBySegmentId,
+        selectedTranscriptRetryIds,
+        vipNodeId,
+    ]);
 
     return (
         <section className="flex max-h-[32rem] min-h-0 flex-col border border-main bg-main xl:absolute xl:inset-0 xl:max-h-none">
@@ -2114,6 +2190,11 @@ function ProgressSegmentsPanel({
                             {hasEmptyEditedText
                                 ? "Empty segment"
                                 : `${changedCount} edited · ${selectedTranscriptRetryIds.length} retry`}
+                        </span>
+                    ) : null}
+                    {!isEditingTranslations && hiddenSegmentCount > 0 ? (
+                        <span className="border border-main bg-main px-2 py-1 text-[10px] font-semibold text-muted">
+                            Showing {visibleSegments.length}/{segments.length}
                         </span>
                     ) : null}
                     <button
@@ -2183,7 +2264,7 @@ function ProgressSegmentsPanel({
                 </div>
             </div>
             <div className="min-h-0 flex-1 divide-y divide-soft overflow-y-auto">
-                {segments.map((segment, index) => {
+                {visibleSegments.map((segment, index) => {
                     const editableSegmentId =
                         typeof segment.id === "number" ? segment.id : null;
                     const isHighSpeed =
@@ -2302,10 +2383,43 @@ function ProgressSegmentsPanel({
                         </article>
                     );
                 })}
+                {!isEditingTranslations && hiddenSegmentCount > 0 ? (
+                    <div className="flex flex-wrap items-center justify-between gap-2 bg-secondary/15 px-3 py-2">
+                        <span className="text-[10px] text-muted">
+                            {hiddenSegmentCount} more segment(s) hidden to keep
+                            Background Progress responsive.
+                        </span>
+                        <div className="flex flex-wrap gap-1.5">
+                            <button
+                                type="button"
+                                onClick={showMoreSegments}
+                                className="border border-main bg-main px-2 py-1 text-[10px] font-semibold text-main hover:bg-secondary"
+                            >
+                                Show more
+                            </button>
+                            <button
+                                type="button"
+                                onClick={showAllSegments}
+                                className="border border-main bg-main px-2 py-1 text-[10px] font-semibold text-main hover:bg-secondary"
+                            >
+                                Show all
+                            </button>
+                        </div>
+                    </div>
+                ) : null}
             </div>
         </section>
     );
 }
+
+const MemoizedProgressSegmentsPanel = memo(
+    ProgressSegmentsPanel,
+    (previous, next) =>
+        previous.step.id === next.step.id &&
+        previous.step.status === next.step.status &&
+        previous.header === next.header &&
+        previous.lines === next.lines,
+);
 
 function TaskProgressBar({ task }: { task: ProgressTask }) {
     const isFinished = task.status === "success" || task.status === "failed";

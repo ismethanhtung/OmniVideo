@@ -84,6 +84,7 @@ describe("workspace seed templates", () => {
         expect(remoteVipNode?.config.voiceRenderExecutionMode).toBe(
             "remote-voice-render",
         );
+        expect(remoteVipNode?.config.originalAudioSourceMode).toBe("source");
         expect(remoteSeed?.buildGraph().nodes.map((node) => node.templateNodeType)).toEqual(
             expect.arrayContaining([
                 "source.file",

@@ -227,6 +227,52 @@ describe("progress center", () => {
     ]);
   });
 
+  it("compacts very large segment descriptions only for persisted storage", () => {
+    const storage = createLocalStorageMock();
+    vi.stubGlobal("window", { localStorage: storage });
+    const segmentLines = Array.from(
+      { length: 130 },
+      (_, index) =>
+        `SEGMENT_JSON ${JSON.stringify({
+          id: index,
+          start: index,
+          end: index + 1,
+          translatedText: `Line ${index}`,
+        })}`,
+    );
+    const description = [
+      "VIP complete.",
+      "Metadata:",
+      "File: done.mp4",
+      "Segments (130 total):",
+      ...segmentLines,
+    ].join("\n");
+
+    const taskId = startProgressTask({
+      id: "workspace-large-vip",
+      title: "Workspace flow",
+      scope: "system",
+      steps: [{ id: "vip", title: "VIP" }],
+    });
+    finishProgressStep({
+      taskId,
+      stepId: "vip",
+      status: "success",
+      description,
+    });
+
+    expect(getProgressTasksSnapshot()[0].steps[0].description).toContain(
+      '"id":129',
+    );
+    const persisted = storage.getItem("omnivideo-progress-tasks") ?? "";
+    const persistedDescription = JSON.parse(persisted)[0].steps[0]
+      .description as string;
+    expect(persistedDescription).toContain("Segment list compacted for storage");
+    expect(persistedDescription).toContain('"id":79');
+    expect(persistedDescription).not.toContain('"id":80');
+    expect(persistedDescription).not.toContain('"id":129');
+  });
+
   it("does not move finishedAt when polling finishes an already completed step again", () => {
     const nowSpy = vi.spyOn(Date, "now");
     try {

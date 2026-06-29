@@ -430,6 +430,54 @@ describe("VIP final render filter order", () => {
         );
     });
 
+    it("uses an isolated original audio stem before background music inputs", () => {
+        const args = buildVipFinalRenderArgs({
+            videoPath: "/tmp/source.mp4",
+            voicePath: "/tmp/voice.wav",
+            originalAudioPath: "/tmp/original-vocals.wav",
+            subtitleAssPath: "/tmp/subtitles.ass",
+            outputPath: "/tmp/output.mp4",
+            speedFactor: 0.8,
+            mirrorEnabled: true,
+            blurRegions: [],
+            originalAudioVolume: 0.2,
+            voiceVolume: 1,
+            timelineDurationSeconds: 30,
+            backgroundMusic: {
+                enabled: true,
+                volume: 0.25,
+                tracks: [
+                    {
+                        source: "/musics/one.mp3",
+                        label: "One",
+                        filePath: "/tmp/music-one.mp3",
+                        startSeconds: 0,
+                        volume: 1,
+                        repeat: false,
+                    },
+                ],
+            },
+        });
+        const filter = args[args.indexOf("-filter_complex") + 1] ?? "";
+
+        expect(args).toEqual(
+            expect.arrayContaining([
+                "-i",
+                "/tmp/source.mp4",
+                "-i",
+                "/tmp/voice.wav",
+                "-i",
+                "/tmp/original-vocals.wav",
+                "-i",
+                "/tmp/music-one.mp3",
+            ]),
+        );
+        expect(filter).toContain("[2:a]atempo=0.8,volume=0.200[orig]");
+        expect(filter).toContain(
+            "[3:a]atrim=duration=30.000,asetpts=PTS-STARTPTS,volume=0.250[music0]",
+        );
+    });
+
     it("mixes repeat and scheduled background music tracks into VIP audio", () => {
         const args = buildVipFinalRenderArgs({
             videoPath: "/tmp/source.mp4",
@@ -1101,6 +1149,81 @@ describe("VIP processing stage checkpoints", () => {
         expect(result.voice.byteLength).toBe(11);
         expect(result.stages.voiceDurationMs).toBe(7);
         expect(result.stages.finalRenderDurationMs).toBe(8);
+    });
+
+    it("isolates source vocals before delegating EC2 voice/render when requested", async () => {
+        mockedRunRemoteVideoVipVoiceRender.mockResolvedValueOnce({
+            videoBytes: Buffer.from("remote-voice-render-video"),
+            mimeType: "video/mp4",
+            extension: "mp4",
+            fileName: "source-done.mp4",
+            byteLength: 25,
+            generationDurationMs: 20,
+            voice: {
+                mimeType: "audio/wav",
+                extension: "wav",
+                fileName: "voice.wav",
+                byteLength: 11,
+                segmentCount: 1,
+                generationDurationMs: 7,
+                alignment: {
+                    mode: "timeline",
+                    chunks: 1,
+                    targetDurationSeconds: 1,
+                },
+                settings: { binaryPath: "piper", modelPath: "" },
+                provider: { name: "piper", mode: "local-cli" },
+            },
+            stages: { voiceDurationMs: 7, finalRenderDurationMs: 8 },
+            mix: {
+                originalAudioVolume: 0.2,
+                originalAudioSourceMode: "vocals",
+                originalAudioStemByteLength: 6,
+                voiceVolume: 1,
+            },
+        });
+        const runners = createStageRunners();
+        const isolateVocals = vi.fn(async () => ({
+            bytes: Buffer.from("vocals"),
+            mimeType: "audio/wav",
+            fileName: "vocals.wav",
+            byteLength: 6,
+            provider: "replicate" as const,
+            model: "soykertje/spleeter:test",
+        }));
+
+        await runVideoVipProcessing({
+            fileName: "source.mp4",
+            fileSizeBytes: 3,
+            fileBytes: new Uint8Array([1, 2, 3]),
+            originalAudioVolume: 0.2,
+            originalAudioSourceMode: "vocals",
+            voiceRenderExecutionMode: "remote-voice-render",
+            remoteVoiceRenderEndpoint: "http://worker.example",
+            stageRunners: {
+                ...runners,
+                isolateVocals,
+            },
+            omitVideoBase64: true,
+        });
+
+        expect(isolateVocals).toHaveBeenCalledWith(
+            expect.objectContaining({
+                sourceFileName: "source.mp4",
+                sourceVideoBytes: new Uint8Array([1, 2, 3]),
+            }),
+        );
+        expect(mockedRunRemoteVideoVipVoiceRender).toHaveBeenCalledWith(
+            expect.objectContaining({
+                originalAudioVolume: 0.2,
+                originalAudioSourceMode: "vocals",
+                originalAudioStem: expect.objectContaining({
+                    byteLength: 6,
+                    fileName: "vocals.wav",
+                }),
+            }),
+            expect.any(Object),
+        );
     });
 
     it("persists remote worker upload progress in VIP checkpoints", async () => {

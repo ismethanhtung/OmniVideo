@@ -29,6 +29,12 @@ import {
     type VoiceGenerationResult,
     type VoiceGenerationSettings,
 } from "@/lib/multilingual-audio/types";
+import {
+    isolateSourceVocalsWithReplicate,
+    normalizeVipOriginalAudioSourceMode,
+    type VipOriginalAudioSourceMode,
+    type VipOriginalAudioStem,
+} from "@/lib/multilingual-audio/source-vocal-isolation";
 import type { RemoteVipWorkerProgress } from "@/lib/multilingual-audio/remote-vip-worker";
 import { buildVideoDubbingVoiceSegments } from "@/lib/multilingual-audio/video-dubbing";
 import { generateVietnameseVideoMetadata } from "@/lib/multilingual-audio/video-metadata";
@@ -134,6 +140,7 @@ type VipStageRunners = {
     transcribe: typeof runChineseVideoTranscription;
     translate: typeof translateTranscriptSegments;
     generateVoice: typeof generateVoiceFromSegments;
+    isolateVocals: typeof isolateSourceVocalsWithReplicate;
     render: typeof renderVipCompositeVideo;
     generateMetadata: typeof generateVietnameseVideoMetadata;
 };
@@ -364,6 +371,7 @@ export type VideoVipProcessingInput = {
     translationRateLimit?: AiProviderRateLimit;
     ttsSettings?: Partial<VoiceGenerationSettings>;
     originalAudioVolume?: number;
+    originalAudioSourceMode?: VipOriginalAudioSourceMode;
     voiceVolume?: number;
     videoSpeedFactor?: number;
     renderPreset?: VipRenderPreset;
@@ -438,6 +446,8 @@ export type VideoVipVoiceRenderInput = {
     translation: TranscriptTranslationResult;
     ttsSettings?: Partial<VoiceGenerationSettings>;
     originalAudioVolume?: number;
+    originalAudioSourceMode?: VipOriginalAudioSourceMode;
+    originalAudioStem?: VipOriginalAudioStem;
     voiceVolume?: number;
     videoSpeedFactor?: number;
     renderPreset?: VipRenderPreset;
@@ -466,6 +476,8 @@ export type VideoVipVoiceRenderResult = {
     >;
     mix: {
         originalAudioVolume: number;
+        originalAudioSourceMode?: VipOriginalAudioSourceMode;
+        originalAudioStemByteLength?: number;
         voiceVolume: number;
     };
 };
@@ -479,6 +491,8 @@ export type VideoVipRemoteRenderInput = {
     voiceAudioBase64: string;
     translatedSegments: TranscriptTranslationResult["translatedSegments"];
     originalAudioVolume?: number;
+    originalAudioSourceMode?: VipOriginalAudioSourceMode;
+    originalAudioStem?: VipOriginalAudioStem;
     voiceVolume?: number;
     videoSpeedFactor?: number;
     renderPreset?: VipRenderPreset;
@@ -503,6 +517,8 @@ export type VideoVipRemoteRenderResult = {
     stages: Pick<VideoVipProcessingResult["stages"], "finalRenderDurationMs">;
     mix: {
         originalAudioVolume: number;
+        originalAudioSourceMode?: VipOriginalAudioSourceMode;
+        originalAudioStemByteLength?: number;
         voiceVolume: number;
     };
 };
@@ -694,6 +710,9 @@ function buildVipCheckpointFingerprint(input: VideoVipProcessingInput) {
             ttsSettings: input.ttsSettings,
             voiceRenderExecutionMode: input.voiceRenderExecutionMode ?? "local",
             originalAudioVolume: input.originalAudioVolume,
+            originalAudioSourceMode: normalizeVipOriginalAudioSourceMode(
+                input.originalAudioSourceMode,
+            ),
             voiceVolume: input.voiceVolume,
             videoSpeedFactor: input.videoSpeedFactor,
             renderPreset: normalizeRenderPreset(input.renderPreset),
@@ -892,6 +911,55 @@ function logVipEvent(
         event,
         ...data,
     });
+}
+
+async function resolveVipOriginalAudioStem(input: {
+    runId: string;
+    sourceFileName: string;
+    sourceMimeType?: string;
+    sourceVideoBytes: Uint8Array;
+    originalAudioVolume: number;
+    originalAudioSourceMode?: VipOriginalAudioSourceMode;
+    isolateVocals: VipStageRunners["isolateVocals"];
+}) {
+    const originalAudioSourceMode = normalizeVipOriginalAudioSourceMode(
+        input.originalAudioSourceMode,
+    );
+    if (
+        originalAudioSourceMode !== "vocals" ||
+        input.originalAudioVolume <= 0.0001
+    ) {
+        return undefined;
+    }
+
+    const startedAt = Date.now();
+    logVipEvent(input.runId, "stage-start", {
+        stage: "source-vocals-isolation",
+        sourceFileSizeBytes: input.sourceVideoBytes.byteLength,
+        originalAudioSourceMode,
+    });
+    try {
+        const stem = await input.isolateVocals({
+            sourceVideoBytes: input.sourceVideoBytes,
+            sourceFileName: input.sourceFileName,
+            sourceMimeType: input.sourceMimeType,
+        });
+        logVipEvent(input.runId, "stage-success", {
+            stage: "source-vocals-isolation",
+            durationMs: Date.now() - startedAt,
+            byteLength: stem.byteLength,
+            mimeType: stem.mimeType,
+            model: stem.model,
+        });
+        return stem;
+    } catch (error) {
+        logVipEvent(input.runId, "stage-failed", {
+            stage: "source-vocals-isolation",
+            durationMs: Date.now() - startedAt,
+            error: summarizeVipError(error),
+        });
+        throw error;
+    }
 }
 
 function getReusableCheckpointStages(state: VipCheckpointState) {
@@ -1233,6 +1301,7 @@ function buildEmptyAssContent(input: { playResX?: number; playResY?: number }) {
 export function buildVipFinalRenderArgs(input: {
     videoPath: string;
     voicePath: string;
+    originalAudioPath?: string;
     subtitleAssPath: string;
     subtitleFontsDir?: string;
     textOverlayAssPath?: string;
@@ -1330,6 +1399,8 @@ export function buildVipFinalRenderArgs(input: {
 
     const atempo = buildAtempoFilters(clampedSpeed).join(",");
     const shouldMixOriginalAudio = input.originalAudioVolume > 0.0001;
+    const originalAudioInputIndex = input.originalAudioPath ? 2 : 0;
+    const backgroundMusicInputOffset = input.originalAudioPath ? 3 : 2;
     const backgroundMusicTracks =
         input.backgroundMusic?.enabled === true
             ? input.backgroundMusic.tracks.filter((track) => {
@@ -1345,8 +1416,8 @@ export function buildVipFinalRenderArgs(input: {
     if (shouldMixOriginalAudio) {
         audioParts.push(
             atempo
-                ? `[0:a]${atempo},volume=${input.originalAudioVolume.toFixed(3)}[orig]`
-                : `[0:a]volume=${input.originalAudioVolume.toFixed(3)}[orig]`,
+                ? `[${originalAudioInputIndex}:a]${atempo},volume=${input.originalAudioVolume.toFixed(3)}[orig]`
+                : `[${originalAudioInputIndex}:a]volume=${input.originalAudioVolume.toFixed(3)}[orig]`,
         );
     }
     const shouldMixAudio = shouldMixOriginalAudio || backgroundMusicTracks.length > 0;
@@ -1366,7 +1437,7 @@ export function buildVipFinalRenderArgs(input: {
         }
     }
     backgroundMusicTracks.forEach((track, index) => {
-        const inputIndex = index + 2;
+        const inputIndex = index + backgroundMusicInputOffset;
         const musicLabel = `music${index}`;
         const relativeStartSeconds = Math.max(
             0,
@@ -1457,6 +1528,13 @@ export function buildVipFinalRenderArgs(input: {
             startSeconds: input.voiceStartSeconds,
             durationSeconds: input.voiceDurationSeconds,
         }),
+        ...(input.originalAudioPath
+            ? buildFfmpegInputArgs({
+                  filePath: input.originalAudioPath,
+                  startSeconds: input.sourceStartSeconds,
+                  durationSeconds: input.sourceDurationSeconds,
+              })
+            : []),
         ...backgroundMusicTracks.flatMap((track) => [
             ...(track.repeat ? ["-stream_loop", "-1"] : []),
             "-i",
@@ -1749,10 +1827,22 @@ async function concatRenderedChunks(input: {
     });
 }
 
+function safeOriginalAudioStemExtension(stem: VipOriginalAudioStem) {
+    const fromName = stem.fileName.split(".").pop()?.toLowerCase() ?? "";
+    if (/^[a-z0-9]{2,6}$/u.test(fromName)) return fromName;
+    if (stem.mimeType.includes("mpeg") || stem.mimeType.includes("mp3")) {
+        return "mp3";
+    }
+    if (stem.mimeType.includes("ogg")) return "ogg";
+    if (stem.mimeType.includes("aac")) return "aac";
+    return "wav";
+}
+
 export async function renderVipCompositeVideo(input: {
     sourceVideoBytes: Uint8Array;
     sourceFileName: string;
     voiceBytes: Buffer;
+    originalAudioStem?: VipOriginalAudioStem;
     translatedSegments: TranscriptTranslationResult["translatedSegments"];
     speedFactor: number;
     mirrorEnabled: boolean;
@@ -1768,6 +1858,14 @@ export async function renderVipCompositeVideo(input: {
     const workDir = path.join(tmpdir(), `omnivideo-vip-${randomUUID()}`);
     const inputPath = path.join(workDir, "source.mp4");
     const voicePath = path.join(workDir, "voice.wav");
+    const originalAudioPath = input.originalAudioStem
+        ? path.join(
+              workDir,
+              `original-vocals.${safeOriginalAudioStemExtension(
+                  input.originalAudioStem,
+              )}`,
+          )
+        : undefined;
     const assPath = path.join(workDir, "subtitles.ass");
     const textOverlayAssPath =
         input.textOverlays?.enabled === true &&
@@ -1780,6 +1878,9 @@ export async function renderVipCompositeVideo(input: {
         await mkdir(workDir, { recursive: true });
         await writeFile(inputPath, input.sourceVideoBytes);
         await writeFile(voicePath, input.voiceBytes);
+        if (originalAudioPath && input.originalAudioStem) {
+            await writeFile(originalAudioPath, input.originalAudioStem.bytes);
+        }
         const probedDimensions = await probeVideoDimensions(inputPath);
         const subtitleFontsDir = await prepareVipSubtitleFontsDir({
             workDir,
@@ -1878,6 +1979,7 @@ export async function renderVipCompositeVideo(input: {
                         args: buildVipFinalRenderArgs({
                             videoPath: inputPath,
                             voicePath,
+                            originalAudioPath,
                             subtitleAssPath: chunkAssPath,
                             subtitleFontsDir,
                             textOverlayAssPath: hasTextOverlay
@@ -1922,6 +2024,7 @@ export async function renderVipCompositeVideo(input: {
                 args: buildVipFinalRenderArgs({
                     videoPath: inputPath,
                     voicePath,
+                    originalAudioPath,
                     subtitleAssPath: assPath,
                     subtitleFontsDir,
                     textOverlayAssPath: hasTextOverlay
@@ -2031,6 +2134,9 @@ export async function runVideoVipVoiceRender(
         input.originalAudioVolume,
         DEFAULT_VIP_ORIGINAL_AUDIO_VOLUME,
     );
+    const originalAudioSourceMode = normalizeVipOriginalAudioSourceMode(
+        input.originalAudioSourceMode,
+    );
     const voiceVolume = normalizeVolume(input.voiceVolume, 1);
     const backgroundMusic = normalizeVideoBackgroundMusicConfig(
         input.backgroundMusic,
@@ -2048,6 +2154,8 @@ export async function runVideoVipVoiceRender(
         textOverlayEnabled: input.textOverlays?.enabled === true,
         renderPreset,
         originalAudioVolume,
+        originalAudioSourceMode,
+        originalAudioStemByteLength: input.originalAudioStem?.byteLength,
         voiceVolume,
         backgroundMusicTrackCount: backgroundMusic?.tracks.length ?? 0,
     });
@@ -2061,6 +2169,7 @@ export async function runVideoVipVoiceRender(
             sourceVideoBytes: input.fileBytes,
             sourceFileName: input.fileName,
             voiceBytes: Buffer.from(voice.audioBase64, "base64"),
+            originalAudioStem: input.originalAudioStem,
             translatedSegments: enrichedSubtitleSegments,
             speedFactor: clampedSpeed,
             mirrorEnabled: input.mirrorEnabled === true,
@@ -2114,6 +2223,8 @@ export async function runVideoVipVoiceRender(
         },
         mix: {
             originalAudioVolume,
+            originalAudioSourceMode,
+            originalAudioStemByteLength: input.originalAudioStem?.byteLength,
             voiceVolume,
         },
     };
@@ -2148,6 +2259,9 @@ export async function runVideoVipRemoteRender(
         input.originalAudioVolume,
         DEFAULT_VIP_ORIGINAL_AUDIO_VOLUME,
     );
+    const originalAudioSourceMode = normalizeVipOriginalAudioSourceMode(
+        input.originalAudioSourceMode,
+    );
     const voiceVolume = normalizeVolume(input.voiceVolume, 1);
     const backgroundMusic = normalizeVideoBackgroundMusicConfig(
         input.backgroundMusic,
@@ -2168,6 +2282,8 @@ export async function runVideoVipRemoteRender(
         textOverlayEnabled: input.textOverlays?.enabled === true,
         renderPreset,
         originalAudioVolume,
+        originalAudioSourceMode,
+        originalAudioStemByteLength: input.originalAudioStem?.byteLength,
         voiceVolume,
         backgroundMusicTrackCount: backgroundMusic?.tracks.length ?? 0,
     });
@@ -2177,6 +2293,7 @@ export async function runVideoVipRemoteRender(
             sourceVideoBytes: input.fileBytes,
             sourceFileName: input.fileName,
             voiceBytes: Buffer.from(input.voiceAudioBase64, "base64"),
+            originalAudioStem: input.originalAudioStem,
             translatedSegments: input.translatedSegments,
             speedFactor: clampedSpeed,
             mirrorEnabled: input.mirrorEnabled === true,
@@ -2218,6 +2335,8 @@ export async function runVideoVipRemoteRender(
         },
         mix: {
             originalAudioVolume,
+            originalAudioSourceMode,
+            originalAudioStemByteLength: input.originalAudioStem?.byteLength,
             voiceVolume,
         },
     };
@@ -2265,6 +2384,9 @@ export async function runVideoVipProcessing(
             input.originalAudioVolume,
             DEFAULT_VIP_ORIGINAL_AUDIO_VOLUME,
         ),
+        originalAudioSourceMode: normalizeVipOriginalAudioSourceMode(
+            input.originalAudioSourceMode,
+        ),
         voiceVolume: normalizeVolume(input.voiceVolume, 1),
         backgroundMusicTrackCount: backgroundMusic?.tracks.length ?? 0,
         checkpointEnabled: Boolean(input.checkpointKey),
@@ -2273,6 +2395,8 @@ export async function runVideoVipProcessing(
         transcribe: input.stageRunners?.transcribe ?? runChineseVideoTranscription,
         translate: input.stageRunners?.translate ?? translateTranscriptSegments,
         generateVoice: input.stageRunners?.generateVoice ?? generateVoiceFromSegments,
+        isolateVocals:
+            input.stageRunners?.isolateVocals ?? isolateSourceVocalsWithReplicate,
         render: input.stageRunners?.render ?? renderVipCompositeVideo,
         generateMetadata:
             input.stageRunners?.generateMetadata ?? generateVietnameseVideoMetadata,
@@ -2558,6 +2682,18 @@ export async function runVideoVipProcessing(
             input.originalAudioVolume,
             DEFAULT_VIP_ORIGINAL_AUDIO_VOLUME,
         );
+        const originalAudioSourceMode = normalizeVipOriginalAudioSourceMode(
+            input.originalAudioSourceMode,
+        );
+        const originalAudioStem = await resolveVipOriginalAudioStem({
+            runId,
+            sourceFileName: input.fileName,
+            sourceMimeType: input.mimeType,
+            sourceVideoBytes: input.fileBytes,
+            originalAudioVolume,
+            originalAudioSourceMode,
+            isolateVocals: runners.isolateVocals,
+        });
         const voiceVolume = normalizeVolume(input.voiceVolume, 1);
         const remoteStartedAt = Date.now();
         logVipEvent(runId, "stage-start", {
@@ -2571,6 +2707,8 @@ export async function runVideoVipProcessing(
             speedFactor: clampedSpeed,
             renderPreset,
             originalAudioVolume,
+            originalAudioSourceMode,
+            originalAudioStemByteLength: originalAudioStem?.byteLength,
             voiceVolume,
             backgroundMusicTrackCount: backgroundMusic?.tracks.length ?? 0,
             alignmentMode:
@@ -2595,6 +2733,8 @@ export async function runVideoVipProcessing(
                     translation,
                     ttsSettings: input.ttsSettings,
                     originalAudioVolume,
+                    originalAudioSourceMode,
+                    originalAudioStem,
                     voiceVolume,
                     videoSpeedFactor: clampedSpeed,
                     renderPreset,
@@ -2873,6 +3013,18 @@ export async function runVideoVipProcessing(
             input.originalAudioVolume,
             DEFAULT_VIP_ORIGINAL_AUDIO_VOLUME,
         );
+        const originalAudioSourceMode = normalizeVipOriginalAudioSourceMode(
+            input.originalAudioSourceMode,
+        );
+        const originalAudioStem = await resolveVipOriginalAudioStem({
+            runId,
+            sourceFileName: input.fileName,
+            sourceMimeType: input.mimeType,
+            sourceVideoBytes: input.fileBytes,
+            originalAudioVolume,
+            originalAudioSourceMode,
+            isolateVocals: runners.isolateVocals,
+        });
         const voiceVolume = normalizeVolume(input.voiceVolume, 1);
         const remoteStartedAt = Date.now();
         logVipEvent(runId, "stage-start", {
@@ -2887,6 +3039,8 @@ export async function runVideoVipProcessing(
             speedFactor: clampedSpeed,
             renderPreset,
             originalAudioVolume,
+            originalAudioSourceMode,
+            originalAudioStemByteLength: originalAudioStem?.byteLength,
             voiceVolume,
             backgroundMusicTrackCount: backgroundMusic?.tracks.length ?? 0,
         });
@@ -2909,6 +3063,8 @@ export async function runVideoVipProcessing(
                     voiceAudioBase64: voice.audioBase64,
                     translatedSegments: enrichedSubtitleSegments,
                     originalAudioVolume,
+                    originalAudioSourceMode,
+                    originalAudioStem,
                     voiceVolume,
                     videoSpeedFactor: clampedSpeed,
                     renderPreset,
@@ -3191,7 +3347,23 @@ export async function runVideoVipProcessing(
         input.originalAudioVolume,
         DEFAULT_VIP_ORIGINAL_AUDIO_VOLUME,
     );
+    const originalAudioSourceMode = normalizeVipOriginalAudioSourceMode(
+        input.originalAudioSourceMode,
+    );
     const voiceVolume = normalizeVolume(input.voiceVolume, 1);
+    let originalAudioStem: VipOriginalAudioStem | undefined;
+    const getOriginalAudioStem = async () => {
+        originalAudioStem ??= await resolveVipOriginalAudioStem({
+            runId,
+            sourceFileName: input.fileName,
+            sourceMimeType: input.mimeType,
+            sourceVideoBytes: input.fileBytes,
+            originalAudioVolume,
+            originalAudioSourceMode,
+            isolateVocals: runners.isolateVocals,
+        });
+        return originalAudioStem;
+    };
 
     const finalRenderStartedAt = Date.now();
     const enrichedSubtitleSegments = enrichSubtitlesWithSpeechTimings(
@@ -3212,6 +3384,8 @@ export async function runVideoVipProcessing(
         textOverlayEnabled: input.textOverlays?.enabled === true,
         renderPreset,
         originalAudioVolume,
+        originalAudioSourceMode,
+        originalAudioStemByteLength: originalAudioStem?.byteLength,
         voiceVolume,
         backgroundMusicTrackCount: backgroundMusic?.tracks.length ?? 0,
     });
@@ -3240,6 +3414,7 @@ export async function runVideoVipProcessing(
                     sourceVideoBytes: input.fileBytes,
                     sourceFileName: input.fileName,
                     voiceBytes: Buffer.from(voice.audioBase64, "base64"),
+                    originalAudioStem: await getOriginalAudioStem(),
                     translatedSegments: enrichedSubtitleSegments,
                     speedFactor: clampedSpeed,
                     mirrorEnabled: input.mirrorEnabled === true,
@@ -3274,6 +3449,7 @@ export async function runVideoVipProcessing(
                 sourceVideoBytes: input.fileBytes,
                 sourceFileName: input.fileName,
                 voiceBytes: Buffer.from(voice.audioBase64, "base64"),
+                originalAudioStem: await getOriginalAudioStem(),
                 translatedSegments: enrichedSubtitleSegments,
                 speedFactor: clampedSpeed,
                 mirrorEnabled: input.mirrorEnabled === true,

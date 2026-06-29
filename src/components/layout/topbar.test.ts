@@ -21,6 +21,16 @@ describe("Topbar background progress modal", () => {
         expect(source).toContain("Hide source");
         expect(source).toContain("HIGH_PROGRESS_VOICE_SPEED_FACTOR");
         expect(source).toContain("parseProgressSegmentLine");
+        expect(source).toContain("MemoizedProgressSegmentsPanel");
+        expect(source).toContain("MemoizedProgressRichStepPanel");
+        expect(source).toContain("INITIAL_PROGRESS_SEGMENT_RENDER_LIMIT");
+        expect(source).toContain("PROGRESS_SEGMENT_RENDER_BATCH_SIZE");
+        expect(source).toContain("visibleSegments");
+        expect(source).toContain("hiddenSegmentCount");
+        expect(source).toContain("Show more");
+        expect(source).toContain("Show all");
+        expect(source).toContain("lines.map(parseProgressSegmentLine)");
+        expect(source).not.toContain("segmentSignature = lines.join");
         expect(source).toContain("relative min-h-0");
         expect(source).toContain("xl:absolute xl:inset-0 xl:max-h-none");
         expect(source).not.toContain("ResizeObserver");

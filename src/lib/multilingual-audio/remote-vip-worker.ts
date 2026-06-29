@@ -11,6 +11,7 @@ import {
     ChineseTranscriptionError,
     type TranscriptTranslationResult,
 } from "@/lib/multilingual-audio/types";
+import type { VipOriginalAudioStem } from "@/lib/multilingual-audio/source-vocal-isolation";
 import type {
     VideoVipVoiceRenderInput,
     VideoVipVoiceRenderResult,
@@ -225,6 +226,7 @@ export async function runRemoteVideoVipRender(
     const {
         fileBytes: sourceVideoBytes,
         voiceAudioBase64,
+        originalAudioStem,
         stageRunners: _stageRunners,
         ...payloadInput
     } = input;
@@ -239,6 +241,7 @@ export async function runRemoteVideoVipRender(
         sourceFileName: input.fileName,
         sourceMimeType: input.mimeType,
         voiceAudioBase64,
+        originalAudioStem,
     };
 
     return await postRemoteVipWorker<VideoVipRemoteRenderResult>(
@@ -253,6 +256,7 @@ export async function runRemoteVideoVipVoiceRender(
 ): Promise<VideoVipVoiceRenderResult> {
     const {
         fileBytes: sourceVideoBytes,
+        originalAudioStem,
         stageRunners: _stageRunners,
         ...payloadInput
     } = input;
@@ -266,6 +270,7 @@ export async function runRemoteVideoVipVoiceRender(
         sourceVideoBytes,
         sourceFileName: input.fileName,
         sourceMimeType: input.mimeType,
+        originalAudioStem,
     };
 
     return await postRemoteVipWorker<VideoVipVoiceRenderResult>(
@@ -280,6 +285,7 @@ type RemoteVipWorkerUpload = {
     sourceFileName: string;
     sourceMimeType?: string;
     voiceAudioBase64?: string;
+    originalAudioStem?: VipOriginalAudioStem;
     sourceUploadId?: string;
 };
 
@@ -310,6 +316,15 @@ function createRemoteVipWorkerFormData(input: RemoteVipWorkerUpload) {
                 type: "audio/wav",
             }),
             "voice.wav",
+        );
+    }
+    if (input.originalAudioStem) {
+        formData.set(
+            "originalAudioStemFile",
+            new Blob([Buffer.from(input.originalAudioStem.bytes)], {
+                type: input.originalAudioStem.mimeType || "audio/wav",
+            }),
+            input.originalAudioStem.fileName || "original-vocals.wav",
         );
     }
     return formData;
@@ -760,6 +775,9 @@ function buildRemoteVipWorkerMultipart(
     const voiceBytes = upload.voiceAudioBase64
         ? Buffer.from(upload.voiceAudioBase64, "base64")
         : undefined;
+    const originalAudioStemBytes = upload.originalAudioStem
+        ? Buffer.from(upload.originalAudioStem.bytes)
+        : undefined;
     const parts: Array<Buffer | { kind: "video"; bytes: Buffer }> = [
         buildMultipartField(boundary, "payloadJson", payloadJson, {
             contentType: "application/json; charset=utf-8",
@@ -787,6 +805,19 @@ function buildRemoteVipWorkerMultipart(
                 contentType: "audio/wav",
             }),
             voiceBytes,
+            Buffer.from("\r\n"),
+        );
+    }
+
+    if (originalAudioStemBytes && upload.originalAudioStem) {
+        parts.push(
+            buildMultipartFileHeader(boundary, {
+                fieldName: "originalAudioStemFile",
+                fileName:
+                    upload.originalAudioStem.fileName || "original-vocals.wav",
+                contentType: upload.originalAudioStem.mimeType || "audio/wav",
+            }),
+            originalAudioStemBytes,
             Buffer.from("\r\n"),
         );
     }

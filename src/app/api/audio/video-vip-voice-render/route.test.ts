@@ -378,6 +378,7 @@ describe("video vip voice/render worker API", () => {
                         translatedText: "Xin chào",
                     },
                 ],
+                originalAudioSourceMode: "vocals",
             }),
         );
         formData.set(
@@ -389,6 +390,12 @@ describe("video vip voice/render worker API", () => {
         formData.set(
             "voiceFile",
             new File([Buffer.from("voice")], "voice.wav", {
+                type: "audio/wav",
+            }),
+        );
+        formData.set(
+            "originalAudioStemFile",
+            new File([Buffer.from("vocals")], "vocals.wav", {
                 type: "audio/wav",
             }),
         );
@@ -413,6 +420,11 @@ describe("video vip voice/render worker API", () => {
                 fileName: "source.mp4",
                 fileBytes: new Uint8Array([4, 5, 6]),
                 voiceAudioBase64: Buffer.from("voice").toString("base64"),
+                originalAudioSourceMode: "vocals",
+                originalAudioStem: expect.objectContaining({
+                    byteLength: 6,
+                    fileName: "vocals.wav",
+                }),
                 backgroundMusic: expect.objectContaining({
                     enabled: true,
                     volume: 0.2,

@@ -22,6 +22,7 @@ import {
     type VoiceGenerationSettings,
     ChineseTranscriptionError,
 } from "@/lib/multilingual-audio/types";
+import { normalizeVipOriginalAudioSourceMode } from "@/lib/multilingual-audio/source-vocal-isolation";
 import { runVideoVipProcessing } from "@/lib/multilingual-audio/video-vip-processing";
 import {
     isSafePublicMusicSource,
@@ -1016,6 +1017,9 @@ export async function POST(request: Request) {
                 undefined,
             ttsSettings,
             originalAudioVolume: readOptionalNumber(formData, "originalAudioVolume"),
+            originalAudioSourceMode: normalizeVipOriginalAudioSourceMode(
+                readFormValue(formData, "originalAudioSourceMode").trim(),
+            ),
             voiceVolume: readOptionalNumber(formData, "voiceVolume"),
             videoSpeedFactor: readOptionalNumber(formData, "videoSpeedFactor"),
             renderPreset: readOptionalRenderPreset(formData),

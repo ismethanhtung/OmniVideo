@@ -324,6 +324,7 @@ describe("workspace graph helpers", () => {
             renderPreset: "veryfast",
             speedFactor: 0.75,
             originalAudioVolume: 0,
+            originalAudioSourceMode: "source",
         });
     });
 

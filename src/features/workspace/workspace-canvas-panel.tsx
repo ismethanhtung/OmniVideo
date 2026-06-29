@@ -4504,6 +4504,13 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         getStringConfig(vipNode, "targetLanguage", "vi"),
                         getStringConfig(vipNode, "model", DEFAULT_TRANSLATION_MODEL),
                         String(getNumberConfig(vipNode, "originalAudioVolume", DEFAULT_WORKSPACE_VIP_ORIGINAL_AUDIO_VOLUME)),
+                        getStringConfig(
+                            vipNode,
+                            "originalAudioSourceMode",
+                            "source",
+                        ) === "vocals"
+                            ? "vocals"
+                            : "source",
                         String(getNumberConfig(vipNode, "voiceVolume", 1)),
                         String(getBooleanConfig(vipNode, "mirrorEnabled", true)),
                     ].join(":");
@@ -4646,6 +4653,18 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         String(
                             getNumberConfig(vipNode, "originalAudioVolume", DEFAULT_WORKSPACE_VIP_ORIGINAL_AUDIO_VOLUME),
                         ),
+                    );
+                    const originalAudioSourceMode =
+                        getStringConfig(
+                            vipNode,
+                            "originalAudioSourceMode",
+                            "source",
+                        ) === "vocals"
+                            ? "vocals"
+                            : "source";
+                    formData.set(
+                        "originalAudioSourceMode",
+                        originalAudioSourceMode,
                     );
                     formData.set(
                         "voiceVolume",
@@ -4914,6 +4933,18 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     if (voiceRenderExecutionMode === "remote-voice-render") {
                         appendVipStageLog(
                             "Remote voice + render mode enabled: Piper voice generation and final render run on the configured EC2 worker.",
+                        );
+                    }
+                    if (
+                        originalAudioSourceMode === "vocals" &&
+                        getNumberConfig(
+                            vipNode,
+                            "originalAudioVolume",
+                            DEFAULT_WORKSPACE_VIP_ORIGINAL_AUDIO_VOLUME,
+                        ) > 0
+                    ) {
+                        appendVipStageLog(
+                            "Original audio source: Replicate Spleeter vocals only.",
                         );
                     }
                     if (
@@ -10187,7 +10218,7 @@ function NodeRuntimeConfig({
                         />
                     )}
 
-                    <div className="grid gap-2 sm:grid-cols-3">
+                    <div className="grid gap-2 sm:grid-cols-4">
                         <RuntimeTextInput
                             label="Speed factor"
                             value={String(getNumberConfig(node, "speedFactor", 0.75))}
@@ -10235,6 +10266,28 @@ function NodeRuntimeConfig({
                                 setConfig({ originalAudioVolume: Number(value) })
                             }
                         />
+                        <RuntimeSelect
+                            label="Original source"
+                            value={
+                                getStringConfig(
+                                    node,
+                                    "originalAudioSourceMode",
+                                    "source",
+                                ) === "vocals"
+                                    ? "vocals"
+                                    : "source"
+                            }
+                            disabled={isRunningFlow}
+                            onChange={(value) =>
+                                setConfig({
+                                    originalAudioSourceMode:
+                                        value === "vocals" ? "vocals" : "source",
+                                })
+                            }
+                        >
+                            <option value="source">Full source audio</option>
+                            <option value="vocals">Vocals only</option>
+                        </RuntimeSelect>
                         <RuntimeTextInput
                             label="Voice volume"
                             value={String(getNumberConfig(node, "voiceVolume", 1))}

@@ -107,6 +107,69 @@ describe("remote VIP worker client", () => {
         expect(result.fileName).toBe("source-done.mp4");
     });
 
+    it("uploads isolated original audio stem as multipart file", async () => {
+        const fetchImpl = vi
+            .fn<typeof fetch>()
+            .mockResolvedValueOnce(
+                Response.json({
+                    ok: true,
+                    data: {
+                        videoBase64: Buffer.from("remote-video").toString(
+                            "base64",
+                        ),
+                        mimeType: "video/mp4",
+                        extension: "mp4",
+                        fileName: "source-done.mp4",
+                        byteLength: 12,
+                        generationDurationMs: 100,
+                        stages: {
+                            finalRenderDurationMs: 40,
+                        },
+                        mix: {
+                            originalAudioVolume: 0.2,
+                            originalAudioSourceMode: "vocals",
+                            originalAudioStemByteLength: 6,
+                            voiceVolume: 1,
+                        },
+                    },
+                }),
+            );
+
+        await runRemoteVideoVipRender(
+            {
+                ...baseInput,
+                originalAudioVolume: 0.2,
+                originalAudioSourceMode: "vocals",
+                originalAudioStem: {
+                    bytes: Buffer.from("vocals"),
+                    mimeType: "audio/wav",
+                    fileName: "vocals.wav",
+                    byteLength: 6,
+                    provider: "replicate",
+                    model: "soykertje/spleeter:test",
+                },
+            },
+            {
+                endpoint: "http://worker.example/",
+                token: "secret",
+                fetchImpl,
+            },
+        );
+
+        const [, postInit] = fetchImpl.mock.calls[0];
+        const formData = postInit?.body as FormData;
+        const payloadJson = formData.get("payloadJson");
+        expect(typeof payloadJson).toBe("string");
+        expect(payloadJson).not.toContain("originalAudioStem");
+        expect(JSON.parse(payloadJson as string)).toMatchObject({
+            executionMode: "render-only",
+            originalAudioSourceMode: "vocals",
+        });
+        const stemFile = formData.get("originalAudioStemFile") as File;
+        expect(stemFile.name).toBe("vocals.wav");
+        expect(await stemFile.text()).toBe("vocals");
+    });
+
     it("polls async worker jobs before downloading rendered artifact bytes", async () => {
         const fetchImpl = vi
             .fn<typeof fetch>()

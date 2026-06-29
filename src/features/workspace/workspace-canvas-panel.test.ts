@@ -84,6 +84,12 @@ describe("WorkspaceCanvasPanel canvas interactions", () => {
         expect(source).toContain("remote-voice-render");
         expect(source).toContain("formData.set(");
         expect(source).toContain("voiceRenderExecutionMode");
+        expect(source).toContain("originalAudioSourceMode");
+        expect(source).toContain("Original source");
+        expect(source).toContain("Vocals only");
+        expect(source).toContain(
+            "Original audio source: Replicate Spleeter vocals only.",
+        );
         expect(source).toContain("Check worker");
         expect(source).toContain("Kill active jobs");
         expect(source).toContain("/api/audio/remote-vip-worker");

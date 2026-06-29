@@ -1,5 +1,18 @@
 # OmniVideo Changelog
 
+## FAST-VIDEO-058 - Add VIP original vocals isolation
+
+- Bumped app version from `0.11.45` to `0.11.46` as a patch release for Workspace VIP original-audio controls.
+- Added a VIP original-audio source mode so Workspace VIP can mix either full source audio or a vocals-only stem while preserving the existing original/voice volume controls.
+- Added a Replicate Spleeter adapter for `soykertje/spleeter:cd128044253523c86abfd743dea680c88559ad975ccd72378c8433f067ab5d0a`, including source-audio extraction, prediction polling, vocals stem selection, and clear missing-token errors.
+- Updated local VIP render and remote EC2 voice/render payloads so isolated vocals stems are used instead of `[0:a]` full source audio when vocals-only mode is selected.
+- Added Workspace VIP UI/runtime wiring, checkpoint fingerprint coverage, worker route parsing, and remote worker status metrics for original vocals stems.
+- Verification (FAST-VIDEO-058):
+  - `npm run test -- --run src/lib/multilingual-audio/source-vocal-isolation.test.ts src/lib/multilingual-audio/video-vip-processing.test.ts src/lib/multilingual-audio/remote-vip-worker.test.ts src/app/api/audio/video-vip-processing/route.test.ts src/app/api/audio/video-vip-voice-render/route.test.ts src/features/workspace/workspace-canvas-panel.test.ts src/lib/workspace/workspace-graph.test.ts src/lib/workspace/workspace-seeds.test.ts` pass (8 files / 168 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+
 ## FAST-VIDEO-057 - Add VIP segment transcript retry and Vietnamese name guard
 
 - Bumped app version from `0.11.44` to `0.11.45` as a patch release for Workspace VIP segment review.

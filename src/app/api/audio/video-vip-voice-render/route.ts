@@ -106,6 +106,11 @@ function parseBase64Bytes(fileBase64: unknown, message: string) {
     return Buffer.from(fileBase64, "base64");
 }
 
+function parseOptionalBase64Bytes(value: unknown) {
+    if (typeof value !== "string" || !value.trim()) return undefined;
+    return Buffer.from(value, "base64");
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
     return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
@@ -280,6 +285,7 @@ async function parseWorkerPayload(request: Request) {
         const payloadJson = formData.get("payloadJson");
         const file = formData.get("videoFile");
         const voiceFile = formData.get("voiceFile");
+        const originalAudioStemFile = formData.get("originalAudioStemFile");
         const asyncRequested =
             formData.get("async") === "1" ||
             formData.get("async") === "true";
@@ -324,6 +330,18 @@ async function parseWorkerPayload(request: Request) {
                 voiceFile instanceof File
                     ? new Uint8Array(await voiceFile.arrayBuffer())
                     : undefined,
+            originalAudioStemBytes:
+                originalAudioStemFile instanceof File
+                    ? new Uint8Array(await originalAudioStemFile.arrayBuffer())
+                    : undefined,
+            originalAudioStemFileName:
+                originalAudioStemFile instanceof File
+                    ? originalAudioStemFile.name || undefined
+                    : undefined,
+            originalAudioStemMimeType:
+                originalAudioStemFile instanceof File
+                    ? originalAudioStemFile.type || undefined
+                    : undefined,
             fileName:
                 file instanceof File
                     ? file.name || undefined
@@ -350,6 +368,17 @@ async function parseWorkerPayload(request: Request) {
                       payload.voiceBase64,
                       "voiceBase64 is required for remote VIP render.",
                   )
+                : undefined,
+        originalAudioStemBytes: parseOptionalBase64Bytes(
+            payload.originalAudioStemBase64,
+        ),
+        originalAudioStemFileName:
+            typeof payload.originalAudioStemFileName === "string"
+                ? payload.originalAudioStemFileName
+                : undefined,
+        originalAudioStemMimeType:
+            typeof payload.originalAudioStemMimeType === "string"
+                ? payload.originalAudioStemMimeType
                 : undefined,
         fileName: undefined,
         mimeType: undefined,
@@ -658,6 +687,7 @@ export async function GET(request: Request) {
         capabilities: {
             sourceChunkUpload: true,
             sourceUploadReference: true,
+            originalAudioStemUpload: true,
         },
         data: {
             jobs: Array.from(remoteVipWorkerJobs.values()).map((job) =>
@@ -693,12 +723,24 @@ export async function POST(request: Request) {
         if (url.searchParams.get("sourceUpload") === "part") {
             return await handleSourceUploadPart(request);
         }
-        const { payload, fileBytes, voiceBytes, fileName, mimeType, asyncRequested } =
-            await parseWorkerPayload(request);
+        const {
+            payload,
+            fileBytes,
+            voiceBytes,
+            originalAudioStemBytes,
+            originalAudioStemFileName,
+            originalAudioStemMimeType,
+            fileName,
+            mimeType,
+            asyncRequested,
+        } = await parseWorkerPayload(request);
         const workerInput = {
             payload,
             fileBytes,
             voiceBytes,
+            originalAudioStemBytes,
+            originalAudioStemFileName,
+            originalAudioStemMimeType,
             fileName,
             mimeType,
         };
@@ -808,11 +850,36 @@ async function executeWorkerJob(input: {
     payload: Record<string, unknown>;
     fileBytes: Uint8Array;
     voiceBytes?: Uint8Array;
+    originalAudioStemBytes?: Uint8Array;
+    originalAudioStemFileName?: string;
+    originalAudioStemMimeType?: string;
     fileName?: string;
     mimeType?: string;
 }, updateJob?: (patch: Partial<RemoteVipWorkerJob>) => void) {
-    const { payload, fileBytes, voiceBytes, fileName, mimeType } = input;
+    const {
+        payload,
+        fileBytes,
+        voiceBytes,
+        originalAudioStemBytes,
+        originalAudioStemFileName,
+        originalAudioStemMimeType,
+        fileName,
+        mimeType,
+    } = input;
     const executionMode = normalizeWorkerExecutionMode(payload.executionMode);
+    const originalAudioStem = originalAudioStemBytes?.byteLength
+        ? {
+              bytes: Buffer.from(originalAudioStemBytes),
+              mimeType: originalAudioStemMimeType || "audio/wav",
+              fileName: originalAudioStemFileName || "original-vocals.wav",
+              byteLength: originalAudioStemBytes.byteLength,
+              provider: "replicate" as const,
+              model:
+                  typeof payload.originalAudioStemModel === "string"
+                      ? payload.originalAudioStemModel
+                      : "remote-upload",
+          }
+        : undefined;
 
     const baseInput = {
         fileName:
@@ -834,6 +901,9 @@ async function executeWorkerJob(input: {
             typeof payload.originalAudioVolume === "number"
                 ? payload.originalAudioVolume
                 : undefined,
+        originalAudioSourceMode:
+            payload.originalAudioSourceMode === "vocals" ? "vocals" : "source",
+        originalAudioStem,
         voiceVolume:
             typeof payload.voiceVolume === "number"
                 ? payload.voiceVolume
@@ -915,6 +985,8 @@ async function executeWorkerJob(input: {
                     voiceByteLength: renderInput.voiceBytes.byteLength,
                     translatedCount: renderInput.translatedSegments.length,
                     speedFactor: renderInput.speedFactor,
+                    originalAudioStemByteLength:
+                        renderInput.originalAudioStem?.byteLength,
                     backgroundMusicTrackCount:
                         renderInput.backgroundMusic?.tracks.length ?? 0,
                 },

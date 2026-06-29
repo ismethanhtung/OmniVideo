@@ -214,6 +214,7 @@ describe("video vip processing API", () => {
       videoSpeedFactor: "0.7",
       renderPreset: "veryfast",
       mirrorEnabled: "true",
+      originalAudioSourceMode: "vocals",
       ttsAlignmentMode: "strict",
       ttsPreserveTimestampGaps: "true",
     });
@@ -249,6 +250,7 @@ describe("video vip processing API", () => {
         targetLanguage: "vi",
         videoSpeedFactor: 0.7,
         renderPreset: "veryfast",
+        originalAudioSourceMode: "vocals",
         mirrorEnabled: true,
         checkpointKey: undefined,
       }),
