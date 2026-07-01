@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
     assertRemoteVipWorkerAvailable,
     runRemoteVideoVipRender,
+    runRemoteVideoVipTranscription,
     runRemoteVideoVipVoiceRender,
 } from "./remote-vip-worker";
 
@@ -26,6 +27,61 @@ const baseInput = {
 };
 
 describe("remote VIP worker client", () => {
+    it("starts remote transcription from an existing source upload id", async () => {
+        const fetchImpl = vi.fn<typeof fetch>().mockResolvedValueOnce(
+            Response.json({
+                ok: true,
+                data: {
+                    text: "你好",
+                    language: "zh",
+                    model: "whisper-large-v3-turbo",
+                    segments: [{ id: 0, start: 0, end: 1, text: "你好" }],
+                    words: [],
+                    source: { fileName: "source.mp4", fileSizeBytes: 3 },
+                    audio: {
+                        format: "mp3",
+                        sampleRate: 16000,
+                        channels: 1,
+                        bitrateKbps: 64,
+                        fileSizeBytes: 2,
+                    },
+                    steps: [],
+                    provider: { name: "groq" },
+                },
+            }),
+        );
+
+        const result = await runRemoteVideoVipTranscription(
+            {
+                fileName: "source.mp4",
+                mimeType: "video/mp4",
+                fileSizeBytes: 3,
+                fileBytes: new Uint8Array(),
+                sourceUploadId: "33333333-3333-4333-8333-333333333333",
+                language: "zh",
+                transcriptionApiKey: "groq-key",
+                includeWordTimestamps: true,
+                overlongSegmentRetryMode: "best-effort",
+            },
+            {
+                endpoint: "http://worker.example/",
+                token: "secret",
+                fetchImpl,
+            },
+        );
+
+        expect(result.text).toBe("你好");
+        const formData = fetchImpl.mock.calls[0][1]?.body as FormData;
+        const payloadJson = formData.get("payloadJson");
+        expect(typeof payloadJson).toBe("string");
+        expect(JSON.parse(payloadJson as string)).toMatchObject({
+            executionMode: "transcribe",
+            sourceUploadId: "33333333-3333-4333-8333-333333333333",
+            transcriptionApiKey: "groq-key",
+        });
+        expect(formData.get("videoFile")).toBeNull();
+    });
+
     it("uploads source video as multipart and downloads rendered artifact bytes", async () => {
         const fetchImpl = vi
             .fn<typeof fetch>()

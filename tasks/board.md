@@ -178,6 +178,7 @@
 
 ## Done
 
+- `FAST-WORKSPACE-099` - Stage Workspace VIP source directly to EC2
 - `FAST-WORKSPACE-098` - Make VIP route duration Hobby-safe
 - `FAST-WORKSPACE-097` - Clarify Vercel VIP upload progress and duration
 - `FAST-AUDIO-080` - Soften gender guardrails for contextual Vietnamese address terms

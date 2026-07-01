@@ -261,6 +261,49 @@ describe("video vip processing API", () => {
     );
   });
 
+  it("runs VIP processing from a remote EC2 staged source upload id", async () => {
+    mockedRunVideoVipProcessing.mockResolvedValueOnce(createVipProcessingResult());
+
+    const response = await POST(
+      new Request("http://localhost/api/audio/video-vip-processing", {
+        method: "POST",
+        body: createFormData({
+          voiceRenderExecutionMode: "remote-voice-render",
+          remoteVoiceRenderEndpoint: "http://worker.example:8787",
+          remoteVoiceRenderToken: "secret",
+          remoteSourceUploadId: "33333333-3333-4333-8333-333333333333",
+          remoteSourceFileName: "direct-source.mp4",
+          remoteSourceMimeType: "video/mp4",
+          remoteSourceFileSizeBytes: "167000000",
+        }),
+      }),
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload).toMatchObject({
+      ok: true,
+      data: {
+        mimeType: "video/mp4",
+        fileName: "vip-output.mp4",
+      },
+    });
+    expect(mockedRunVideoVipProcessing).toHaveBeenCalledWith(
+      expect.objectContaining({
+        fileName: "direct-source.mp4",
+        sourceTitle: "direct-source",
+        mimeType: "video/mp4",
+        fileSizeBytes: 167000000,
+        fileBytes: new Uint8Array(),
+        voiceRenderExecutionMode: "remote-voice-render",
+        remoteSourceUploadId: "33333333-3333-4333-8333-333333333333",
+        stageRunners: expect.objectContaining({
+          transcribe: expect.any(Function),
+        }),
+      }),
+    );
+  });
+
   it("passes vipResumeKey into VIP processing checkpoints", async () => {
     mockedRunVideoVipProcessing.mockResolvedValueOnce({
       videoBase64: Buffer.from("vip").toString("base64"),

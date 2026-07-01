@@ -9,6 +9,8 @@ import { request as httpsRequest } from "node:https";
 
 import {
     ChineseTranscriptionError,
+    type ChineseTranscriptionRequest,
+    type ChineseTranscriptionResult,
     type TranscriptTranslationResult,
 } from "@/lib/multilingual-audio/types";
 import type { VipOriginalAudioStem } from "@/lib/multilingual-audio/source-vocal-isolation";
@@ -90,11 +92,21 @@ type RemoteVipVoiceRenderWorkerPayload = Omit<
     executionMode: "voice-render";
 };
 
+type RemoteVipTranscriptionWorkerPayload = Omit<
+    ChineseTranscriptionRequest,
+    "fileBytes"
+> & {
+    executionMode: "transcribe";
+};
+
 type RemoteVipWorkerResponseData = (
     | VideoVipRemoteRenderResult
     | VideoVipVoiceRenderResult
+    | ChineseTranscriptionResult
 ) & {
     artifactId?: string;
+    videoBase64?: string;
+    videoBytes?: Buffer | Uint8Array | string;
 };
 
 type RemoteVipWorkerJobResponse = {
@@ -225,6 +237,7 @@ export async function runRemoteVideoVipRender(
 ): Promise<VideoVipRemoteRenderResult> {
     const {
         fileBytes: sourceVideoBytes,
+        sourceUploadId,
         voiceAudioBase64,
         originalAudioStem,
         stageRunners: _stageRunners,
@@ -242,6 +255,7 @@ export async function runRemoteVideoVipRender(
         sourceMimeType: input.mimeType,
         voiceAudioBase64,
         originalAudioStem,
+        sourceUploadId,
     };
 
     return await postRemoteVipWorker<VideoVipRemoteRenderResult>(
@@ -256,6 +270,7 @@ export async function runRemoteVideoVipVoiceRender(
 ): Promise<VideoVipVoiceRenderResult> {
     const {
         fileBytes: sourceVideoBytes,
+        sourceUploadId,
         originalAudioStem,
         stageRunners: _stageRunners,
         ...payloadInput
@@ -271,6 +286,7 @@ export async function runRemoteVideoVipVoiceRender(
         sourceFileName: input.fileName,
         sourceMimeType: input.mimeType,
         originalAudioStem,
+        sourceUploadId,
     };
 
     return await postRemoteVipWorker<VideoVipVoiceRenderResult>(
@@ -279,8 +295,34 @@ export async function runRemoteVideoVipVoiceRender(
     );
 }
 
+export async function runRemoteVideoVipTranscription(
+    input: ChineseTranscriptionRequest & { sourceUploadId?: string },
+    options: RemoteVipWorkerOptions = {},
+): Promise<ChineseTranscriptionResult> {
+    const { fileBytes: sourceVideoBytes, sourceUploadId, ...payloadInput } = input;
+    const payload: RemoteVipTranscriptionWorkerPayload = {
+        ...payloadInput,
+        executionMode: "transcribe",
+    };
+    const upload = {
+        payload,
+        sourceVideoBytes,
+        sourceFileName: input.fileName,
+        sourceMimeType: input.mimeType,
+        sourceUploadId,
+    };
+
+    return await postRemoteVipWorker<ChineseTranscriptionResult>(
+        upload,
+        options,
+    );
+}
+
 type RemoteVipWorkerUpload = {
-    payload: RemoteVipWorkerPayload | RemoteVipVoiceRenderWorkerPayload;
+    payload:
+        | RemoteVipWorkerPayload
+        | RemoteVipVoiceRenderWorkerPayload
+        | RemoteVipTranscriptionWorkerPayload;
     sourceVideoBytes: Uint8Array;
     sourceFileName: string;
     sourceMimeType?: string;

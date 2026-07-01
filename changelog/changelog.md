@@ -1,5 +1,19 @@
 # OmniVideo Changelog
 
+## FAST-WORKSPACE-099 - Stage Workspace VIP source directly to EC2
+
+- Bumped app version from `0.11.52` to `0.11.53` as a patch release for deployed remote VIP upload speed.
+- Added direct browser-to-EC2 source chunk staging for Workspace `remote-voice-render` VIP runs with browser file sources, avoiding the slow full source upload to Vercel.
+- Added EC2 worker CORS support for direct browser source chunk uploads.
+- Added EC2 transcription execution mode so Vercel can run transcript from a staged `sourceUploadId` without receiving original video bytes.
+- Reused the same staged EC2 source upload id for remote voice/render so Vercel does not re-upload the source after transcript/translation.
+- Kept direct staging scoped away from vocals-only original audio because Replicate source vocal isolation still needs source bytes on the current Vercel path.
+- Verification (FAST-WORKSPACE-099):
+  - `npm run test -- --run src/lib/multilingual-audio/remote-vip-worker.test.ts src/app/api/audio/video-vip-voice-render/route.test.ts src/app/api/audio/video-vip-processing/route.test.ts src/features/workspace/workspace-canvas-panel.test.ts src/lib/multilingual-audio/video-vip-processing.test.ts` pass (5 files / 111 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+
 ## FAST-WORKSPACE-098 - Make VIP route duration Hobby-safe
 
 - Bumped app version from `0.11.51` to `0.11.52` as a patch release for Vercel Hobby deployment compatibility.

@@ -95,6 +95,11 @@ describe("WorkspaceCanvasPanel canvas interactions", () => {
         expect(source).toContain("/api/audio/remote-vip-worker");
         expect(source).toContain("formatRemoteVipWorkerProgress");
         expect(source).toContain("checkpointState.remoteWorker");
+        expect(source).toContain("uploadRemoteVipSourceFileDirectly");
+        expect(source).toContain("canStageVipSourceDirectlyToEc2");
+        expect(source).toContain("remoteSourceUploadId");
+        expect(source).toContain("Direct EC2 source staging enabled");
+        expect(source).toContain("Sending lightweight VIP request to Vercel");
         expect(source).toContain("Uploading source video to EC2");
         expect(source).toContain("Uploading source video to EC2 in parallel chunks");
         expect(source).toContain("EC2 accepted VIP job");

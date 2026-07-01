@@ -335,6 +335,8 @@ type WorkspaceRunOptions = {
     >;
 };
 const MAX_RESUME_TEXT_LENGTH = 4000;
+const DIRECT_REMOTE_VIP_UPLOAD_CHUNK_BYTES = 16 * 1024 * 1024;
+const DIRECT_REMOTE_VIP_UPLOAD_CONCURRENCY = 4;
 const VIP_PROGRESS_STAGE_DESCRIPTORS = [
     {
         key: "upload",
@@ -1453,6 +1455,147 @@ async function fetchWorkspaceJsonWithUploadProgress<T>(input: {
         };
         xhr.send(input.formData);
     });
+}
+
+function normalizeRemoteWorkerEndpoint(endpoint: string) {
+    return endpoint.trim().replace(/\/+$/u, "");
+}
+
+function createRemoteVipSourceUploadId() {
+    if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+        return crypto.randomUUID();
+    }
+    return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/gu, (char) => {
+        const value = Math.floor(Math.random() * 16);
+        const nibble = char === "x" ? value : (value & 0x3) | 0x8;
+        return nibble.toString(16);
+    });
+}
+
+async function uploadRemoteVipSourceChunkDirectly(input: {
+    endpoint: string;
+    token: string;
+    uploadId: string;
+    file: File;
+    partIndex: number;
+    partCount: number;
+    chunk: Blob;
+    onPartProgress: (loadedBytes: number) => void;
+}) {
+    await new Promise<void>((resolve, reject) => {
+        const formData = new FormData();
+        formData.set("sourceUploadId", input.uploadId);
+        formData.set("partIndex", String(input.partIndex));
+        formData.set("partCount", String(input.partCount));
+        formData.set("totalBytes", String(input.file.size));
+        formData.set("fileName", input.file.name || "source.mp4");
+        formData.set("mimeType", input.file.type || "video/mp4");
+        formData.set(
+            "chunkFile",
+            input.chunk,
+            `${input.partIndex}.part`,
+        );
+
+        const xhr = new XMLHttpRequest();
+        xhr.open(
+            "POST",
+            `${normalizeRemoteWorkerEndpoint(input.endpoint)}/api/audio/video-vip-voice-render?sourceUpload=part`,
+        );
+        if (input.token.trim()) {
+            xhr.setRequestHeader("Authorization", `Bearer ${input.token.trim()}`);
+        }
+        xhr.upload.onprogress = (event) => {
+            input.onPartProgress(event.loaded);
+        };
+        xhr.onerror = () => {
+            reject(new Error("Direct EC2 source upload failed with a network error."));
+        };
+        xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+                input.onPartProgress(input.chunk.size);
+                resolve();
+                return;
+            }
+            let message = `Direct EC2 source upload chunk failed with HTTP ${xhr.status}.`;
+            try {
+                const payload = JSON.parse(xhr.responseText) as { error?: unknown };
+                if (typeof payload.error === "string") message = payload.error;
+            } catch {
+                // Keep HTTP fallback message.
+            }
+            reject(new Error(message));
+        };
+        xhr.send(formData);
+    });
+}
+
+async function uploadRemoteVipSourceFileDirectly(input: {
+    endpoint: string;
+    token: string;
+    file: File;
+    onProgress?: (progress: WorkspaceFileProgress) => void;
+}) {
+    const uploadId = createRemoteVipSourceUploadId();
+    const partCount = Math.ceil(
+        input.file.size / DIRECT_REMOTE_VIP_UPLOAD_CHUNK_BYTES,
+    );
+    const loadedByPart = new Map<number, number>();
+    let nextPartIndex = 0;
+
+    const emitProgress = () => {
+        const loadedBytes = Array.from(loadedByPart.values()).reduce(
+            (total, value) => total + value,
+            0,
+        );
+        input.onProgress?.({
+            loadedBytes,
+            totalBytes: input.file.size,
+            percent:
+                input.file.size > 0
+                    ? Math.max(0, Math.min(100, (loadedBytes / input.file.size) * 100))
+                    : 100,
+        });
+    };
+
+    const uploadNextPart = async () => {
+        while (nextPartIndex < partCount) {
+            const partIndex = nextPartIndex;
+            nextPartIndex += 1;
+            const start = partIndex * DIRECT_REMOTE_VIP_UPLOAD_CHUNK_BYTES;
+            const end = Math.min(
+                start + DIRECT_REMOTE_VIP_UPLOAD_CHUNK_BYTES,
+                input.file.size,
+            );
+            const chunk = input.file.slice(start, end);
+            await uploadRemoteVipSourceChunkDirectly({
+                endpoint: input.endpoint,
+                token: input.token,
+                uploadId,
+                file: input.file,
+                partIndex,
+                partCount,
+                chunk,
+                onPartProgress: (loadedBytes) => {
+                    loadedByPart.set(partIndex, loadedBytes);
+                    emitProgress();
+                },
+            });
+        }
+    };
+
+    await Promise.all(
+        Array.from(
+            {
+                length: Math.min(
+                    DIRECT_REMOTE_VIP_UPLOAD_CONCURRENCY,
+                    Math.max(1, partCount),
+                ),
+            },
+            () => uploadNextPart(),
+        ),
+    );
+    emitProgress();
+    return { uploadId, partCount };
 }
 
 async function fetchWorkspaceFile(input: {
@@ -5068,10 +5211,21 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     appendVipStageLog(
                         "Server-side VIP is running. Live sub-stage status is being tracked...",
                     );
+                    const vipBrowserSourceFile =
+                        formData.get("videoFile") instanceof File
+                            ? (formData.get("videoFile") as File)
+                            : null;
+                    const canStageVipSourceDirectlyToEc2 =
+                        voiceRenderExecutionMode === "remote-voice-render" &&
+                        Boolean(remoteVipWorkerConfig.endpoint) &&
+                        vipBrowserSourceFile !== null &&
+                        originalAudioSourceMode !== "vocals";
                     startVipProgressStage(
                         step,
                         "upload",
-                        "Uploading source video to Vercel before transcript work...",
+                        canStageVipSourceDirectlyToEc2
+                            ? "Uploading source video directly to EC2 before transcript work..."
+                            : "Uploading source video to Vercel before transcript work...",
                     );
                     let isPolling = true;
                     const pollCheckpoint = async () => {
@@ -5284,6 +5438,53 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         );
                     };
                     try {
+                        if (canStageVipSourceDirectlyToEc2 && vipBrowserSourceFile) {
+                            appendVipStageLog(
+                                "[upload] Direct EC2 source staging enabled; Vercel will receive only sourceUploadId.",
+                            );
+                            const stagedSource =
+                                await uploadRemoteVipSourceFileDirectly({
+                                    endpoint: remoteVipWorkerConfig.endpoint,
+                                    token: remoteVipWorkerConfig.token,
+                                    file: vipBrowserSourceFile,
+                                    onProgress: (progress) => {
+                                        const totalText =
+                                            typeof progress.totalBytes ===
+                                            "number"
+                                                ? ` / ${formatBytes(progress.totalBytes)}`
+                                                : "";
+                                        const percentText =
+                                            typeof progress.percent === "number"
+                                                ? ` (${Math.round(progress.percent)}%)`
+                                                : "";
+                                        updateVipProgressStage(
+                                            step,
+                                            "upload",
+                                            `Uploading source video directly to EC2: ${formatBytes(progress.loadedBytes)}${totalText}${percentText}.`,
+                                        );
+                                    },
+                                });
+                            formData.delete("videoFile");
+                            formData.set(
+                                "remoteSourceUploadId",
+                                stagedSource.uploadId,
+                            );
+                            formData.set(
+                                "remoteSourceFileName",
+                                vipBrowserSourceFile.name || "source.mp4",
+                            );
+                            formData.set(
+                                "remoteSourceMimeType",
+                                vipBrowserSourceFile.type || "video/mp4",
+                            );
+                            formData.set(
+                                "remoteSourceFileSizeBytes",
+                                String(vipBrowserSourceFile.size),
+                            );
+                            appendVipStageLog(
+                                `[upload] Direct EC2 source staging complete. Upload id: ${stagedSource.uploadId}.`,
+                            );
+                        }
                         vipPayload = await fetchWorkspaceJsonWithUploadProgress<{
                             ok: true;
                             data: VideoVipProcessingResult & {
@@ -5295,6 +5496,14 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                             actionLabel: "VIP processing",
                             formData,
                             onUploadProgress: (progress) => {
+                                if (canStageVipSourceDirectlyToEc2) {
+                                    updateVipProgressStage(
+                                        step,
+                                        "upload",
+                                        "Sending lightweight VIP request to Vercel with EC2 source upload id...",
+                                    );
+                                    return;
+                                }
                                 const totalText =
                                     typeof progress.totalBytes === "number"
                                         ? ` / ${formatBytes(progress.totalBytes)}`

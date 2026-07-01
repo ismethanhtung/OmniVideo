@@ -778,11 +778,13 @@ async function readStorageAssetVideo(assetId: string) {
         );
     }
 
+    const fileBytes = new Uint8Array(arrayBuffer);
     return {
         fileName: `${asset.metadata?.title ?? assetId}.mp4`,
         sourceTitle: asset.metadata?.title?.trim() || undefined,
         mimeType: download.headers.get("content-type") ?? asset.mimeType ?? "video/mp4",
-        fileBytes: new Uint8Array(arrayBuffer),
+        fileSizeBytes: fileBytes.byteLength,
+        fileBytes,
         sourceVideoEditSetup:
             asset.metadata?.videoEditSetup &&
             typeof asset.metadata.videoEditSetup === "object"
@@ -805,6 +807,7 @@ function readWorkspaceArtifactVideo(artifactId: string) {
         fileName: artifact.fileName,
         sourceTitle: stripExtension(artifact.fileName),
         mimeType: artifact.mimeType,
+        fileSizeBytes: artifact.bytes.byteLength,
         fileBytes: new Uint8Array(artifact.bytes),
         sourceVideoEditSetup: null,
     };
@@ -826,6 +829,10 @@ export async function POST(request: Request) {
             readFormValue(formData, "metadataProviderId").trim() ||
             DEFAULT_GOOGLE_AI_STUDIO_PROVIDER_ID;
         const vipResumeKey = readFormValue(formData, "vipResumeKey").trim();
+        const remoteSourceUploadId = readFormValue(
+            formData,
+            "remoteSourceUploadId",
+        ).trim();
         const voiceRenderExecutionModeRaw = readFormValue(
             formData,
             "voiceRenderExecutionMode",
@@ -875,17 +882,43 @@ export async function POST(request: Request) {
                   fileName: string;
                   sourceTitle?: string;
                   mimeType?: string;
+                  fileSizeBytes: number;
                   fileBytes: Uint8Array;
                   sourceVideoEditSetup?: Record<string, unknown> | null;
               }
             | undefined;
 
         if (file instanceof File) {
+            const fileBytes = new Uint8Array(await file.arrayBuffer());
             source = {
                 fileName: file.name || "source.mp4",
                 sourceTitle: stripExtension(file.name || "source.mp4"),
                 mimeType: file.type || undefined,
-                fileBytes: new Uint8Array(await file.arrayBuffer()),
+                fileSizeBytes: fileBytes.byteLength,
+                fileBytes,
+                sourceVideoEditSetup: null,
+            };
+        } else if (remoteSourceUploadId) {
+            const remoteSourceFileName =
+                readFormValue(formData, "remoteSourceFileName").trim() ||
+                "source.mp4";
+            const remoteSourceFileSizeBytes =
+                readOptionalNumber(formData, "remoteSourceFileSizeBytes") ?? 0;
+            if (voiceRenderExecutionMode !== "remote-voice-render") {
+                throw new ChineseTranscriptionError(
+                    "VAL_DUBBING_VIDEO_REQUIRED",
+                    "remoteSourceUploadId is only supported for remote voice + render VIP runs.",
+                    400,
+                );
+            }
+            source = {
+                fileName: remoteSourceFileName,
+                sourceTitle: stripExtension(remoteSourceFileName),
+                mimeType:
+                    readFormValue(formData, "remoteSourceMimeType").trim() ||
+                    undefined,
+                fileSizeBytes: remoteSourceFileSizeBytes,
+                fileBytes: new Uint8Array(),
                 sourceVideoEditSetup: null,
             };
         } else if (artifactId) {
@@ -978,6 +1011,24 @@ export async function POST(request: Request) {
                   source.sourceVideoEditSetup,
               )
             : undefined;
+        const originalAudioVolumeInput = readOptionalNumber(
+            formData,
+            "originalAudioVolume",
+        );
+        const originalAudioSourceModeInput = normalizeVipOriginalAudioSourceMode(
+            readFormValue(formData, "originalAudioSourceMode").trim(),
+        );
+        if (
+            remoteSourceUploadId &&
+            originalAudioSourceModeInput === "vocals" &&
+            (originalAudioVolumeInput ?? 0) > 0
+        ) {
+            throw new ChineseTranscriptionError(
+                "VAL_DUBBING_VIDEO_REQUIRED",
+                "Direct EC2 source upload does not support vocals-only original audio yet.",
+                400,
+            );
+        }
         const model = readFormValue(formData, "model") || undefined;
         const metadataModel =
             readFormValue(formData, "metadataModel") || undefined;
@@ -985,7 +1036,7 @@ export async function POST(request: Request) {
             fileName: source.fileName,
             sourceTitle: source.sourceTitle,
             mimeType: source.mimeType,
-            fileSizeBytes: source.fileBytes.byteLength,
+            fileSizeBytes: source.fileSizeBytes,
             fileBytes: source.fileBytes,
             language: readFormValue(formData, "language") || "zh",
             transcriptOverride,
@@ -1016,11 +1067,41 @@ export async function POST(request: Request) {
             remoteVoiceRenderToken:
                 readFormValue(formData, "remoteVoiceRenderToken").trim() ||
                 undefined,
+            remoteSourceUploadId: remoteSourceUploadId || undefined,
+            stageRunners: remoteSourceUploadId
+                ? {
+                      transcribe: async (transcriptionInput) => {
+                          const { runRemoteVideoVipTranscription } = await import(
+                              "@/lib/multilingual-audio/remote-vip-worker"
+                          );
+                          return await runRemoteVideoVipTranscription(
+                              {
+                                  ...transcriptionInput,
+                                  fileBytes: new Uint8Array(),
+                                  sourceUploadId: remoteSourceUploadId,
+                                  transcriptionApiKey:
+                                      process.env.GROQ_API_KEY?.trim() ||
+                                      undefined,
+                              },
+                              {
+                                  endpoint:
+                                      readFormValue(
+                                          formData,
+                                          "remoteVoiceRenderEndpoint",
+                                      ).trim() || undefined,
+                                  token:
+                                      readFormValue(
+                                          formData,
+                                          "remoteVoiceRenderToken",
+                                      ).trim() || undefined,
+                              },
+                          );
+                      },
+                  }
+                : undefined,
             ttsSettings,
-            originalAudioVolume: readOptionalNumber(formData, "originalAudioVolume"),
-            originalAudioSourceMode: normalizeVipOriginalAudioSourceMode(
-                readFormValue(formData, "originalAudioSourceMode").trim(),
-            ),
+            originalAudioVolume: originalAudioVolumeInput,
+            originalAudioSourceMode: originalAudioSourceModeInput,
             voiceVolume: readOptionalNumber(formData, "voiceVolume"),
             videoSpeedFactor: readOptionalNumber(formData, "videoSpeedFactor"),
             renderPreset: readOptionalRenderPreset(formData),
