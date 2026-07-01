@@ -69,9 +69,14 @@ describe("WorkspaceCanvasPanel canvas interactions", () => {
         expect(source).toContain('"remoteVoiceRenderToken"');
         expect(source).toContain("readRemoteVipWorkerBrowserConfig");
         expect(source).toContain("resolveRemoteVipWorkerRuntimeConfig");
+        expect(source).toContain("hydrateRemoteVipWorkerRuntimeConfig");
+        expect(source).toContain("fetchRemoteVipWorkerEnvBrowserConfig");
+        expect(source).toContain("/api/audio/remote-vip-worker/browser-config");
         expect(source).toContain("remoteVipWorkerConfig.endpoint");
         expect(source).toContain("remoteVipWorkerConfig.token");
         expect(source).toContain("Remote worker endpoint source:");
+        expect(source).toContain("Server modal");
+        expect(source).toContain("server env");
         expect(source).toContain("Compatibility fallback: retrying remote upload with native FormData");
         expect(source).toContain("X-OmniVideo-Remote-Vip-Token");
         expect(source).toContain("buildRemoteWorkerRequestInit");

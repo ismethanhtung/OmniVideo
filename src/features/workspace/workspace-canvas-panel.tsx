@@ -255,6 +255,12 @@ type WorkspaceFileProgress = {
     percent?: number;
 };
 
+type RemoteVipWorkerRuntimeConfig = {
+    endpoint: string;
+    token: string;
+    source: "node" | "Server modal" | "env";
+};
+
 type WorkspaceVideoEditSetup = NonNullable<
     NonNullable<WorkspaceAsset["metadata"]>["videoEditSetup"]
 > & {
@@ -1459,6 +1465,38 @@ async function fetchWorkspaceJsonWithUploadProgress<T>(input: {
 
 function normalizeRemoteWorkerEndpoint(endpoint: string) {
     return endpoint.trim().replace(/\/+$/u, "");
+}
+
+async function fetchRemoteVipWorkerEnvBrowserConfig(): Promise<RemoteVipWorkerRuntimeConfig | null> {
+    try {
+        const payload = await fetchWorkspaceJson<{
+            ok: true;
+            data?: {
+                endpoint?: unknown;
+                token?: unknown;
+            };
+        }>({
+            url: "/api/audio/remote-vip-worker/browser-config",
+            actionLabel: "Remote VIP worker browser config",
+        });
+        const endpoint =
+            typeof payload.data?.endpoint === "string"
+                ? normalizeRemoteWorkerEndpoint(payload.data.endpoint)
+                : "";
+        if (!endpoint) {
+            return null;
+        }
+        return {
+            endpoint,
+            token:
+                typeof payload.data?.token === "string"
+                    ? payload.data.token.trim()
+                    : "",
+            source: "env",
+        };
+    } catch {
+        return null;
+    }
 }
 
 function createRemoteVipSourceUploadId() {
@@ -2902,17 +2940,33 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
 
     const resolveRemoteVipWorkerRuntimeConfig = (
         vipNode: WorkspaceNodeInstance,
-    ) => {
+    ): RemoteVipWorkerRuntimeConfig => {
         const browserConfig = readRemoteVipWorkerBrowserConfig();
         const nodeEndpoint = getStringConfig(
             vipNode,
             "remoteVoiceRenderEndpoint",
         ).trim();
+        const browserEndpoint = browserConfig.endpoint.trim();
         return {
-            endpoint: nodeEndpoint || browserConfig.endpoint.trim(),
+            endpoint: normalizeRemoteWorkerEndpoint(nodeEndpoint || browserEndpoint),
             token: browserConfig.token.trim(),
-            source: nodeEndpoint ? "node" : browserConfig.endpoint.trim() ? "server" : "env",
+            source: nodeEndpoint
+                ? "node"
+                : browserEndpoint
+                  ? "Server modal"
+                  : "env",
         };
+    };
+
+    const hydrateRemoteVipWorkerRuntimeConfig = async (
+        currentConfig: RemoteVipWorkerRuntimeConfig,
+    ) => {
+        if (currentConfig.endpoint) {
+            return currentConfig;
+        }
+        return (
+            (await fetchRemoteVipWorkerEnvBrowserConfig()) ?? currentConfig
+        );
     };
 
     const clearDraft = () => {
@@ -4868,8 +4922,19 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         "voiceRenderExecutionMode",
                         voiceRenderExecutionMode,
                     );
-                    const remoteVipWorkerConfig =
+                    let remoteVipWorkerConfig =
                         resolveRemoteVipWorkerRuntimeConfig(vipNode);
+                    if (
+                        (voiceRenderExecutionMode === "remote" ||
+                            voiceRenderExecutionMode ===
+                                "remote-voice-render") &&
+                        !remoteVipWorkerConfig.endpoint
+                    ) {
+                        remoteVipWorkerConfig =
+                            await hydrateRemoteVipWorkerRuntimeConfig(
+                                remoteVipWorkerConfig,
+                            );
+                    }
                     if (remoteVipWorkerConfig.endpoint) {
                         formData.set(
                             "remoteVoiceRenderEndpoint",
@@ -5188,7 +5253,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         appendVipStageLog(
                             remoteVipWorkerConfig.endpoint
                                 ? `Remote worker endpoint source: ${remoteVipWorkerConfig.source}.`
-                                : "Remote worker endpoint not set in node or Server modal; server env fallback will be used if configured.",
+                                : "Remote worker endpoint not set in node, Server modal, or server env.",
                         );
                     }
                     if (vipTranslationMode === "import") {

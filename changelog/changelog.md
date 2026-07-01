@@ -1,5 +1,18 @@
 # OmniVideo Changelog
 
+## FAST-WORKSPACE-100 - Hydrate remote VIP browser config from server env
+
+- Bumped app version from `0.11.53` to `0.11.54` as a patch release for deployed Workspace direct EC2 upload reliability.
+- Kept Workspace remote VIP endpoint priority as node config first, then Server modal browser config, then server env fallback.
+- Added an owner-guarded `/api/audio/remote-vip-worker/browser-config` route so deployed browsers can hydrate the server env worker endpoint/token before source upload when local browser config is empty.
+- Updated Workspace VIP progress text to distinguish `Server modal` from `env` endpoint sources.
+- Fixed the deployed fallback path where a browser with no readable endpoint uploaded the full source video to Vercel even though the server env could reach the EC2 worker.
+- Verification (FAST-WORKSPACE-100):
+  - `npm run test -- --run src/app/api/audio/remote-vip-worker/browser-config/route.test.ts src/features/workspace/workspace-canvas-panel.test.ts` pass (2 files / 28 tests).
+  - `npm run build` pass.
+  - `npm run guard:version` initially failed before changelog update, then passed after changelog update.
+  - `git diff --check` pass.
+
 ## FAST-WORKSPACE-099 - Stage Workspace VIP source directly to EC2
 
 - Bumped app version from `0.11.52` to `0.11.53` as a patch release for deployed remote VIP upload speed.
