@@ -116,7 +116,7 @@ describe("video vip processing API", () => {
   });
 
   it("declares a long Vercel max duration for VIP processing", () => {
-    expect(maxDuration).toBe(800);
+    expect(maxDuration).toBe(300);
   });
 
   it("rejects missing video input", async () => {

@@ -47,7 +47,7 @@ describe("video vip voice/render worker API", () => {
     });
 
     it("declares a long Vercel max duration for worker jobs", () => {
-        expect(maxDuration).toBe(800);
+        expect(maxDuration).toBe(300);
     });
 
     it("exposes a lightweight health check", async () => {

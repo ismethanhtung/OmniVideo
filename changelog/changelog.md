@@ -1,11 +1,23 @@
 # OmniVideo Changelog
 
+## FAST-WORKSPACE-098 - Make VIP route duration Hobby-safe
+
+- Bumped app version from `0.11.51` to `0.11.52` as a patch release for Vercel Hobby deployment compatibility.
+- Replaced the Pro/Enterprise-only `maxDuration = 800` on VIP routes with the Hobby-safe `maxDuration = 300`.
+- Updated route regression tests so future changes do not reintroduce a Hobby-invalid duration value.
+- Note: Hobby can deploy these routes, but a single VIP request still cannot run longer than 5 minutes on that plan.
+- Verification (FAST-WORKSPACE-098):
+  - `npm run test -- --run src/app/api/audio/video-vip-processing/route.test.ts src/app/api/audio/video-vip-voice-render/route.test.ts` pass (2 files / 35 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+
 ## FAST-WORKSPACE-097 - Clarify Vercel VIP upload progress and duration
 
 - Bumped app version from `0.11.50` to `0.11.51` as a patch release for deployed Workspace VIP reliability.
 - Added a distinct `VIP · Upload source` Background Progress stage so production runs do not appear stuck at transcript while the browser is still sending the source video to Vercel.
 - Switched the Workspace VIP POST call to an upload-progress capable XHR helper that preserves existing JSON error parsing and VIP failure details.
-- Declared `maxDuration = 800` on the long VIP processing and EC2 worker routes for Vercel App Router deployments.
+- Declared explicit `maxDuration` exports on the long VIP processing and EC2 worker routes for Vercel App Router deployments.
 - Verification (FAST-WORKSPACE-097):
   - `npm run test -- --run src/features/workspace/workspace-canvas-panel.test.ts src/app/api/audio/video-vip-processing/route.test.ts src/app/api/audio/video-vip-voice-render/route.test.ts` pass (3 files / 60 tests).
   - `npm run guard:version` pass.
