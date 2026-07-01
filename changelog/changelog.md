@@ -1,5 +1,17 @@
 # OmniVideo Changelog
 
+## FAST-WORKSPACE-101 - Explain HTTPS requirement for direct EC2 uploads
+
+- Bumped app version from `0.11.54` to `0.11.55` as a patch release for deployed direct EC2 upload diagnostics.
+- Added a browser-side transport guard for direct EC2 source uploads so HTTPS Vercel pages no longer fail with a generic network error when the worker URL is plain HTTP.
+- Updated the direct upload error to explain browser mixed-content blocking and require an HTTPS worker URL, such as a TLS domain or tunnel proxying to the EC2 worker.
+- Kept HTTP worker URLs usable for non-HTTPS local app runs.
+- Verification (FAST-WORKSPACE-101):
+  - `npm run test -- --run src/features/workspace/workspace-canvas-panel.test.ts` pass (1 file / 25 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+
 ## FAST-WORKSPACE-100 - Hydrate remote VIP browser config from server env
 
 - Bumped app version from `0.11.53` to `0.11.54` as a patch release for deployed Workspace direct EC2 upload reliability.

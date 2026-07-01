@@ -178,6 +178,7 @@
 
 ## Done
 
+- `FAST-WORKSPACE-101` - Explain HTTPS requirement for direct EC2 uploads
 - `FAST-WORKSPACE-100` - Hydrate remote VIP browser config from server env
 - `FAST-WORKSPACE-099` - Stage Workspace VIP source directly to EC2
 - `FAST-WORKSPACE-098` - Make VIP route duration Hobby-safe

@@ -1467,6 +1467,26 @@ function normalizeRemoteWorkerEndpoint(endpoint: string) {
     return endpoint.trim().replace(/\/+$/u, "");
 }
 
+function getDirectRemoteVipUploadTransportError(endpoint: string) {
+    if (typeof window === "undefined") {
+        return "";
+    }
+    let workerUrl: URL;
+    try {
+        workerUrl = new URL(normalizeRemoteWorkerEndpoint(endpoint));
+    } catch {
+        return "";
+    }
+    if (window.location.protocol !== "https:") {
+        return "";
+    }
+    if (workerUrl.protocol !== "http:") {
+        return "";
+    }
+    const host = workerUrl.host || workerUrl.hostname || endpoint;
+    return `Direct EC2 source upload is blocked by browser mixed-content rules: this app is running over HTTPS, but the remote worker URL is HTTP (${host}). Use an HTTPS worker URL in Server modal, for example a domain or tunnel with TLS that proxies to this EC2 worker, then run again.`;
+}
+
 async function fetchRemoteVipWorkerEnvBrowserConfig(): Promise<RemoteVipWorkerRuntimeConfig | null> {
     try {
         const payload = await fetchWorkspaceJson<{
@@ -1521,6 +1541,13 @@ async function uploadRemoteVipSourceChunkDirectly(input: {
     onPartProgress: (loadedBytes: number) => void;
 }) {
     await new Promise<void>((resolve, reject) => {
+        const transportError = getDirectRemoteVipUploadTransportError(
+            input.endpoint,
+        );
+        if (transportError) {
+            reject(new Error(transportError));
+            return;
+        }
         const formData = new FormData();
         formData.set("sourceUploadId", input.uploadId);
         formData.set("partIndex", String(input.partIndex));
@@ -1546,7 +1573,12 @@ async function uploadRemoteVipSourceChunkDirectly(input: {
             input.onPartProgress(event.loaded);
         };
         xhr.onerror = () => {
-            reject(new Error("Direct EC2 source upload failed with a network error."));
+            reject(
+                new Error(
+                    getDirectRemoteVipUploadTransportError(input.endpoint) ||
+                        "Direct EC2 source upload failed with a network error. Check the worker URL, HTTPS/TLS, CORS, and security group access from the browser.",
+                ),
+            );
         };
         xhr.onload = () => {
             if (xhr.status >= 200 && xhr.status < 300) {
@@ -1573,6 +1605,12 @@ async function uploadRemoteVipSourceFileDirectly(input: {
     file: File;
     onProgress?: (progress: WorkspaceFileProgress) => void;
 }) {
+    const transportError = getDirectRemoteVipUploadTransportError(
+        input.endpoint,
+    );
+    if (transportError) {
+        throw new Error(transportError);
+    }
     const uploadId = createRemoteVipSourceUploadId();
     const partCount = Math.ceil(
         input.file.size / DIRECT_REMOTE_VIP_UPLOAD_CHUNK_BYTES,

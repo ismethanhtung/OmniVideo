@@ -101,6 +101,9 @@ describe("WorkspaceCanvasPanel canvas interactions", () => {
         expect(source).toContain("formatRemoteVipWorkerProgress");
         expect(source).toContain("checkpointState.remoteWorker");
         expect(source).toContain("uploadRemoteVipSourceFileDirectly");
+        expect(source).toContain("getDirectRemoteVipUploadTransportError");
+        expect(source).toContain("browser mixed-content rules");
+        expect(source).toContain("Use an HTTPS worker URL in Server modal");
         expect(source).toContain("canStageVipSourceDirectlyToEc2");
         expect(source).toContain("remoteSourceUploadId");
         expect(source).toContain("Direct EC2 source staging enabled");
