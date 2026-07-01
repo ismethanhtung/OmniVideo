@@ -578,6 +578,9 @@ async function resolveVipBackgroundMusicConfig(
 
 export const DEFAULT_VIP_VIDEO_SPEED_FACTOR = 0.75;
 export const DEFAULT_VIP_ORIGINAL_AUDIO_VOLUME = 0;
+const DEFAULT_VIP_TTS_ALIGNMENT_MODE: NonNullable<
+    VoiceGenerationSettings["alignmentMode"]
+> = "strict";
 const DEFAULT_VIP_RENDER_TIMEOUT_MS = 4 * 60 * 60 * 1000;
 
 function isVipRenderPreset(value: string | undefined): value is VipRenderPreset {
@@ -2098,8 +2101,7 @@ export async function runVideoVipVoiceRender(
         stage: "voice",
         segmentCount: voiceInputSegments.length,
         alignmentMode:
-            input.ttsSettings?.alignmentMode ??
-            DEFAULT_PIPER_TTS_SETTINGS.alignmentMode,
+            input.ttsSettings?.alignmentMode ?? DEFAULT_VIP_TTS_ALIGNMENT_MODE,
     });
     let voice: VoiceGenerationResult;
     try {
@@ -2108,6 +2110,9 @@ export async function runVideoVipVoiceRender(
             settings: {
                 ...DEFAULT_PIPER_TTS_SETTINGS,
                 ...input.ttsSettings,
+                alignmentMode:
+                    input.ttsSettings?.alignmentMode ??
+                    DEFAULT_VIP_TTS_ALIGNMENT_MODE,
                 preserveTimestampGaps:
                     input.ttsSettings?.preserveTimestampGaps ??
                     DEFAULT_PIPER_TTS_SETTINGS.preserveTimestampGaps,
@@ -2713,7 +2718,7 @@ export async function runVideoVipProcessing(
             backgroundMusicTrackCount: backgroundMusic?.tracks.length ?? 0,
             alignmentMode:
                 input.ttsSettings?.alignmentMode ??
-                DEFAULT_PIPER_TTS_SETTINGS.alignmentMode,
+                DEFAULT_VIP_TTS_ALIGNMENT_MODE,
             binaryPath: input.ttsSettings?.binaryPath ?? DEFAULT_PIPER_TTS_SETTINGS.binaryPath,
             modelPath: input.ttsSettings?.modelPath ?? DEFAULT_PIPER_TTS_SETTINGS.modelPath,
         });
@@ -2943,7 +2948,7 @@ export async function runVideoVipProcessing(
             segmentCount: voiceInputSegments.length,
             alignmentMode:
                 input.ttsSettings?.alignmentMode ??
-                DEFAULT_PIPER_TTS_SETTINGS.alignmentMode,
+                DEFAULT_VIP_TTS_ALIGNMENT_MODE,
             binaryPath: input.ttsSettings?.binaryPath ?? DEFAULT_PIPER_TTS_SETTINGS.binaryPath,
             modelPath: input.ttsSettings?.modelPath ?? DEFAULT_PIPER_TTS_SETTINGS.modelPath,
         });
@@ -2956,6 +2961,9 @@ export async function runVideoVipProcessing(
                         settings: {
                             ...DEFAULT_PIPER_TTS_SETTINGS,
                             ...input.ttsSettings,
+                            alignmentMode:
+                                input.ttsSettings?.alignmentMode ??
+                                DEFAULT_VIP_TTS_ALIGNMENT_MODE,
                             preserveTimestampGaps:
                                 input.ttsSettings?.preserveTimestampGaps ??
                                 DEFAULT_PIPER_TTS_SETTINGS.preserveTimestampGaps,
@@ -3276,8 +3284,7 @@ export async function runVideoVipProcessing(
         reused: Boolean(checkpointState.voice),
         segmentCount: voiceInputSegments.length,
         alignmentMode:
-            input.ttsSettings?.alignmentMode ??
-            DEFAULT_PIPER_TTS_SETTINGS.alignmentMode,
+            input.ttsSettings?.alignmentMode ?? DEFAULT_VIP_TTS_ALIGNMENT_MODE,
         binaryPath: input.ttsSettings?.binaryPath ?? DEFAULT_PIPER_TTS_SETTINGS.binaryPath,
         modelPath: input.ttsSettings?.modelPath ?? DEFAULT_PIPER_TTS_SETTINGS.modelPath,
     });
@@ -3290,6 +3297,9 @@ export async function runVideoVipProcessing(
                     settings: {
                         ...DEFAULT_PIPER_TTS_SETTINGS,
                         ...input.ttsSettings,
+                        alignmentMode:
+                            input.ttsSettings?.alignmentMode ??
+                            DEFAULT_VIP_TTS_ALIGNMENT_MODE,
                         preserveTimestampGaps:
                             input.ttsSettings?.preserveTimestampGaps ??
                             DEFAULT_PIPER_TTS_SETTINGS.preserveTimestampGaps,

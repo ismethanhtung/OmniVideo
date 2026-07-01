@@ -762,6 +762,27 @@ describe("VIP processing stage checkpoints", () => {
         expect(result.checkpoint?.reusedStages).toEqual([]);
     });
 
+    it("defaults VIP voice generation to strict alignment", async () => {
+        const runners = createStageRunners();
+
+        await runVideoVipProcessing({
+            fileName: "source.mp4",
+            fileSizeBytes: 3,
+            fileBytes: new Uint8Array([1, 2, 3]),
+            stageRunners: runners,
+            omitVideoBase64: true,
+        });
+
+        expect(runners.generateVoice).toHaveBeenCalledWith(
+            expect.objectContaining({
+                settings: expect.objectContaining({
+                    alignmentMode: "strict",
+                    preserveTimestampGaps: true,
+                }),
+            }),
+        );
+    });
+
     it("uses imported translation lines without calling AI translate runner", async () => {
         const runners = createStageRunners();
         const result = await runVideoVipProcessing({

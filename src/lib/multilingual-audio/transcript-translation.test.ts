@@ -276,10 +276,17 @@ describe("transcript translation", () => {
     expect(body.response_format).toEqual({ type: "json_object" });
     expect(prompt).toContain("fit the source timing");
     expect(prompt).toContain("Translation guide:");
+    expect(prompt).toContain("use the cast/gender map as supporting evidence");
     expect(prompt).toContain("Pronouns: resolve Chinese 他/她");
+    expect(prompt).toContain("Treat 他 in Chinese web subtitles as ambiguous");
     expect(prompt).toContain("Female cues include");
     expect(prompt).toContain("Male cues include");
     expect(prompt).toContain("avoid gendered Vietnamese pronouns");
+    expect(prompt).toContain("'chàng' and 'nàng' are intimate/literary/romantic choices");
+    expect(prompt).toContain("do not soften it into 'chàng/nàng'");
+    expect(prompt).toContain("silently audit every translated segment");
+    expect(prompt).toContain("do not assume the viewer is male");
+    expect(prompt).toContain("neutral-to-female-audience-friendly");
     expect(prompt).not.toContain("Full source transcript context (read-only):");
     expect(prompt).toContain("Short source lines need short Vietnamese");
     expect(prompt).toContain("wasabi -> wa sa bi");
@@ -617,12 +624,28 @@ describe("transcript translation", () => {
     expect(result.provider.requestId).toContain("chat_guide");
     expect(result.chunks.map((chunk) => chunk.segmentCount)).toEqual([150, 1]);
 
+    const guideBody = JSON.parse(fetchImpl.mock.calls[0][1].body as string);
+    const guidePrompt = guideBody.messages[1].content as string;
+    expect(guidePrompt).toContain('"aliases"');
+    expect(guidePrompt).toContain('"genderEvidence"');
+    expect(guidePrompt).toContain('"preferredRefs"');
+    expect(guidePrompt).toContain('"forbiddenRefs"');
+    expect(guidePrompt).toContain('"relationshipStage"');
+    expect(guidePrompt).toContain('"addressStyle"');
+    expect(guidePrompt).toContain(
+      "neutral-to-female-audience-friendly Vietnamese recap tone",
+    );
+    expect(guidePrompt).toContain("chàng/nàng would be too intimate");
+
     const prompts = fetchImpl.mock.calls.slice(1).map(([, init]) => {
       const body = JSON.parse((init as RequestInit).body as string);
       return body.messages[1].content as string;
     });
     expect(prompts[0]).toContain("短句0");
     expect(prompts[0]).toContain("短句150");
+    expect(prompts[0]).toContain("use the cast/gender map as supporting evidence");
+    expect(prompts[0]).toContain("Before final JSON, silently audit");
+    expect(prompts[0]).toContain("do not soften it into 'chàng/nàng'");
     expect(prompts[1]).not.toContain("短句0");
     expect(prompts[1]).toContain("短句150");
 
@@ -668,10 +691,25 @@ describe("transcript translation", () => {
     const [, fallbackInit] = fetchImpl.mock.calls[2];
     const fallbackBody = JSON.parse(fallbackInit.body as string);
     expect(fallbackBody.messages[0].content).toContain(
-      "Keep gender pronouns consistent with Chinese context cues.",
+      "Keep character gender consistent with the guide and Chinese context cues",
+    );
+    expect(fallbackBody.messages[0].content).toContain(
+      "do not force romance pronouns",
+    );
+    expect(fallbackBody.messages[0].content).toContain(
+      "Do not assume the viewer is male",
     );
     expect(fallbackBody.messages[1].content).toContain(
       "Translation guide:",
+    );
+    expect(fallbackBody.messages[1].content).toContain(
+      "Audit gender before answering",
+    );
+    expect(fallbackBody.messages[1].content).toContain(
+      "Do not use 'chàng/nàng' just because gender is known",
+    );
+    expect(fallbackBody.messages[1].content).toContain(
+      "neutral-to-female-audience-friendly",
     );
     expect(fallbackBody.messages[1].content).toContain(
       "YoYo Television Series Exclusive",

@@ -6,7 +6,7 @@ import { getAiProviderById } from "@/lib/ai-providers/repository";
 import { resolveAssetDownload } from "@/lib/storage/asset-download";
 import { getIntakeDb, getVideoAssetById } from "@/lib/video-intake/repository";
 
-import { GET, POST, DELETE } from "./route";
+import { GET, POST, DELETE, maxDuration } from "./route";
 
 vi.mock("@/lib/multilingual-audio/video-vip-processing", () => ({
   runVideoVipProcessing: vi.fn(),
@@ -113,6 +113,10 @@ describe("video vip processing API", () => {
     mockedResolveAssetDownload.mockReset();
     mockedGetIntakeDb.mockReset();
     mockedGetVideoAssetById.mockReset();
+  });
+
+  it("declares a long Vercel max duration for VIP processing", () => {
+    expect(maxDuration).toBe(800);
   });
 
   it("rejects missing video input", async () => {

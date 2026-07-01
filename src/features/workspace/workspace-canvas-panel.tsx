@@ -337,6 +337,11 @@ type WorkspaceRunOptions = {
 const MAX_RESUME_TEXT_LENGTH = 4000;
 const VIP_PROGRESS_STAGE_DESCRIPTORS = [
     {
+        key: "upload",
+        label: "VIP · Upload source",
+        subtitle: "Waiting for source upload...",
+    },
+    {
         key: "transcript",
         label: "VIP · Transcript",
         subtitle: "Waiting for speech transcript...",
@@ -527,15 +532,25 @@ function buildVipManualImportPrompt(input: {
         "",
         "Before translating, infer a small cast/gender map from the whole chunk, then apply that map consistently to every segment.",
         "",
-        "Chinese pronouns are context-sensitive: do not translate 他 mechanically as 'hắn/anh ấy' when the current referent is female. Resolve the referent from the nearest named character, titles, actions, and surrounding segments.",
+        "Gender contract: use the cast/gender map as supporting evidence, not as a forced pronoun mapping. It prevents cross-gender mistakes, but it must not override source wording, relationship stage, scene emotion, power dynamics, or direct dialogue address.",
         "",
-        "Female cues: 她, 师妹, 师姐, 圣女, 姑娘, 小姐, 女子, 女修, 仙子, 美人, 绝美, 师尊 if the context describes a female master. Use Vietnamese female references such as 'nàng' or 'cô ấy' consistently.",
+        "Chinese pronouns are context-sensitive: do not translate 他 mechanically as 'hắn/anh ấy' when the current referent is female. Resolve the referent from the nearest named character, titles, relationships, actions, dialogue speaker, and surrounding segments.",
         "",
-        "Male cues: 他, 师兄, 师弟, 公子, 少年, 男子, 男修. Use Vietnamese male references such as 'hắn', 'anh ấy', or 'chàng' only when the referent is clearly male.",
+        "Female cues: 她, 女主, 妻子, 夫人, 王妃, 娘娘, 小姐, 姑娘, 女子, 女儿, 妹妹, 姐姐, 师妹, 师姐, 圣女, 女修, 仙子, 美人, 绝美, 师尊 if the context describes a female master. Keep female referents female, but choose the Vietnamese address term from the scene.",
+        "",
+        "Male cues: 他, 男主, 夫君, 丈夫, 王爷, 少爷, 公子, 男子, 少年, 儿子, 哥哥, 弟弟, 师兄, 师弟, 男修. Keep male referents male, but choose the Vietnamese address term from the scene.",
         "",
         "When a name/title establishes gender in one segment, keep that gender for later pronouns that refer to the same person, even if later Chinese uses 他 ambiguously.",
         "",
-        "If gender is ambiguous, prefer a neutral Vietnamese wording that avoids gendered pronouns instead of guessing.",
+        "If gender or referent is ambiguous, prefer a neutral Vietnamese wording that avoids gendered pronouns instead of guessing: use the name/title/role, 'người đó', 'đối phương', or omit the pronoun.",
+        "",
+        "Address terms are contextual: 'chàng' and 'nàng' are intimate/literary/romantic choices, not default male/female pronouns. Use them only when the narrator style or established relationship supports that intimacy.",
+        "",
+        "In direct dialogue, preserve the source address force. If characters are angry, distant, hostile, formal, or not yet romantically close, keep a sharper or neutral address such as 'ngươi', 'anh', 'cô', name/title/role, or omit the address; do not soften it into 'chàng/nàng'.",
+        "",
+        "Before final output, silently audit every line: do not call a confirmed male character 'nàng/cô ấy/cô ta' and do not call a confirmed female character 'hắn/anh ấy/chàng'. Replace risky pronouns with a name/title/neutral wording.",
+        "",
+        "Audience/style: do not assume the viewer is male. Use a neutral-to-female-audience-friendly romance/short-drama recap tone when compatible with the source, but never change a character's gender, relationship, or agency to fit that tone.",
         "",
         "Never insert pronouns inside another word; pronouns must remain separate Vietnamese words only when they are actually needed.",
         "",
@@ -1362,6 +1377,82 @@ async function fetchWorkspaceJson<T>(input: {
     }
 
     return payload as T;
+}
+
+async function fetchWorkspaceJsonWithUploadProgress<T>(input: {
+    url: string;
+    actionLabel: string;
+    formData: FormData;
+    onUploadProgress?: (progress: WorkspaceFileProgress) => void;
+    onUploadComplete?: () => void;
+}) {
+    return await new Promise<T>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", input.url);
+        xhr.responseType = "text";
+
+        xhr.upload.onprogress = (event) => {
+            const totalBytes = event.lengthComputable
+                ? event.total
+                : undefined;
+            input.onUploadProgress?.({
+                loadedBytes: event.loaded,
+                totalBytes,
+                percent:
+                    typeof totalBytes === "number" && totalBytes > 0
+                        ? Math.max(
+                              0,
+                              Math.min(100, (event.loaded / totalBytes) * 100),
+                          )
+                        : undefined,
+            });
+        };
+        xhr.upload.onload = () => input.onUploadComplete?.();
+
+        xhr.onerror = () => {
+            reject(
+                new Error(
+                    `${input.actionLabel} failed at ${input.url}: network error`,
+                ),
+            );
+        };
+        xhr.onload = () => {
+            let payload: unknown = null;
+            try {
+                payload = xhr.responseText ? JSON.parse(xhr.responseText) : null;
+            } catch {
+                payload = null;
+            }
+
+            const ok =
+                xhr.status >= 200 &&
+                xhr.status < 300 &&
+                (!payload ||
+                    typeof payload !== "object" ||
+                    !("ok" in payload) ||
+                    (payload as { ok?: unknown }).ok !== false);
+
+            if (!ok) {
+                reject(
+                    new WorkspaceApiError({
+                        message: `${input.actionLabel} failed at ${input.url}: ${getWorkspaceApiErrorMessage(
+                            payload,
+                            "Unexpected API error.",
+                            xhr.status,
+                        )}`,
+                        status: xhr.status,
+                        payload,
+                        url: input.url,
+                        actionLabel: input.actionLabel,
+                    }),
+                );
+                return;
+            }
+
+            resolve(payload as T);
+        };
+        xhr.send(input.formData);
+    });
 }
 
 async function fetchWorkspaceFile(input: {
@@ -4979,12 +5070,8 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     );
                     startVipProgressStage(
                         step,
-                        "transcript",
-                        vipTranslationOverride
-                            ? "Reusing current transcript for corrected VIP rerun..."
-                            : vipTranscriptRetryOverride
-                              ? "Using corrected split transcript for selected retry segment(s)..."
-                            : "Transcribing source speech...",
+                        "upload",
+                        "Uploading source video to Vercel before transcript work...",
                     );
                     let isPolling = true;
                     const pollCheckpoint = async () => {
@@ -5024,13 +5111,19 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                                     currentLogs.push(`[transcript] Complete. Segments: ${checkpointState.transcript.segments.length} total.`);
                                 }
                             } else {
-                                updateVipProgressStage(
-                                    step,
-                                    "transcript",
-                                    "Transcribing source speech...",
+                                const uploadStillRunning = !currentLogs.some(
+                                    (line) =>
+                                        line.startsWith("[upload] Complete."),
                                 );
-                                if (!currentLogs.some((line) => line.startsWith("[transcript] Processing..."))) {
-                                    currentLogs.push("[transcript] Processing...");
+                                if (!uploadStillRunning) {
+                                    updateVipProgressStage(
+                                        step,
+                                        "transcript",
+                                        "Transcribing source speech...",
+                                    );
+                                    if (!currentLogs.some((line) => line.startsWith("[transcript] Processing..."))) {
+                                        currentLogs.push("[transcript] Processing...");
+                                    }
                                 }
                             }
 
@@ -5168,8 +5261,30 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                             artifactExpiresAt?: string;
                         };
                     };
+                    let vipUploadCompleted = false;
+                    const finishVipSourceUploadStage = () => {
+                        if (vipUploadCompleted) return;
+                        vipUploadCompleted = true;
+                        finishVipProgressStage(
+                            step,
+                            "upload",
+                            "Source upload sent to VIP API.",
+                        );
+                        appendVipStageLog(
+                            "[upload] Complete. Source upload sent to VIP API.",
+                        );
+                        startVipProgressStage(
+                            step,
+                            "transcript",
+                            vipTranslationOverride
+                                ? "Reusing current transcript for corrected VIP rerun..."
+                                : vipTranscriptRetryOverride
+                                  ? "Using corrected split transcript for selected retry segment(s)..."
+                                : "Transcribing source speech...",
+                        );
+                    };
                     try {
-                        vipPayload = await fetchWorkspaceJson<{
+                        vipPayload = await fetchWorkspaceJsonWithUploadProgress<{
                             ok: true;
                             data: VideoVipProcessingResult & {
                                 artifactId?: string;
@@ -5178,7 +5293,23 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         }>({
                             url: "/api/audio/video-vip-processing",
                             actionLabel: "VIP processing",
-                            init: { method: "POST", body: formData },
+                            formData,
+                            onUploadProgress: (progress) => {
+                                const totalText =
+                                    typeof progress.totalBytes === "number"
+                                        ? ` / ${formatBytes(progress.totalBytes)}`
+                                        : "";
+                                const percentText =
+                                    typeof progress.percent === "number"
+                                        ? ` (${Math.round(progress.percent)}%)`
+                                        : "";
+                                updateVipProgressStage(
+                                    step,
+                                    "upload",
+                                    `Uploading source video to Vercel: ${formatBytes(progress.loadedBytes)}${totalText}${percentText}.`,
+                                );
+                            },
+                            onUploadComplete: finishVipSourceUploadStage,
                         });
                     } catch (error) {
                         if (error instanceof WorkspaceApiError) {
@@ -5217,6 +5348,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         isPolling = false;
                         clearInterval(pollInterval);
                     }
+                    finishVipSourceUploadStage();
                     if (vipPayload.data.checkpoint?.reusedStages.length) {
                         appendVipStageLog(
                             `Resumed VIP checkpoint: ${vipPayload.data.checkpoint.reusedStages.join(", ")}.`,

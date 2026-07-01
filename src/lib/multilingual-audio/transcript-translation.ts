@@ -41,7 +41,7 @@ const DEFAULT_MAX_TRANSIENT_CHUNK_RETRIES = 4;
 const DEFAULT_TRANSIENT_CHUNK_RETRY_BASE_MS = 1000;
 const DEFAULT_TRANSIENT_CHUNK_RETRY_MAX_MS = 15000;
 const INVALID_JSON_SNIPPET_MAX_CHARS = 220;
-const TRANSLATION_PROMPT_VERSION = "transcript-translation-v4-vietnamese-name-guard";
+const TRANSLATION_PROMPT_VERSION = "transcript-translation-v6-contextual-address-guard";
 const TRANSLATION_GUIDE_SOURCE_MAX_CHARS = 32000;
 const TRANSLATION_GUIDE_MAX_CHARS = 3500;
 const NEARBY_CONTEXT_SEGMENT_COUNT = 8;
@@ -634,7 +634,14 @@ function buildTranslationPrompt(input: {
         "Task: translate only the requested transcript segments into natural Vietnamese for voice-over.",
         "Rules: preserve meaning, names, tone, timeline alignment, and segment IDs. Do not merge, split, reorder, or drop segments.",
         "Use the Translation guide as the main continuity source. Use Nearby context only for pronouns, names, relationships, and tone; do not output nearby context unless its IDs appear in Segments.",
-        "Pronouns: resolve Chinese 他/她 from names, titles, actions, and guide. Female cues include 她/师妹/师姐/圣女/姑娘/小姐/女子/女修/仙子/美人/绝美. Male cues include 他/师兄/师弟/公子/少年/男子/男修. If unclear, avoid gendered Vietnamese pronouns.",
+        "Gender contract: use the cast/gender map as supporting evidence, not as a forced pronoun mapping. It prevents cross-gender mistakes, but it must not override source wording, relationship stage, scene emotion, power dynamics, or direct dialogue address.",
+        "Pronouns: resolve Chinese 他/她 from names, titles, relationships, actions, dialogue speaker, and guide. Treat 他 in Chinese web subtitles as ambiguous when surrounding evidence points to a female referent; do not translate it mechanically as male.",
+        "Female cues include 她/女主/妻子/夫人/王妃/娘娘/小姐/姑娘/女子/女儿/妹妹/姐姐/师妹/师姐/圣女/女修/仙子/美人/绝美. Male cues include 他/男主/夫君/丈夫/王爷/少爷/公子/男子/少年/儿子/哥哥/弟弟/师兄/师弟/男修.",
+        "Vietnamese pronoun policy: if gender is confirmed, use the same gendered reference consistently; if referent or gender is unclear, avoid gendered Vietnamese pronouns and use the name/title/role, 'người đó', 'đối phương', or omit the pronoun.",
+        "Address terms are contextual: 'chàng' and 'nàng' are intimate/literary/romantic choices, not default male/female pronouns. Use them only when the narrator style or established relationship supports that intimacy.",
+        "In direct dialogue, preserve the source address force. If characters are angry, distant, hostile, formal, or not yet romantically close, keep a sharper or neutral address such as 'ngươi', 'anh', 'cô', name/title/role, or omit the address; do not soften it into 'chàng/nàng'.",
+        "Before final JSON, silently audit every translated segment for pronoun mismatches against the guide and nearby context. Replace risky pronouns with a name/title/neutral wording rather than guessing.",
+        "Audience/style: do not assume the viewer is male. Use a neutral-to-female-audience-friendly romance/short-drama recap tone when compatible with the source, but never change a character's gender, relationship, or agency to fit that tone.",
         "Names for Vietnamese voice: never output Pinyin/latinized Chinese names or tone-marked romanization such as Zhūzhū, Xǔ Shí, Lǐ, Wáng. Convert Chinese names/titles to natural Vietnamese or Sino-Vietnamese when possible; if unsure, use a Vietnamese role/pronoun instead of Pinyin.",
         "Vietnamese style: concise spoken language that can fit the source timing. Short source lines need short Vietnamese. Avoid explanations and filler.",
         "TTS normalization: spell standalone numbers as Vietnamese words unless codes/measurements; expand units like 50cm -> 50 xen ti mét, 12kg -> 12 ki lô gam, 5ml -> 5 mi li lít; render wasabi -> wa sa bi, isothiocyanate -> ai sô thio xai a nết, myrosinase -> mai rô si nâyz, enzyme/enzym -> en zim.",
@@ -722,8 +729,8 @@ async function requestTranslationGuide(input: {
                     `Prompt version: ${TRANSLATION_PROMPT_VERSION}.`,
                     `Source language: ${input.sourceLanguage}. Target language: ${input.targetLanguage}.`,
                     "Analyze this transcript once. Return a compact JSON guide under 1200 words with keys:",
-                    '{"characters":{"sourceName":{"gender":"male|female|unknown","viRef":"...","notes":"..."}},"terms":{"sourceTerm":"Vietnamese rendering"},"style":"...","warnings":["..."]}',
-                    "Focus on names, gender/pronoun continuity, titles/sects/skills, repeated terms, and tone. Do not translate the full transcript.",
+                    '{"characters":{"sourceName":{"aliases":["..."],"gender":"male|female|unknown","genderEvidence":["segmentId:cue"],"viRef":"...","preferredRefs":["..."],"forbiddenRefs":["..."],"relationships":["..."],"relationshipStage":"unknown|distant|conflict|respectful|intimate|romantic","addressStyle":"...","notes":"..."}},"terms":{"sourceTerm":"Vietnamese rendering"},"style":"neutral-to-female-audience-friendly Vietnamese recap tone unless source requires otherwise","warnings":["..."]}',
+                    "Focus on names, aliases, gender/pronoun continuity, titles/relationships, relationship stage, address style, repeated terms, and tone. For every character with clear gender evidence, include forbiddenRefs that prevent cross-gender Vietnamese pronouns. Mark when chàng/nàng would be too intimate or too soft for the scene. Do not translate the full transcript.",
                     "Transcript:",
                     guideSource,
                 ].join("\n"),
@@ -966,7 +973,7 @@ async function requestSingleSegmentPlainTextFallback(input: {
             {
                 role: "system",
                 content:
-                    "You are a translator. Return only Vietnamese translated text with no explanations or markdown. Keep gender pronouns consistent with Chinese context cues. Never output Pinyin or tone-marked romanized Chinese names; use natural Vietnamese/Sino-Vietnamese names or Vietnamese pronouns.",
+                    "You are a translator. Return only Vietnamese translated text with no explanations or markdown. Keep character gender consistent with the guide and Chinese context cues, but do not force romance pronouns; when unsure, avoid gendered Vietnamese pronouns. Do not assume the viewer is male. Never output Pinyin or tone-marked romanized Chinese names; use natural Vietnamese/Sino-Vietnamese names or Vietnamese role references.",
             },
             {
                 role: "user",
@@ -977,7 +984,10 @@ async function requestSingleSegmentPlainTextFallback(input: {
                     nearbyContext ? "Nearby context:" : "",
                     nearbyContext,
                     "Translate this one transcript segment into concise natural Vietnamese for TTS.",
-                    "Do not output Pinyin/latinized Chinese names. Convert names/titles to Vietnamese when possible; if unsure, use a Vietnamese role/pronoun.",
+                    "Audit gender before answering: do not call a confirmed male character 'nàng/cô ấy/cô ta' and do not call a confirmed female character 'hắn/anh ấy/chàng'. If unclear, use name/title/role/neutral wording.",
+                    "Keep address terms contextual. Do not use 'chàng/nàng' just because gender is known; in angry, distant, hostile, formal, or pre-romance dialogue, preserve sharper or neutral address such as 'ngươi', 'anh', 'cô', name/title/role, or omit it.",
+                    "Use a neutral-to-female-audience-friendly romance/short-drama recap tone when compatible with the source, but do not change character gender or relationship.",
+                    "Do not output Pinyin/latinized Chinese names. Convert names/titles to Vietnamese when possible; if unsure, use a Vietnamese role reference.",
                     `Source text: ${input.segment.text}`,
                 ].join("\n"),
             },

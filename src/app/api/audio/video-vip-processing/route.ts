@@ -41,6 +41,7 @@ import {
 } from "@/lib/workspace/server-artifacts";
 
 export const runtime = "nodejs";
+export const maxDuration = 800;
 
 function readFormValue(formData: FormData, key: string) {
     const value = formData.get(key);

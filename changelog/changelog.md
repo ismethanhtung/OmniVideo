@@ -1,5 +1,55 @@
 # OmniVideo Changelog
 
+## FAST-WORKSPACE-097 - Clarify Vercel VIP upload progress and duration
+
+- Bumped app version from `0.11.50` to `0.11.51` as a patch release for deployed Workspace VIP reliability.
+- Added a distinct `VIP · Upload source` Background Progress stage so production runs do not appear stuck at transcript while the browser is still sending the source video to Vercel.
+- Switched the Workspace VIP POST call to an upload-progress capable XHR helper that preserves existing JSON error parsing and VIP failure details.
+- Declared `maxDuration = 800` on the long VIP processing and EC2 worker routes for Vercel App Router deployments.
+- Verification (FAST-WORKSPACE-097):
+  - `npm run test -- --run src/features/workspace/workspace-canvas-panel.test.ts src/app/api/audio/video-vip-processing/route.test.ts src/app/api/audio/video-vip-voice-render/route.test.ts` pass (3 files / 60 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+
+## FAST-AUDIO-080 - Soften gender guardrails for contextual Vietnamese address terms
+
+- Bumped app version from `0.11.49` to `0.11.50` as a patch release for Vietnamese transcript translation prompt quality.
+- Refined gender guardrails so the cast/gender map is supporting evidence, not a forced pronoun mapping that overrides source wording, relationship stage, emotion, or direct dialogue address.
+- Added explicit guidance that `chàng`/`nàng` are intimate, literary, or romantic choices, not default male/female pronouns.
+- Added direct-dialogue address rules so angry, distant, hostile, formal, or pre-romance scenes can preserve sharper or neutral wording such as `ngươi`, `anh`, `cô`, name/title/role, or omitted address.
+- Extended the guide preflight schema with `relationshipStage` and `addressStyle` so model guidance can track whether romantic address terms are too intimate for the scene.
+- Verification (FAST-AUDIO-080):
+  - `npm run test -- --run src/lib/multilingual-audio/transcript-translation.test.ts src/features/workspace/workspace-canvas-panel.test.ts` pass (2 files / 46 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+
+## FAST-AUDIO-079 - Harden Vietnamese gender pronoun translation
+
+- Bumped app version from `0.11.48` to `0.11.49` as a patch release for Vietnamese transcript translation quality.
+- Strengthened automatic translation prompts with a stricter cast/gender contract, explicit Chinese gender cues, and a pre-output gender pronoun audit.
+- Updated the translation guide preflight schema to capture character aliases, gender evidence, preferred Vietnamese references, and forbidden cross-gender references.
+- Added neutral-to-female-audience-friendly recap tone guidance so translation no longer assumes a male viewer while preserving source character gender and relationships.
+- Aligned the Workspace manual translation import prompt with the same gender and audience rules.
+- Verification (FAST-AUDIO-079):
+  - `npm run test -- --run src/lib/multilingual-audio/transcript-translation.test.ts src/features/workspace/workspace-canvas-panel.test.ts` pass (2 files / 46 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+
+## FAST-AUDIO-077 - Restore strict voice timestamp starts and 1.15x floor
+
+- Bumped app version from `0.11.47` to `0.11.48` as a patch release for strict VIP voice timing.
+- Removed strict Piper timeline lead borrowing so generated voice segments no longer start before their transcript timestamps.
+- Lowered the strict timeline speed floor from `1.25x` to `1.15x`, keeping a non-natural baseline without over-accelerating short segments.
+- Kept balanced alignment on the natural speed path, while defaulting VIP voice generation to strict alignment when no `ttsAlignmentMode` is provided.
+- Verification (FAST-AUDIO-077):
+  - `npm run test -- --run src/lib/multilingual-audio/piper-tts.test.ts src/lib/multilingual-audio/video-vip-processing.test.ts src/app/api/audio/video-vip-processing/route.test.ts src/app/api/audio/video-vip-voice-render/route.test.ts` pass (4 files / 92 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+
 ## FAST-VIDEO-058 - Add VIP original vocals isolation
 
 - Bumped app version from `0.11.45` to `0.11.46` as a patch release for Workspace VIP original-audio controls.

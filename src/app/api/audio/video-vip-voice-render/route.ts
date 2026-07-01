@@ -27,6 +27,7 @@ import {
 import { buildWorkspaceMediaPayload } from "@/lib/workspace/server-artifacts";
 
 export const runtime = "nodejs";
+export const maxDuration = 800;
 
 type RemoteVipWorkerJobStatus = "running" | "done" | "failed";
 type RemoteVipWorkerJob = {

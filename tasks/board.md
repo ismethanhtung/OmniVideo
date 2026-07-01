@@ -178,6 +178,10 @@
 
 ## Done
 
+- `FAST-WORKSPACE-097` - Clarify Vercel VIP upload progress and duration
+- `FAST-AUDIO-080` - Soften gender guardrails for contextual Vietnamese address terms
+- `FAST-AUDIO-079` - Harden Vietnamese gender pronoun translation
+- `FAST-AUDIO-077` - Restore strict voice timestamp starts and 1.15x floor
 - `FAST-VIDEO-058` - Add VIP original vocals isolation
 - `FAST-VIDEO-057` - Add VIP segment transcript retry and Vietnamese name guard
 - `FAST-VIDEO-056` - Move VIP translation corrections into Background Progress

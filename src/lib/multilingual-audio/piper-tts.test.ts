@@ -371,7 +371,7 @@ describe("Piper TTS adapter", () => {
         expect(result.segmentCount).toBe(1);
     });
 
-    it("borrows safe following gaps before speeding up timeline segments", () => {
+    it("keeps the 1.15x strict floor after borrowing safe following gaps", () => {
         expect(
             buildTimelineAlignmentChunk({
                 segment: { id: 7, start: 0, end: 1, text: "Một câu hơi dài" },
@@ -384,8 +384,8 @@ describe("Piper TTS adapter", () => {
             rawDurationSeconds: 1.5,
             targetDurationSeconds: 1.5,
             borrowedGapSeconds: 0.5,
-            speedFactor: 1,
-            tempoFilter: "anull",
+            speedFactor: 1.15,
+            tempoFilter: "atempo=1.15",
             warningCodes: [],
         });
     });
@@ -405,7 +405,7 @@ describe("Piper TTS adapter", () => {
         });
     });
 
-    it("uses a 1.25x speed floor when timeline acceleration is needed", () => {
+    it("uses a 1.15x speed floor when timeline acceleration is needed", () => {
         expect(
             buildTimelineAlignmentChunk({
                 segment: {
@@ -419,8 +419,8 @@ describe("Piper TTS adapter", () => {
             }),
         ).toMatchObject({
             targetDurationSeconds: 1,
-            speedFactor: 1.25,
-            tempoFilter: "atempo=1.25",
+            speedFactor: 1.15,
+            tempoFilter: "atempo=1.15",
         });
     });
 
@@ -528,7 +528,7 @@ describe("Piper TTS adapter", () => {
         });
     });
 
-    it("lets strict timeline segments borrow safe previous audible slack", async () => {
+    it("keeps strict timeline segment starts fixed instead of borrowing previous slack", async () => {
         const spawnMock = createMockSpawn();
         const ffmpegCalls: string[][] = [];
         setPiperSpawnForTest(spawnMock as never);
@@ -573,18 +573,18 @@ describe("Piper TTS adapter", () => {
 
         expect(result.alignment.timeline?.[1]).toMatchObject({
             segmentId: 1,
-            targetDurationSeconds: expect.closeTo(5.35, 4),
-            borrowedLeadSeconds: expect.closeTo(0.35, 4),
-            speedFactor: expect.closeTo(7 / 5.35, 4),
-            scheduledStartSeconds: expect.closeTo(4.65, 4),
+            targetDurationSeconds: expect.closeTo(5, 4),
+            borrowedLeadSeconds: 0,
+            speedFactor: expect.closeTo(7 / 5, 4),
+            scheduledStartSeconds: expect.closeTo(5, 4),
             scheduledEndSeconds: expect.closeTo(10, 4),
-            driftSeconds: expect.closeTo(-0.35, 4),
+            driftSeconds: 0,
         });
         const finalMixCall = ffmpegCalls.at(-1) ?? [];
         const filterComplex =
             finalMixCall[finalMixCall.indexOf("-filter_complex") + 1] ?? "";
         expect(filterComplex).toContain("adelay=0:all=1");
-        expect(filterComplex).toContain("adelay=4650:all=1");
+        expect(filterComplex).toContain("adelay=5000:all=1");
     });
 
     it("places strict timeline chunks by absolute timestamp instead of serial concat", async () => {

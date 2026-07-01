@@ -52,11 +52,8 @@ export const DEFAULT_PIPER_TTS_SETTINGS = {
 export const PIPER_TTS_ALIGNMENT_SETTINGS = {
     timelineGapBorrowRatio: 0.75,
     maxTimelineGapBorrowSeconds: 0.75,
-    timelineLeadBorrowRatio: 0.75,
-    maxTimelineLeadBorrowSeconds: 0.35,
-    timelineMinInterSpeechGapSeconds: 0.04,
     timelineSegmentSentenceSilenceSeconds: 0.05,
-    timelineMinSpeedFactor: 1.25,
+    timelineMinSpeedFactor: 1.15,
     timelineMaxSpeedFactor: 1.75,
     highTimelineSpeedFactor: 1.35,
     balancedMaxPauseSeconds: 0.1,

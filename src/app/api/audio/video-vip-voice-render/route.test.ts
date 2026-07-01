@@ -12,7 +12,7 @@ import {
     getWorkspaceServerArtifact,
 } from "@/lib/workspace/server-artifacts";
 
-import { DELETE, GET, POST } from "./route";
+import { DELETE, GET, POST, maxDuration } from "./route";
 
 vi.mock("node:child_process", () => ({
     execFileSync: vi.fn(() => ""),
@@ -44,6 +44,10 @@ describe("video vip voice/render worker API", () => {
     afterEach(() => {
         vi.unstubAllGlobals();
         clearWorkspaceServerArtifactsForTest();
+    });
+
+    it("declares a long Vercel max duration for worker jobs", () => {
+        expect(maxDuration).toBe(800);
     });
 
     it("exposes a lightweight health check", async () => {
