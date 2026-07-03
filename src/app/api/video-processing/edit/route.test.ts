@@ -424,6 +424,58 @@ describe("video edit API", () => {
         );
     });
 
+    it("parses YouTube Short clip settings as a standalone transform", async () => {
+        mockedRunVideoEditPipeline.mockResolvedValueOnce({
+            videoBase64: Buffer.from("short").toString("base64"),
+            mimeType: "video/mp4",
+            extension: "mp4",
+            fileName: "source-edit.mp4",
+            byteLength: 5,
+            generationDurationMs: 12,
+            transform: {
+                mirror: false,
+                partialBlur: false,
+                coverBox: false,
+                subtitleOverlay: false,
+                segmentCount: 0,
+                textOverlay: false,
+                textOverlayCount: 0,
+                youtubeShort: true,
+                shortClipDurationSeconds: 120,
+            },
+        });
+        const formData = createFormData({
+            shortClipEnabled: "true",
+            shortClipStart: "0",
+            shortClipDuration: "120",
+        });
+        formData.set(
+            "videoFile",
+            new File([new Uint8Array([1, 2, 3])], "source.mp4", {
+                type: "video/mp4",
+            }),
+        );
+
+        const response = await POST(
+            new Request("http://localhost/api/video-processing/edit", {
+                method: "POST",
+                body: formData,
+            }),
+        );
+
+        expect(response.status).toBe(200);
+        expect(mockedRunVideoEditPipeline).toHaveBeenCalledWith(
+            expect.objectContaining({
+                fileName: "source.mp4",
+                shortClip: {
+                    enabled: true,
+                    start: 0,
+                    duration: 120,
+                },
+            }),
+        );
+    });
+
     it("parses multi blur regions json and forwards to pipeline", async () => {
         mockedRunVideoEditPipeline.mockResolvedValueOnce({
             videoBase64: Buffer.from("edited").toString("base64"),

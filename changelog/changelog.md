@@ -1,5 +1,19 @@
 # OmniVideo Changelog
 
+## FAST-VIDEO-059 - Add Video Tools Text Overlay defaults and YouTube Short crop
+
+- Bumped app version from `0.11.55` to `0.11.56` as a patch release for Video Tools short-form editing and Video Tools Lab overlay defaults.
+- Changed Video Tools Lab Text Overlay defaults so the overlay is enabled by default, uses `Lon Xon Review`, and starts at font size `45`.
+- Replaced the Text Overlay channel text field with a select containing `Lon Xon Review` and `Com Ao Review`.
+- Added a Video Tools YouTube Short option that trims by start/duration seconds and renders a centered 9:16 crop at 1080x1920.
+- Added visible Video Tools mode buttons so `YouTube Short 9:16` is shown on the page without opening the split-mode dropdown.
+- Verification (FAST-VIDEO-059):
+  - `npm run test -- --run src/features/video-processing/video-tools-lab-panel.test.ts src/features/video-processing/video-splitter-panel.test.ts src/app/api/video-processing/edit/route.test.ts src/lib/video-processing/video-edit-pipeline.test.ts` pass (4 files / 51 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - Host-side `curl -sS http://localhost:3000/video-splitter | rg -o "YouTube Short 9:16|Render Short \\+ Download MP4|Block|Parts|Head clip"` shows `YouTube Short 9:16`, `Block`, `Parts`, and `Head clip`.
+  - `git diff --check` pass.
+
 ## FAST-AUDIO-080 - Soften gender guardrails for contextual Vietnamese address terms
 
 - Bumped app version from `0.11.49` to `0.11.50` as a patch release for Vietnamese transcript translation prompt quality.

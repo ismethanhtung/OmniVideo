@@ -86,7 +86,11 @@ describe("Video Tools Lab source preview controls", () => {
         expect(source).toContain("coverBoxColor");
         expect(source).toContain("subtitleBackgroundPaddingY");
         expect(source).toContain("Text Overlay");
-        expect(source).toContain("Ăn Không Ngồi Rồi");
+        expect(source).toContain("Lộn Xộn Review");
+        expect(source).toContain("Cơm Áo Review");
+        expect(source).toContain("TEXT_OVERLAY_CHANNEL_OPTIONS.map");
+        expect(source).toContain("const [textOverlayEnabled, setTextOverlayEnabled] = useState(true)");
+        expect(source).toContain("fontSize: 45");
         expect(source).toContain("textOverlaysJson");
         expect(source).toContain("textOverlayPlayResX");
         expect(source).toContain("getVideoTextFontOption");

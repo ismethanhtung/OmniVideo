@@ -454,9 +454,9 @@ const VIDEO_TEXT_FONT_OPTIONS: Array<{
 ];
 
 const DEFAULT_TEXT_OVERLAY: TextOverlayDraft = {
-    text: "Ăn Không Ngồi Rồi",
+    text: "Lộn Xộn Review",
     fontFamily: "Baloo 2",
-    fontSize: 52,
+    fontSize: 45,
     fontWeight: 800,
     textColor: "#ffffff",
     strokeColor: "#111827",
@@ -469,6 +469,11 @@ const DEFAULT_TEXT_OVERLAY: TextOverlayDraft = {
     start: 0,
     end: 36000,
 };
+
+const TEXT_OVERLAY_CHANNEL_OPTIONS = [
+    "Lộn Xộn Review",
+    "Cơm Áo Review",
+] as const;
 
 function buildDraftId(prefix: string) {
     if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -585,7 +590,7 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
         widthPercent?: number;
         heightPercent?: number;
     } | null>(null);
-    const [textOverlayEnabled, setTextOverlayEnabled] = useState(false);
+    const [textOverlayEnabled, setTextOverlayEnabled] = useState(true);
     const [textOverlay, setTextOverlay] = useState<TextOverlayDraft>({
         ...DEFAULT_TEXT_OVERLAY,
     });
@@ -1163,7 +1168,7 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                 setBlurRegions([]);
                 setActiveRegionId(null);
                 applyDefaultSubtitleSetup();
-                setTextOverlayEnabled(false);
+                setTextOverlayEnabled(true);
                 applyDefaultTextOverlaySetup();
                 setBackgroundMusicEnabled(false);
                 applyDefaultBackgroundMusicSetup();
@@ -2660,9 +2665,9 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                                 </div>
                                 <label className="block">
                                     <span className="mb-1 block text-[10px] font-semibold text-muted">
-                                        Text
+                                        Channel
                                     </span>
-                                    <input
+                                    <select
                                         value={textOverlay.text}
                                         disabled={isRunningEdit}
                                         onChange={(event) =>
@@ -2671,7 +2676,18 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                                             })
                                         }
                                         className="w-full border border-main bg-secondary/30 px-2 py-1.5 text-[11px] text-main"
-                                    />
+                                    >
+                                        {TEXT_OVERLAY_CHANNEL_OPTIONS.map(
+                                            (option) => (
+                                                <option
+                                                    key={option}
+                                                    value={option}
+                                                >
+                                                    {option}
+                                                </option>
+                                            ),
+                                        )}
+                                    </select>
                                 </label>
                                 <div className="grid grid-cols-3 gap-2">
                                     <label className="block">

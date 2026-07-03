@@ -100,6 +100,41 @@ describe("video edit pipeline", () => {
         );
     });
 
+    it("builds ffmpeg args for a YouTube Short 9:16 head clip", () => {
+        const args = buildVideoEditFfmpegArgs({
+            videoPath: "/tmp/source.mp4",
+            outputPath: "/tmp/out.mp4",
+            mirror: false,
+            shortClip: {
+                enabled: true,
+                start: 30,
+                duration: 60,
+            },
+        });
+
+        expect(args).toEqual(
+            expect.arrayContaining([
+                "-ss",
+                "30",
+                "-i",
+                "/tmp/source.mp4",
+                "-t",
+                "60",
+                "-filter_complex",
+                expect.stringContaining("scale=1080:1920,setsar=1"),
+                "-map",
+                "[v0]",
+                "-map",
+                "0:a?",
+                "-c:a",
+                "copy",
+            ]),
+        );
+        const filter = args[args.indexOf("-filter_complex") + 1];
+        expect(filter).toContain("crop=w='min(iw\\,ih*9/16)'");
+        expect(filter).toContain("h='min(ih\\,iw*16/9)'");
+    });
+
     it("generates ASS subtitles from translated segments", () => {
         const ass = buildSubtitleAssContent([
             {
@@ -531,6 +566,21 @@ describe("video edit pipeline", () => {
                 },
             }),
         ).not.toThrow();
+    });
+
+    it("rejects invalid YouTube Short clip duration", () => {
+        expect(() =>
+            validateVideoEditInput({
+                fileName: "source.mp4",
+                fileSizeBytes: 3,
+                fileBytes: new Uint8Array([1, 2, 3]),
+                shortClip: {
+                    enabled: true,
+                    start: 0,
+                    duration: 0,
+                },
+            }),
+        ).toThrow(/YouTube Short clip start and duration/);
     });
 
     it("runs ffmpeg and returns base64 output metadata", async () => {

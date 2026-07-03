@@ -412,6 +412,7 @@ export async function POST(request: Request) {
         const blurEnabled = readBoolean(formData, "blurEnabled");
         const coverBoxEnabled = readBoolean(formData, "coverBoxEnabled");
         const textOverlayEnabled = readBoolean(formData, "textOverlayEnabled");
+        const shortClipEnabled = readBoolean(formData, "shortClipEnabled");
         const subtitlesEnabled = readBoolean(
             formData,
             "subtitleOverlayEnabled",
@@ -550,6 +551,13 @@ export async function POST(request: Request) {
                       ),
                   }
                 : undefined,
+            shortClip: shortClipEnabled
+                ? {
+                      enabled: true,
+                      start: readNumber(formData, "shortClipStart", 0),
+                      duration: readNumber(formData, "shortClipDuration", 60),
+                  }
+                : undefined,
         };
 
         const responseMode = readFormValue(formData, "responseMode");
@@ -572,10 +580,11 @@ export async function POST(request: Request) {
             const needsVideoDimensions =
                 input.subtitles?.enabled === true ||
                 input.textOverlays?.enabled === true;
-            const videoDimensions =
-                needsVideoDimensions
-                    ? await probeVideoDimensionsFromPath(uploadedPath)
-                    : null;
+            const videoDimensions = shortClipEnabled
+                ? { width: 1080, height: 1920 }
+                : needsVideoDimensions
+                  ? await probeVideoDimensionsFromPath(uploadedPath)
+                  : null;
             const normalizedInput =
                 videoDimensions && needsVideoDimensions
                     ? {

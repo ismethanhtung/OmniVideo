@@ -19,6 +19,7 @@ describe("Video Splitter panel", () => {
         expect(source).toContain("Chia theo block thời lượng");
         expect(source).toContain("Chia đều theo số phần");
         expect(source).toContain("Chỉ cắt đoạn đầu");
+        expect(source).toContain("YouTube Short 9:16");
         expect(source).toContain("30 minutes");
         expect(source).toContain("45 minutes");
         expect(source).toContain("60 minutes");
@@ -33,5 +34,17 @@ describe("Video Splitter panel", () => {
         expect(source).toContain("Split + Download ZIP");
         expect(source).toContain("Download trực tiếp");
         expect(source).toContain("downloadUrl");
+    });
+
+    it("renders YouTube Short through the edit API from Video Tools", () => {
+        expect(source).toContain("SPLIT_MODE_OPTIONS.map");
+        expect(source).toContain('mode === "short"');
+        expect(source).toContain('formData.set("responseMode", "binary")');
+        expect(source).toContain('formData.set("shortClipEnabled", "true")');
+        expect(source).toContain('formData.set("shortClipStart"');
+        expect(source).toContain('"shortClipDuration"');
+        expect(source).toContain('fetch("/api/video-processing/edit"');
+        expect(source).toContain("Render Short + Download MP4");
+        expect(source).toContain("[60, 120, 180].map");
     });
 });

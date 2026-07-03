@@ -85,6 +85,12 @@ export type VideoEditTextOverlay = {
     end?: number;
 };
 
+export type VideoEditShortClip = {
+    enabled: boolean;
+    start?: number;
+    duration?: number;
+};
+
 export type VideoEditInput = {
     fileName: string;
     mimeType?: string;
@@ -141,6 +147,7 @@ export type VideoEditInput = {
         playResX?: number;
         playResY?: number;
     };
+    shortClip?: VideoEditShortClip;
 };
 
 export type VideoEditMetadata = {
@@ -157,6 +164,8 @@ export type VideoEditMetadata = {
         segmentCount: number;
         textOverlay: boolean;
         textOverlayCount: number;
+        youtubeShort: boolean;
+        shortClipDurationSeconds?: number;
     };
 };
 
@@ -177,6 +186,7 @@ export class VideoEditError extends Error {
             | "VAL_VIDEO_EDIT_TIMELINE_INVALID"
             | "VAL_VIDEO_EDIT_SUBTITLES_REQUIRED"
             | "VAL_VIDEO_EDIT_TEXT_OVERLAY_REQUIRED"
+            | "VAL_VIDEO_EDIT_SHORT_CLIP_INVALID"
             | "SYS_VIDEO_EDIT_FAILED",
         message: string,
         public readonly status = 400,
@@ -228,13 +238,15 @@ export function validateVideoEditInput(input: VideoEditInput) {
     const coverBoxesEnabled = input.coverBoxes?.enabled === true;
     const subtitlesEnabled = input.subtitles?.enabled === true;
     const textOverlaysEnabled = input.textOverlays?.enabled === true;
+    const shortClipEnabled = input.shortClip?.enabled === true;
 
     if (
         !mirror &&
         !blurEnabled &&
         !coverBoxesEnabled &&
         !subtitlesEnabled &&
-        !textOverlaysEnabled
+        !textOverlaysEnabled &&
+        !shortClipEnabled
     ) {
         throw new VideoEditError(
             "VAL_VIDEO_EDIT_NO_TRANSFORM",
@@ -288,6 +300,14 @@ export function validateVideoEditInput(input: VideoEditInput) {
             400,
         );
     }
+
+    if (shortClipEnabled && !normalizeShortClip(input.shortClip)) {
+        throw new VideoEditError(
+            "VAL_VIDEO_EDIT_SHORT_CLIP_INVALID",
+            "YouTube Short clip start and duration must be valid positive seconds.",
+            400,
+        );
+    }
 }
 
 function validateVideoEditTransforms(input: Omit<VideoEditInput, "fileBytes">) {
@@ -338,6 +358,11 @@ type NormalizedTextOverlay = Required<
         | "end"
     >
 >;
+
+type NormalizedShortClip = {
+    start: number;
+    duration: number;
+};
 
 function isValidRegion(region: VideoEditRegionPercent | undefined) {
     if (!region) return false;
@@ -394,6 +419,26 @@ function normalizeBlurRegions(
         });
     }
     return output;
+}
+
+function normalizeShortClip(
+    shortClip: VideoEditInput["shortClip"] | undefined,
+): NormalizedShortClip | null {
+    if (!shortClip?.enabled) return null;
+    const start = Number(shortClip.start ?? 0);
+    const duration = Number(shortClip.duration ?? 60);
+    if (
+        !Number.isFinite(start) ||
+        !Number.isFinite(duration) ||
+        start < 0 ||
+        duration <= 0
+    ) {
+        return null;
+    }
+    return {
+        start,
+        duration,
+    };
 }
 
 function normalizeHexColor(value: string | undefined, fallback = "#000000") {
@@ -1130,6 +1175,7 @@ export function buildVideoEditFilter(input: {
     subtitleAssPath?: string;
     subtitleFontsDir?: string;
     textOverlayAssPath?: string;
+    shortClip?: VideoEditShortClip;
 }) {
     const filters: string[] = [];
     let currentLabel = "0:v";
@@ -1189,6 +1235,17 @@ export function buildVideoEditFilter(input: {
         currentLabel = nextLabel;
     }
 
+    const shortClip = normalizeShortClip(input.shortClip);
+    if (shortClip) {
+        const nextLabel = `v${step++}`;
+        const cropWidth = "min(iw\\,ih*9/16)";
+        const cropHeight = "min(ih\\,iw*16/9)";
+        filters.push(
+            `[${currentLabel}]crop=w='${cropWidth}':h='${cropHeight}':x='(iw-${cropWidth})/2':y='(ih-${cropHeight})/2',scale=1080:1920,setsar=1[${nextLabel}]`,
+        );
+        currentLabel = nextLabel;
+    }
+
     if (input.subtitleAssPath) {
         const nextLabel = `v${step++}`;
         filters.push(
@@ -1242,8 +1299,10 @@ export function buildVideoEditFfmpegArgs(input: {
     subtitleAssPath?: string;
     subtitleFontsDir?: string;
     textOverlayAssPath?: string;
+    shortClip?: VideoEditShortClip;
 }) {
     const { filter, outputLabel } = buildVideoEditFilter(input);
+    const shortClip = normalizeShortClip(input.shortClip);
 
     if (!filter) {
         throw new VideoEditError(
@@ -1255,8 +1314,12 @@ export function buildVideoEditFfmpegArgs(input: {
 
     return [
         "-y",
+        ...(shortClip && shortClip.start > 0
+            ? ["-ss", roundFilterNumber(shortClip.start)]
+            : []),
         "-i",
         input.videoPath,
+        ...(shortClip ? ["-t", roundFilterNumber(shortClip.duration)] : []),
         "-filter_complex",
         filter,
         "-map",
@@ -1351,6 +1414,7 @@ export async function runVideoEditPipelineFromPath(
     const normalizedCoverBoxes = normalizeCoverBoxes(input.coverBoxes);
     const coverBoxes =
         normalizedCoverBoxes.length > 0 ? input.coverBoxes : undefined;
+    const shortClip = normalizeShortClip(input.shortClip);
     const subtitleSegments =
         input.subtitles?.enabled === true ? input.subtitles.segments : [];
     const normalizedTextOverlays = normalizeTextOverlays(input.textOverlays);
@@ -1403,6 +1467,7 @@ export async function runVideoEditPipelineFromPath(
                 subtitleAssPath: assPath || undefined,
                 subtitleFontsDir,
                 textOverlayAssPath: textOverlayAssPath || undefined,
+                shortClip: input.shortClip,
             }),
         );
 
@@ -1425,6 +1490,10 @@ export async function runVideoEditPipelineFromPath(
                 segmentCount: subtitleSegments.length,
                 textOverlay: normalizedTextOverlays.length > 0,
                 textOverlayCount: normalizedTextOverlays.length,
+                youtubeShort: Boolean(shortClip),
+                ...(shortClip
+                    ? { shortClipDurationSeconds: shortClip.duration }
+                    : {}),
             },
         };
     } catch (error) {

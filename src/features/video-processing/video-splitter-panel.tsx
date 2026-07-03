@@ -27,7 +27,14 @@ type SubmitState =
       }
     | { status: "failed"; message: string; errorCode?: string };
 
-type SplitMode = "interval" | "parts" | "head";
+type SplitMode = "interval" | "parts" | "head" | "short";
+
+const SPLIT_MODE_OPTIONS: Array<{ value: SplitMode; label: string }> = [
+    { value: "interval", label: "Block" },
+    { value: "parts", label: "Parts" },
+    { value: "head", label: "Head clip" },
+    { value: "short", label: "YouTube Short 9:16" },
+];
 
 export function VideoSplitterPanel({ section }: VideoSplitterPanelProps) {
     const Icon = section.icon ?? Briefcase;
@@ -36,6 +43,8 @@ export function VideoSplitterPanel({ section }: VideoSplitterPanelProps) {
     const [mode, setMode] = useState<SplitMode>("interval");
     const [intervalMinutes, setIntervalMinutes] = useState(30);
     const [headMinutes, setHeadMinutes] = useState(15);
+    const [shortStartSeconds, setShortStartSeconds] = useState(0);
+    const [shortDurationSeconds, setShortDurationSeconds] = useState(60);
     const [splitParts, setSplitParts] = useState(2);
     const [state, setState] = useState<SubmitState>({
         status: "idle",
@@ -58,9 +67,15 @@ export function VideoSplitterPanel({ section }: VideoSplitterPanelProps) {
             return;
         }
 
-        setState({ status: "running", message: "Đang chuẩn bị split..." });
+        setState({
+            status: "running",
+            message:
+                mode === "short"
+                    ? "Đang chuẩn bị YouTube Short..."
+                    : "Đang chuẩn bị split...",
+        });
         const taskId = startProgressTask({
-            title: "Video split",
+            title: mode === "short" ? "YouTube Short" : "Video split",
             description: "Uploading source video...",
             scope: "system",
             progress: 20,
@@ -69,6 +84,66 @@ export function VideoSplitterPanel({ section }: VideoSplitterPanelProps) {
         try {
             const formData = new FormData();
             formData.set("videoFile", videoFile);
+            if (mode === "short") {
+                if (
+                    !Number.isFinite(shortStartSeconds) ||
+                    !Number.isFinite(shortDurationSeconds) ||
+                    shortStartSeconds < 0 ||
+                    shortDurationSeconds <= 0
+                ) {
+                    throw new Error(
+                        "YouTube Short cần start >= 0 và duration > 0 giây.",
+                    );
+                }
+                formData.set("responseMode", "binary");
+                formData.set("shortClipEnabled", "true");
+                formData.set("shortClipStart", String(shortStartSeconds));
+                formData.set(
+                    "shortClipDuration",
+                    String(shortDurationSeconds),
+                );
+
+                updateProgressTask(taskId, {
+                    description: "Rendering 9:16 short with ffmpeg...",
+                    progress: 70,
+                });
+                const response = await fetch("/api/video-processing/edit", {
+                    method: "POST",
+                    body: formData,
+                });
+                if (!response.ok) {
+                    const text = await response.text();
+                    throw new Error(text || "YouTube Short render failed.");
+                }
+                const blob = await response.blob();
+                const fileName = decodeURIComponent(
+                    response.headers.get("X-OmniVideo-File-Name") ||
+                        "youtube-short.mp4",
+                );
+                const downloadUrl = URL.createObjectURL(blob);
+                const link = document.createElement("a");
+                link.href = downloadUrl;
+                link.setAttribute("download", fileName);
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+
+                setState({
+                    status: "success",
+                    message:
+                        "YouTube Short hoàn tất. Đã gửi request tải MP4 về browser.",
+                    downloadUrl,
+                    archiveName: fileName,
+                    outputCount: 1,
+                });
+                finishProgressTask({
+                    id: taskId,
+                    status: "success",
+                    description: "YouTube Short MP4 ready.",
+                });
+                return;
+            }
+
             formData.set("mode", mode);
             if (mode === "interval")
                 formData.set("intervalMinutes", String(intervalMinutes));
@@ -262,8 +337,27 @@ export function VideoSplitterPanel({ section }: VideoSplitterPanelProps) {
                                     Chia đều theo số phần
                                 </option>
                                 <option value="head">Chỉ cắt đoạn đầu</option>
+                                <option value="short">
+                                    YouTube Short 9:16
+                                </option>
                             </select>
                         </label>
+                        <div className="grid grid-cols-2 gap-1.5">
+                            {SPLIT_MODE_OPTIONS.map((option) => (
+                                <button
+                                    key={option.value}
+                                    type="button"
+                                    onClick={() => setMode(option.value)}
+                                    className={`border px-2 py-1.5 text-left text-[10px] font-semibold ${
+                                        mode === option.value
+                                            ? "border-accent bg-accent/10 text-accent"
+                                            : "border-main bg-main text-main hover:bg-secondary"
+                                    }`}
+                                >
+                                    {option.label}
+                                </button>
+                            ))}
+                        </div>
                         {mode === "interval" ? (
                             <label className="block">
                                 <span className="mb-1 block text-[10px] font-semibold text-muted">
@@ -325,13 +419,77 @@ export function VideoSplitterPanel({ section }: VideoSplitterPanelProps) {
                                 </select>
                             </label>
                         ) : null}
+                        {mode === "short" ? (
+                            <div className="space-y-2">
+                                <div className="flex items-center gap-1">
+                                    {[60, 120, 180].map((seconds) => (
+                                        <button
+                                            key={seconds}
+                                            type="button"
+                                            onClick={() =>
+                                                setShortDurationSeconds(seconds)
+                                            }
+                                            className={`border border-main px-2 py-1 text-[10px] font-semibold ${
+                                                shortDurationSeconds === seconds
+                                                    ? "bg-accent text-on-accent"
+                                                    : "bg-main text-main hover:bg-secondary"
+                                            }`}
+                                        >
+                                            {seconds / 60}m
+                                        </button>
+                                    ))}
+                                </div>
+                                <div className="grid grid-cols-2 gap-2">
+                                    <label className="block">
+                                        <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                            Start (seconds)
+                                        </span>
+                                        <input
+                                            type="number"
+                                            min={0}
+                                            value={shortStartSeconds}
+                                            onChange={(event) =>
+                                                setShortStartSeconds(
+                                                    Number(
+                                                        event.currentTarget
+                                                            .value,
+                                                    ),
+                                                )
+                                            }
+                                            className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main"
+                                        />
+                                    </label>
+                                    <label className="block">
+                                        <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                            Duration (seconds)
+                                        </span>
+                                        <input
+                                            type="number"
+                                            min={1}
+                                            value={shortDurationSeconds}
+                                            onChange={(event) =>
+                                                setShortDurationSeconds(
+                                                    Number(
+                                                        event.currentTarget
+                                                            .value,
+                                                    ),
+                                                )
+                                            }
+                                            className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main"
+                                        />
+                                    </label>
+                                </div>
+                            </div>
+                        ) : null}
                         <button
                             type="button"
                             onClick={() => void runSplit()}
                             disabled={state.status === "running"}
                             className="inline-flex w-full items-center justify-center gap-2 border border-accent/35 bg-accent/10 px-3 py-2 text-[12px] font-semibold text-accent hover:bg-accent/15 disabled:cursor-not-allowed disabled:opacity-60"
                         >
-                            Split + Download ZIP
+                            {mode === "short"
+                                ? "Render Short + Download MP4"
+                                : "Split + Download ZIP"}
                         </button>
                     </article>
 
