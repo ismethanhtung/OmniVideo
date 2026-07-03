@@ -395,7 +395,6 @@ export type VideoVipProcessingInput = {
     voiceRenderExecutionMode?: VipVoiceRenderExecutionMode;
     remoteVoiceRenderEndpoint?: string;
     remoteVoiceRenderToken?: string;
-    remoteSourceUploadId?: string;
     stageRunners?: Partial<VipStageRunners>;
 };
 
@@ -443,7 +442,6 @@ export type VideoVipVoiceRenderInput = {
     mimeType?: string;
     fileSizeBytes?: number;
     fileBytes: Uint8Array;
-    sourceUploadId?: string;
     transcript: ChineseTranscriptionResult;
     translation: TranscriptTranslationResult;
     ttsSettings?: Partial<VoiceGenerationSettings>;
@@ -490,7 +488,6 @@ export type VideoVipRemoteRenderInput = {
     mimeType?: string;
     fileSizeBytes?: number;
     fileBytes: Uint8Array;
-    sourceUploadId?: string;
     voiceAudioBase64: string;
     translatedSegments: TranscriptTranslationResult["translatedSegments"];
     originalAudioVolume?: number;
@@ -2355,10 +2352,7 @@ export async function runVideoVipProcessing(
 ): Promise<VideoVipProcessingResult> {
     const startedAt = Date.now();
     const runId = randomUUID();
-    if (
-        (!input.fileBytes || input.fileBytes.byteLength === 0) &&
-        !input.remoteSourceUploadId
-    ) {
+    if (!input.fileBytes || input.fileBytes.byteLength === 0) {
         throw new ChineseTranscriptionError(
             "VAL_DUBBING_VIDEO_REQUIRED",
             "A source video file is required for VIP processing.",
@@ -2740,7 +2734,6 @@ export async function runVideoVipProcessing(
                     mimeType: input.mimeType,
                     fileSizeBytes: input.fileSizeBytes,
                     fileBytes: input.fileBytes,
-                    sourceUploadId: input.remoteSourceUploadId,
                     transcript,
                     translation,
                     ttsSettings: input.ttsSettings,
@@ -3075,7 +3068,6 @@ export async function runVideoVipProcessing(
                     mimeType: input.mimeType,
                     fileSizeBytes: input.fileSizeBytes,
                     fileBytes: input.fileBytes,
-                    sourceUploadId: input.remoteSourceUploadId,
                     voiceAudioBase64: voice.audioBase64,
                     translatedSegments: enrichedSubtitleSegments,
                     originalAudioVolume,

@@ -255,12 +255,6 @@ type WorkspaceFileProgress = {
     percent?: number;
 };
 
-type RemoteVipWorkerRuntimeConfig = {
-    endpoint: string;
-    token: string;
-    source: "node" | "Server modal" | "env";
-};
-
 type WorkspaceVideoEditSetup = NonNullable<
     NonNullable<WorkspaceAsset["metadata"]>["videoEditSetup"]
 > & {
@@ -341,14 +335,7 @@ type WorkspaceRunOptions = {
     >;
 };
 const MAX_RESUME_TEXT_LENGTH = 4000;
-const DIRECT_REMOTE_VIP_UPLOAD_CHUNK_BYTES = 16 * 1024 * 1024;
-const DIRECT_REMOTE_VIP_UPLOAD_CONCURRENCY = 4;
 const VIP_PROGRESS_STAGE_DESCRIPTORS = [
-    {
-        key: "upload",
-        label: "VIP · Upload source",
-        subtitle: "Waiting for source upload...",
-    },
     {
         key: "transcript",
         label: "VIP · Transcript",
@@ -1385,293 +1372,6 @@ async function fetchWorkspaceJson<T>(input: {
     }
 
     return payload as T;
-}
-
-async function fetchWorkspaceJsonWithUploadProgress<T>(input: {
-    url: string;
-    actionLabel: string;
-    formData: FormData;
-    onUploadProgress?: (progress: WorkspaceFileProgress) => void;
-    onUploadComplete?: () => void;
-}) {
-    return await new Promise<T>((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.open("POST", input.url);
-        xhr.responseType = "text";
-
-        xhr.upload.onprogress = (event) => {
-            const totalBytes = event.lengthComputable
-                ? event.total
-                : undefined;
-            input.onUploadProgress?.({
-                loadedBytes: event.loaded,
-                totalBytes,
-                percent:
-                    typeof totalBytes === "number" && totalBytes > 0
-                        ? Math.max(
-                              0,
-                              Math.min(100, (event.loaded / totalBytes) * 100),
-                          )
-                        : undefined,
-            });
-        };
-        xhr.upload.onload = () => input.onUploadComplete?.();
-
-        xhr.onerror = () => {
-            reject(
-                new Error(
-                    `${input.actionLabel} failed at ${input.url}: network error`,
-                ),
-            );
-        };
-        xhr.onload = () => {
-            let payload: unknown = null;
-            try {
-                payload = xhr.responseText ? JSON.parse(xhr.responseText) : null;
-            } catch {
-                payload = null;
-            }
-
-            const ok =
-                xhr.status >= 200 &&
-                xhr.status < 300 &&
-                (!payload ||
-                    typeof payload !== "object" ||
-                    !("ok" in payload) ||
-                    (payload as { ok?: unknown }).ok !== false);
-
-            if (!ok) {
-                reject(
-                    new WorkspaceApiError({
-                        message: `${input.actionLabel} failed at ${input.url}: ${getWorkspaceApiErrorMessage(
-                            payload,
-                            "Unexpected API error.",
-                            xhr.status,
-                        )}`,
-                        status: xhr.status,
-                        payload,
-                        url: input.url,
-                        actionLabel: input.actionLabel,
-                    }),
-                );
-                return;
-            }
-
-            resolve(payload as T);
-        };
-        xhr.send(input.formData);
-    });
-}
-
-function normalizeRemoteWorkerEndpoint(endpoint: string) {
-    return endpoint.trim().replace(/\/+$/u, "");
-}
-
-function getDirectRemoteVipUploadTransportError(endpoint: string) {
-    if (typeof window === "undefined") {
-        return "";
-    }
-    let workerUrl: URL;
-    try {
-        workerUrl = new URL(normalizeRemoteWorkerEndpoint(endpoint));
-    } catch {
-        return "";
-    }
-    if (window.location.protocol !== "https:") {
-        return "";
-    }
-    if (workerUrl.protocol !== "http:") {
-        return "";
-    }
-    const host = workerUrl.host || workerUrl.hostname || endpoint;
-    return `Direct EC2 source upload is blocked by browser mixed-content rules: this app is running over HTTPS, but the remote worker URL is HTTP (${host}). Use an HTTPS worker URL in Server modal, for example a domain or tunnel with TLS that proxies to this EC2 worker, then run again.`;
-}
-
-async function fetchRemoteVipWorkerEnvBrowserConfig(): Promise<RemoteVipWorkerRuntimeConfig | null> {
-    try {
-        const payload = await fetchWorkspaceJson<{
-            ok: true;
-            data?: {
-                endpoint?: unknown;
-                token?: unknown;
-            };
-        }>({
-            url: "/api/audio/remote-vip-worker/browser-config",
-            actionLabel: "Remote VIP worker browser config",
-        });
-        const endpoint =
-            typeof payload.data?.endpoint === "string"
-                ? normalizeRemoteWorkerEndpoint(payload.data.endpoint)
-                : "";
-        if (!endpoint) {
-            return null;
-        }
-        return {
-            endpoint,
-            token:
-                typeof payload.data?.token === "string"
-                    ? payload.data.token.trim()
-                    : "",
-            source: "env",
-        };
-    } catch {
-        return null;
-    }
-}
-
-function createRemoteVipSourceUploadId() {
-    if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-        return crypto.randomUUID();
-    }
-    return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/gu, (char) => {
-        const value = Math.floor(Math.random() * 16);
-        const nibble = char === "x" ? value : (value & 0x3) | 0x8;
-        return nibble.toString(16);
-    });
-}
-
-async function uploadRemoteVipSourceChunkDirectly(input: {
-    endpoint: string;
-    token: string;
-    uploadId: string;
-    file: File;
-    partIndex: number;
-    partCount: number;
-    chunk: Blob;
-    onPartProgress: (loadedBytes: number) => void;
-}) {
-    await new Promise<void>((resolve, reject) => {
-        const transportError = getDirectRemoteVipUploadTransportError(
-            input.endpoint,
-        );
-        if (transportError) {
-            reject(new Error(transportError));
-            return;
-        }
-        const formData = new FormData();
-        formData.set("sourceUploadId", input.uploadId);
-        formData.set("partIndex", String(input.partIndex));
-        formData.set("partCount", String(input.partCount));
-        formData.set("totalBytes", String(input.file.size));
-        formData.set("fileName", input.file.name || "source.mp4");
-        formData.set("mimeType", input.file.type || "video/mp4");
-        formData.set(
-            "chunkFile",
-            input.chunk,
-            `${input.partIndex}.part`,
-        );
-
-        const xhr = new XMLHttpRequest();
-        xhr.open(
-            "POST",
-            `${normalizeRemoteWorkerEndpoint(input.endpoint)}/api/audio/video-vip-voice-render?sourceUpload=part`,
-        );
-        if (input.token.trim()) {
-            xhr.setRequestHeader("Authorization", `Bearer ${input.token.trim()}`);
-        }
-        xhr.upload.onprogress = (event) => {
-            input.onPartProgress(event.loaded);
-        };
-        xhr.onerror = () => {
-            reject(
-                new Error(
-                    getDirectRemoteVipUploadTransportError(input.endpoint) ||
-                        "Direct EC2 source upload failed with a network error. Check the worker URL, HTTPS/TLS, CORS, and security group access from the browser.",
-                ),
-            );
-        };
-        xhr.onload = () => {
-            if (xhr.status >= 200 && xhr.status < 300) {
-                input.onPartProgress(input.chunk.size);
-                resolve();
-                return;
-            }
-            let message = `Direct EC2 source upload chunk failed with HTTP ${xhr.status}.`;
-            try {
-                const payload = JSON.parse(xhr.responseText) as { error?: unknown };
-                if (typeof payload.error === "string") message = payload.error;
-            } catch {
-                // Keep HTTP fallback message.
-            }
-            reject(new Error(message));
-        };
-        xhr.send(formData);
-    });
-}
-
-async function uploadRemoteVipSourceFileDirectly(input: {
-    endpoint: string;
-    token: string;
-    file: File;
-    onProgress?: (progress: WorkspaceFileProgress) => void;
-}) {
-    const transportError = getDirectRemoteVipUploadTransportError(
-        input.endpoint,
-    );
-    if (transportError) {
-        throw new Error(transportError);
-    }
-    const uploadId = createRemoteVipSourceUploadId();
-    const partCount = Math.ceil(
-        input.file.size / DIRECT_REMOTE_VIP_UPLOAD_CHUNK_BYTES,
-    );
-    const loadedByPart = new Map<number, number>();
-    let nextPartIndex = 0;
-
-    const emitProgress = () => {
-        const loadedBytes = Array.from(loadedByPart.values()).reduce(
-            (total, value) => total + value,
-            0,
-        );
-        input.onProgress?.({
-            loadedBytes,
-            totalBytes: input.file.size,
-            percent:
-                input.file.size > 0
-                    ? Math.max(0, Math.min(100, (loadedBytes / input.file.size) * 100))
-                    : 100,
-        });
-    };
-
-    const uploadNextPart = async () => {
-        while (nextPartIndex < partCount) {
-            const partIndex = nextPartIndex;
-            nextPartIndex += 1;
-            const start = partIndex * DIRECT_REMOTE_VIP_UPLOAD_CHUNK_BYTES;
-            const end = Math.min(
-                start + DIRECT_REMOTE_VIP_UPLOAD_CHUNK_BYTES,
-                input.file.size,
-            );
-            const chunk = input.file.slice(start, end);
-            await uploadRemoteVipSourceChunkDirectly({
-                endpoint: input.endpoint,
-                token: input.token,
-                uploadId,
-                file: input.file,
-                partIndex,
-                partCount,
-                chunk,
-                onPartProgress: (loadedBytes) => {
-                    loadedByPart.set(partIndex, loadedBytes);
-                    emitProgress();
-                },
-            });
-        }
-    };
-
-    await Promise.all(
-        Array.from(
-            {
-                length: Math.min(
-                    DIRECT_REMOTE_VIP_UPLOAD_CONCURRENCY,
-                    Math.max(1, partCount),
-                ),
-            },
-            () => uploadNextPart(),
-        ),
-    );
-    emitProgress();
-    return { uploadId, partCount };
 }
 
 async function fetchWorkspaceFile(input: {
@@ -2978,33 +2678,17 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
 
     const resolveRemoteVipWorkerRuntimeConfig = (
         vipNode: WorkspaceNodeInstance,
-    ): RemoteVipWorkerRuntimeConfig => {
+    ) => {
         const browserConfig = readRemoteVipWorkerBrowserConfig();
         const nodeEndpoint = getStringConfig(
             vipNode,
             "remoteVoiceRenderEndpoint",
         ).trim();
-        const browserEndpoint = browserConfig.endpoint.trim();
         return {
-            endpoint: normalizeRemoteWorkerEndpoint(nodeEndpoint || browserEndpoint),
+            endpoint: nodeEndpoint || browserConfig.endpoint.trim(),
             token: browserConfig.token.trim(),
-            source: nodeEndpoint
-                ? "node"
-                : browserEndpoint
-                  ? "Server modal"
-                  : "env",
+            source: nodeEndpoint ? "node" : browserConfig.endpoint.trim() ? "server" : "env",
         };
-    };
-
-    const hydrateRemoteVipWorkerRuntimeConfig = async (
-        currentConfig: RemoteVipWorkerRuntimeConfig,
-    ) => {
-        if (currentConfig.endpoint) {
-            return currentConfig;
-        }
-        return (
-            (await fetchRemoteVipWorkerEnvBrowserConfig()) ?? currentConfig
-        );
     };
 
     const clearDraft = () => {
@@ -4960,19 +4644,8 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         "voiceRenderExecutionMode",
                         voiceRenderExecutionMode,
                     );
-                    let remoteVipWorkerConfig =
+                    const remoteVipWorkerConfig =
                         resolveRemoteVipWorkerRuntimeConfig(vipNode);
-                    if (
-                        (voiceRenderExecutionMode === "remote" ||
-                            voiceRenderExecutionMode ===
-                                "remote-voice-render") &&
-                        !remoteVipWorkerConfig.endpoint
-                    ) {
-                        remoteVipWorkerConfig =
-                            await hydrateRemoteVipWorkerRuntimeConfig(
-                                remoteVipWorkerConfig,
-                            );
-                    }
                     if (remoteVipWorkerConfig.endpoint) {
                         formData.set(
                             "remoteVoiceRenderEndpoint",
@@ -5291,7 +4964,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         appendVipStageLog(
                             remoteVipWorkerConfig.endpoint
                                 ? `Remote worker endpoint source: ${remoteVipWorkerConfig.source}.`
-                                : "Remote worker endpoint not set in node, Server modal, or server env.",
+                                : "Remote worker endpoint not set in node or Server modal; server env fallback will be used if configured.",
                         );
                     }
                     if (vipTranslationMode === "import") {
@@ -5314,21 +4987,14 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                     appendVipStageLog(
                         "Server-side VIP is running. Live sub-stage status is being tracked...",
                     );
-                    const vipBrowserSourceFile =
-                        formData.get("videoFile") instanceof File
-                            ? (formData.get("videoFile") as File)
-                            : null;
-                    const canStageVipSourceDirectlyToEc2 =
-                        voiceRenderExecutionMode === "remote-voice-render" &&
-                        Boolean(remoteVipWorkerConfig.endpoint) &&
-                        vipBrowserSourceFile !== null &&
-                        originalAudioSourceMode !== "vocals";
                     startVipProgressStage(
                         step,
-                        "upload",
-                        canStageVipSourceDirectlyToEc2
-                            ? "Uploading source video directly to EC2 before transcript work..."
-                            : "Uploading source video to Vercel before transcript work...",
+                        "transcript",
+                        vipTranslationOverride
+                            ? "Reusing current transcript for corrected VIP rerun..."
+                            : vipTranscriptRetryOverride
+                              ? "Using corrected split transcript for selected retry segment(s)..."
+                            : "Transcribing source speech...",
                     );
                     let isPolling = true;
                     const pollCheckpoint = async () => {
@@ -5368,19 +5034,13 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                                     currentLogs.push(`[transcript] Complete. Segments: ${checkpointState.transcript.segments.length} total.`);
                                 }
                             } else {
-                                const uploadStillRunning = !currentLogs.some(
-                                    (line) =>
-                                        line.startsWith("[upload] Complete."),
+                                updateVipProgressStage(
+                                    step,
+                                    "transcript",
+                                    "Transcribing source speech...",
                                 );
-                                if (!uploadStillRunning) {
-                                    updateVipProgressStage(
-                                        step,
-                                        "transcript",
-                                        "Transcribing source speech...",
-                                    );
-                                    if (!currentLogs.some((line) => line.startsWith("[transcript] Processing..."))) {
-                                        currentLogs.push("[transcript] Processing...");
-                                    }
+                                if (!currentLogs.some((line) => line.startsWith("[transcript] Processing..."))) {
+                                    currentLogs.push("[transcript] Processing...");
                                 }
                             }
 
@@ -5518,77 +5178,8 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                             artifactExpiresAt?: string;
                         };
                     };
-                    let vipUploadCompleted = false;
-                    const finishVipSourceUploadStage = () => {
-                        if (vipUploadCompleted) return;
-                        vipUploadCompleted = true;
-                        finishVipProgressStage(
-                            step,
-                            "upload",
-                            "Source upload sent to VIP API.",
-                        );
-                        appendVipStageLog(
-                            "[upload] Complete. Source upload sent to VIP API.",
-                        );
-                        startVipProgressStage(
-                            step,
-                            "transcript",
-                            vipTranslationOverride
-                                ? "Reusing current transcript for corrected VIP rerun..."
-                                : vipTranscriptRetryOverride
-                                  ? "Using corrected split transcript for selected retry segment(s)..."
-                                : "Transcribing source speech...",
-                        );
-                    };
                     try {
-                        if (canStageVipSourceDirectlyToEc2 && vipBrowserSourceFile) {
-                            appendVipStageLog(
-                                "[upload] Direct EC2 source staging enabled; Vercel will receive only sourceUploadId.",
-                            );
-                            const stagedSource =
-                                await uploadRemoteVipSourceFileDirectly({
-                                    endpoint: remoteVipWorkerConfig.endpoint,
-                                    token: remoteVipWorkerConfig.token,
-                                    file: vipBrowserSourceFile,
-                                    onProgress: (progress) => {
-                                        const totalText =
-                                            typeof progress.totalBytes ===
-                                            "number"
-                                                ? ` / ${formatBytes(progress.totalBytes)}`
-                                                : "";
-                                        const percentText =
-                                            typeof progress.percent === "number"
-                                                ? ` (${Math.round(progress.percent)}%)`
-                                                : "";
-                                        updateVipProgressStage(
-                                            step,
-                                            "upload",
-                                            `Uploading source video directly to EC2: ${formatBytes(progress.loadedBytes)}${totalText}${percentText}.`,
-                                        );
-                                    },
-                                });
-                            formData.delete("videoFile");
-                            formData.set(
-                                "remoteSourceUploadId",
-                                stagedSource.uploadId,
-                            );
-                            formData.set(
-                                "remoteSourceFileName",
-                                vipBrowserSourceFile.name || "source.mp4",
-                            );
-                            formData.set(
-                                "remoteSourceMimeType",
-                                vipBrowserSourceFile.type || "video/mp4",
-                            );
-                            formData.set(
-                                "remoteSourceFileSizeBytes",
-                                String(vipBrowserSourceFile.size),
-                            );
-                            appendVipStageLog(
-                                `[upload] Direct EC2 source staging complete. Upload id: ${stagedSource.uploadId}.`,
-                            );
-                        }
-                        vipPayload = await fetchWorkspaceJsonWithUploadProgress<{
+                        vipPayload = await fetchWorkspaceJson<{
                             ok: true;
                             data: VideoVipProcessingResult & {
                                 artifactId?: string;
@@ -5597,31 +5188,7 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         }>({
                             url: "/api/audio/video-vip-processing",
                             actionLabel: "VIP processing",
-                            formData,
-                            onUploadProgress: (progress) => {
-                                if (canStageVipSourceDirectlyToEc2) {
-                                    updateVipProgressStage(
-                                        step,
-                                        "upload",
-                                        "Sending lightweight VIP request to Vercel with EC2 source upload id...",
-                                    );
-                                    return;
-                                }
-                                const totalText =
-                                    typeof progress.totalBytes === "number"
-                                        ? ` / ${formatBytes(progress.totalBytes)}`
-                                        : "";
-                                const percentText =
-                                    typeof progress.percent === "number"
-                                        ? ` (${Math.round(progress.percent)}%)`
-                                        : "";
-                                updateVipProgressStage(
-                                    step,
-                                    "upload",
-                                    `Uploading source video to Vercel: ${formatBytes(progress.loadedBytes)}${totalText}${percentText}.`,
-                                );
-                            },
-                            onUploadComplete: finishVipSourceUploadStage,
+                            init: { method: "POST", body: formData },
                         });
                     } catch (error) {
                         if (error instanceof WorkspaceApiError) {
@@ -5660,7 +5227,6 @@ export function WorkspaceCanvasPanel({ section }: WorkspaceCanvasPanelProps) {
                         isPolling = false;
                         clearInterval(pollInterval);
                     }
-                    finishVipSourceUploadStage();
                     if (vipPayload.data.checkpoint?.reusedStages.length) {
                         appendVipStageLog(
                             `Resumed VIP checkpoint: ${vipPayload.data.checkpoint.reusedStages.join(", ")}.`,

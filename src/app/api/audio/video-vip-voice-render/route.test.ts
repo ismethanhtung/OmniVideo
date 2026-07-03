@@ -7,13 +7,12 @@ import {
     runVideoVipRemoteRender,
     runVideoVipVoiceRender,
 } from "@/lib/multilingual-audio/video-vip-processing";
-import { runChineseVideoTranscription } from "@/lib/multilingual-audio/chinese-transcription";
 import {
     clearWorkspaceServerArtifactsForTest,
     getWorkspaceServerArtifact,
 } from "@/lib/workspace/server-artifacts";
 
-import { DELETE, GET, OPTIONS, POST, maxDuration } from "./route";
+import { DELETE, GET, POST } from "./route";
 
 vi.mock("node:child_process", () => ({
     execFileSync: vi.fn(() => ""),
@@ -24,14 +23,10 @@ vi.mock("@/lib/multilingual-audio/video-vip-processing", () => ({
     runVideoVipRemoteRender: vi.fn(),
     runVideoVipVoiceRender: vi.fn(),
 }));
-vi.mock("@/lib/multilingual-audio/chinese-transcription", () => ({
-    runChineseVideoTranscription: vi.fn(),
-}));
 
 const mockedExecFileSync = vi.mocked(execFileSync);
 const mockedRunVideoVipRemoteRender = vi.mocked(runVideoVipRemoteRender);
 const mockedRunVideoVipVoiceRender = vi.mocked(runVideoVipVoiceRender);
-const mockedRunChineseVideoTranscription = vi.mocked(runChineseVideoTranscription);
 
 describe("video vip voice/render worker API", () => {
     beforeEach(() => {
@@ -39,7 +34,6 @@ describe("video vip voice/render worker API", () => {
         mockedExecFileSync.mockReturnValue("");
         mockedRunVideoVipRemoteRender.mockReset();
         mockedRunVideoVipVoiceRender.mockReset();
-        mockedRunChineseVideoTranscription.mockReset();
         vi.stubGlobal(
             "fetch",
             vi.fn(async () => new Response("", { status: 404 })),
@@ -50,23 +44,6 @@ describe("video vip voice/render worker API", () => {
     afterEach(() => {
         vi.unstubAllGlobals();
         clearWorkspaceServerArtifactsForTest();
-    });
-
-    it("declares a long Vercel max duration for worker jobs", () => {
-        expect(maxDuration).toBe(300);
-    });
-
-    it("allows browser CORS preflight for direct source chunk uploads", () => {
-        const response = OPTIONS();
-
-        expect(response.status).toBe(204);
-        expect(response.headers.get("Access-Control-Allow-Origin")).toBe("*");
-        expect(response.headers.get("Access-Control-Allow-Methods")).toContain(
-            "POST",
-        );
-        expect(response.headers.get("Access-Control-Allow-Headers")).toContain(
-            "Authorization",
-        );
     });
 
     it("exposes a lightweight health check", async () => {
@@ -556,96 +533,6 @@ describe("video vip voice/render worker API", () => {
                 fileBytes: new Uint8Array([1, 2, 3, 4]),
                 voiceAudioBase64: Buffer.from("voice").toString("base64"),
                 omitVideoBase64: true,
-            }),
-        );
-    });
-
-    it("runs transcription from staged source upload chunks", async () => {
-        process.env.OMNIVIDEO_REMOTE_VIP_TOKEN = "secret";
-        mockedRunChineseVideoTranscription.mockResolvedValueOnce({
-            text: "你好",
-            language: "zh",
-            model: "whisper-large-v3-turbo",
-            segments: [{ id: 0, start: 0, end: 1, text: "你好" }],
-            words: [],
-            source: { fileName: "source.mp4", fileSizeBytes: 4 },
-            audio: {
-                format: "mp3",
-                sampleRate: 16000,
-                channels: 1,
-                bitrateKbps: 64,
-                fileSizeBytes: 2,
-            },
-            steps: [],
-            provider: { name: "groq" },
-        });
-
-        const uploadId = "22222222-2222-4222-8222-222222222222";
-        const chunkForm = new FormData();
-        chunkForm.set("sourceUploadId", uploadId);
-        chunkForm.set("partIndex", "0");
-        chunkForm.set("partCount", "1");
-        chunkForm.set("totalBytes", "4");
-        chunkForm.set("fileName", "source.mp4");
-        chunkForm.set("mimeType", "video/mp4");
-        chunkForm.set(
-            "chunkFile",
-            new File([new Uint8Array([1, 2, 3, 4])], "0.part", {
-                type: "application/octet-stream",
-            }),
-        );
-        const chunkResponse = await POST(
-            new Request(
-                "http://localhost/api/audio/video-vip-voice-render?sourceUpload=part",
-                {
-                    method: "POST",
-                    headers: { Authorization: "Bearer secret" },
-                    body: chunkForm,
-                },
-            ),
-        );
-        expect(chunkResponse.status).toBe(200);
-        expect(chunkResponse.headers.get("Access-Control-Allow-Origin")).toBe("*");
-
-        const formData = new FormData();
-        formData.set(
-            "payloadJson",
-            JSON.stringify({
-                executionMode: "transcribe",
-                sourceUploadId: uploadId,
-                fileName: "source.mp4",
-                fileSizeBytes: 4,
-                language: "zh",
-                transcriptionApiKey: "groq-key",
-                includeWordTimestamps: true,
-                overlongSegmentRetryMode: "best-effort",
-                videoSpeedFactor: 0.75,
-            }),
-        );
-
-        const response = await POST(
-            new Request("http://localhost/api/audio/video-vip-voice-render", {
-                method: "POST",
-                headers: { Authorization: "Bearer secret" },
-                body: formData,
-            }),
-        );
-        const payload = await response.json();
-
-        expect(response.status).toBe(200);
-        expect(payload.data).toMatchObject({
-            text: "你好",
-            segments: [{ id: 0, start: 0, end: 1, text: "你好" }],
-        });
-        expect(mockedRunChineseVideoTranscription).toHaveBeenCalledWith(
-            expect.objectContaining({
-                fileName: "source.mp4",
-                fileSizeBytes: 4,
-                fileBytes: new Uint8Array([1, 2, 3, 4]),
-                transcriptionApiKey: "groq-key",
-                includeWordTimestamps: true,
-                overlongSegmentRetryMode: "best-effort",
-                videoSpeedFactor: 0.75,
             }),
         );
     });

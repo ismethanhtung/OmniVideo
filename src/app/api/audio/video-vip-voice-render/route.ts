@@ -9,11 +9,9 @@ import { NextResponse } from "next/server";
 import {
     type ChineseTranscriptionResult,
     ChineseTranscriptionError,
-    type ChineseTranscriptionRequest,
     type TranscriptTranslationResult,
     type VoiceGenerationSettings,
 } from "@/lib/multilingual-audio/types";
-import { runChineseVideoTranscription } from "@/lib/multilingual-audio/chinese-transcription";
 import {
     generateVoiceFromSegments,
     killActivePiperChildProcesses,
@@ -29,13 +27,12 @@ import {
 import { buildWorkspaceMediaPayload } from "@/lib/workspace/server-artifacts";
 
 export const runtime = "nodejs";
-export const maxDuration = 300;
 
 type RemoteVipWorkerJobStatus = "running" | "done" | "failed";
 type RemoteVipWorkerJob = {
     id: string;
     status: RemoteVipWorkerJobStatus;
-    stage?: "queued" | "transcript" | "voice" | "render" | "artifact" | "done";
+    stage?: "queued" | "voice" | "render" | "artifact" | "done";
     stageStartedAt?: string;
     message?: string;
     metrics?: Record<string, number | string | boolean | undefined>;
@@ -76,19 +73,6 @@ const remoteVipWorkerJobs: Map<string, RemoteVipWorkerJob> =
     ((globalThis as typeof globalThis & {
         __omnivideoRemoteVipWorkerJobs?: Map<string, RemoteVipWorkerJob>;
     }).__omnivideoRemoteVipWorkerJobs ??= new Map());
-
-const REMOTE_WORKER_CORS_HEADERS = {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "GET,POST,DELETE,OPTIONS",
-    "Access-Control-Allow-Headers": "Authorization,Content-Type",
-};
-
-function withCors(response: NextResponse) {
-    for (const [key, value] of Object.entries(REMOTE_WORKER_CORS_HEADERS)) {
-        response.headers.set(key, value);
-    }
-    return response;
-}
 
 function readBearerToken(request: Request) {
     const header = request.headers.get("authorization") ?? "";
@@ -403,8 +387,7 @@ async function parseWorkerPayload(request: Request) {
 }
 
 function normalizeWorkerExecutionMode(value: unknown) {
-    if (value === "voice-render" || value === "transcribe") return value;
-    return "render-only";
+    return value === "voice-render" ? "voice-render" : "render-only";
 }
 
 function readTranslatedSegments(payload: Record<string, unknown>) {
@@ -462,62 +445,6 @@ function readTranslation(payload: Record<string, unknown>) {
         chunks: [],
         provider: { name: "remote-worker" },
     } satisfies TranscriptTranslationResult;
-}
-
-function readTranscriptionInput(input: {
-    payload: Record<string, unknown>;
-    fileBytes: Uint8Array;
-    fileName?: string;
-    mimeType?: string;
-}): ChineseTranscriptionRequest {
-    const { payload, fileBytes, fileName, mimeType } = input;
-    return {
-        fileName:
-            typeof payload.fileName === "string" && payload.fileName.trim()
-                ? payload.fileName
-                : fileName ?? "source.mp4",
-        mimeType:
-            typeof payload.mimeType === "string" ? payload.mimeType : mimeType,
-        fileSizeBytes:
-            typeof payload.fileSizeBytes === "number"
-                ? payload.fileSizeBytes
-                : fileBytes.byteLength,
-        fileBytes,
-        language: typeof payload.language === "string" ? payload.language : "zh",
-        prompt: typeof payload.prompt === "string" ? payload.prompt : undefined,
-        transcriptionModel:
-            typeof payload.transcriptionModel === "string"
-                ? payload.transcriptionModel
-                : undefined,
-        transcriptionApiKey:
-            typeof payload.transcriptionApiKey === "string"
-                ? payload.transcriptionApiKey
-                : undefined,
-        transcriptionBaseUrl:
-            typeof payload.transcriptionBaseUrl === "string"
-                ? payload.transcriptionBaseUrl
-                : undefined,
-        transcriptionProviderName:
-            typeof payload.transcriptionProviderName === "string"
-                ? payload.transcriptionProviderName
-                : undefined,
-        includeWordTimestamps:
-            typeof payload.includeWordTimestamps === "boolean"
-                ? payload.includeWordTimestamps
-                : true,
-        overlongSegmentRetryMode:
-            payload.overlongSegmentRetryMode === "best-effort"
-                ? "best-effort"
-                : "strict",
-        retryPromptHardConstraint:
-            typeof payload.retryPromptHardConstraint === "boolean"
-                ? payload.retryPromptHardConstraint
-                : undefined,
-        videoSpeedFactor:
-            typeof payload.videoSpeedFactor === "number"
-                ? payload.videoSpeedFactor
-                : undefined,
-    };
 }
 
 function summarizeWorkerResult(result: Record<string, unknown> | undefined) {
@@ -734,19 +661,19 @@ export async function GET(request: Request) {
 
         const job = remoteVipWorkerJobs.get(jobId);
         if (!job) {
-            return withCors(NextResponse.json(
+            return NextResponse.json(
                 {
                     ok: false,
                     errorCode: "SYS_DUBBING_MUX_FAILED",
                     error: "Remote VIP worker job was not found.",
                 },
                 { status: 404 },
-            ));
+            );
         }
-        return withCors(NextResponse.json({
+        return NextResponse.json({
             ok: true,
             data: serializeWorkerJob(job),
-        }));
+        });
     }
 
     const [ec2, top] = await Promise.all([
@@ -754,7 +681,7 @@ export async function GET(request: Request) {
         Promise.resolve(readTopSnapshot()),
     ]);
 
-    return withCors(NextResponse.json({
+    return NextResponse.json({
         ok: true,
         service: "omnivideo-vip-voice-render",
         capabilities: {
@@ -771,34 +698,30 @@ export async function GET(request: Request) {
             ec2,
             top,
         },
-    }));
+    });
 }
 
 export function DELETE(request: Request) {
     const denied = requireWorkerToken(request);
-    if (denied) return withCors(denied);
+    if (denied) return denied;
 
     const url = new URL(request.url);
     const jobId = url.searchParams.get("jobId")?.trim() || undefined;
     const result = cancelWorkerJobs({ jobId });
-    return withCors(NextResponse.json({
+    return NextResponse.json({
         ok: true,
         data: result,
-    }));
-}
-
-export function OPTIONS() {
-    return withCors(new NextResponse(null, { status: 204 }));
+    });
 }
 
 export async function POST(request: Request) {
     const denied = requireWorkerToken(request);
-    if (denied) return withCors(denied);
+    if (denied) return denied;
 
     try {
         const url = new URL(request.url);
         if (url.searchParams.get("sourceUpload") === "part") {
-            return withCors(await handleSourceUploadPart(request));
+            return await handleSourceUploadPart(request);
         }
         const {
             payload,
@@ -878,7 +801,7 @@ export async function POST(request: Request) {
                     }, REMOTE_VIP_JOB_TTL_MS);
                 });
 
-            return withCors(NextResponse.json(
+            return NextResponse.json(
                 {
                     ok: true,
                     data: {
@@ -891,14 +814,14 @@ export async function POST(request: Request) {
                     },
                 },
                 { status: 202 },
-            ));
+            );
         }
 
         const data = await executeWorkerJob(workerInput);
-        return withCors(NextResponse.json({ ok: true, data }));
+        return NextResponse.json({ ok: true, data });
     } catch (error) {
         if (error instanceof ChineseTranscriptionError) {
-            return withCors(NextResponse.json(
+            return NextResponse.json(
                 {
                     ok: false,
                     errorCode: error.code,
@@ -906,10 +829,10 @@ export async function POST(request: Request) {
                     steps: error.steps,
                 },
                 { status: error.status },
-            ));
+            );
         }
 
-        return withCors(NextResponse.json(
+        return NextResponse.json(
             {
                 ok: false,
                 errorCode: "SYS_DUBBING_MUX_FAILED",
@@ -919,7 +842,7 @@ export async function POST(request: Request) {
                         : "Remote VIP voice/render API failed.",
             },
             { status: 500 },
-        ));
+        );
     }
 }
 
@@ -1028,35 +951,6 @@ async function executeWorkerJob(input: {
             metrics: input.metrics,
         });
     };
-
-    if (executionMode === "transcribe") {
-        markStage({
-            stage: "transcript",
-            message: "Transcribing source speech on EC2.",
-            metrics: {
-                sourceFileSizeBytes: fileBytes.byteLength,
-                language:
-                    typeof payload.language === "string" ? payload.language : "zh",
-            },
-        });
-        const transcript = await runChineseVideoTranscription(
-            readTranscriptionInput({
-                payload,
-                fileBytes,
-                fileName,
-                mimeType,
-            }),
-        );
-        updateJob?.({
-            message: "EC2 transcription completed.",
-            metrics: {
-                segmentCount: transcript.segments.length,
-                wordCount: transcript.words.length,
-                audioFileSizeBytes: transcript.audio.fileSizeBytes,
-            },
-        });
-        return transcript;
-    }
 
     const stageRunners = {
         generateVoice: async (
