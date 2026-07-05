@@ -284,6 +284,10 @@ describe("transcript translation", () => {
     expect(prompt).toContain("avoid gendered Vietnamese pronouns");
     expect(prompt).toContain("'chàng' and 'nàng' are intimate/literary/romantic choices");
     expect(prompt).toContain("do not soften it into 'chàng/nàng'");
+    expect(prompt).toContain("Short bare direct-address lines are especially context-sensitive");
+    expect(prompt).toContain("do not convert 你 into gendered/polite 'cô/anh'");
+    expect(prompt).toContain("or 我 into 'tôi'");
+    expect(prompt).toContain("'ngươi', 'ta', 'đúng', 'chính là ngươi'");
     expect(prompt).toContain("silently audit every translated segment");
     expect(prompt).toContain("do not assume the viewer is male");
     expect(prompt).toContain("neutral-to-female-audience-friendly");
@@ -707,6 +711,15 @@ describe("transcript translation", () => {
     );
     expect(fallbackBody.messages[1].content).toContain(
       "Do not use 'chàng/nàng' just because gender is known",
+    );
+    expect(fallbackBody.messages[1].content).toContain(
+      "For short bare direct-address lines like '你', '我', '对', '就是你'",
+    );
+    expect(fallbackBody.messages[1].content).toContain(
+      "do not turn 你 into 'cô/anh' or 我 into 'tôi'",
+    );
+    expect(fallbackBody.messages[1].content).toContain(
+      "prefer 'ngươi', 'ta', 'đúng', 'chính là ngươi'",
     );
     expect(fallbackBody.messages[1].content).toContain(
       "neutral-to-female-audience-friendly",

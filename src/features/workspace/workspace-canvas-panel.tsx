@@ -543,6 +543,8 @@ function buildVipManualImportPrompt(input: {
         "",
         "In direct dialogue, preserve the source address force. If characters are angry, distant, hostile, formal, or not yet romantically close, keep a sharper or neutral address such as 'ngươi', 'anh', 'cô', name/title/role, or omit the address; do not soften it into 'chàng/nàng'.",
         "",
+        "Short bare direct-address lines are especially context-sensitive. For source lines like '你', '我', '对', '就是你', do not convert 你 into gendered/polite 'cô/anh' or 我 into 'tôi' merely from audience or gender assumptions. In hostile, distant, power-asymmetric, historical/fantasy, or ambiguous-address scenes, prefer force-preserving 'ngươi', 'ta', 'đúng', 'chính là ngươi'.",
+        "",
         "Before final output, silently audit every line: do not call a confirmed male character 'nàng/cô ấy/cô ta' and do not call a confirmed female character 'hắn/anh ấy/chàng'. Replace risky pronouns with a name/title/neutral wording.",
         "",
         "Audience/style: do not assume the viewer is male. Use a neutral-to-female-audience-friendly romance/short-drama recap tone when compatible with the source, but never change a character's gender, relationship, or agency to fit that tone.",

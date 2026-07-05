@@ -291,6 +291,9 @@ describe("WorkspaceCanvasPanel canvas interactions", () => {
         expect(source).toContain("neutral-to-female-audience-friendly");
         expect(source).toContain("'chàng' and 'nàng' are intimate/literary/romantic choices");
         expect(source).toContain("do not soften it into 'chàng/nàng'");
+        expect(source).toContain("Short bare direct-address lines are especially context-sensitive");
+        expect(source).toContain("do not convert 你 into gendered/polite 'cô/anh'");
+        expect(source).toContain("'ngươi', 'ta', 'đúng', 'chính là ngươi'");
         expect(source).toContain("Before final output, silently audit every line");
         expect(source).toContain("Return plain text only. Do not return JSON.");
         expect(source).toContain("Required output format (strict):");

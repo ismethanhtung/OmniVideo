@@ -1,5 +1,17 @@
 # OmniVideo Changelog
 
+## FAST-AUDIO-081 - Keep neutral confrontational pronouns in VIP translation
+
+- Bumped app version from `0.11.56` to `0.11.57` as a patch release for VIP translation prompt correctness.
+- Tightened VIP transcript translation prompts so short direct-address lines such as `你`, `我`, `对`, and `就是你` are not converted into gendered/polite `cô/anh/tôi` from audience or gender assumptions.
+- Added guidance to prefer force-preserving `ngươi`, `ta`, `đúng`, and `chính là ngươi` for hostile, distant, power-asymmetric, historical/fantasy, or ambiguous-address scenes.
+- Aligned the Workspace default translation prompt with the runtime VIP prompt and added prompt regression coverage.
+- Verification (FAST-AUDIO-081):
+  - `npm run test -- --run src/lib/multilingual-audio/transcript-translation.test.ts src/features/workspace/workspace-canvas-panel.test.ts` pass (2 files / 46 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+
 ## FAST-VIDEO-059 - Add Video Tools Text Overlay defaults and YouTube Short crop
 
 - Bumped app version from `0.11.55` to `0.11.56` as a patch release for Video Tools short-form editing and Video Tools Lab overlay defaults.

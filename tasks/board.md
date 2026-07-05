@@ -178,6 +178,7 @@
 
 ## Done
 
+- `FAST-AUDIO-081` - Keep neutral confrontational pronouns in VIP translation
 - `FAST-VIDEO-059` - Add Video Tools Text Overlay defaults and YouTube Short crop
 - `FAST-AUDIO-080` - Soften gender guardrails for contextual Vietnamese address terms
 - `FAST-AUDIO-079` - Harden Vietnamese gender pronoun translation
