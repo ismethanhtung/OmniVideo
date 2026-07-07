@@ -326,6 +326,16 @@ describe("video edit pipeline", () => {
         expect(ass).toContain("Dialogue: 20,0:00:00.00,0:00:12.00");
     });
 
+    it("uses the subtitle font as the default ASS text overlay font", () => {
+        const ass = buildTextOverlayAssContent(
+            [{ text: "Lộn Xộn Review", start: 0, end: 12 }],
+            { playResX: 1920, playResY: 1080 },
+        );
+
+        expect(ass).toContain("Style: TextOverlay0,Bangers,48");
+        expect(ass).not.toContain("Style: TextOverlay0,Arial");
+    });
+
     it("applies custom subtitle style overrides", () => {
         const ass = buildSubtitleAssContent(
             [

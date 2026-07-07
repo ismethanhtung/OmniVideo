@@ -39,6 +39,12 @@ import {
     type VideoBackgroundMusicLibraryOption,
     type VideoBackgroundMusicTrackConfig,
 } from "@/lib/video-processing/background-music";
+import {
+    buildContainedVideoRegionBox,
+    pointToContainedVideoPercent,
+    resolveContainedVideoRect,
+    type ContainedVideoRect,
+} from "@/lib/video-processing/video-preview-region";
 
 import {
     ASS_SUBTITLE_OUTLINE,
@@ -455,7 +461,7 @@ const VIDEO_TEXT_FONT_OPTIONS: Array<{
 
 const DEFAULT_TEXT_OVERLAY: TextOverlayDraft = {
     text: "Lộn Xộn Review",
-    fontFamily: "Baloo 2",
+    fontFamily: "Bangers",
     fontSize: 45,
     fontWeight: 800,
     textColor: "#ffffff",
@@ -474,6 +480,27 @@ const TEXT_OVERLAY_CHANNEL_OPTIONS = [
     "Lộn Xộn Review",
     "Cơm Áo Review",
 ] as const;
+
+function normalizeTextOverlayFontFamilyFromSetup(
+    savedTextOverlay: VideoEditSetup["textOverlay"],
+) {
+    const savedFontFamily =
+        savedTextOverlay && typeof savedTextOverlay.fontFamily === "string"
+            ? savedTextOverlay.fontFamily
+            : DEFAULT_TEXT_OVERLAY.fontFamily;
+    const savedText =
+        savedTextOverlay && typeof savedTextOverlay.text === "string"
+            ? savedTextOverlay.text
+            : DEFAULT_TEXT_OVERLAY.text;
+    const isOldDefaultChannelWatermark =
+        savedFontFamily === "Baloo 2" &&
+        TEXT_OVERLAY_CHANNEL_OPTIONS.includes(
+            savedText as (typeof TEXT_OVERLAY_CHANNEL_OPTIONS)[number],
+        );
+    return isOldDefaultChannelWatermark
+        ? DEFAULT_TEXT_OVERLAY.fontFamily
+        : savedFontFamily;
+}
 
 function buildDraftId(prefix: string) {
     if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -538,6 +565,19 @@ function getVideoTextFontOption(fontFamily: string) {
 function getVideoTextFontFamily(fontFamily: string) {
     const option = getVideoTextFontOption(fontFamily);
     return `var(${option.cssVariable}), ${option.fallbackFamily}`;
+}
+
+function buildPreviewRegionStyle(
+    region: { x: number; y: number; width: number; height: number },
+    videoRect: ContainedVideoRect,
+) {
+    const box = buildContainedVideoRegionBox(region, videoRect);
+    return {
+        left: `${box.left}px`,
+        top: `${box.top}px`,
+        width: `${box.width}px`,
+        height: `${box.height}px`,
+    };
 }
 
 function hasSavedVideoEditSetup(asset: StoredVideoAsset | null) {
@@ -643,6 +683,14 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
     const textOverlayBoxRef = useRef<HTMLDivElement | null>(null);
     const sourceVideoRef = useRef<HTMLVideoElement | null>(null);
     const subtitlePreviewPosRef = useRef({ left: 120, top: 320 });
+    const previewVideoRect = resolveContainedVideoRect({
+        frameWidth:
+            previewFrameRef.current?.clientWidth ?? videoNaturalSize.width,
+        frameHeight:
+            previewFrameRef.current?.clientHeight ?? videoNaturalSize.height,
+        videoWidth: videoNaturalSize.width,
+        videoHeight: videoNaturalSize.height,
+    });
 
     const loadBackgroundMusicOptions = useCallback(async () => {
         try {
@@ -726,6 +774,18 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
         setSourcePreviewDuration(0);
     }, [sourceVideoUrl]);
 
+    useEffect(() => {
+        const frame = previewFrameRef.current;
+        if (!frame || typeof ResizeObserver === "undefined") return;
+        const observer = new ResizeObserver(() => {
+            setPreviewLayoutVersion((current) => current + 1);
+        });
+        observer.observe(frame);
+        return () => {
+            observer.disconnect();
+        };
+    }, [sourceVideoUrl]);
+
     const activeRegion =
         blurRegions.find((item) => item.id === activeRegionId) ?? null;
     const backgroundMusicSelectOptions = useMemo(() => {
@@ -768,6 +828,26 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
             setTextOverlay((current) => ({ ...current, ...patch }));
         },
         [],
+    );
+
+    const getPreviewPointerVideoPercent = useCallback(
+        (event: { clientX: number; clientY: number }) => {
+            const frame = previewFrameRef.current;
+            if (!frame) return null;
+            const rect = frame.getBoundingClientRect();
+            if (rect.width <= 0 || rect.height <= 0) return null;
+            return pointToContainedVideoPercent({
+                clientX: event.clientX,
+                clientY: event.clientY,
+                frameLeft: rect.left,
+                frameTop: rect.top,
+                frameWidth: rect.width,
+                frameHeight: rect.height,
+                videoWidth: videoNaturalSize.width,
+                videoHeight: videoNaturalSize.height,
+            });
+        },
+        [videoNaturalSize.height, videoNaturalSize.width],
     );
 
     const applyDefaultBackgroundMusicSetup = useCallback(() => {
@@ -1007,17 +1087,18 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
         if (!isDraggingTextOverlay) return;
 
         const handlePointerMove = (event: MouseEvent) => {
-            const frame = previewFrameRef.current;
-            if (!frame) return;
-            const frameRect = frame.getBoundingClientRect();
-            if (frameRect.width <= 0 || frameRect.height <= 0) return;
             const centerX =
-                event.clientX - frameRect.left - textOverlayDragOffset.x;
+                event.clientX - textOverlayDragOffset.x;
             const centerY =
-                event.clientY - frameRect.top - textOverlayDragOffset.y;
+                event.clientY - textOverlayDragOffset.y;
+            const position = getPreviewPointerVideoPercent({
+                clientX: centerX,
+                clientY: centerY,
+            });
+            if (!position) return;
             updateTextOverlay({
-                x: clampNumber((centerX / frameRect.width) * 100, 0, 100),
-                y: clampNumber((centerY / frameRect.height) * 100, 0, 100),
+                x: position.x,
+                y: position.y,
             });
         };
 
@@ -1033,6 +1114,7 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
         };
     }, [
         isDraggingTextOverlay,
+        getPreviewPointerVideoPercent,
         textOverlayDragOffset.x,
         textOverlayDragOffset.y,
         updateTextOverlay,
@@ -1267,9 +1349,9 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                                   ? savedTextOverlay.text
                                   : DEFAULT_TEXT_OVERLAY.text,
                           fontFamily:
-                              typeof savedTextOverlay.fontFamily === "string"
-                                  ? savedTextOverlay.fontFamily
-                                  : DEFAULT_TEXT_OVERLAY.fontFamily,
+                              normalizeTextOverlayFontFamilyFromSetup(
+                                  savedTextOverlay,
+                              ),
                           fontSize: Number.isFinite(savedTextOverlay.fontSize)
                               ? Number(savedTextOverlay.fontSize)
                               : DEFAULT_TEXT_OVERLAY.fontSize,
@@ -3255,34 +3337,24 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                                             ) {
                                                 return;
                                             }
-                                            const rect =
-                                                event.currentTarget.getBoundingClientRect();
-                                            const x =
-                                                ((event.clientX - rect.left) /
-                                                    rect.width) *
-                                                100;
-                                            const y =
-                                                ((event.clientY - rect.top) /
-                                                    rect.height) *
-                                                100;
+                                            const point =
+                                                getPreviewPointerVideoPercent(
+                                                    event,
+                                                );
+                                            if (!point) return;
                                             setIsDrawingRegion(true);
-                                            setDrawStart({ x, y });
-                                            setDrawCurrent({ x, y });
+                                            setDrawStart(point);
+                                            setDrawCurrent(point);
                                         }}
                                         onMouseMove={(event) => {
                                             if (!isDrawingRegion || !drawStart)
                                                 return;
-                                            const rect =
-                                                event.currentTarget.getBoundingClientRect();
-                                            const x =
-                                                ((event.clientX - rect.left) /
-                                                    rect.width) *
-                                                100;
-                                            const y =
-                                                ((event.clientY - rect.top) /
-                                                    rect.height) *
-                                                100;
-                                            setDrawCurrent({ x, y });
+                                            const point =
+                                                getPreviewPointerVideoPercent(
+                                                    event,
+                                                );
+                                            if (!point) return;
+                                            setDrawCurrent(point);
                                         }}
                                         onMouseUp={() => {
                                             if (
@@ -3512,10 +3584,10 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                                                 key={region.id}
                                                 className={`pointer-events-none absolute border ${activeRegionId === region.id ? "border-accent bg-accent/20" : "border-main bg-main/10"}`}
                                                 style={{
-                                                    left: `${region.x}%`,
-                                                    top: `${region.y}%`,
-                                                    width: `${region.width}%`,
-                                                    height: `${region.height}%`,
+                                                    ...buildPreviewRegionStyle(
+                                                        region,
+                                                        previewVideoRect,
+                                                    ),
                                                     backgroundColor:
                                                         coverBoxEnabled
                                                             ? hexToRgba(
@@ -3531,24 +3603,27 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                                         drawCurrent ? (
                                             <div
                                                 className="pointer-events-none absolute border border-accent bg-accent/15"
-                                                style={{
-                                                    left: `${Math.min(
-                                                        drawStart.x,
-                                                        drawCurrent.x,
-                                                    )}%`,
-                                                    top: `${Math.min(
-                                                        drawStart.y,
-                                                        drawCurrent.y,
-                                                    )}%`,
-                                                    width: `${Math.abs(
-                                                        drawCurrent.x -
+                                                style={buildPreviewRegionStyle(
+                                                    {
+                                                        x: Math.min(
                                                             drawStart.x,
-                                                    )}%`,
-                                                    height: `${Math.abs(
-                                                        drawCurrent.y -
+                                                            drawCurrent.x,
+                                                        ),
+                                                        y: Math.min(
                                                             drawStart.y,
-                                                    )}%`,
-                                                }}
+                                                            drawCurrent.y,
+                                                        ),
+                                                        width: Math.abs(
+                                                            drawCurrent.x -
+                                                                drawStart.x,
+                                                        ),
+                                                        height: Math.abs(
+                                                            drawCurrent.y -
+                                                                drawStart.y,
+                                                        ),
+                                                    },
+                                                    previewVideoRect,
+                                                )}
                                             />
                                         ) : null}
                                         {textOverlayEnabled ? (
@@ -3577,20 +3652,20 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                                                 }}
                                                 className="absolute cursor-move select-none whitespace-nowrap px-1 text-center"
                                                 style={{
-                                                    left: `${textOverlay.x}%`,
-                                                    top: `${textOverlay.y}%`,
+                                                    left: `${previewVideoRect.left + (textOverlay.x / 100) * previewVideoRect.width}px`,
+                                                    top: `${previewVideoRect.top + (textOverlay.y / 100) * previewVideoRect.height}px`,
                                                     transform:
                                                         "translate(-50%, -50%)",
-                                                    fontFamily: `var(${getVideoTextFontOption(textOverlay.fontFamily).cssVariable}), ${getVideoTextFontOption(textOverlay.fontFamily).fallbackFamily}`,
+                                                    fontFamily:
+                                                        getVideoTextFontFamily(
+                                                            textOverlay.fontFamily,
+                                                        ),
                                                     fontSize: `${Math.max(
                                                         8,
                                                         ((textOverlay.fontSize *
-                                                            (previewFrameRef
-                                                                .current
-                                                                ?.clientHeight ??
-                                                                420)) /
+                                                            previewVideoRect.height) /
                                                             videoNaturalSize.height) *
-                                                            (72 / 96),
+                                                            ASS_TO_CSS_FONT_DPI_RATIO,
                                                     )}px`,
                                                     fontWeight:
                                                         textOverlay.fontWeight,
@@ -3598,12 +3673,9 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                                                     WebkitTextStroke: `${Math.max(
                                                         0,
                                                         ((textOverlay.strokeWidth *
-                                                            (previewFrameRef
-                                                                .current
-                                                                ?.clientHeight ??
-                                                                420)) /
+                                                            previewVideoRect.height) /
                                                             videoNaturalSize.height) *
-                                                            (72 / 96),
+                                                            ASS_TO_CSS_FONT_DPI_RATIO,
                                                     )}px ${textOverlay.strokeColor}`,
                                                     paintOrder: "stroke fill",
                                                     backgroundColor:

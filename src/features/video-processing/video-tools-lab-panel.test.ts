@@ -5,6 +5,11 @@ import {
     buildSubtitleAssPlacementFromPreview,
     buildSubtitleAssPlacementFromPreviewPercent,
 } from "@/lib/video-processing/subtitle-placement";
+import {
+    buildContainedVideoRegionBox,
+    pointToContainedVideoPercent,
+    resolveContainedVideoRect,
+} from "@/lib/video-processing/video-preview-region";
 
 const SOURCE_PATH = "src/features/video-processing/video-tools-lab-panel.tsx";
 const HELPER_SOURCE_PATH =
@@ -90,10 +95,89 @@ describe("Video Tools Lab source preview controls", () => {
         expect(source).toContain("Cơm Áo Review");
         expect(source).toContain("TEXT_OVERLAY_CHANNEL_OPTIONS.map");
         expect(source).toContain("const [textOverlayEnabled, setTextOverlayEnabled] = useState(true)");
+        expect(source).toContain('fontFamily: "Bangers"');
         expect(source).toContain("fontSize: 45");
         expect(source).toContain("textOverlaysJson");
         expect(source).toContain("textOverlayPlayResX");
         expect(source).toContain("getVideoTextFontOption");
+        expect(source).toContain("getVideoTextFontFamily");
+        expect(source).toContain("normalizeTextOverlayFontFamilyFromSetup");
+        expect(source).toContain('savedFontFamily === "Baloo 2"');
+    });
+
+    it("maps vertical-video pointer blur regions inside the contained video content", () => {
+        const videoRect = resolveContainedVideoRect({
+            frameWidth: 1183,
+            frameHeight: 720,
+            videoWidth: 720,
+            videoHeight: 1280,
+        });
+
+        expect(videoRect.left).toBeCloseTo(389, 0);
+        expect(videoRect.width).toBeCloseTo(405, 0);
+        expect(
+            pointToContainedVideoPercent({
+                clientX: 100,
+                clientY: 360,
+                frameLeft: 0,
+                frameTop: 0,
+                frameWidth: 1183,
+                frameHeight: 720,
+                videoWidth: 720,
+                videoHeight: 1280,
+            }),
+        ).toEqual({ x: 0, y: 50 });
+        expect(
+            pointToContainedVideoPercent({
+                clientX: 591.5,
+                clientY: 360,
+                frameLeft: 0,
+                frameTop: 0,
+                frameWidth: 1183,
+                frameHeight: 720,
+                videoWidth: 720,
+                videoHeight: 1280,
+            }),
+        ).toEqual({ x: 50, y: 50 });
+        expect(
+            buildContainedVideoRegionBox(
+                { x: 0, y: 25, width: 100, height: 25 },
+                videoRect,
+            ),
+        ).toEqual({
+            left: videoRect.left,
+            top: 180,
+            width: videoRect.width,
+            height: 180,
+        });
+    });
+
+    it("keeps horizontal-video pointer blur mapping unchanged", () => {
+        const videoRect = resolveContainedVideoRect({
+            frameWidth: 1280,
+            frameHeight: 720,
+            videoWidth: 1920,
+            videoHeight: 1080,
+        });
+
+        expect(videoRect).toEqual({
+            left: 0,
+            top: 0,
+            width: 1280,
+            height: 720,
+        });
+        expect(
+            pointToContainedVideoPercent({
+                clientX: 320,
+                clientY: 180,
+                frameLeft: 0,
+                frameTop: 0,
+                frameWidth: 1280,
+                frameHeight: 720,
+                videoWidth: 1920,
+                videoHeight: 1080,
+            }),
+        ).toEqual({ x: 25, y: 25 });
     });
 
     it("adds saved background music controls for VIP render setup", () => {

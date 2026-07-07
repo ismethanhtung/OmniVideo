@@ -1,5 +1,18 @@
 # OmniVideo Changelog
 
+## FAST-VIDEO-060 - Fix Video Tools Lab vertical blur mapping and watermark font
+
+- Bumped app version from `0.11.57` to `0.11.58` as a patch release for Video Tools Lab preview/render correctness.
+- Fixed mouse-created blur and cover-box regions on vertical videos so preview side bars are ignored and coordinates map to the contained source video content.
+- Aligned Text Overlay defaults and ASS render fallback with the subtitle font family by using `Bangers` instead of falling back to default/Arial-style text.
+- Mapped Text Overlay preview positioning against the contained video content area so vertical-video watermarks no longer preview on the black side bars.
+- Migrated old saved default channel watermarks from `Baloo 2` to `Bangers` when loading built-in channel names.
+- Verification (FAST-VIDEO-060):
+  - `npm run test -- --run src/features/video-processing/video-tools-lab-panel.test.ts src/lib/video-processing/video-edit-pipeline.test.ts` pass (2 files / 42 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+
 ## FAST-AUDIO-081 - Keep neutral confrontational pronouns in VIP translation
 
 - Bumped app version from `0.11.56` to `0.11.57` as a patch release for VIP translation prompt correctness.

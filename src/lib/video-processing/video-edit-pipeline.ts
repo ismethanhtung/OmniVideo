@@ -44,6 +44,7 @@ const FALLBACK_BUNDLED_SUBTITLE_FONT_FILES: Record<string, string> = {
         "Lobster-Regular.ttf",
     ),
 };
+const DEFAULT_VIDEO_TEXT_OVERLAY_FONT_FAMILY = "Bangers";
 
 export type SubtitleDisplayMode =
     | "standard"
@@ -512,7 +513,9 @@ function normalizeTextOverlays(
 
             return {
                 text,
-                fontFamily: (overlay.fontFamily || "Arial")
+                fontFamily: (
+                    overlay.fontFamily || DEFAULT_VIDEO_TEXT_OVERLAY_FONT_FAMILY
+                )
                     .replace(/,/g, "")
                     .trim(),
                 fontSize: Number.isFinite(overlay.fontSize)
@@ -984,7 +987,7 @@ export function buildTextOverlayAssContent(
     const styleLines = normalizedOverlays.map((overlay, index) => {
         const borderStyle = overlay.backgroundEnabled ? 3 : 1;
         const bold = overlay.fontWeight >= 600 ? -1 : 0;
-        return `Style: TextOverlay${index},${overlay.fontFamily || "Arial"},${overlay.fontSize},${hexToAssColor(
+        return `Style: TextOverlay${index},${overlay.fontFamily || DEFAULT_VIDEO_TEXT_OVERLAY_FONT_FAMILY},${overlay.fontSize},${hexToAssColor(
             overlay.textColor,
             100,
         )},&H000000FF,${hexToAssColor(
