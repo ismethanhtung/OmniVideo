@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { Briefcase, Merge, Scissors, Download } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Briefcase, Merge, Scissors, Download, GripVertical, X } from "lucide-react";
 
 import type { LeftbarNavItem } from "@/components/layout/types";
 import { StatusText } from "@/components/ui/status-text";
@@ -29,6 +29,15 @@ type SubmitState =
 
 type SplitMode = "interval" | "parts" | "head" | "short";
 
+type MergeVideoMetadata =
+    | {
+          status: "ready";
+          width: number;
+          height: number;
+          durationSeconds: number;
+      }
+    | { status: "error" };
+
 const SPLIT_MODE_OPTIONS: Array<{ value: SplitMode; label: string }> = [
     { value: "interval", label: "Block" },
     { value: "parts", label: "Parts" },
@@ -36,10 +45,26 @@ const SPLIT_MODE_OPTIONS: Array<{ value: SplitMode; label: string }> = [
     { value: "short", label: "YouTube Short 9:16" },
 ];
 
+function formatAspectRatio(width: number, height: number) {
+    if (!width || !height) return "Unknown ratio";
+    const divisor = (left: number, right: number): number =>
+        right === 0 ? left : divisor(right, left % right);
+    const factor = divisor(width, height);
+    return `${width / factor}:${height / factor}`;
+}
+
 export function VideoSplitterPanel({ section }: VideoSplitterPanelProps) {
     const Icon = section.icon ?? Briefcase;
     const [videoFile, setVideoFile] = useState<File | null>(null);
     const [mergeFiles, setMergeFiles] = useState<File[]>([]);
+    const [mergePreviewUrls, setMergePreviewUrls] = useState<string[]>([]);
+    const [mergeVideoMetadata, setMergeVideoMetadata] = useState<
+        Record<string, MergeVideoMetadata>
+    >({});
+    const [activePreviewIndex, setActivePreviewIndex] = useState(0);
+    const [draggedMergeIndex, setDraggedMergeIndex] = useState<number | null>(
+        null,
+    );
     const [mode, setMode] = useState<SplitMode>("interval");
     const [intervalMinutes, setIntervalMinutes] = useState(30);
     const [headMinutes, setHeadMinutes] = useState(15);
@@ -56,6 +81,67 @@ export function VideoSplitterPanel({ section }: VideoSplitterPanelProps) {
         if (!file) return;
         setMergeFiles((previous) => [...previous, file]);
     };
+
+    const moveMergeFile = (fromIndex: number, toIndex: number) => {
+        if (fromIndex === toIndex) return;
+        setMergeFiles((previous) => {
+            const next = [...previous];
+            const [file] = next.splice(fromIndex, 1);
+            if (!file) return previous;
+            next.splice(toIndex, 0, file);
+            return next;
+        });
+    };
+
+    const removeMergeFile = (index: number) => {
+        setMergeFiles((previous) =>
+            previous.filter((_, fileIndex) => fileIndex !== index),
+        );
+    };
+
+    useEffect(() => {
+        const urls = mergeFiles.map((file) => URL.createObjectURL(file));
+        let isCurrent = true;
+        setMergePreviewUrls(urls);
+        setMergeVideoMetadata({});
+        setActivePreviewIndex(0);
+        urls.forEach((url) => {
+            const video = document.createElement("video");
+            video.preload = "metadata";
+            video.onloadedmetadata = () => {
+                if (!isCurrent || !video.videoWidth || !video.videoHeight)
+                    return;
+                setMergeVideoMetadata((previous) => ({
+                    ...previous,
+                    [url]: {
+                        status: "ready",
+                        width: video.videoWidth,
+                        height: video.videoHeight,
+                        durationSeconds: video.duration,
+                    },
+                }));
+            };
+            video.onerror = () => {
+                if (!isCurrent) return;
+                setMergeVideoMetadata((previous) => ({
+                    ...previous,
+                    [url]: { status: "error" },
+                }));
+            };
+            video.src = url;
+        });
+        return () => {
+            isCurrent = false;
+            urls.forEach((url) => URL.revokeObjectURL(url));
+        };
+    }, [mergeFiles]);
+
+    const referenceMergeFormat = mergePreviewUrls
+        .map((url) => mergeVideoMetadata[url])
+        .find(
+            (metadata): metadata is Extract<MergeVideoMetadata, { status: "ready" }> =>
+                metadata?.status === "ready",
+        );
 
     const runSplit = async () => {
         if (!videoFile) {
@@ -554,25 +640,268 @@ export function VideoSplitterPanel({ section }: VideoSplitterPanelProps) {
                     </div>
 
                     <section className="border border-main bg-secondary/20 p-4">
-                        <p className="text-[12px] font-semibold text-main">
-                            Merge Queue
-                        </p>
+                        <div className="flex items-center justify-between gap-2">
+                            <p className="text-[12px] font-semibold text-main">
+                                Merge Queue
+                            </p>
+                            <p className="text-[10px] text-muted">
+                                Kéo thả để đổi thứ tự
+                            </p>
+                        </div>
                         {mergeFiles.length === 0 ? (
                             <p className="mt-1 text-[11px] text-muted">
                                 Chưa có file nào trong hàng đợi merge.
                             </p>
                         ) : (
                             <div className="mt-2 max-h-56 space-y-1 overflow-y-auto border border-main bg-main p-2">
-                                {mergeFiles.map((file, index) => (
-                                    <p
+                                {mergeFiles.map((file, index) => {
+                                    const metadata = mergePreviewUrls[index]
+                                        ? mergeVideoMetadata[
+                                              mergePreviewUrls[index]
+                                          ]
+                                        : undefined;
+                                    return (
+                                    <div
                                         key={`${file.name}-${index}-${file.size}`}
-                                        className="truncate text-[11px] text-main"
+                                        draggable
+                                        onDragStart={(event) => {
+                                            setDraggedMergeIndex(index);
+                                            event.dataTransfer.effectAllowed =
+                                                "move";
+                                        }}
+                                        onDragOver={(event) => {
+                                            event.preventDefault();
+                                            event.dataTransfer.dropEffect =
+                                                "move";
+                                        }}
+                                        onDrop={(event) => {
+                                            event.preventDefault();
+                                            if (draggedMergeIndex === null)
+                                                return;
+                                            moveMergeFile(
+                                                draggedMergeIndex,
+                                                index,
+                                            );
+                                            setDraggedMergeIndex(null);
+                                        }}
+                                        onDragEnd={() =>
+                                            setDraggedMergeIndex(null)
+                                        }
+                                        className={`flex items-center gap-1.5 border px-2 py-1.5 text-[11px] text-main ${
+                                            draggedMergeIndex === index
+                                                ? "border-accent bg-accent/10"
+                                                : "border-transparent bg-secondary/20"
+                                        }`}
                                     >
-                                        {index + 1}. {file.name}
-                                    </p>
-                                ))}
+                                        <GripVertical className="h-3.5 w-3.5 shrink-0 text-muted" />
+                                        <span className="w-4 shrink-0 font-semibold text-muted">
+                                            {index + 1}.
+                                        </span>
+                                        <span className="min-w-0 flex-1 truncate">
+                                            {file.name}
+                                        </span>
+                                        {metadata?.status === "ready" ? (
+                                            <span className="shrink-0 text-[9px] text-muted">
+                                                {metadata.width}×
+                                                {metadata.height}
+                                            </span>
+                                        ) : null}
+                                        <button
+                                            type="button"
+                                            onClick={() => removeMergeFile(index)}
+                                            className="shrink-0 p-0.5 text-muted hover:text-rose-600"
+                                            aria-label={`Remove ${file.name}`}
+                                        >
+                                            <X className="h-3.5 w-3.5" />
+                                        </button>
+                                    </div>
+                                    );
+                                })}
                             </div>
                         )}
+                    </section>
+                    <section className="border border-main bg-secondary/20 p-4">
+                        <div className="flex items-center justify-between gap-2">
+                            <p className="text-[12px] font-semibold text-main">
+                                Merge Preview
+                            </p>
+                            {mergeFiles.length > 0 ? (
+                                <button
+                                    type="button"
+                                    onClick={() => setActivePreviewIndex(0)}
+                                    className="text-[10px] font-semibold text-accent hover:underline"
+                                >
+                                    Preview from first
+                                </button>
+                            ) : null}
+                        </div>
+                        {mergeFiles.length === 0 ||
+                        !mergePreviewUrls[activePreviewIndex] ? (
+                            <p className="mt-1 text-[11px] leading-5 text-muted">
+                                Add videos to preview their merge order locally.
+                            </p>
+                        ) : (
+                            <div className="mt-2">
+                                <p className="mb-2 text-[10px] text-muted">
+                                    Playing {activePreviewIndex + 1}/
+                                    {mergeFiles.length}: {" "}
+                                    {mergeFiles[activePreviewIndex]?.name}
+                                </p>
+                                <video
+                                    key={mergePreviewUrls[activePreviewIndex]}
+                                    controls
+                                    autoPlay={activePreviewIndex > 0}
+                                    className="aspect-video w-full bg-black"
+                                    src={mergePreviewUrls[activePreviewIndex]}
+                                    onEnded={() =>
+                                        setActivePreviewIndex((current) =>
+                                            current < mergeFiles.length - 1
+                                                ? current + 1
+                                                : 0,
+                                        )
+                                    }
+                                />
+                                <p className="mt-2 text-[10px] leading-4 text-muted">
+                                    This is a local sequential preview only. It
+                                    does not upload or merge files until you
+                                    press Merge + Download MP4.
+                                </p>
+                            </div>
+                        )}
+                        {mergeFiles.length > 0 ? (
+                            <div className="mt-3 border-t border-main pt-3">
+                                <div className="flex items-center justify-between gap-2">
+                                    <p className="text-[11px] font-semibold text-main">
+                                        Format Compatibility
+                                    </p>
+                                    {referenceMergeFormat ? (
+                                        <p className="text-[10px] text-muted">
+                                            Base: {referenceMergeFormat.width}×
+                                            {referenceMergeFormat.height} · {" "}
+                                            {formatAspectRatio(
+                                                referenceMergeFormat.width,
+                                                referenceMergeFormat.height,
+                                            )}
+                                        </p>
+                                    ) : null}
+                                </div>
+                                <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                                    {mergeFiles.map((file, index) => {
+                                        const metadata = mergePreviewUrls[index]
+                                            ? mergeVideoMetadata[
+                                                  mergePreviewUrls[index]
+                                              ]
+                                            : undefined;
+                                        const matchesBase =
+                                            metadata?.status === "ready" &&
+                                            referenceMergeFormat &&
+                                            metadata.width ===
+                                                referenceMergeFormat.width &&
+                                            metadata.height ===
+                                                referenceMergeFormat.height;
+                                        return (
+                                            <div
+                                                key={`format-${file.name}-${index}-${file.size}`}
+                                                className={`flex gap-2 border p-2 ${
+                                                    matchesBase
+                                                        ? "border-sky-500/70 bg-sky-500/5"
+                                                        : metadata?.status ===
+                                                            "ready"
+                                                          ? "border-amber-500/70 bg-amber-500/5"
+                                                          : "border-main bg-main"
+                                                }`}
+                                            >
+                                                <div className="flex h-16 w-20 shrink-0 items-center justify-center border border-dashed border-main bg-secondary/30 p-1">
+                                                    {metadata?.status ===
+                                                    "ready" ? (
+                                                        <div
+                                                            className={`border-2 ${
+                                                                matchesBase
+                                                                    ? "border-sky-500"
+                                                                    : "border-amber-500"
+                                                            }`}
+                                                            style={{
+                                                                width:
+                                                                    metadata.width >=
+                                                                    metadata.height
+                                                                        ? "100%"
+                                                                        : `${(metadata.width / metadata.height) * 100}%`,
+                                                                aspectRatio: `${metadata.width} / ${metadata.height}`,
+                                                            }}
+                                                        />
+                                                    ) : (
+                                                        <span className="text-[9px] text-muted">
+                                                            ?
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <div className="min-w-0">
+                                                    <p className="truncate text-[10px] font-semibold text-main">
+                                                        {index + 1}. {file.name}
+                                                    </p>
+                                                    {metadata?.status === "ready" ? (
+                                                        <>
+                                                            <p className="mt-1 text-[10px] text-main">
+                                                                {metadata.width}×
+                                                                {metadata.height} · {" "}
+                                                                {formatAspectRatio(
+                                                                    metadata.width,
+                                                                    metadata.height,
+                                                                )}
+                                                            </p>
+                                                            <p className="text-[10px] text-muted">
+                                                                {Math.round(
+                                                                    metadata.durationSeconds,
+                                                                )}
+                                                                s
+                                                            </p>
+                                                            <p
+                                                                className={`mt-1 text-[10px] font-semibold ${
+                                                                    matchesBase
+                                                                        ? "text-sky-700"
+                                                                        : "text-amber-700"
+                                                                }`}
+                                                            >
+                                                                {matchesBase
+                                                                    ? "Matches base format"
+                                                                    : "Different from base format"}
+                                                            </p>
+                                                        </>
+                                                    ) : metadata?.status ===
+                                                      "error" ? (
+                                                        <p className="mt-1 text-[10px] text-rose-700">
+                                                            Cannot read local video metadata.
+                                                        </p>
+                                                    ) : (
+                                                        <p className="mt-1 text-[10px] text-muted">
+                                                            Reading local format...
+                                                        </p>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                                {referenceMergeFormat &&
+                                mergePreviewUrls.some((url) => {
+                                    const metadata = mergeVideoMetadata[url];
+                                    return (
+                                        metadata?.status === "ready" &&
+                                        (metadata.width !==
+                                            referenceMergeFormat.width ||
+                                            metadata.height !==
+                                                referenceMergeFormat.height)
+                                    );
+                                }) ? (
+                                    <p className="mt-2 border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 text-[10px] leading-4 text-amber-800">
+                                        Format mismatch: stream-copy merge may
+                                        fail or create an unsuitable result.
+                                        Match the same width and height before
+                                        merging, or re-encode the videos first.
+                                    </p>
+                                ) : null}
+                            </div>
+                        ) : null}
                     </section>
                     <section className="border border-main bg-secondary/20 p-4">
                         <div className="flex items-center gap-2 text-[11px]">

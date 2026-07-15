@@ -1,5 +1,98 @@
 # OmniVideo Changelog
 
+## FAST-VIDEO-067 - Preserve Composer Render Quality and Vietnamese Text Fidelity
+
+- Bumped app version from `0.11.65` to `0.11.66` to prioritize lossless Video Composer output.
+- Replaced CRF 20/veryfast video encoding with CRF 0/medium and raised mixed-audio output to 320 kbps AAC.
+- Added source-video height probing so server text scales from the 896×504 preview canvas to the final media dimensions and uses the same centered drag-anchor geometry.
+- Added Unicode-safe font-file selection for Vietnamese glyphs and preserved multi-line text for FFmpeg drawtext.
+- Verification (FAST-VIDEO-067):
+  - `npm run test -- --run src/lib/video-processing/video-composer-render.test.ts src/features/video-processing/video-composer-panel.test.ts src/app/api/video-processing/composer-render/route.test.ts` pass (3 files / 8 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+
+## FAST-VIDEO-066 - Render Video Composer Project to MP4
+
+- Bumped app version from `0.11.64` to `0.11.65` so Video Composer Save Project now renders final output instead of downloading JSON.
+- Added a Node/FFmpeg composer render route that concatenates the selected clip order, applies selected speed, original-audio volume, optional uploaded music mix, Vintage grade, and text overlay position/font size, then returns an MP4 download.
+- Replaced the Video Composer save action with `Save Project + Download MP4`, including final-render progress and API error feedback.
+- Verification (FAST-VIDEO-066):
+  - `npm run test -- --run src/features/video-processing/video-composer-panel.test.ts src/lib/video-processing/video-composer-render.test.ts src/app/api/video-processing/composer-render/route.test.ts` pass (3 files / 7 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+
+## FAST-VIDEO-065 - Fix Video Composer Metadata Event Null Crash
+
+- Bumped app version from `0.11.63` to `0.11.64` as a patch release for Video Composer upload reliability.
+- Fixed the clip metadata handler to synchronously capture the native video element and duration before scheduling React state, preventing `Cannot read properties of null (reading 'duration')` on upload.
+- Preserved duration-based timeline sizing and preview playback-rate setup, while ignoring invalid durations.
+- Verification (FAST-VIDEO-065):
+  - `npm run test -- --run src/features/video-processing/video-composer-panel.test.ts` pass (1 file / 4 tests).
+  - `npm run guard:version`, `npm run build`, and `git diff --check` pass alongside FAST-VIDEO-066.
+
+## FAST-VIDEO-064 - Upgrade Video Composer Preview Timeline and Controls
+
+- Bumped app version from `0.11.62` to `0.11.63` as a patch release for Video Composer review fixes.
+- Synced uploaded music to video preview play, pause, seek, time update, and sequential clip progression; music is now heard as part of preview rather than via a separate control.
+- Added preview speed choices, a 4px minimum text size, and direct pointer dragging for text placement.
+- Rebuilt Retro/Vintage Film preview with a restrained grade, grain, vignette, and fine scratch treatment.
+- Replaced the simple lower clip row with a dark multi-track timeline: time ruler, moving playhead, reorderable video clips/effect labels, and a dedicated music waveform-like track.
+- Verification (FAST-VIDEO-064):
+  - `npm run test -- --run src/features/video-processing/video-composer-panel.test.ts src/features/video-processing/video-splitter-panel.test.ts` pass (2 files / 9 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+
+## FAST-VIDEO-063 - Create Video Composer Workbench
+
+- Bumped app version from `0.11.61` to `0.11.62` as a patch release for a new preview-first editing surface.
+- Added the standalone `Video Composer` page, following the compact Audio Transcript panel shell without changing the existing transcript workflow.
+- Added a local multi-clip timeline with drag reorder, sequential preview, local original-audio volume, uploaded music preview/mix control, Retro/Vintage Film preview, and editable text/font/size overlay.
+- Added an explicit Save Project action that downloads a project JSON only when requested; the page does not silently save, upload, or represent CSS previews as rendered video output.
+- Verification (FAST-VIDEO-063):
+  - `npm run test -- --run src/features/video-processing/video-composer-panel.test.ts src/features/video-processing/video-splitter-panel.test.ts` pass (2 files / 8 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+
+## FAST-VIDEO-062 - Show Merge Format Compatibility Before Render
+
+- Bumped app version from `0.11.60` to `0.11.61` as a patch release for safer Video Tools merges.
+- Added browser-local metadata inspection for every Merge Queue file, showing decoded width, height, simplified aspect ratio, and duration without upload.
+- Added a visual format map: a blue ratio frame means an exact width/height match with the base video; an amber frame means a mismatch, including horizontal-versus-vertical mixes.
+- Added a direct stream-copy merge-risk warning and a per-file metadata-read failure state; preview/reorder/remove remain available when metadata cannot be decoded.
+- Verification (FAST-VIDEO-062):
+  - `npm run test -- --run src/features/video-processing/video-splitter-panel.test.ts src/app/api/video-processing/merge/route.test.ts src/lib/video-processing/video-merge.test.ts` pass (3 files / 10 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+
+## FAST-VIDEO-061 - Preview and Reorder Video Tools Merge Queue
+
+- Bumped app version from `0.11.59` to `0.11.60` as a patch release for Video Tools merge planning.
+- Added a browser-local sequential Merge Preview that plays selected videos in queue order before a real merge; it neither uploads nor invokes ffmpeg.
+- Added drag-and-drop queue reordering and per-file removal. The displayed order, preview order, and existing merge FormData order now share the same queue.
+- Revokes local object URLs when the queue changes or panel unmounts.
+- Verification (FAST-VIDEO-061):
+  - `npm run test -- --run src/features/video-processing/video-splitter-panel.test.ts src/app/api/video-processing/merge/route.test.ts src/lib/video-processing/video-merge.test.ts` pass (3 files / 9 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+
+## FAST-AUDIO-082 - Select Local Piper Voice Models in Feature Sandbox
+
+- Bumped app version from `0.11.58` to `0.11.59` as a patch release for Feature Sandbox Voice Lab usability.
+- Added a server-side catalog that scans only the repository `piper/` directory and returns direct `.onnx` files only when their matching `.onnx.json` config exists.
+- Added a `Local voice model` selector in Voice Lab; it automatically selects a discovered local voice on load and fills both existing model/config fields when changed, while preserving manual path overrides and the existing Generate Speech flow.
+- Added a clear manual-entry fallback when no complete model pair is available.
+- Verification (FAST-AUDIO-082):
+  - `npm run test -- --run src/lib/multilingual-audio/piper-model-catalog.test.ts src/features/audio/piper-tts-sandbox-panel.test.ts` pass (2 files / 7 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+  - `git diff --check` pass.
+
 ## FAST-VIDEO-060 - Fix Video Tools Lab vertical blur mapping and watermark font
 
 - Bumped app version from `0.11.57` to `0.11.58` as a patch release for Video Tools Lab preview/render correctness.

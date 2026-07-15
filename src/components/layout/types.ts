@@ -16,6 +16,7 @@ export type AppSectionId =
   | "piperTtsSandbox"
   | "videoToolsLab"
   | "videoSplitter"
+  | "videoComposer"
   | "thumbnailStudio"
   | "storageProviders"
   | "storageLibrary"

@@ -14,6 +14,37 @@ describe("Video Splitter panel", () => {
         expect(source).toContain('fetch("/api/video-processing/merge"');
     });
 
+    it("previews the local merge queue and supports drag reorder before upload", () => {
+        expect(source).toContain("Merge Preview");
+        expect(source).toContain("URL.createObjectURL(file)");
+        expect(source).toContain("URL.revokeObjectURL(url)");
+        expect(source).toContain("onEnded");
+        expect(source).toContain("Preview from first");
+        expect(source).toContain("draggable");
+        expect(source).toContain("onDragStart");
+        expect(source).toContain("onDrop");
+        expect(source).toContain("moveMergeFile(");
+        expect(source).toContain("removeMergeFile(index)");
+        expect(source).toContain("for (const file of mergeFiles)");
+        expect(source).toContain(
+            "does not upload or merge files until you",
+        );
+    });
+
+    it("shows dimensions and a visual format warning before stream-copy merge", () => {
+        expect(source).toContain('video.preload = "metadata"');
+        expect(source).toContain("video.onloadedmetadata");
+        expect(source).toContain("video.onerror");
+        expect(source).toContain("Format Compatibility");
+        expect(source).toContain("Matches base format");
+        expect(source).toContain("Different from base format");
+        expect(source).toContain("Format mismatch: stream-copy merge may");
+        expect(source).toContain("Cannot read local video metadata.");
+        expect(source).toContain("aspectRatio:");
+        expect(source).toContain("border-sky-500");
+        expect(source).toContain("border-amber-500");
+    });
+
     it("provides interval and head clip split modes", () => {
         expect(source).toContain("Split mode");
         expect(source).toContain("Chia theo block thời lượng");

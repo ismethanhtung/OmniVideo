@@ -60,4 +60,15 @@ describe("Feature Sandbox panel", () => {
             "`/api/ai-providers/${selectedTranscriptionProviderId}/models`",
         );
     });
+
+    it("discovers and selects complete local Piper model pairs", () => {
+        expect(source).toContain('fetch("/api/audio/piper-models"');
+        expect(source).toContain("Local voice model");
+        expect(source).toContain("No complete Piper model pairs found");
+        expect(source).toContain("setModelPath(model.modelPath)");
+        expect(source).toContain("setConfigPath(model.configPath)");
+        expect(source).toContain(
+            "Choosing a voice fills both model and config paths.",
+        );
+    });
 });

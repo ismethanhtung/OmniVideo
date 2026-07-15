@@ -178,6 +178,14 @@
 
 ## Done
 
+- `FAST-VIDEO-067` - Preserve Composer Render Quality and Vietnamese Text Fidelity
+- `FAST-VIDEO-066` - Render Video Composer Project to MP4
+- `FAST-VIDEO-065` - Fix Video Composer Metadata Event Null Crash
+- `FAST-VIDEO-064` - Upgrade Video Composer Preview Timeline and Controls
+- `FAST-VIDEO-063` - Create Video Composer Workbench
+- `FAST-VIDEO-062` - Show Merge Format Compatibility Before Render
+- `FAST-VIDEO-061` - Preview and Reorder Video Tools Merge Queue
+- `FAST-AUDIO-082` - Select Local Piper Voice Models in Feature Sandbox
 - `FAST-VIDEO-060` - Fix Video Tools Lab vertical blur mapping and watermark font
 - `FAST-AUDIO-081` - Keep neutral confrontational pronouns in VIP translation
 - `FAST-VIDEO-059` - Add Video Tools Text Overlay defaults and YouTube Short crop

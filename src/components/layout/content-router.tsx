@@ -15,6 +15,7 @@ import { LocalUploadIntakePanel } from "@/features/video-intake/local-upload-int
 import { VideoIntakePanel } from "@/features/video-intake/video-intake-panel";
 import { VideoToolsLabPanel } from "@/features/video-processing/video-tools-lab-panel";
 import { VideoSplitterPanel } from "@/features/video-processing/video-splitter-panel";
+import { VideoComposerPanel } from "@/features/video-processing/video-composer-panel";
 import { ThumbnailStudioPanel } from "@/features/thumbnails/thumbnail-studio-panel";
 import { DisplayPreferencesPanel } from "@/features/workspace/display-preferences-panel";
 import { PlaceholderPanel } from "@/features/workspace/placeholder-panel";
@@ -51,6 +52,7 @@ const SECTION_COMPONENTS: Partial<
     videoIntake: VideoIntakePanel,
     videoToolsLab: VideoToolsLabPanel,
     videoSplitter: VideoSplitterPanel,
+    videoComposer: VideoComposerPanel,
     thumbnailStudio: ThumbnailStudioPanel,
     workspace: WorkspaceCanvasPanel,
 };

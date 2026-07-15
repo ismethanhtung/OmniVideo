@@ -80,6 +80,13 @@ type AiModelOption = {
     name: string;
 };
 
+type LocalPiperModel = {
+    id: string;
+    label: string;
+    modelPath: string;
+    configPath: string;
+};
+
 type TranscriptionApiPayload =
     | {
           ok: true;
@@ -262,6 +269,8 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
     const [binaryPath, setBinaryPath] = useState(REPO_PIPER_BINARY);
     const [modelPath, setModelPath] = useState(REPO_PIPER_MODEL);
     const [configPath, setConfigPath] = useState(REPO_PIPER_CONFIG);
+    const [piperModels, setPiperModels] = useState<LocalPiperModel[]>([]);
+    const [isLoadingPiperModels, setIsLoadingPiperModels] = useState(true);
     const [speaker, setSpeaker] = useState("");
     const [lengthScale, setLengthScale] = useState("1.0");
     const [noiseScale, setNoiseScale] = useState("0.667");
@@ -319,6 +328,28 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
                 if (payload.ok && payload.data) setAssets(payload.data);
             })
             .catch(() => {});
+    }, []);
+
+    useEffect(() => {
+        fetch("/api/audio/piper-models", {
+            method: "GET",
+            cache: "no-store",
+        })
+            .then((response) => response.json())
+            .then((payload: { ok: boolean; data?: LocalPiperModel[] }) => {
+                const models = payload.ok ? (payload.data ?? []) : [];
+                setPiperModels(models);
+                if (models.length > 0) {
+                    setModelPath((currentPath) =>
+                        currentPath || models[0].modelPath,
+                    );
+                    setConfigPath((currentPath) =>
+                        currentPath || models[0].configPath,
+                    );
+                }
+            })
+            .catch(() => setPiperModels([]))
+            .finally(() => setIsLoadingPiperModels(false));
     }, []);
 
     useEffect(() => {
@@ -1474,6 +1505,51 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
                                     placeholder="Config JSON"
                                 />
                             </div>
+                            <label className="block">
+                                <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                    Local voice model
+                                </span>
+                                <select
+                                    value={
+                                        piperModels.some(
+                                            (model) =>
+                                                model.modelPath === modelPath &&
+                                                model.configPath === configPath,
+                                        )
+                                            ? modelPath
+                                            : ""
+                                    }
+                                    onChange={(event) => {
+                                        const model = piperModels.find(
+                                            (candidate) =>
+                                                candidate.modelPath ===
+                                                event.target.value,
+                                        );
+                                        if (!model) return;
+                                        setModelPath(model.modelPath);
+                                        setConfigPath(model.configPath);
+                                    }}
+                                    disabled={isLoadingPiperModels || piperModels.length === 0}
+                                    className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                    {isLoadingPiperModels ? (
+                                        <option>Loading local voices...</option>
+                                    ) : null}
+                                    {!isLoadingPiperModels && piperModels.length === 0 ? (
+                                        <option>No complete Piper model pairs found</option>
+                                    ) : null}
+                                    {piperModels.map((model) => (
+                                        <option key={model.id} value={model.modelPath}>
+                                            {model.label}
+                                        </option>
+                                    ))}
+                                </select>
+                                <span className="mt-1 block text-[10px] leading-4 text-muted">
+                                    {piperModels.length > 0
+                                        ? "Choosing a voice fills both model and config paths."
+                                        : "Add matching .onnx and .onnx.json files directly in piper/, or enter paths manually."}
+                                </span>
+                            </label>
                             <input
                                 value={speaker}
                                 onChange={(event) =>

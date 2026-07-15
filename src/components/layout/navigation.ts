@@ -28,6 +28,7 @@ import {
     PackageOpen,
     Briefcase,
     ToolCase,
+    WandSparkles,
 } from "lucide-react";
 
 import type { AppSectionId, LeftbarNavGroup, LeftbarNavItem } from "./types";
@@ -216,6 +217,13 @@ export const LEFTBAR_NAV: LeftbarNavGroup[] = [
                     "Cắt video dài theo block/số phần hoặc ghép nhiều video local thành một file MP4.",
             },
             {
+                id: "videoComposer",
+                icon: WandSparkles,
+                label: "Video Composer",
+                description:
+                    "Workbench preview-first để sắp clip, nhạc, chữ và hiệu ứng trước khi lưu project.",
+            },
+            {
                 id: "inspirationVault",
                 icon: Lightbulb,
                 label: "Inspiration Vault",
@@ -267,6 +275,7 @@ const SECTION_SLUG_BY_ID: Record<AppSectionId, string> = {
     piperTtsSandbox: "piper-tts-sandbox",
     videoToolsLab: "video-tools-lab",
     videoSplitter: "video-splitter",
+    videoComposer: "video-composer",
     thumbnailStudio: "thumbnail-studio",
     storageProviders: "storage-providers",
     storageLibrary: "storage-library",
@@ -295,6 +304,7 @@ const LEGACY_SECTION_BY_CAMEL: Record<string, AppSectionId> = {
     piperTtsSandbox: "piperTtsSandbox",
     videoToolsLab: "videoToolsLab",
     videoSplitter: "videoSplitter",
+    videoComposer: "videoComposer",
     thumbnailStudio: "thumbnailStudio",
     storageProviders: "storageProviders",
     storageLibrary: "storageLibrary",
