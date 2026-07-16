@@ -21,6 +21,8 @@ type VideoComposerPanelProps = {
 type ComposerClip = {
     id: string;
     file: File;
+    trimStart: number;
+    trimEnd: number | null;
 };
 
 function makeClipId() {
@@ -45,6 +47,8 @@ export function VideoComposerPanel({ section }: VideoComposerPanelProps) {
     const [musicVolume, setMusicVolume] = useState(30);
     const [playbackSpeed, setPlaybackSpeed] = useState(1);
     const [vintageEnabled, setVintageEnabled] = useState(false);
+    const [fadeOut, setFadeOut] = useState(false);
+    const [durationMode, setDurationMode] = useState<"video" | "music">("video");
     const [overlayText, setOverlayText] = useState("");
     const [fontFamily, setFontFamily] = useState("Bangers");
     const [fontSize, setFontSize] = useState(48);
@@ -87,20 +91,38 @@ export function VideoComposerPanel({ section }: VideoComposerPanelProps) {
         if (musicRef.current) musicRef.current.volume = musicVolume / 100;
     }, [musicVolume, musicUrl]);
 
+    const getClipDuration = (clip: ComposerClip) => {
+        const rawDur = clipDurations[clip.id] ?? 0;
+        const start = clip.trimStart;
+        const end = clip.trimEnd ?? rawDur;
+        return Math.max(0, end - start);
+    };
+
     const activeClip = clips[activeClipIndex];
     const timelineDuration = clips.reduce(
-        (total, clip) => total + (clipDurations[clip.id] ?? 0) / playbackSpeed,
+        (total, clip) => total + getClipDuration(clip) / playbackSpeed,
         0,
     );
     const composerSeconds =
         clips.slice(0, activeClipIndex).reduce(
             (total, clip) =>
-                total + (clipDurations[clip.id] ?? 0) / playbackSpeed,
+                total + getClipDuration(clip) / playbackSpeed,
             0,
-        ) + previewSeconds / playbackSpeed;
+        ) + Math.max(0, previewSeconds - (activeClip?.trimStart ?? 0)) / playbackSpeed;
     const playheadPercent = timelineDuration
         ? Math.min(100, (composerSeconds / timelineDuration) * 100)
         : 0;
+
+    useEffect(() => {
+        if (videoRef.current && activeClip) {
+            const cur = videoRef.current.currentTime;
+            const rawDur = clipDurations[activeClip.id] ?? videoRef.current.duration;
+            const end = activeClip.trimEnd ?? rawDur;
+            if (cur < activeClip.trimStart || cur > end) {
+                videoRef.current.currentTime = activeClip.trimStart;
+            }
+        }
+    }, [activeClip?.trimStart, activeClip?.trimEnd, activeClipIndex, clipDurations]);
 
     const syncMusicToPreview = (video: HTMLVideoElement, shouldPlay = false) => {
         const music = musicRef.current;
@@ -132,8 +154,27 @@ export function VideoComposerPanel({ section }: VideoComposerPanelProps) {
         if (!videos.length) return;
         setClips((previous) => [
             ...previous,
-            ...videos.map((file) => ({ id: makeClipId(), file })),
+            ...videos.map((file) => ({
+                id: makeClipId(),
+                file,
+                trimStart: 0,
+                trimEnd: null,
+            })),
         ]);
+    };
+
+    const updateClipTrim = (id: string, trimStart: number, trimEnd: number | null) => {
+        setClips((previous) =>
+            previous.map((c) =>
+                c.id === id
+                    ? {
+                          ...c,
+                          trimStart: Math.max(0, trimStart),
+                          trimEnd: trimEnd === null ? null : Math.max(trimStart, trimEnd),
+                      }
+                    : c,
+            ),
+        );
     };
 
     const moveClip = (from: number, to: number) => {
@@ -165,12 +206,18 @@ export function VideoComposerPanel({ section }: VideoComposerPanelProps) {
                     musicVolume,
                     speed: playbackSpeed,
                     vintageFilm: vintageEnabled,
+                    fadeOut,
+                    durationMode,
                     textOverlay: {
                         text: overlayText,
                         fontFamily,
                         fontSize,
                         textPosition,
                     },
+                    clipTrims: clips.map((c) => ({
+                        startTime: c.trimStart,
+                        endTime: c.trimEnd,
+                    })),
                 }),
             );
             const response = await fetch("/api/video-processing/composer-render", {
@@ -229,6 +276,49 @@ export function VideoComposerPanel({ section }: VideoComposerPanelProps) {
                             <span className="mt-1 block">Add video clips</span>
                             <input type="file" accept="video/*" multiple onChange={(event) => { addClips(event.currentTarget.files); event.currentTarget.value = ""; }} className="sr-only" />
                         </label>
+                        {clips.map((clip, index) => {
+                            const duration = clipDurations[clip.id] ?? 0;
+                            return (
+                                <div key={clip.id} className="mt-2 border border-main bg-main p-2 text-[10px]">
+                                    <div className="flex items-center justify-between gap-1 font-semibold text-main">
+                                        <span className="truncate">{index + 1}. {clip.file.name}</span>
+                                        <span className="text-muted shrink-0">({duration ? `${duration.toFixed(1)}s` : "loading..."})</span>
+                                    </div>
+                                    <div className="mt-1.5 flex items-center gap-2">
+                                        <label className="flex items-center gap-1 text-[9px] text-muted">
+                                            From:
+                                            <input
+                                                type="number"
+                                                min={0}
+                                                max={duration || 9999}
+                                                step={0.1}
+                                                value={clip.trimStart}
+                                                onChange={(e) => updateClipTrim(clip.id, Number(e.target.value), clip.trimEnd)}
+                                                className="w-12 border border-main bg-secondary px-1 py-0.5 text-main text-center"
+                                            />
+                                            s
+                                        </label>
+                                        <label className="flex items-center gap-1 text-[9px] text-muted">
+                                            To:
+                                            <input
+                                                type="number"
+                                                min={clip.trimStart}
+                                                max={duration || 9999}
+                                                step={0.1}
+                                                value={clip.trimEnd ?? ""}
+                                                placeholder={duration > 0 ? duration.toFixed(1) : "end"}
+                                                onChange={(e) => {
+                                                    const val = e.target.value === "" ? null : Number(e.target.value);
+                                                    updateClipTrim(clip.id, clip.trimStart, val);
+                                                }}
+                                                className="w-12 border border-main bg-secondary px-1 py-0.5 text-main text-center"
+                                            />
+                                            s
+                                        </label>
+                                    </div>
+                                </div>
+                            );
+                        })}
                         <label className="mt-2 block border border-main bg-main px-2 py-2 text-[11px] text-main file:mr-2 file:border-0 file:bg-secondary file:px-2 file:py-1 file:text-[10px]">
                             <Music2 className="mr-1 inline h-3.5 w-3.5 text-accent" /> Upload music
                             <input type="file" accept="audio/*" onChange={(event) => setMusicFile(event.currentTarget.files?.[0] ?? null)} className="mt-2 block w-full text-[10px]" />
@@ -241,14 +331,24 @@ export function VideoComposerPanel({ section }: VideoComposerPanelProps) {
                         <p className="text-[12px] font-semibold text-main">Audio</p>
                         <label className="mt-2 block text-[10px] text-muted">Original audio · {originalAudioVolume}%<input type="range" min={0} max={100} value={originalAudioVolume} onChange={(event) => setOriginalAudioVolume(Number(event.target.value))} className="mt-1 w-full accent-[var(--accent-color)]" /></label>
                         <label className="mt-2 block text-[10px] text-muted">Music mix · {musicVolume}%<input type="range" min={0} max={100} value={musicVolume} onChange={(event) => setMusicVolume(Number(event.target.value))} className="mt-1 w-full accent-[var(--accent-color)]" /></label>
-                        <p className="mt-2 text-[10px] leading-4 text-muted">Uploaded music now plays in sync with the video preview.</p>
+                        <label className="mt-3 block text-[10px] text-muted">Duration sync
+                            <select
+                                value={durationMode}
+                                onChange={(event) => setDurationMode(event.target.value as "video" | "music")}
+                                className="mt-1 w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main"
+                            >
+                                <option value="video">Sync to video — music loops / cuts</option>
+                                <option value="music">Sync to music — video &amp; music end together</option>
+                            </select>
+                        </label>
+                        <p className="mt-1 text-[10px] leading-4 text-muted">&quot;Sync to video&quot;: music loops if shorter, cuts if longer. &quot;Sync to music&quot;: output stops when the shorter track ends — no solo audio or solo video tail.</p>
                     </section>
                 </aside>
 
                 <main className="min-w-0 space-y-3">
                     <section className="border border-main bg-black p-3">
                         <div ref={previewFrameRef} onPointerMove={(event) => { if (isDraggingText) updateTextPosition(event.clientX, event.clientY); }} onPointerUp={() => setIsDraggingText(false)} onPointerLeave={() => setIsDraggingText(false)} className="relative mx-auto aspect-video max-w-4xl overflow-hidden bg-black">
-                            {clipUrls[activeClipIndex] ? <video ref={videoRef} controls autoPlay={activeClipIndex > 0} onLoadedMetadata={(event) => { const video = event.currentTarget; const duration = video.duration; if (activeClip && Number.isFinite(duration) && duration >= 0) setClipDurations((previous) => ({ ...previous, [activeClip.id]: duration })); video.playbackRate = playbackSpeed; }} onPlay={(event) => syncMusicToPreview(event.currentTarget, true)} onPause={() => musicRef.current?.pause()} onSeeking={(event) => syncMusicToPreview(event.currentTarget)} onTimeUpdate={(event) => { setPreviewSeconds(event.currentTarget.currentTime); syncMusicToPreview(event.currentTarget); }} onEnded={() => { if (activeClipIndex < clipUrls.length - 1) setActiveClipIndex((index) => index + 1); else { musicRef.current?.pause(); setActiveClipIndex(0); } }} src={clipUrls[activeClipIndex]} className="h-full w-full object-contain" style={vintageEnabled ? { filter: "sepia(.17) contrast(1.12) saturate(.78) brightness(.93)" } : undefined} /> : <div className="flex h-full items-center justify-center text-[12px] text-zinc-400">Add clips to start your local preview.</div>}
+                            {clipUrls[activeClipIndex] ? <video ref={videoRef} controls autoPlay={activeClipIndex > 0} onLoadedMetadata={(event) => { const video = event.currentTarget; const duration = video.duration; if (activeClip && Number.isFinite(duration) && duration >= 0) setClipDurations((previous) => ({ ...previous, [activeClip.id]: duration })); video.playbackRate = playbackSpeed; if (activeClip) video.currentTime = activeClip.trimStart; }} onPlay={(event) => syncMusicToPreview(event.currentTarget, true)} onPause={() => musicRef.current?.pause()} onSeeking={(event) => syncMusicToPreview(event.currentTarget)} onTimeUpdate={(event) => { const video = event.currentTarget; const current = video.currentTime; const end = activeClip ? (activeClip.trimEnd ?? clipDurations[activeClip.id] ?? video.duration) : video.duration; if (current >= end) { if (activeClipIndex < clipUrls.length - 1) setActiveClipIndex((index) => index + 1); else { musicRef.current?.pause(); setActiveClipIndex(0); } } else { setPreviewSeconds(current); syncMusicToPreview(video); } }} src={clipUrls[activeClipIndex]} className="h-full w-full object-contain" style={vintageEnabled ? { filter: "sepia(.17) contrast(1.12) saturate(.78) brightness(.93)" } : undefined} /> : <div className="flex h-full items-center justify-center text-[12px] text-zinc-400">Add clips to start your local preview.</div>}
                             {vintageEnabled ? <><div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_35%,rgba(23,12,4,.48)_100%)]" /><div className="pointer-events-none absolute inset-0 opacity-20 [background-image:radial-gradient(rgba(255,246,211,.9)_0.7px,transparent_0.8px),linear-gradient(90deg,transparent_49%,rgba(255,255,255,.3)_50%,transparent_51%)] [background-size:3px_3px,94px_100%]" /></> : null}
                             {overlayText ? <div onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); setIsDraggingText(true); updateTextPosition(event.clientX, event.clientY); }} className="absolute z-10 cursor-move select-none whitespace-pre-wrap text-center text-white [text-shadow:2px_2px_0_#000]" style={{ fontFamily, fontSize: `${fontSize}px`, left: `${textPosition.x}%`, top: `${textPosition.y}%`, transform: "translate(-50%, -50%)" }}>{overlayText}</div> : null}
                         </div>
@@ -283,7 +383,7 @@ export function VideoComposerPanel({ section }: VideoComposerPanelProps) {
                                         }}
                                         onDragEnd={() => setDraggedIndex(null)}
                                         onClick={() => setActiveClipIndex(index)}
-                                        style={{ flexGrow: Math.max(1, (clipDurations[clip.id] ?? 5) / 5) }}
+                                        style={{ flexGrow: Math.max(1, getClipDuration(clip) / 5) }}
                                         className={`min-w-28 cursor-grab border p-2 ${
                                             activeClipIndex === index
                                                 ? "border-cyan-300 bg-cyan-900/50"
@@ -311,7 +411,7 @@ export function VideoComposerPanel({ section }: VideoComposerPanelProps) {
                                         <p className="mt-2 truncate text-[10px] font-semibold text-white">
                                             {index + 1}. {clip.file.name}
                                         </p>
-                                        <p className="mt-1 truncate text-[9px] text-cyan-100/80">{vintageEnabled ? "Effects · Vintage" : "Clip"} · {playbackSpeed}x</p>
+                                        <p className="mt-1 truncate text-[9px] text-cyan-100/80">{vintageEnabled ? "Effects · Vintage" : "Clip"} · {playbackSpeed}x · {getClipDuration(clip).toFixed(1)}s</p>
                                     </div>
                                 ))
                             )}
@@ -326,7 +426,7 @@ export function VideoComposerPanel({ section }: VideoComposerPanelProps) {
                 </main>
 
                 <aside className="space-y-3">
-                    <section className="border border-main bg-secondary/20 p-3"><div className="flex items-center gap-2"><Film className="h-4 w-4 text-accent" /><p className="text-[12px] font-semibold text-main">Look & Speed</p></div><label className="mt-3 flex items-center justify-between gap-2 text-[11px] text-main"><span>Retro / Vintage Film Effect</span><input type="checkbox" checked={vintageEnabled} onChange={(event) => setVintageEnabled(event.target.checked)} /></label><p className="mt-1 text-[10px] leading-4 text-muted">Subtle warm grade, restrained grain, vignette, and fine film scratches.</p><label className="mt-3 block text-[10px] text-muted">Video speed<select value={playbackSpeed} onChange={(event) => setPlaybackSpeed(Number(event.target.value))} className="mt-1 w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main"><option value={0.5}>0.5x</option><option value={0.75}>0.75x</option><option value={1}>1.0x</option><option value={1.25}>1.25x</option><option value={1.5}>1.5x</option><option value={2}>2.0x</option></select></label></section>
+                    <section className="border border-main bg-secondary/20 p-3"><div className="flex items-center gap-2"><Film className="h-4 w-4 text-accent" /><p className="text-[12px] font-semibold text-main">Look & Speed</p></div><label className="mt-3 flex items-center justify-between gap-2 text-[11px] text-main"><span>Retro / Vintage Film Effect</span><input type="checkbox" checked={vintageEnabled} onChange={(event) => setVintageEnabled(event.target.checked)} /></label><p className="mt-1 text-[10px] leading-4 text-muted">Subtle warm grade, restrained grain, vignette, and fine film scratches.</p><label className="mt-3 flex items-center justify-between gap-2 text-[11px] text-main"><span>Fade out to black</span><input type="checkbox" checked={fadeOut} onChange={(event) => setFadeOut(event.target.checked)} /></label><p className="mt-1 text-[10px] leading-4 text-muted">Last 1.5 s dissolve — video &amp; audio fade to black together.</p><label className="mt-3 block text-[10px] text-muted">Video speed<select value={playbackSpeed} onChange={(event) => setPlaybackSpeed(Number(event.target.value))} className="mt-1 w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main"><option value={0.5}>0.5x</option><option value={0.75}>0.75x</option><option value={1}>1.0x</option><option value={1.25}>1.25x</option><option value={1.5}>1.5x</option><option value={2}>2.0x</option></select></label></section>
                     <section className="border border-main bg-secondary/20 p-3"><div className="flex items-center gap-2"><Type className="h-4 w-4 text-accent" /><p className="text-[12px] font-semibold text-main">Text Overlay</p></div><textarea value={overlayText} onChange={(event) => setOverlayText(event.target.value)} placeholder="Type text for the video" rows={3} className="mt-2 w-full resize-none border border-main bg-main px-2 py-1.5 text-[11px] text-main" /><label className="mt-2 block text-[10px] text-muted">Font<select value={fontFamily} onChange={(event) => setFontFamily(event.target.value)} className="mt-1 w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main"><option>Bangers</option><option>Lobster</option><option>Arial</option></select></label><label className="mt-2 block text-[10px] text-muted">Font size · {fontSize}px<input type="range" min={4} max={120} value={fontSize} onChange={(event) => setFontSize(Number(event.target.value))} className="mt-1 w-full accent-[var(--accent-color)]" /></label><p className="mt-1 text-[10px] text-muted">Drag text directly in the preview to position it.</p></section>
                     <section className="border border-main bg-secondary/20 p-3 text-[10px] leading-4 text-muted"><div className="flex items-center gap-1.5 text-main"><Volume2 className="h-3.5 w-3.5" /> Preview-first workflow</div><p className="mt-1">Arrange and test locally. Press Save Project once to export the exact timeline and settings JSON.</p></section>
                 </aside>
