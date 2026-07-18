@@ -12,10 +12,8 @@ import {
 } from "@/lib/video-processing/video-preview-region";
 
 const SOURCE_PATH = "src/features/video-processing/video-tools-lab-panel.tsx";
-const HELPER_SOURCE_PATH =
-    "src/lib/video-processing/subtitle-placement.ts";
-const MUSIC_SOURCE_PATH =
-    "src/lib/video-processing/background-music.ts";
+const HELPER_SOURCE_PATH = "src/lib/video-processing/subtitle-placement.ts";
+const MUSIC_SOURCE_PATH = "src/lib/video-processing/background-music.ts";
 
 describe("Video Tools Lab source preview controls", () => {
     const source = readFileSync(SOURCE_PATH, "utf8");
@@ -53,7 +51,10 @@ describe("Video Tools Lab source preview controls", () => {
     it("keeps background padding and subtitle sample width controls on the same grid row", () => {
         const paddingStart = source.indexOf("Background padding Y");
         const hintStart = source.indexOf("Kéo thả `Subtitle mẫu`");
-        const gridStart = source.lastIndexOf("grid grid-cols-2 gap-2", paddingStart);
+        const gridStart = source.lastIndexOf(
+            "grid grid-cols-2 gap-2",
+            paddingStart,
+        );
         const subtitleControlGroup = source.slice(gridStart, hintStart);
 
         expect(gridStart).toBeGreaterThan(-1);
@@ -91,10 +92,12 @@ describe("Video Tools Lab source preview controls", () => {
         expect(source).toContain("coverBoxColor");
         expect(source).toContain("subtitleBackgroundPaddingY");
         expect(source).toContain("Text Overlay");
-        expect(source).toContain("Lộn Xộn Review");
+        expect(source).toContain("#LonXonReview");
         expect(source).toContain("Cơm Áo Review");
         expect(source).toContain("TEXT_OVERLAY_CHANNEL_OPTIONS.map");
-        expect(source).toContain("const [textOverlayEnabled, setTextOverlayEnabled] = useState(true)");
+        expect(source).toContain(
+            "const [textOverlayEnabled, setTextOverlayEnabled] = useState(true)",
+        );
         expect(source).toContain('fontFamily: "Bangers"');
         expect(source).toContain("fontSize: 45");
         expect(source).toContain("textOverlaysJson");
@@ -210,7 +213,9 @@ describe("Video Tools Lab source preview controls", () => {
         expect(source).toContain("subtitleTextRef");
         expect(source).toContain("getCurrentSubtitlePlacementRegion");
         expect(source).toContain("subtitleRegionY");
-        expect(helperSource).toContain("buildSubtitlePlacementRegionFromPreview");
+        expect(helperSource).toContain(
+            "buildSubtitlePlacementRegionFromPreview",
+        );
         expect(helperSource).toContain("resolveBottomAlignedAssAlignment");
     });
 

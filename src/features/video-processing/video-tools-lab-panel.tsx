@@ -460,9 +460,9 @@ const VIDEO_TEXT_FONT_OPTIONS: Array<{
 ];
 
 const DEFAULT_TEXT_OVERLAY: TextOverlayDraft = {
-    text: "Lộn Xộn Review",
-    fontFamily: "Bangers",
-    fontSize: 45,
+    text: "#LonXonReview",
+    fontFamily: "Lobster",
+    fontSize: 40,
     fontWeight: 800,
     textColor: "#ffffff",
     strokeColor: "#111827",
@@ -477,7 +477,7 @@ const DEFAULT_TEXT_OVERLAY: TextOverlayDraft = {
 };
 
 const TEXT_OVERLAY_CHANNEL_OPTIONS = [
-    "Lộn Xộn Review",
+    "#LonXonReview",
     "Cơm Áo Review",
 ] as const;
 
@@ -510,8 +510,7 @@ function buildDraftId(prefix: string) {
 }
 
 function buildDefaultBackgroundMusicTrack(
-    options: readonly VideoBackgroundMusicLibraryOption[] =
-        VIDEO_BACKGROUND_MUSIC_LIBRARY,
+    options: readonly VideoBackgroundMusicLibraryOption[] = VIDEO_BACKGROUND_MUSIC_LIBRARY,
 ): BackgroundMusicTrackDraft {
     const option = options[0] ?? VIDEO_BACKGROUND_MUSIC_LIBRARY[0];
     return {
@@ -526,16 +525,14 @@ function buildDefaultBackgroundMusicTrack(
 
 function normalizeBackgroundMusicDrafts(
     tracks: unknown,
-    options: readonly VideoBackgroundMusicLibraryOption[] =
-        VIDEO_BACKGROUND_MUSIC_LIBRARY,
+    options: readonly VideoBackgroundMusicLibraryOption[] = VIDEO_BACKGROUND_MUSIC_LIBRARY,
 ): BackgroundMusicTrackDraft[] {
-    if (!Array.isArray(tracks)) return [buildDefaultBackgroundMusicTrack(options)];
+    if (!Array.isArray(tracks))
+        return [buildDefaultBackgroundMusicTrack(options)];
     const normalized = tracks
         .map((track) => normalizeVideoBackgroundMusicTrack(track))
         .filter(
-            (
-                track,
-            ): track is VideoBackgroundMusicTrackConfig => track !== null,
+            (track): track is VideoBackgroundMusicTrackConfig => track !== null,
         )
         .map((track) => ({
             ...track,
@@ -609,7 +606,7 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
     const [regionTimeEnd, setRegionTimeEnd] = useState(36000);
     const [regionStrength, setRegionStrength] = useState(25);
     const [subtitleFontFamily, setSubtitleFontFamily] = useState("Bangers");
-    const [subtitleFontSize, setSubtitleFontSize] = useState(50);
+    const [subtitleFontSize, setSubtitleFontSize] = useState(45);
     const [subtitleMarginBottom, setSubtitleMarginBottom] = useState(150);
     const [subtitleMarginLeft, setSubtitleMarginLeft] = useState(60);
     const [subtitleMarginRight, setSubtitleMarginRight] = useState(60);
@@ -634,8 +631,7 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
     const [textOverlay, setTextOverlay] = useState<TextOverlayDraft>({
         ...DEFAULT_TEXT_OVERLAY,
     });
-    const [backgroundMusicEnabled, setBackgroundMusicEnabled] =
-        useState(false);
+    const [backgroundMusicEnabled, setBackgroundMusicEnabled] = useState(false);
     const [backgroundMusicVolume, setBackgroundMusicVolume] = useState(
         DEFAULT_VIDEO_BACKGROUND_MUSIC_VOLUME,
     );
@@ -694,10 +690,13 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
 
     const loadBackgroundMusicOptions = useCallback(async () => {
         try {
-            const response = await fetch("/api/video-processing/background-music", {
-                method: "GET",
-                cache: "no-store",
-            });
+            const response = await fetch(
+                "/api/video-processing/background-music",
+                {
+                    method: "GET",
+                    cache: "no-store",
+                },
+            );
             const payload = (await response.json()) as {
                 ok?: boolean;
                 data?: VideoBackgroundMusicLibraryOption[];
@@ -806,7 +805,7 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
 
     const applyDefaultSubtitleSetup = useCallback(() => {
         setSubtitleFontFamily("Bangers");
-        setSubtitleFontSize(50);
+        setSubtitleFontSize(45);
         setSubtitleMarginBottom(150);
         setSubtitleMarginLeft(60);
         setSubtitleMarginRight(60);
@@ -1087,10 +1086,8 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
         if (!isDraggingTextOverlay) return;
 
         const handlePointerMove = (event: MouseEvent) => {
-            const centerX =
-                event.clientX - textOverlayDragOffset.x;
-            const centerY =
-                event.clientY - textOverlayDragOffset.y;
+            const centerX = event.clientX - textOverlayDragOffset.x;
+            const centerY = event.clientY - textOverlayDragOffset.y;
             const position = getPreviewPointerVideoPercent({
                 clientX: centerX,
                 clientY: centerY,
@@ -1258,7 +1255,8 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
             }
             setMirrorEnabled(setup.mirrorEnabled === true);
             const hasBlurEnabled = typeof setup.blurEnabled === "boolean";
-            const hasCoverBoxEnabled = typeof setup.coverBoxEnabled === "boolean";
+            const hasCoverBoxEnabled =
+                typeof setup.coverBoxEnabled === "boolean";
             if (!hasBlurEnabled && !hasCoverBoxEnabled) {
                 setBlurEnabled(true);
                 setCoverBoxEnabled(false);
@@ -1273,7 +1271,7 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                     ...region,
                 })),
             );
-            setSubtitleFontFamily(setup.subtitleFontFamily || "Bangers");
+            setSubtitleFontFamily(setup.subtitleFontFamily || "Lobster");
             setSubtitleFontSize(setup.subtitleFontSize ?? 50);
             setSubtitleMarginBottom(setup.subtitleMarginBottom ?? 150);
             setSubtitleMarginLeft(setup.subtitleMarginLeft ?? 60);
@@ -2214,7 +2212,9 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                                     <button
                                         type="button"
                                         disabled={isRunningEdit}
-                                        onClick={applyDefaultBackgroundMusicSetup}
+                                        onClick={
+                                            applyDefaultBackgroundMusicSetup
+                                        }
                                         className="inline-flex items-center gap-1 border border-main bg-secondary px-2 py-1 text-[10px] font-semibold text-main hover:bg-secondary/75 disabled:cursor-not-allowed disabled:opacity-60"
                                     >
                                         <Music2 className="h-3 w-3" />
@@ -2223,7 +2223,9 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                                     <button
                                         type="button"
                                         disabled={isRunningEdit}
-                                        onClick={() => void loadBackgroundMusicOptions()}
+                                        onClick={() =>
+                                            void loadBackgroundMusicOptions()
+                                        }
                                         className="inline-flex items-center gap-1 border border-main bg-secondary px-2 py-1 text-[10px] font-semibold text-main hover:bg-secondary/75 disabled:cursor-not-allowed disabled:opacity-60"
                                     >
                                         Refresh
@@ -2399,9 +2401,7 @@ export function VideoToolsLabPanel({ section }: VideoToolsLabPanelProps) {
                                                             min={0}
                                                             max={2}
                                                             step={0.01}
-                                                            value={
-                                                                track.volume
-                                                            }
+                                                            value={track.volume}
                                                             disabled={
                                                                 isRunningEdit
                                                             }

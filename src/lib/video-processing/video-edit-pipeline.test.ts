@@ -75,7 +75,9 @@ describe("video edit pipeline", () => {
         );
         const filter = args[args.indexOf("-filter_complex") + 1];
         expect(filter).toContain("crop=w=iw*0.8:h=ih*0.18");
-        expect(filter).toContain("boxblur=luma_radius=min(22\\,min(w\\,h)/2-1)");
+        expect(filter).toContain(
+            "boxblur=luma_radius=min(22\\,min(w\\,h)/2-1)",
+        );
         expect(filter).toContain("enable='between(t,1,5)'");
         expect(filter).toContain("ass='/tmp/subtitles.ass'");
         expect(args).toEqual(expect.arrayContaining(["-crf", "22"]));
@@ -269,7 +271,9 @@ describe("video edit pipeline", () => {
         const filter = args[args.indexOf("-filter_complex") + 1];
         expect(filter).toContain("between(t,0,5)");
         expect(filter).toContain("between(t,5,10)");
-        expect(filter).toContain("boxblur=luma_radius=min(25\\,min(w\\,h)/2-1)");
+        expect(filter).toContain(
+            "boxblur=luma_radius=min(25\\,min(w\\,h)/2-1)",
+        );
         expect(filter).toContain(
             "boxblur=luma_radius=min(30\\,min(w\\,h)/2-1)",
         );
@@ -328,7 +332,7 @@ describe("video edit pipeline", () => {
 
     it("uses the subtitle font as the default ASS text overlay font", () => {
         const ass = buildTextOverlayAssContent(
-            [{ text: "Lộn Xộn Review", start: 0, end: 12 }],
+            [{ text: "#LonXonReview", start: 0, end: 12 }],
             { playResX: 1920, playResY: 1080 },
         );
 
@@ -374,7 +378,9 @@ describe("video edit pipeline", () => {
         );
 
         expect(ass).toContain("Style: BackgroundBox");
-        expect(ass).toContain("&H00FFFFFF,&H00FFFFFF,-1,0,0,0,100,100,0,0,3,2,0");
+        expect(ass).toContain(
+            "&H00FFFFFF,&H00FFFFFF,-1,0,0,0,100,100,0,0,3,2,0",
+        );
         expect(ass).toContain("Style: ForegroundText");
         expect(ass).toContain("&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,2");
     });
@@ -476,7 +482,9 @@ describe("video edit pipeline", () => {
             { subtitleMode: "triple-word-highlight", textColor: "#FCA5A5" },
         );
 
-        expect(ass).toContain("ForegroundText,Bangers,80,&H00CCFFFF,&H000000FF");
+        expect(ass).toContain(
+            "ForegroundText,Bangers,80,&H00CCFFFF,&H000000FF",
+        );
         expect(ass).not.toContain("{\\k");
         expect(ass).toContain("{\\c&HA5A5FC&}MOT{\\c&HCCFFFF&} HAI BA");
         expect(ass).toContain("MOT {\\c&HA5A5FC&}HAI{\\c&HCCFFFF&} BA");
@@ -502,8 +510,12 @@ describe("video edit pipeline", () => {
             { subtitleMode: "word-reveal" },
         );
 
-        expect(ass).toContain("Dialogue: 1,0:00:01.00,0:00:01.48,ForegroundText,,0,0,0,,XIN");
-        expect(ass).toContain("Dialogue: 1,0:00:01.48,0:00:02.00,ForegroundText,,0,0,0,,CHAO");
+        expect(ass).toContain(
+            "Dialogue: 1,0:00:01.00,0:00:01.48,ForegroundText,,0,0,0,,XIN",
+        );
+        expect(ass).toContain(
+            "Dialogue: 1,0:00:01.48,0:00:02.00,ForegroundText,,0,0,0,,CHAO",
+        );
     });
 
     it("adjusts karaoke highlight duration using speechEnd when provided", () => {
