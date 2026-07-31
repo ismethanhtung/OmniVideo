@@ -3,10 +3,16 @@ import type { OriginPlatform } from "./types";
 const DIRECT_VIDEO_EXTENSIONS = [".mp4", ".mov", ".webm", ".m4v", ".mkv"];
 
 export function normalizeUrl(rawUrl: string): string {
-  const value = rawUrl.trim();
+  let value = rawUrl.trim();
 
   if (!value) {
     throw new Error("URL is required.");
+  }
+
+  const urlRegex = /(https?:\/\/[^\s]+)/;
+  const match = value.match(urlRegex);
+  if (match) {
+    value = match[0];
   }
 
   const url = new URL(value);

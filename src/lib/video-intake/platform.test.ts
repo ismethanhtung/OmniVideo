@@ -28,4 +28,12 @@ describe("video intake platform helpers", () => {
       "https://example.com/video?id=1",
     );
   });
+
+  it("extracts URL from mixed sharing texts", () => {
+    const douyinShareText = "4.84 dnD:/ N@j.pQ :6pm 10/10 太喜欢这种感觉了，摇曳的树影被路灯拉长，像一封未写完의信。 # 晚风很温柔 # 治愈系 # 林间小道 # 人间观察计划 # 路의尽头终会有温柔의光  https://v.douyin.com/lirNlzgcO34/ 复制此链接，打开Dou音搜索，直接观看视频！";
+    expect(normalizeUrl(douyinShareText)).toBe("https://v.douyin.com/lirNlzgcO34/");
+
+    const tiktokShareText = "Check this out: https://vt.tiktok.com/ZS12345/ raw text";
+    expect(normalizeUrl(tiktokShareText)).toBe("https://vt.tiktok.com/ZS12345/");
+  });
 });

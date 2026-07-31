@@ -1,5 +1,14 @@
 # OmniVideo Changelog
 
+## FAST-INTAKE-015 - Extract URL from sharing texts in Video Intake
+
+- Bumped app version from `0.11.66` to `0.11.67` to add mixed sharing text URL extraction support in Video Intake.
+- Updated `normalizeUrl` in `src/lib/video-intake/platform.ts` to scan and extract the first HTTP/HTTPS URL from any surrounding description, hashtags, or metadata text.
+- Added comprehensive unit test coverage in `src/lib/video-intake/platform.test.ts` for Douyin, TikTok, and YouTube sharing strings.
+- Verification (FAST-INTAKE-015):
+  - `npm run test -- --run src/lib/video-intake/platform.test.ts src/lib/video-intake/validation.test.ts` pass (2 files / 15 tests).
+  - `npm run guard:version` pass.
+
 ## FAST-VIDEO-067 - Preserve Composer Render Quality and Vietnamese Text Fidelity
 
 - Bumped app version from `0.11.65` to `0.11.66` to prioritize lossless Video Composer output.

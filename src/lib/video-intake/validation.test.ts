@@ -24,6 +24,18 @@ describe("validateIntakeInput", () => {
     expect(result.qualityPreference).toBe("best");
   });
 
+  it("handles mixed sharing texts containing URLs", () => {
+    const result = validateIntakeInput({
+      sourceUrl: "4.84 dnD:/ N@j.pQ :6pm 10/10 太喜欢这种感觉了，摇曳的树影被路灯拉长，像一封未写完의信。 # 晚风很温柔 # 治愈系 # 林间小道 # 人间观察计划 # 路의尽头终会有温柔의光  https://v.douyin.com/lirNlzgcO34/ 复制此链接，打开Dou音搜索，直接观看视频！",
+      storageProvider: "telegram",
+      folder: "kiến thức sức khoẻ",
+      tags: [],
+    });
+
+    expect(result.canonicalUrl).toBe("https://v.douyin.com/lirNlzgcO34/");
+    expect(result.originPlatform).toBe("douyin");
+  });
+
   it("rejects invalid URL", () => {
     expect(() =>
       validateIntakeInput({

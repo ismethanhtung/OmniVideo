@@ -26,6 +26,7 @@
 
 ## Review
 
+- `FAST-INTAKE-015` - Extract URL from sharing texts in Video Intake
 - `FAST-AUDIO-069` - Implement HTTP 429 rate limit retries with backoff for Groq Whisper transcription.
 - `FAST-WORKSPACE-082` - Intermediate step-aware progress details for Workspace VIP flow.
 - `FAST-UX-028` - Add Command-click open behavior to Inspiration Vault.
