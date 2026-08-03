@@ -1,5 +1,16 @@
 # OmniVideo Changelog
 
+## FAST-WORKSPACE-096 - Fix Background Progress Segment Render Performance
+
+- Bumped app version from `0.11.67` to `0.11.68` to support always displaying all segment rows in Background Progress details, removing pagination/hiding.
+- Removed segment render limits, pagination hooks, states, and "Show more" / "Show all" button panels in `ProgressSegmentsPanel` of `src/components/layout/topbar.tsx`.
+- Updated unit test assertions in `src/components/layout/topbar.test.ts` to expect no pagination constants, states, or buttons and to verify total segment count presentation.
+- Fixed outdated default font family and font size test assertions in `src/features/video-processing/video-tools-lab-panel.test.ts` to restore complete test suite green status.
+- Verification (FAST-WORKSPACE-096):
+  - `npm run test -- --run src/components/layout/topbar.test.ts src/features/video-processing/video-tools-lab-panel.test.ts` pass (2 files / 8 tests).
+  - `npm run guard:version` pass.
+  - `npm run build` pass.
+
 ## FAST-INTAKE-015 - Extract URL from sharing texts in Video Intake
 
 - Bumped app version from `0.11.66` to `0.11.67` to add mixed sharing text URL extraction support in Video Intake.

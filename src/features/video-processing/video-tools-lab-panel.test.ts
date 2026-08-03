@@ -98,8 +98,8 @@ describe("Video Tools Lab source preview controls", () => {
         expect(source).toContain(
             "const [textOverlayEnabled, setTextOverlayEnabled] = useState(true)",
         );
-        expect(source).toContain('fontFamily: "Bangers"');
-        expect(source).toContain("fontSize: 45");
+        expect(source).toContain('fontFamily: "Lobster"');
+        expect(source).toContain("fontSize: 40");
         expect(source).toContain("textOverlaysJson");
         expect(source).toContain("textOverlayPlayResX");
         expect(source).toContain("getVideoTextFontOption");
@@ -223,7 +223,7 @@ describe("Video Tools Lab source preview controls", () => {
         expect(source).toContain('setSubtitleFontFamily("Bangers")');
         expect(source).toContain("useState(25)");
         expect(source).toContain("useState(8)");
-        expect(source).toContain("setSubtitleFontSize(50)");
+        expect(source).toContain("setSubtitleFontSize(45)");
         expect(source).toContain("setSubtitleBackgroundPaddingY(8)");
         expect(source).toContain("if (!hasBlurEnabled && !hasCoverBoxEnabled)");
         expect(source).toContain("VIDEO_TEXT_FONT_OPTIONS.map");

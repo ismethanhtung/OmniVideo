@@ -9,7 +9,6 @@
 - (none)
 
 ## In Progress
-- `FAST-WORKSPACE-096` - Fix Background Progress segment render performance
 - `FAST-VIDEO-032` - Add subtitle display modes (Standard, Word Reveal, Karaoke) to Video Narrator and support alignment customization
 - `FAST-WORKSPACE-053` - Prioritize saved Video Tools setup over node defaults in VIP flow.
 - `FAST-WORKSPACE-052` - Add Seed Asset VIP Processing 2 for upload->storage->local flow.
@@ -179,6 +178,7 @@
 
 ## Done
 
+- `FAST-WORKSPACE-096` - Fix Background Progress segment render performance
 - `FAST-VIDEO-067` - Preserve Composer Render Quality and Vietnamese Text Fidelity
 - `FAST-VIDEO-066` - Render Video Composer Project to MP4
 - `FAST-VIDEO-065` - Fix Video Composer Metadata Event Null Crash

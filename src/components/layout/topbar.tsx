@@ -63,8 +63,6 @@ type TopbarProps = {
 };
 
 const HIGH_PROGRESS_VOICE_SPEED_FACTOR = 1.35;
-const INITIAL_PROGRESS_SEGMENT_RENDER_LIMIT = 120;
-const PROGRESS_SEGMENT_RENDER_BATCH_SIZE = 120;
 
 export function Topbar({
     activeSection,
@@ -2008,9 +2006,6 @@ function ProgressSegmentsPanel({
         transcriptRetrySelectedBySegmentId,
         setTranscriptRetrySelectedBySegmentId,
     ] = useState<Record<string, boolean | undefined>>({});
-    const [visibleSegmentCount, setVisibleSegmentCount] = useState(
-        INITIAL_PROGRESS_SEGMENT_RENDER_LIMIT,
-    );
     const segments = useMemo(
         () => lines.map(parseProgressSegmentLine),
         [lines],
@@ -2034,17 +2029,6 @@ function ProgressSegmentsPanel({
         step.status === "success" &&
         vipNodeId.length > 0 &&
         editableSegments.length > 0;
-    const visibleSegments = useMemo(
-        () =>
-            isEditingTranslations
-                ? segments
-                : segments.slice(0, visibleSegmentCount),
-        [isEditingTranslations, segments, visibleSegmentCount],
-    );
-    const hiddenSegmentCount = Math.max(
-        0,
-        segments.length - visibleSegments.length,
-    );
     const changedCount = useMemo(
         () =>
             editableSegments.filter((segment) => {
@@ -2081,7 +2065,6 @@ function ProgressSegmentsPanel({
         setIsEditingTranslations(false);
         setEditedTextBySegmentId({});
         setTranscriptRetrySelectedBySegmentId({});
-        setVisibleSegmentCount(INITIAL_PROGRESS_SEGMENT_RENDER_LIMIT);
     }, [step.id, lines]);
 
     const updateEditedSegmentText = useCallback((segmentId: number, value: string) => {
@@ -2105,19 +2088,6 @@ function ProgressSegmentsPanel({
             [String(segmentId)]: !current[String(segmentId)],
         }));
     }, []);
-
-    const showMoreSegments = useCallback(() => {
-        setVisibleSegmentCount((current) =>
-            Math.min(
-                segments.length,
-                current + PROGRESS_SEGMENT_RENDER_BATCH_SIZE,
-            ),
-        );
-    }, [segments.length]);
-
-    const showAllSegments = useCallback(() => {
-        setVisibleSegmentCount(segments.length);
-    }, [segments.length]);
 
     const runCorrectedVip = useCallback(() => {
         if (
@@ -2192,9 +2162,9 @@ function ProgressSegmentsPanel({
                                 : `${changedCount} edited · ${selectedTranscriptRetryIds.length} retry`}
                         </span>
                     ) : null}
-                    {!isEditingTranslations && hiddenSegmentCount > 0 ? (
+                    {!isEditingTranslations ? (
                         <span className="border border-main bg-main px-2 py-1 text-[10px] font-semibold text-muted">
-                            Showing {visibleSegments.length}/{segments.length}
+                            {segments.length} segments
                         </span>
                     ) : null}
                     <button
@@ -2264,7 +2234,7 @@ function ProgressSegmentsPanel({
                 </div>
             </div>
             <div className="min-h-0 flex-1 divide-y divide-soft overflow-y-auto">
-                {visibleSegments.map((segment, index) => {
+                {segments.map((segment, index) => {
                     const editableSegmentId =
                         typeof segment.id === "number" ? segment.id : null;
                     const isHighSpeed =
@@ -2383,30 +2353,6 @@ function ProgressSegmentsPanel({
                         </article>
                     );
                 })}
-                {!isEditingTranslations && hiddenSegmentCount > 0 ? (
-                    <div className="flex flex-wrap items-center justify-between gap-2 bg-secondary/15 px-3 py-2">
-                        <span className="text-[10px] text-muted">
-                            {hiddenSegmentCount} more segment(s) hidden to keep
-                            Background Progress responsive.
-                        </span>
-                        <div className="flex flex-wrap gap-1.5">
-                            <button
-                                type="button"
-                                onClick={showMoreSegments}
-                                className="border border-main bg-main px-2 py-1 text-[10px] font-semibold text-main hover:bg-secondary"
-                            >
-                                Show more
-                            </button>
-                            <button
-                                type="button"
-                                onClick={showAllSegments}
-                                className="border border-main bg-main px-2 py-1 text-[10px] font-semibold text-main hover:bg-secondary"
-                            >
-                                Show all
-                            </button>
-                        </div>
-                    </div>
-                ) : null}
             </div>
         </section>
     );
