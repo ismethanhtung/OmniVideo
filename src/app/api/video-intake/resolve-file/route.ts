@@ -132,24 +132,28 @@ async function handleResolveDownloadRequest(
     const accessDenied = requireWriteAccess(request);
     if (accessDenied) return accessDenied;
 
+    let canonicalUrl = normalizeUrl(inputBody.sourceUrl);
+    canonicalUrl = await resolveShortLinks(canonicalUrl);
+
+    const platform = detectOriginPlatform(canonicalUrl);
     const cobaltUrl = getAppEnv().COBALT_API_URL;
-    if (!cobaltUrl) {
+
+    const isDirectPlatformSupported = platform === "tiktok" || platform === "douyin";
+    if (!isDirectPlatformSupported && !cobaltUrl) {
         return NextResponse.json(
             {
                 ok: false,
                 errorCode: "COBALT_URL_MISSING",
-                error: "Chưa cấu hình COBALT_API_URL trong biến môi trường. Vui lòng cấu hình COBALT_API_URL trong file .env.local và restart lại Next.js server.",
+                error: "Chưa cấu hình COBALT_API_URL trong biến môi trường. Vui lòng cấu hình COBALT_API_URL trong file .env.local để hỗ trợ phân tích YouTube, Facebook và các nền tảng khác.",
             },
             { status: 400 }
         );
     }
 
-    let canonicalUrl = normalizeUrl(inputBody.sourceUrl);
-    canonicalUrl = await resolveShortLinks(canonicalUrl);
     const input: ValidatedIntakeInput = {
         sourceUrl: inputBody.sourceUrl,
         canonicalUrl,
-        originPlatform: detectOriginPlatform(canonicalUrl),
+        originPlatform: platform,
         storageProvider: "drive",
         folder: "workspace",
         tags: ["workspace", "url"],

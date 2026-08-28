@@ -271,33 +271,80 @@ async function resolveViaTikWm(
   }
 }
 
-async function resolveViaDouyinWtf(
+interface TaiNhanhVideoResponse {
+  status: boolean;
+  message: string;
+  data?: {
+    video_url?: string;
+    video_download_url?: string;
+    music?: string;
+    title?: string;
+    cover?: string;
+  };
+}
+
+async function fetchTaiNhanhVideoSession() {
+  try {
+    const getResponse = await fetch("https://tainhanhvideo.com/", {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8"
+      }
+    });
+
+    if (!getResponse.ok) return null;
+
+    const setCookieHeaders = getResponse.headers.getSetCookie();
+    const cookiesArr = setCookieHeaders.map(c => c.split(";")[0]);
+    const cookiesStr = cookiesArr.join("; ");
+
+    const html = await getResponse.text();
+    const csrfMatch = html.match(/name="csrf-token"\s+content="([^"]+)"/) || html.match(/csrf-token"\s+content="([^"]+)"/);
+    const csrfToken = csrfMatch ? csrfMatch[1] : null;
+
+    const tokenInputMatch = html.match(/name="_token"\s+value="([^"]+)"/) || html.match(/value="([^"]+)"\s+name="_token"/);
+    const formToken = tokenInputMatch ? tokenInputMatch[1] : null;
+
+    const token = csrfToken || formToken;
+    if (!token) return null;
+
+    return { cookiesStr, token };
+  } catch (e) {
+    console.error("Fetch TaiNhanhVideo session failed:", e);
+    return null;
+  }
+}
+
+async function resolveViaTaiNhanhVideo(
   input: ValidatedIntakeInput,
 ): Promise<ResolvedMedia | null> {
   try {
-    const response = await fetch(
-      `https://api.douyin.wtf/api/hybrid/video_data?url=${encodeURIComponent(input.canonicalUrl)}&minimal=true`,
-      {
-        method: "GET",
-        headers: {
-          "Accept": "application/json",
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        },
-      }
-    );
+    const session = await fetchTaiNhanhVideoSession();
+    if (!session) return null;
+
+    const response = await fetch("https://tainhanhvideo.com/tiktok/download", {
+      method: "POST",
+      headers: {
+        "accept": "*/*",
+        "accept-language": "vi,en;q=0.9",
+        "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
+        "x-csrf-token": session.token,
+        "x-requested-with": "XMLHttpRequest",
+        "cookie": session.cookiesStr,
+        "Referer": "https://tainhanhvideo.com/",
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+      },
+      body: new URLSearchParams({
+        url: input.canonicalUrl,
+        type: "douyin",
+        _token: session.token
+      }).toString()
+    });
 
     if (!response.ok) return null;
 
-    const payload = (await response.json()) as {
-      status: string;
-      video_data?: {
-        desc?: string;
-        nwm_video_url_HQ?: string;
-        music_url?: string;
-      };
-    };
-
-    if (!payload.video_data || !payload.video_data.nwm_video_url_HQ) {
+    const payload = (await response.json()) as TaiNhanhVideoResponse;
+    if (!payload.status || !payload.data || !payload.data.video_download_url) {
       return null;
     }
 
@@ -306,8 +353,8 @@ async function resolveViaDouyinWtf(
       : "auto";
 
     const directMediaUrl = downloadMode === "audio"
-      ? payload.video_data.music_url
-      : payload.video_data.nwm_video_url_HQ;
+      ? payload.data.music
+      : payload.data.video_download_url;
 
     if (!directMediaUrl) return null;
 
@@ -315,7 +362,7 @@ async function resolveViaDouyinWtf(
       originalUrl: input.canonicalUrl,
       directMediaUrl,
       originPlatform: "douyin",
-      title: payload.video_data.desc || "douyin-video",
+      title: payload.data.title || "douyin-video",
       requestedQuality: input.qualityPreference ?? "best",
       downloadMode: "direct-url",
       resolver: "cobalt",
@@ -324,7 +371,7 @@ async function resolveViaDouyinWtf(
       ext: downloadMode === "audio" ? "mp3" : "mp4",
     };
   } catch (e) {
-    console.error("Douyin.wtf resolve error:", e);
+    console.error("TaiNhanhVideo resolve error:", e);
     return null;
   }
 }
@@ -346,23 +393,26 @@ export async function resolveMediaUrl(
 
   if (input.originPlatform === "tiktok") {
     try {
+      const data = await resolveViaTaiNhanhVideo(input);
+      if (data) return data;
+    } catch (e) {
+      console.error("Resolve TikTok via TaiNhanhVideo failed, trying TikWM:", e);
+    }
+
+    try {
       const tikWmData = await resolveViaTikWm(input);
-      if (tikWmData) {
-        return tikWmData;
-      }
+      if (tikWmData) return tikWmData;
     } catch (e) {
       console.error("Resolve via TikWM failed:", e);
     }
   }
 
-  if (input.originPlatform === "douyin") {
+  if (input.originPlatform === "douyin" || input.originPlatform === "youtube" || input.originPlatform === "facebook") {
     try {
-      const douyinWtfData = await resolveViaDouyinWtf(input);
-      if (douyinWtfData) {
-        return douyinWtfData;
-      }
+      const data = await resolveViaTaiNhanhVideo(input);
+      if (data) return data;
     } catch (e) {
-      console.error("Resolve via Douyin.wtf failed:", e);
+      console.error(`Resolve ${input.originPlatform} via TaiNhanhVideo failed:`, e);
     }
   }
 

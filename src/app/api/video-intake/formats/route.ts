@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 
 import { requireWriteAccess } from "@/lib/access-control/route-guards";
-import { listMediaFormatsInternal } from "@/lib/video-intake/internal-resolver";
 import { detectOriginPlatform, normalizeUrl, resolveShortLinks } from "@/lib/video-intake/platform";
 import type { IntakeQualityPreference } from "@/lib/video-intake/types";
 import { getAppEnv } from "@/lib/config/env";
@@ -138,13 +137,14 @@ async function analyzeViaTikWm(url: string) {
       data?: {
         id: string;
         title: string;
-        cover: string;
         play: string;
         music: string;
       };
     };
 
-    if (payload.code !== 0 || !payload.data) return null;
+    if (payload.code !== 0 || !payload.data) {
+      return null;
+    }
 
     return {
       sourceUrl: url,
@@ -155,7 +155,7 @@ async function analyzeViaTikWm(url: string) {
         {
           formatId: "tikwm-video",
           ext: "mp4",
-          formatNote: "video no watermark via tikwm",
+          formatNote: "video without watermark via TikWM",
           resolution: "best",
           hasAudio: true,
           hasVideo: true,
@@ -163,7 +163,7 @@ async function analyzeViaTikWm(url: string) {
         {
           formatId: "tikwm-audio",
           ext: "mp3",
-          formatNote: "audio/voice only via tikwm",
+          formatNote: "audio/voice only via TikWM",
           resolution: "audio",
           hasAudio: true,
           hasVideo: false,
@@ -176,52 +176,101 @@ async function analyzeViaTikWm(url: string) {
   }
 }
 
-async function analyzeViaDouyinWtf(url: string) {
+interface TaiNhanhVideoResponse {
+  status: boolean;
+  message: string;
+  data?: {
+    video_url?: string;
+    video_download_url?: string;
+    music?: string;
+    title?: string;
+    cover?: string;
+  };
+}
+
+async function fetchTaiNhanhVideoSession() {
   try {
-    const response = await fetch(
-      `https://api.douyin.wtf/api/hybrid/video_data?url=${encodeURIComponent(url)}&minimal=true`,
-      {
-        method: "GET",
-        headers: {
-          "Accept": "application/json",
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        },
+    const getResponse = await fetch("https://tainhanhvideo.com/", {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8"
       }
-    );
+    });
+
+    if (!getResponse.ok) return null;
+
+    const setCookieHeaders = getResponse.headers.getSetCookie();
+    const cookiesArr = setCookieHeaders.map(c => c.split(";")[0]);
+    const cookiesStr = cookiesArr.join("; ");
+
+    const html = await getResponse.text();
+    const csrfMatch = html.match(/name="csrf-token"\s+content="([^"]+)"/) || html.match(/csrf-token"\s+content="([^"]+)"/);
+    const csrfToken = csrfMatch ? csrfMatch[1] : null;
+
+    const tokenInputMatch = html.match(/name="_token"\s+value="([^"]+)"/) || html.match(/value="([^"]+)"\s+name="_token"/);
+    const formToken = tokenInputMatch ? tokenInputMatch[1] : null;
+
+    const token = csrfToken || formToken;
+    if (!token) return null;
+
+    return { cookiesStr, token };
+  } catch (e) {
+    console.error("Fetch TaiNhanhVideo session failed:", e);
+    return null;
+  }
+}
+
+async function analyzeViaTaiNhanhVideo(url: string, type: string) {
+  try {
+    const session = await fetchTaiNhanhVideoSession();
+    if (!session) return null;
+
+    const response = await fetch("https://tainhanhvideo.com/tiktok/download", {
+      method: "POST",
+      headers: {
+        "accept": "*/*",
+        "accept-language": "vi,en;q=0.9",
+        "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
+        "x-csrf-token": session.token,
+        "x-requested-with": "XMLHttpRequest",
+        "cookie": session.cookiesStr,
+        "Referer": "https://tainhanhvideo.com/",
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+      },
+      body: new URLSearchParams({
+        url,
+        type,
+        _token: session.token
+      }).toString()
+    });
 
     if (!response.ok) return null;
 
-    const payload = (await response.json()) as {
-      status: string;
-      video_data?: {
-        desc?: string;
-        nwm_video_url_HQ?: string;
-        music_url?: string;
-      };
-    };
-
-    if (!payload.video_data || !payload.video_data.nwm_video_url_HQ) {
+    const payload = (await response.json()) as TaiNhanhVideoResponse;
+    if (!payload.status || !payload.data || !payload.data.video_download_url) {
       return null;
     }
 
+    const platformName = type === "douyin" ? "douyin" : type === "tiktok" ? "tiktok" : "youtube";
+
     return {
       sourceUrl: url,
-      title: payload.video_data.desc || "Douyin Video",
-      originPlatform: "douyin",
-      resolverProfile: "douyin_wtf",
+      title: payload.data.title || `${type} Video`,
+      originPlatform: platformName,
+      resolverProfile: "tainhanhvideo",
       formats: [
         {
-          formatId: "douyin-video-hq",
+          formatId: `${type}-video-hd`,
           ext: "mp4",
-          formatNote: "video no watermark HQ via douyin.wtf",
+          formatNote: `video no watermark via tainhanhvideo`,
           resolution: "best",
           hasAudio: true,
           hasVideo: true,
         },
         {
-          formatId: "douyin-audio",
+          formatId: `${type}-audio`,
           ext: "mp3",
-          formatNote: "audio/voice only via douyin.wtf",
+          formatNote: `audio/voice only via tainhanhvideo`,
           resolution: "audio",
           hasAudio: true,
           hasVideo: false,
@@ -229,7 +278,7 @@ async function analyzeViaDouyinWtf(url: string) {
       ],
     };
   } catch (e) {
-    console.error("Douyin.wtf analyze error:", e);
+    console.error(`TaiNhanhVideo analyze error for ${type}:`, e);
     return null;
   }
 }
@@ -269,62 +318,89 @@ export async function POST(request: Request) {
       ? (qualityRaw as IntakeQualityPreference)
       : "best";
     const platform = detectOriginPlatform(canonicalUrl);
+
+    // 1. TikTok
     if (platform === "tiktok") {
       try {
-        const tikWmData = await analyzeViaTikWm(canonicalUrl);
-        if (tikWmData) {
-          return NextResponse.json({
-            ok: true,
-            data: tikWmData,
-          });
-        }
+        const data = await analyzeViaTaiNhanhVideo(canonicalUrl, "tiktok");
+        if (data) return NextResponse.json({ ok: true, data });
       } catch (e) {
-        console.error("Analyze via TikWM failed, falling back:", e);
+        console.error("Analyze TikTok via TaiNhanhVideo failed, falling back:", e);
+      }
+
+      try {
+        const tikWmData = await analyzeViaTikWm(canonicalUrl);
+        if (tikWmData) return NextResponse.json({ ok: true, data: tikWmData });
+      } catch (e) {
+        console.error("Analyze TikTok via TikWM failed:", e);
       }
     }
 
+    // 2. Douyin
     if (platform === "douyin") {
       try {
-        const douyinWtfData = await analyzeViaDouyinWtf(canonicalUrl);
-        if (douyinWtfData) {
-          return NextResponse.json({
-            ok: true,
-            data: douyinWtfData,
-          });
-        }
+        const data = await analyzeViaTaiNhanhVideo(canonicalUrl, "douyin");
+        if (data) return NextResponse.json({ ok: true, data });
       } catch (e) {
-        console.error("Analyze via Douyin.wtf failed, falling back:", e);
+        console.error("Analyze Douyin via TaiNhanhVideo failed:", e);
       }
     }
 
-    const cobaltUrl = getAppEnv().COBALT_API_URL;
-    if (!cobaltUrl) {
-      return NextResponse.json(
-        {
-          ok: false,
-          errorCode: "COBALT_URL_MISSING",
-          error: "Chưa cấu hình COBALT_API_URL trong biến môi trường. Vui lòng cấu hình COBALT_API_URL trong file .env.local và restart lại Next.js server.",
-        },
-        { status: 400 }
-      );
+    // 3. YouTube
+    if (platform === "youtube") {
+      try {
+        const data = await analyzeViaTaiNhanhVideo(canonicalUrl, "youtube");
+        if (data) return NextResponse.json({ ok: true, data });
+      } catch (e) {
+        console.error("Analyze YouTube via TaiNhanhVideo failed:", e);
+      }
     }
 
-    const cobaltData = await analyzeViaCobalt(canonicalUrl, qualityPreference, cobaltUrl);
-    if (!cobaltData) {
+    // 4. Facebook
+    if (platform === "facebook") {
+      try {
+        const data = await analyzeViaTaiNhanhVideo(canonicalUrl, "facebook");
+        if (data) return NextResponse.json({ ok: true, data });
+      } catch (e) {
+        console.error("Analyze Facebook via TaiNhanhVideo failed:", e);
+      }
+    }
+
+    // 5. Fallback sang Cobalt (nếu có cấu hình)
+    const cobaltUrl = getAppEnv().COBALT_API_URL;
+    if (cobaltUrl) {
+      try {
+        const cobaltData = await analyzeViaCobalt(canonicalUrl, qualityPreference, cobaltUrl);
+        if (cobaltData) {
+          return NextResponse.json({
+            ok: true,
+            data: cobaltData,
+          });
+        }
+      } catch (e) {
+        console.error("Analyze via Cobalt fallback failed:", e);
+      }
+    }
+
+    if (platform === "tiktok" || platform === "douyin" || platform === "youtube" || platform === "facebook") {
       return NextResponse.json(
         {
           ok: false,
-          errorCode: "COBALT_ANALYZE_FAILED",
-          error: "Cobalt API không thể phân tích link này. Vui lòng kiểm tra lại link hoặc sử dụng instance Cobalt khác.",
+          errorCode: "ANALYSIS_FAILED",
+          error: `Không thể phân tích link ${platform} này bằng các API công cộng. Vui lòng thử lại sau, hoặc cấu hình COBALT_API_URL (self-hosted) trong file .env.local làm giải pháp backup.`,
         },
         { status: 422 }
       );
     }
 
-    return NextResponse.json({
-      ok: true,
-      data: cobaltData,
-    });
+    return NextResponse.json(
+      {
+        ok: false,
+        errorCode: "COBALT_URL_MISSING",
+        error: "Chưa cấu hình COBALT_API_URL trong biến môi trường. Vui lòng cấu hình COBALT_API_URL trong file .env.local để hỗ trợ phân tích YouTube, Facebook và các nền tảng khác.",
+      },
+      { status: 400 }
+    );
   } catch (error) {
     return NextResponse.json(
       {

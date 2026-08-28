@@ -1,13 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { getAppEnv } from "@/lib/config/env";
 import { POST } from "./route";
 
 vi.mock("@/lib/config/env", () => ({
   getAppEnv: vi.fn(() => ({
-    MONGODB_URI: "mongodb://localhost:27017",
-    MONGODB_DB_NAME: "test",
-    COBALT_API_URL: "",
+    COBALT_API_URL: "https://api.cobalt.tools",
+    COBALT_API_KEY: "mock-key",
   })),
 }));
 
@@ -30,12 +28,11 @@ describe("video intake formats API", () => {
     expect(payload.errorCode).toBe("VAL_SOURCE_URL_REQUIRED");
   });
 
-  it("rejects when COBALT_API_URL is missing", async () => {
-    const mockedGetAppEnv = vi.mocked(getAppEnv);
-    mockedGetAppEnv.mockReturnValue({
-      MONGODB_URI: "mongodb://localhost:27017",
-      MONGODB_DB_NAME: "test",
-      COBALT_API_URL: "",
+  it("rejects unsupported platforms when COBALT_API_URL is missing", async () => {
+    const { getAppEnv } = await import("@/lib/config/env");
+    vi.mocked(getAppEnv).mockReturnValueOnce({
+      MONGODB_URI: "",
+      MONGODB_DB_NAME: "",
     });
 
     const response = await POST(
@@ -43,7 +40,7 @@ describe("video intake formats API", () => {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          sourceUrl: "https://www.youtube.com/watch?v=demo",
+          sourceUrl: "https://www.bilibili.com/video/BV12345/",
         }),
       }),
     );
@@ -53,20 +50,13 @@ describe("video intake formats API", () => {
     expect(payload.errorCode).toBe("COBALT_URL_MISSING");
   });
 
-  it("uses Cobalt API when COBALT_API_URL is configured and response is successful", async () => {
-    const mockedGetAppEnv = vi.mocked(getAppEnv);
-    mockedGetAppEnv.mockReturnValue({
-      MONGODB_URI: "mongodb://localhost:27017",
-      MONGODB_DB_NAME: "test",
-      COBALT_API_URL: "https://api.cobalt.tools",
-    });
-
+  it("uses Cobalt API when COBALT_API_URL is configured for other platforms", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
         ok: true,
         json: async () => ({
-          status: "tunnel",
+          status: "success",
           url: "https://api.cobalt.tools/download/file",
           filename: "cobalt-video-file.mp4",
         }),
@@ -92,21 +82,28 @@ describe("video intake formats API", () => {
     expect(payload.data.formats[0].formatId).toBe("cobalt-video");
   });
 
-  it("uses Douyin.wtf API when sourceUrl is Douyin", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({
+  it("uses TaiNhanhVideo API when sourceUrl is Douyin", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        headers: {
+          getSetCookie: () => ["XSRF-TOKEN=mock-cookie; path=/"],
+        },
+        text: async () => '<html><meta name="csrf-token" content="mock-token"></html>',
+      })
+      .mockResolvedValueOnce({
         ok: true,
         json: async () => ({
-          status: "success",
-          video_data: {
-            desc: "douyin-video-test",
-            nwm_video_url_HQ: "https://api.douyin.wtf/download/file",
-            music_url: "https://api.douyin.wtf/download/music",
+          status: true,
+          message: "success",
+          data: {
+            video_download_url: "https://api.douyin.wtf/download/file",
+            title: "douyin-video-test",
           },
         }),
-      }),
-    );
+      });
+
+    vi.stubGlobal("fetch", fetchMock);
 
     const response = await POST(
       new Request("http://localhost/api/video-intake/formats", {
@@ -122,8 +119,44 @@ describe("video intake formats API", () => {
 
     expect(response.status).toBe(200);
     expect(payload.data.title).toBe("douyin-video-test");
-    expect(payload.data.resolverProfile).toBe("douyin_wtf");
+    expect(payload.data.resolverProfile).toBe("tainhanhvideo");
     expect(payload.data.formats).toHaveLength(2);
-    expect(payload.data.formats[0].formatId).toBe("douyin-video-hq");
+    expect(payload.data.formats[0].formatId).toBe("douyin-video-hd");
+  });
+
+  it("uses TikWM API when sourceUrl is TikTok", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          code: 0,
+          msg: "success",
+          data: {
+            id: "12345",
+            title: "tiktok-video-test",
+            play: "https://www.tikwm.com/video/123",
+            music: "https://www.tikwm.com/music/123",
+          },
+        }),
+      }),
+    );
+
+    const response = await POST(
+      new Request("http://localhost/api/video-intake/formats", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          sourceUrl: "https://www.tiktok.com/@user/video/12345",
+        }),
+      }),
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.data.title).toBe("tiktok-video-test");
+    expect(payload.data.resolverProfile).toBe("tikwm");
+    expect(payload.data.formats).toHaveLength(2);
+    expect(payload.data.formats[0].formatId).toBe("tikwm-video");
   });
 });

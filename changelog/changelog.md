@@ -1,5 +1,50 @@
 # OmniVideo Changelog
 
+## FAST-INTAKE-020 - Support YouTube and Facebook in TaiNhanhVideo resolver
+
+- Bumped app version from `0.11.72` to `0.11.73` to support YouTube/Facebook via TaiNhanhVideo.
+- Cấu hình API `tainhanhvideo.com` nhận động tham số `type` để hỗ trợ bóc tách cho cả YouTube và Facebook trực tiếp từ phía client local mà không cần Cobalt setup.
+- Tích hợp luồng gọi TaiNhanhVideo trước luồng Cobalt fallback cho cả 4 nền tảng: TikTok, Douyin, YouTube, Facebook.
+- Cập nhật test cases trong `formats/route.test.ts` để kiểm chứng luồng hoạt động với các platform mới.
+- Verification (FAST-INTAKE-020):
+  - `npm run test -- src/features/audio/piper-tts-sandbox-panel.test.ts src/app/api/video-intake/resolve-file/route.test.ts src/app/api/video-intake/formats/route.test.ts` pass (16 tests).
+  - `npm run lint` pass.
+  - `npm run guard:version` pass.
+
+## FAST-INTAKE-019 - Integrate TaiNhanhVideo API as primary Douyin resolver
+
+- Bumped app version from `0.11.71` to `0.11.72` to integrate TaiNhanhVideo.
+- Tích hợp cơ chế tự động lấy session cookie và CSRF token từ `tainhanhvideo.com` để gọi API bóc tách Douyin không logo và mp3 audio chất lượng cao.
+- Thay thế API `douyin.wtf` bằng `tainhanhvideo.com` làm resolver mặc định cho luồng Douyin.
+- Cập nhật test cases trong `formats/route.test.ts` để kiểm chứng luồng hoạt động với TaiNhanhVideo mock.
+- Verification (FAST-INTAKE-019):
+  - `npm run test -- src/features/audio/piper-tts-sandbox-panel.test.ts src/app/api/video-intake/resolve-file/route.test.ts src/app/api/video-intake/formats/route.test.ts` pass (16 tests).
+  - `npm run lint` pass.
+  - `npm run guard:version` pass.
+
+## FAST-INTAKE-018 - Add Cobalt backup fallback and fix platform error message
+
+- Bumped app version from `0.11.70` to `0.11.71` to support Cobalt API fallback.
+- Khôi phục lại Cobalt API làm giải pháp fallback dự phòng bền bỉ cho Douyin và TikTok trong trường hợp các API công cộng miễn phí gặp sự cố hoặc bị chặn.
+- Sửa đổi các API endpoints `/api/video-intake/formats` và `/api/video-intake/resolve-file` để báo lỗi chi tiết theo từng nền tảng thay vì đánh đồng hiển thị lỗi `"Nền tảng chưa được hỗ trợ"`.
+- Cập nhật test cases trong `formats/route.test.ts` và `resolve-file/route.test.ts` để kiểm chứng luồng hoạt động với Cobalt.
+- Verification (FAST-INTAKE-018):
+  - `npm run test -- src/features/audio/piper-tts-sandbox-panel.test.ts src/app/api/video-intake/resolve-file/route.test.ts src/app/api/video-intake/formats/route.test.ts` pass (16 tests).
+  - `npm run lint` pass.
+  - `npm run guard:version` pass.
+
+## FAST-INTAKE-017 - Integrate Douyin.wtf and TikWM directly, remove Cobalt
+
+- Bumped app version from `0.11.69` to `0.11.70` to remove Cobalt and yt-dlp.
+- Sửa đổi các API endpoints `/api/video-intake/formats` và `/api/video-intake/resolve-file` để loại bỏ hoàn toàn Cobalt API và yt-dlp local, chỉ hỗ trợ bóc tách TikTok và Douyin.
+- Tích hợp trực tiếp API `douyin.wtf` (`https://douyin.wtf/api/hybrid/video_data`) để tải video Douyin không watermark và audio gốc nhanh chóng không cần API key hay self-hosted setup.
+- Tinh chỉnh cơ chế follow redirect để tự động chuyển link ngắn di động của Douyin và TikTok thành canonical URL dài trước khi gửi lên API.
+- Cập nhật unit tests cho formats và resolve-file routes tương thích với các platform được hỗ trợ và các API mới.
+- Verification (FAST-INTAKE-017):
+  - `npm run test -- src/features/audio/piper-tts-sandbox-panel.test.ts src/app/api/video-intake/resolve-file/route.test.ts src/app/api/video-intake/formats/route.test.ts` pass (15 tests).
+  - `npm run lint` pass.
+  - `npm run guard:version` pass.
+
 ## FAST-INTAKE-016 - Add Fast Media Extractor to Feature Sandbox
 
 - Bumped app version from `0.11.68` to `0.11.69` to support direct media extraction in Feature Sandbox.
