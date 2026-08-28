@@ -234,6 +234,23 @@ function classifyMediaUrl(url: string) {
     return "link";
 }
 
+interface ExtractorFormat {
+    formatId: string;
+    ext: string;
+    resolution?: string | null;
+    formatNote?: string | null;
+    filesize?: number | null;
+    hasVideo?: boolean;
+    hasAudio?: boolean;
+}
+
+interface ExtractorResult {
+    title?: string | null;
+    originPlatform?: string | null;
+    durationMs?: number | null;
+    formats?: ExtractorFormat[];
+}
+
 type PiperTtsSandboxPanelProps = {
     section: LeftbarNavItem;
 };
@@ -250,8 +267,10 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
     const [showAssetBrowser, setShowAssetBrowser] = useState(false);
     const [assetSearchQuery, setAssetSearchQuery] = useState("");
     const [language, setLanguage] = useState("zh");
-    const [selectedTranscriptionProviderId, setSelectedTranscriptionProviderId] =
-        useState("");
+    const [
+        selectedTranscriptionProviderId,
+        setSelectedTranscriptionProviderId,
+    ] = useState("");
     const [transcriptionModel, setTranscriptionModel] = useState(
         DEFAULT_TRANSCRIPTION_MODEL,
     );
@@ -318,6 +337,18 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
         Extract<ReplicatePredictionPayload, { ok: true }>["data"] | null
     >(null);
 
+    const [extractorUrl, setExtractorUrl] = useState("");
+    const [extractorTitle, setExtractorTitle] = useState("");
+    const [extractorTarget, setExtractorTarget] = useState<"video" | "audio">(
+        "video",
+    );
+    const [extractorQuality, setExtractorQuality] = useState<string>("best");
+    const [isAnalyzing, setIsAnalyzing] = useState(false);
+    const [analyzeError, setAnalyzeError] = useState<string | null>(null);
+    const [analyzeResult, setAnalyzeResult] = useState<ExtractorResult | null>(
+        null,
+    );
+
     useEffect(() => {
         fetch("/api/storage/assets?limit=50", {
             method: "GET",
@@ -340,11 +371,11 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
                 const models = payload.ok ? (payload.data ?? []) : [];
                 setPiperModels(models);
                 if (models.length > 0) {
-                    setModelPath((currentPath) =>
-                        currentPath || models[0].modelPath,
+                    setModelPath(
+                        (currentPath) => currentPath || models[0].modelPath,
                     );
-                    setConfigPath((currentPath) =>
-                        currentPath || models[0].configPath,
+                    setConfigPath(
+                        (currentPath) => currentPath || models[0].configPath,
                     );
                 }
             })
@@ -656,7 +687,11 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
                 string,
                 unknown
             >;
-            if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+            if (
+                !parsed ||
+                typeof parsed !== "object" ||
+                Array.isArray(parsed)
+            ) {
                 throw new Error("Input JSON must be an object.");
             }
             setReplicateInputJson(
@@ -686,7 +721,8 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
                 method: "POST",
                 body: formData,
             });
-            const payload = (await response.json()) as ReplicatePredictionPayload;
+            const payload =
+                (await response.json()) as ReplicatePredictionPayload;
             if (!payload.ok) {
                 throw new Error(
                     payload.errorCode
@@ -704,6 +740,60 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
         } finally {
             setIsRunningReplicate(false);
         }
+    };
+
+    const runAnalyze = async () => {
+        if (!extractorUrl.trim()) {
+            setAnalyzeError("Vui lòng nhập link video.");
+            return;
+        }
+        setIsAnalyzing(true);
+        setAnalyzeError(null);
+        setAnalyzeResult(null);
+        try {
+            const response = await fetch("/api/video-intake/formats", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    sourceUrl: extractorUrl.trim(),
+                    qualityPreference: extractorQuality,
+                }),
+            });
+            const payload = await response.json();
+            if (!payload.ok) {
+                throw new Error(payload.error || "Phân tích link thất bại.");
+            }
+            setAnalyzeResult(payload.data);
+        } catch (err) {
+            setAnalyzeError(
+                err instanceof Error ? err.message : "Phân tích link thất bại.",
+            );
+        } finally {
+            setIsAnalyzing(false);
+        }
+    };
+
+    const runDownload = () => {
+        if (!extractorUrl.trim()) {
+            setAnalyzeError("Vui lòng nhập link video trước khi tải.");
+            return;
+        }
+        const formatSelector =
+            extractorTarget === "audio" ? "ba/bestaudio" : "";
+        const params = new URLSearchParams({
+            sourceUrl: extractorUrl.trim(),
+            qualityPreference: extractorQuality,
+            formatSelector,
+            title: extractorTitle.trim(),
+        });
+        const downloadUrl = `/api/video-intake/resolve-file?${params.toString()}`;
+        const iframe = document.createElement("iframe");
+        iframe.style.display = "none";
+        iframe.src = downloadUrl;
+        document.body.appendChild(iframe);
+        setTimeout(() => {
+            document.body.removeChild(iframe);
+        }, 10000);
     };
 
     return (
@@ -823,8 +913,8 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
                                         </div>
                                     ) : (
                                         <p className="text-[10px] leading-4 text-muted">
-                                            No obvious image/file reference input
-                                            detected.
+                                            No obvious image/file reference
+                                            input detected.
                                         </p>
                                     )}
                                     <div className="max-h-44 overflow-auto border border-main">
@@ -1042,7 +1132,8 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
                                                 Prediction Output
                                             </p>
                                             <p className="mt-1 text-[10px] text-muted">
-                                                {replicateResult.resolved.mode} ·{" "}
+                                                {replicateResult.resolved.mode}{" "}
+                                                ·{" "}
                                                 {replicateResult.prediction
                                                     .status ?? "unknown"}
                                             </p>
@@ -1263,7 +1354,10 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
                                             event.target.value,
                                         )
                                     }
-                                    disabled={isRunningTranscript || isLoadingAiProviders}
+                                    disabled={
+                                        isRunningTranscript ||
+                                        isLoadingAiProviders
+                                    }
                                     className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main outline-none transition-colors focus:border-accent"
                                 >
                                     <option value="">
@@ -1529,17 +1623,26 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
                                         setModelPath(model.modelPath);
                                         setConfigPath(model.configPath);
                                     }}
-                                    disabled={isLoadingPiperModels || piperModels.length === 0}
+                                    disabled={
+                                        isLoadingPiperModels ||
+                                        piperModels.length === 0
+                                    }
                                     className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main disabled:cursor-not-allowed disabled:opacity-60"
                                 >
                                     {isLoadingPiperModels ? (
                                         <option>Loading local voices...</option>
                                     ) : null}
-                                    {!isLoadingPiperModels && piperModels.length === 0 ? (
-                                        <option>No complete Piper model pairs found</option>
+                                    {!isLoadingPiperModels &&
+                                    piperModels.length === 0 ? (
+                                        <option>
+                                            No complete Piper model pairs found
+                                        </option>
                                     ) : null}
                                     {piperModels.map((model) => (
-                                        <option key={model.id} value={model.modelPath}>
+                                        <option
+                                            key={model.id}
+                                            value={model.modelPath}
+                                        >
                                             {model.label}
                                         </option>
                                     ))}
@@ -1650,6 +1753,253 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
                                     </a>
                                 </div>
                             ) : null}
+                        </div>
+                    </div>
+                </section>
+                <div className="border-t border-main" />
+                <section className="space-y-3">
+                    <h2 className="text-[13px] font-semibold text-main">
+                        Fast Media Extractor
+                    </h2>
+                    <p className="text-[11px] text-muted leading-relaxed">
+                        Tải nhanh video/audio bằng <strong>Cobalt API</strong>{" "}
+                        hoặc <strong>yt-dlp (Local)</strong>. Để sử dụng Cobalt
+                        cho tốc độ tải cực cao và tránh bị YouTube chặn, vui
+                        lòng cấu hình <code>COBALT_API_URL</code> trong file{" "}
+                        <code>.env.local</code> (ví dụ:{" "}
+                        <code>COBALT_API_URL=https://api.cobalt.tools/</code>{" "}
+                        hoặc instance tự host của bạn). Tìm hiểu thêm tại{" "}
+                        <a
+                            href="https://cobalt.tools"
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-accent underline font-semibold"
+                        >
+                            cobalt.tools
+                        </a>{" "}
+                        hoặc{" "}
+                        <a
+                            href="https://github.com/imputnet/cobalt"
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-accent underline font-semibold"
+                        >
+                            GitHub Cobalt
+                        </a>
+                        .
+                    </p>
+                    <div className="grid gap-4 lg:grid-cols-[360px_minmax(0,1fr)]">
+                        <div className="space-y-3 border border-main bg-secondary/20 p-4">
+                            <p className="text-[12px] font-semibold text-main">
+                                Extractor Settings
+                            </p>
+                            <label className="block">
+                                <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                    Media Link (TikTok, Douyin, Facebook,
+                                    YouTube)
+                                </span>
+                                <input
+                                    value={extractorUrl}
+                                    onChange={(event) =>
+                                        setExtractorUrl(event.target.value)
+                                    }
+                                    placeholder="https://..."
+                                    className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main outline-none focus:border-accent"
+                                />
+                            </label>
+                            <label className="block">
+                                <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                    Custom File Title (Optional)
+                                </span>
+                                <input
+                                    value={extractorTitle}
+                                    onChange={(event) =>
+                                        setExtractorTitle(event.target.value)
+                                    }
+                                    placeholder="my-extracted-media"
+                                    className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main outline-none focus:border-accent"
+                                />
+                            </label>
+                            <div className="grid gap-2 sm:grid-cols-2">
+                                <label className="block">
+                                    <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                        Target Type
+                                    </span>
+                                    <select
+                                        value={extractorTarget}
+                                        onChange={(event) =>
+                                            setExtractorTarget(
+                                                event.target.value as
+                                                    | "video"
+                                                    | "audio",
+                                            )
+                                        }
+                                        className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main outline-none focus:border-accent"
+                                    >
+                                        <option value="video">
+                                            Video + Audio
+                                        </option>
+                                        <option value="audio">
+                                            Audio Only (Voice extract)
+                                        </option>
+                                    </select>
+                                </label>
+                                <label className="block">
+                                    <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                        Quality
+                                    </span>
+                                    <select
+                                        value={extractorQuality}
+                                        onChange={(event) =>
+                                            setExtractorQuality(
+                                                event.target.value,
+                                            )
+                                        }
+                                        className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main outline-none focus:border-accent"
+                                    >
+                                        <option value="best">Best</option>
+                                        <option value="1080p">1080p</option>
+                                        <option value="720p">720p</option>
+                                        <option value="480p">480p</option>
+                                        <option value="360p">360p</option>
+                                    </select>
+                                </label>
+                            </div>
+                            <div className="grid gap-2 sm:grid-cols-2">
+                                <button
+                                    type="button"
+                                    onClick={runAnalyze}
+                                    disabled={isAnalyzing}
+                                    className="inline-flex w-full items-center justify-center gap-2 border border-main bg-main px-3 py-2 text-[11px] font-semibold text-main transition-colors hover:border-accent disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                    <Send className="h-3.5 w-3.5" />
+                                    {isAnalyzing
+                                        ? "Analyzing..."
+                                        : "Analyze Link"}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={runDownload}
+                                    className="inline-flex w-full items-center justify-center gap-2 border border-accent/35 bg-accent/10 px-3 py-2 text-[12px] font-semibold text-accent transition-colors hover:bg-accent/15"
+                                >
+                                    Extract & Download
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="space-y-4">
+                            {analyzeError ? (
+                                <p className="border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-[11px] leading-5 text-rose-700">
+                                    {analyzeError}
+                                </p>
+                            ) : null}
+
+                            <div className="border border-main bg-secondary/20 p-4">
+                                <p className="text-[12px] font-semibold text-main">
+                                    Metadata & Formats
+                                </p>
+                                {analyzeResult ? (
+                                    <div className="mt-3 space-y-3">
+                                        <div className="grid gap-2 border-b border-main pb-3 text-[11px]">
+                                            <p className="text-main font-semibold leading-relaxed">
+                                                Title:{" "}
+                                                <span className="font-normal text-muted">
+                                                    {analyzeResult.title ||
+                                                        "Unknown"}
+                                                </span>
+                                            </p>
+                                            <p className="text-main font-semibold">
+                                                Platform:{" "}
+                                                <span className="font-normal text-muted capitalize">
+                                                    {analyzeResult.originPlatform ||
+                                                        "Unknown"}
+                                                </span>
+                                            </p>
+                                            <p className="text-main font-semibold">
+                                                Duration:{" "}
+                                                <span className="font-normal text-muted">
+                                                    {analyzeResult.durationMs
+                                                        ? `${Math.floor(analyzeResult.durationMs / 1000)}s`
+                                                        : "Unknown"}
+                                                </span>
+                                            </p>
+                                        </div>
+                                        {analyzeResult.formats &&
+                                        analyzeResult.formats.length > 0 ? (
+                                            <div className="max-h-56 overflow-y-auto border border-main bg-main text-[10px]">
+                                                <table className="w-full text-left border-collapse">
+                                                    <thead>
+                                                        <tr className="border-b border-main bg-secondary/50">
+                                                            <th className="p-2 font-semibold text-muted">
+                                                                Format ID
+                                                            </th>
+                                                            <th className="p-2 font-semibold text-muted">
+                                                                Ext
+                                                            </th>
+                                                            <th className="p-2 font-semibold text-muted">
+                                                                Resolution
+                                                            </th>
+                                                            <th className="p-2 font-semibold text-muted">
+                                                                Size
+                                                            </th>
+                                                            <th className="p-2 font-semibold text-muted">
+                                                                A/V
+                                                            </th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {analyzeResult.formats.map(
+                                                            (fmt, idx) => (
+                                                                <tr
+                                                                    key={`${fmt.formatId}-${idx}`}
+                                                                    className="border-b border-main last:border-b-0 hover:bg-secondary/20"
+                                                                >
+                                                                    <td className="p-2 font-mono truncate max-w-[100px]">
+                                                                        {
+                                                                            fmt.formatId
+                                                                        }
+                                                                    </td>
+                                                                    <td className="p-2">
+                                                                        {
+                                                                            fmt.ext
+                                                                        }
+                                                                    </td>
+                                                                    <td className="p-2">
+                                                                        {fmt.resolution ||
+                                                                            fmt.formatNote ||
+                                                                            "N/A"}
+                                                                    </td>
+                                                                    <td className="p-2">
+                                                                        {fmt.filesize
+                                                                            ? `${(fmt.filesize / (1024 * 1024)).toFixed(2)} MB`
+                                                                            : "N/A"}
+                                                                    </td>
+                                                                    <td className="p-2">
+                                                                        {fmt.hasVideo
+                                                                            ? "V"
+                                                                            : ""}
+                                                                        {fmt.hasAudio
+                                                                            ? "A"
+                                                                            : ""}
+                                                                    </td>
+                                                                </tr>
+                                                            ),
+                                                        )}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        ) : (
+                                            <p className="text-[10px] text-muted">
+                                                No formats listed.
+                                            </p>
+                                        )}
+                                    </div>
+                                ) : (
+                                    <p className="mt-1 text-[10px] text-muted">
+                                        Analyze a link to see formats.
+                                    </p>
+                                )}
+                            </div>
                         </div>
                     </div>
                 </section>

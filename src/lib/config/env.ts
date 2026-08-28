@@ -19,6 +19,8 @@ export type AppEnv = {
   TELEGRAM_CHAT_ID?: string;
   GOOGLE_DRIVE_ACCESS_TOKEN?: string;
   GOOGLE_DRIVE_FOLDER_ID?: string;
+  COBALT_API_URL?: string;
+  COBALT_API_KEY?: string;
 };
 
 let cachedEnv: AppEnv | null = null;
@@ -42,6 +44,8 @@ export function getAppEnv(): AppEnv {
     TELEGRAM_CHAT_ID: process.env.TELEGRAM_CHAT_ID?.trim(),
     GOOGLE_DRIVE_ACCESS_TOKEN: process.env.GOOGLE_DRIVE_ACCESS_TOKEN?.trim(),
     GOOGLE_DRIVE_FOLDER_ID: process.env.GOOGLE_DRIVE_FOLDER_ID?.trim(),
+    COBALT_API_URL: process.env.COBALT_API_URL?.trim(),
+    COBALT_API_KEY: process.env.COBALT_API_KEY?.trim(),
   };
 
   return cachedEnv;

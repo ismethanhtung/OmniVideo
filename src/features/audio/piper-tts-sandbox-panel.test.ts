@@ -71,4 +71,24 @@ describe("Feature Sandbox panel", () => {
             "Choosing a voice fills both model and config paths.",
         );
     });
+
+    it("adds a Fast Media Extractor section to the panel", () => {
+        expect(source).toContain("Fast Media Extractor");
+        expect(source).toContain("Extractor Settings");
+        expect(source).toContain("Media Link");
+        expect(source).toContain("Custom File Title (Optional)");
+        expect(source).toContain("Target Type");
+        expect(source).toContain("Video + Audio");
+        expect(source).toContain("Audio Only (Voice extract)");
+        expect(source).toContain("extractorTarget");
+        expect(source).toContain("extractorQuality");
+        expect(source).toContain("runAnalyze");
+        expect(source).toContain("runDownload");
+        expect(source).toContain("/api/video-intake/formats");
+        expect(source).toContain("/api/video-intake/resolve-file");
+        expect(source).toContain("Metadata & Formats");
+        expect(source).toContain("COBALT_API_URL");
+        expect(source).toContain("cobalt.tools");
+        expect(source).toContain("GitHub Cobalt");
+    });
 });

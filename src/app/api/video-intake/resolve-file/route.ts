@@ -4,9 +4,10 @@ import { Readable } from "node:stream";
 import { NextResponse } from "next/server";
 
 import { requireWriteAccess } from "@/lib/access-control/route-guards";
+import { getAppEnv } from "@/lib/config/env";
 import { downloadResolvedMediaToTempFile } from "@/lib/video-intake/internal-resolver";
 import { resolveMediaUrl } from "@/lib/video-intake/media-resolver";
-import { detectOriginPlatform, normalizeUrl } from "@/lib/video-intake/platform";
+import { detectOriginPlatform, normalizeUrl, resolveShortLinks } from "@/lib/video-intake/platform";
 import type { IntakeQualityPreference, ValidatedIntakeInput } from "@/lib/video-intake/types";
 
 export const runtime = "nodejs";
@@ -131,7 +132,20 @@ async function handleResolveDownloadRequest(
     const accessDenied = requireWriteAccess(request);
     if (accessDenied) return accessDenied;
 
-    const canonicalUrl = normalizeUrl(inputBody.sourceUrl);
+    const cobaltUrl = getAppEnv().COBALT_API_URL;
+    if (!cobaltUrl) {
+        return NextResponse.json(
+            {
+                ok: false,
+                errorCode: "COBALT_URL_MISSING",
+                error: "Chưa cấu hình COBALT_API_URL trong biến môi trường. Vui lòng cấu hình COBALT_API_URL trong file .env.local và restart lại Next.js server.",
+            },
+            { status: 400 }
+        );
+    }
+
+    let canonicalUrl = normalizeUrl(inputBody.sourceUrl);
+    canonicalUrl = await resolveShortLinks(canonicalUrl);
     const input: ValidatedIntakeInput = {
         sourceUrl: inputBody.sourceUrl,
         canonicalUrl,

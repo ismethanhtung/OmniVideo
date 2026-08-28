@@ -3,6 +3,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
+import { getAppEnv } from "@/lib/config/env";
 import { downloadResolvedMediaToTempFile } from "@/lib/video-intake/internal-resolver";
 import { resolveMediaUrl } from "@/lib/video-intake/media-resolver";
 
@@ -13,6 +14,13 @@ vi.mock("@/lib/video-intake/media-resolver", () => ({
 }));
 vi.mock("@/lib/video-intake/internal-resolver", () => ({
     downloadResolvedMediaToTempFile: vi.fn(),
+}));
+vi.mock("@/lib/config/env", () => ({
+    getAppEnv: vi.fn(() => ({
+        MONGODB_URI: "mongodb://localhost:27017",
+        MONGODB_DB_NAME: "test",
+        COBALT_API_URL: "https://api.cobalt.tools",
+    })),
 }));
 
 const mockedResolveMediaUrl = vi.mocked(resolveMediaUrl);

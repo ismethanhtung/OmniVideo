@@ -69,7 +69,8 @@ export type ResolvedMedia = {
     | "direct-url"
     | "external-resolver"
     | "internal-resolver"
-    | "local-file";
+    | "local-file"
+    | "cobalt";
 };
 
 export type YtDlpFormatSummary = {

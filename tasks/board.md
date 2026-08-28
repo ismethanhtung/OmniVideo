@@ -178,6 +178,7 @@
 
 ## Done
 
+- `FAST-INTAKE-016` - Add Fast Media Extractor to Feature Sandbox
 - `FAST-WORKSPACE-096` - Fix Background Progress segment render performance
 - `FAST-VIDEO-067` - Preserve Composer Render Quality and Vietnamese Text Fidelity
 - `FAST-VIDEO-066` - Render Video Composer Project to MP4

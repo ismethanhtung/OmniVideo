@@ -1,5 +1,18 @@
 # OmniVideo Changelog
 
+## FAST-INTAKE-016 - Add Fast Media Extractor to Feature Sandbox
+
+- Bumped app version from `0.11.68` to `0.11.69` to support direct media extraction in Feature Sandbox.
+- Added a "Fast Media Extractor" section to `PiperTtsSandboxPanel` in `src/features/audio/piper-tts-sandbox-panel.tsx`.
+- Integrated Cobalt API resolver in `src/lib/video-intake/media-resolver.ts` to support high-speed and bot-resistant download of video/audio via external instance config.
+- Exposed configuration options for `COBALT_API_URL` and `COBALT_API_KEY` in environment variables.
+- Integrated with existing backend resolve APIs (`/api/video-intake/formats` and `/api/video-intake/resolve-file`) to analyze and download files directly via the browser.
+- Exposed format selector preference allowing user to download either "Video + Audio" or "Audio Only (Voice extract)" quickly.
+- Added corresponding unit tests in `src/features/audio/piper-tts-sandbox-panel.test.ts`.
+- Verification (FAST-INTAKE-016):
+  - `npm run test -- src/features/audio/piper-tts-sandbox-panel.test.ts src/app/api/video-intake/resolve-file/route.test.ts` pass (2 files / 11 tests).
+  - `npm run guard:version` pass.
+
 ## FAST-WORKSPACE-096 - Fix Background Progress Segment Render Performance
 
 - Bumped app version from `0.11.67` to `0.11.68` to support always displaying all segment rows in Background Progress details, removing pagination/hiding.
