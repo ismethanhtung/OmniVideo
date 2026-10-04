@@ -1,7 +1,23 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { Copy, Download, RadioTower, Send, Volume2 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+    Copy,
+    Download,
+    Eye,
+    Film,
+    Music,
+    RadioTower,
+    RefreshCw,
+    Send,
+    SlidersHorizontal,
+    Sparkles,
+    SunMedium,
+    Type,
+    Video,
+    Volume2,
+    X,
+} from "lucide-react";
 
 import type { LeftbarNavItem } from "@/components/layout/types";
 import type {
@@ -251,6 +267,138 @@ interface ExtractorResult {
     formats?: ExtractorFormat[];
 }
 
+export type ZeroTtsVoiceOption = {
+    id: string;
+    name: string;
+    gender: string;
+    region: string;
+    description: string;
+    isPreset: boolean;
+    filePath?: string;
+    format?: string;
+};
+
+export type ZeroTtsApiPayload =
+    | {
+          ok: true;
+          data: {
+              audioBase64: string;
+              mimeType: "audio/wav";
+              extension: "wav";
+              byteLength: number;
+              durationMs: number;
+              sampleRate: number;
+              generationDurationMs: number;
+              text: string;
+              normalizedText: string;
+              voice: string;
+              speed: number;
+              modelId: string;
+              isRealInference?: boolean;
+          };
+      }
+    | {
+          ok: false;
+          errorCode?: string;
+          error?: string;
+      };
+
+export type CapCutCaptionStyle =
+    | "capcut_yellow"
+    | "cinematic_white"
+    | "neon_emerald"
+    | "sunset_orange";
+export type CapCutCaptionPosition = "bottom" | "center" | "top";
+export type CapCutCaptionSize = "sm" | "md" | "lg";
+
+export interface ColorGradePreset {
+    id: string;
+    label: string;
+    desc: string;
+    badge: string;
+    brightness: number;
+    contrast: number;
+    saturation: number;
+    gamma: number;
+    vignette: number;
+    temperature: number;
+}
+
+export const COLOR_GRADE_PRESETS: ColorGradePreset[] = [
+    {
+        id: "moody_dark",
+        label: "Moody Melancholic (Trầm Buồn & Đậm Tối)",
+        desc: "Hạ độ sáng, nâng tương phản sâu, giảm nhẹ màu và thêm viền tối vignette tạo cảm giác sâu lắng, hoài niệm, drama.",
+        badge: "Tâm trạng buồn / Cinematic",
+        brightness: -0.18,
+        contrast: 1.25,
+        saturation: 0.85,
+        gamma: 0.9,
+        vignette: 0.45,
+        temperature: -12,
+    },
+    {
+        id: "anti_overexposure",
+        label: "Anti-Overexposure (Cứu Chói Sáng / Cam Cũ)",
+        desc: "Kéo giảm dải highlight bị cháy trắng, cân bằng đường cong gamma để phục hồi chi tiết khuôn mặt và bầu trời.",
+        badge: "Fix cam cũ / Chói nắng",
+        brightness: -0.16,
+        contrast: 1.15,
+        saturation: 1.05,
+        gamma: 0.82,
+        vignette: 0.0,
+        temperature: 0,
+    },
+    {
+        id: "cinematic_vintage",
+        label: "Cinematic Warm Vintage (Phim Cổ Điển Ấm)",
+        desc: "Tone màu vàng hổ phách dịu mắt, tương phản phim điện ảnh và viền tối hoài cổ.",
+        badge: "Hoài niệm / Kể chuyện",
+        brightness: -0.06,
+        contrast: 1.12,
+        saturation: 1.1,
+        gamma: 0.95,
+        vignette: 0.25,
+        temperature: 18,
+    },
+    {
+        id: "film_noir",
+        label: "Deep Noir (Đen Trắng Nghệ Thuật)",
+        desc: "Triệt tiêu màu hoàn toàn, đẩy tương phản đen trắng gắt, làm nổi bật đường nét và cảm xúc cô độc.",
+        badge: "Đen trắng / Bí ẩn",
+        brightness: -0.1,
+        contrast: 1.35,
+        saturation: 0.0,
+        gamma: 0.85,
+        vignette: 0.55,
+        temperature: 0,
+    },
+    {
+        id: "cold_sad",
+        label: "Cold Melancholy (Lạnh Lùng & Tuyệt Vọng)",
+        desc: "Tone xanh xám lạnh buốt, hạ nhiệt độ màu, giảm bão hòa, tạo không khí cô đơn lạnh lẽo giữa trời đông.",
+        badge: "Tone lạnh / U sầu",
+        brightness: -0.14,
+        contrast: 1.2,
+        saturation: 0.75,
+        gamma: 0.92,
+        vignette: 0.35,
+        temperature: -28,
+    },
+    {
+        id: "natural_reset",
+        label: "Original (Gốc)",
+        desc: "Khôi phục toàn bộ thông số màu và ánh sáng về mặc định gốc của video.",
+        badge: "Mặc định",
+        brightness: 0.0,
+        contrast: 1.0,
+        saturation: 1.0,
+        gamma: 1.0,
+        vignette: 0.0,
+        temperature: 0,
+    },
+];
+
 type PiperTtsSandboxPanelProps = {
     section: LeftbarNavItem;
 };
@@ -349,6 +497,179 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
         null,
     );
 
+    const [zeroTtsText, setZeroTtsText] = useState(
+        "Trước một người thật lòng yêu thích, điều đáng tiếc nhất không phải là bị từ chối, mà là cả đời mang theo những lời chưa từng dám nói, thích một người vốn không phải một điều đáng xấu hổ, dẫu kết quả là được đáp lại hay chỉ nhận về lặng im, thì việc dũng cảm nói ra lòng mình cũng đã là một loại trưởng thành. Trần Bình An đã tỏ tình với ninh cô nương của hắn như thế này, Ninh cô nương, bất kể thế nào, cô nhất định phải nghe tôi nói hết, nhưng dù có tức giận cũng xin đừng cắt ngang. Tôi sợ rằng chỉ cần nàng ngắt lời, đời này tôi sẽ chẳng còn đủ can đảm để nói ra nữa.",
+    );
+    const [zeroTtsVoiceMode, setZeroTtsVoiceMode] = useState<
+        "preset" | "custom_upload" | "custom_local"
+    >("custom_local");
+    const [zeroTtsPresetVoice, setZeroTtsPresetVoice] = useState("maichi");
+    const [zeroTtsCustomFile, setZeroTtsCustomFile] = useState<File | null>(
+        null,
+    );
+    const [zeroTtsCustomAudioPreviewUrl, setZeroTtsCustomAudioPreviewUrl] =
+        useState<string | null>(null);
+    const [zeroTtsSelectedLocalVoice, setZeroTtsSelectedLocalVoice] =
+        useState("");
+    const [zeroTtsSpeed, setZeroTtsSpeed] = useState("1.2");
+    const [zeroTtsNormalizeVi, setZeroTtsNormalizeVi] = useState(true);
+    const [zeroTtsModelId, setZeroTtsModelId] = useState(
+        "zeroweight-ai/ZeroTTS",
+    );
+    const [zeroTtsTemperature, setZeroTtsTemperature] = useState("0.8");
+    const [zeroTtsTopP, setZeroTtsTopP] = useState("0.95");
+    const [zeroTtsCfgScale, setZeroTtsCfgScale] = useState("1.0");
+    const [zeroTtsSeed, setZeroTtsSeed] = useState("42");
+    const [zeroTtsSentenceSilence, setZeroTtsSentenceSilence] = useState("0.2");
+    const [zeroTtsPresetVoices, setZeroTtsPresetVoices] = useState<
+        ZeroTtsVoiceOption[]
+    >([]);
+    const [zeroTtsCustomVoices, setZeroTtsCustomVoices] = useState<
+        ZeroTtsVoiceOption[]
+    >([]);
+    const [isLoadingZeroTtsVoices, setIsLoadingZeroTtsVoices] = useState(true);
+    const [isRunningZeroTts, setIsRunningZeroTts] = useState(false);
+    const [zeroTtsError, setZeroTtsError] = useState<string | null>(null);
+    const [zeroTtsResult, setZeroTtsResult] = useState<
+        Extract<ZeroTtsApiPayload, { ok: true }>["data"] | null
+    >(null);
+    const [zeroTtsBackgroundMusic, setZeroTtsBackgroundMusic] =
+        useState<string>("");
+    const [zeroTtsBgmVolume, setZeroTtsBgmVolume] = useState<string>("0.25");
+    const [zeroTtsBgmList, setZeroTtsBgmList] = useState<
+        Array<{ source: string; label: string }>
+    >([]);
+    const [zeroTtsVideoFile, setZeroTtsVideoFile] = useState<File | null>(null);
+    const [zeroTtsVideoUrl, setZeroTtsVideoUrl] = useState<string | null>(null);
+    const [zeroTtsVideoVolume, setZeroTtsVideoVolume] = useState<string>("0.15");
+    const zeroTtsSpeechAudioRef = useRef<HTMLAudioElement | null>(null);
+    const zeroTtsBgmAudioRef = useRef<HTMLAudioElement | null>(null);
+    const zeroTtsVideoRef = useRef<HTMLVideoElement | null>(null);
+
+    const [zeroTtsShowCaptions, setZeroTtsShowCaptions] = useState(true);
+    const [zeroTtsCaptionStyle, setZeroTtsCaptionStyle] =
+        useState<CapCutCaptionStyle>("capcut_yellow");
+    const [zeroTtsCaptionPosition, setZeroTtsCaptionPosition] =
+        useState<CapCutCaptionPosition>("bottom");
+    const [zeroTtsCaptionSize, setZeroTtsCaptionSize] =
+        useState<CapCutCaptionSize>("md");
+    const [zeroTtsCaptionUppercase, setZeroTtsCaptionUppercase] = useState(false);
+    const [zeroTtsSpeechCurrentTime, setZeroTtsSpeechCurrentTime] = useState(0);
+
+    const [cgVideoFile, setCgVideoFile] = useState<File | null>(null);
+    const [cgVideoUrl, setCgVideoUrl] = useState<string | null>(null);
+    const [cgActivePreset, setCgActivePreset] = useState<string>("moody_dark");
+    const [cgBrightness, setCgBrightness] = useState<number>(-0.18);
+    const [cgContrast, setCgContrast] = useState<number>(1.25);
+    const [cgSaturation, setCgSaturation] = useState<number>(0.85);
+    const [cgGamma, setCgGamma] = useState<number>(0.9);
+    const [cgVignette, setCgVignette] = useState<number>(0.45);
+    const [cgTemperature, setCgTemperature] = useState<number>(-12);
+    const [cgCompareMode, setCgCompareMode] = useState<boolean>(false);
+    const [cgIsRendering, setCgIsRendering] = useState<boolean>(false);
+    const [cgRenderResult, setCgRenderResult] = useState<{
+        videoUrl: string;
+        filename: string;
+        originalSize?: number;
+        outputSize?: number;
+        processingDurationMs?: number;
+    } | null>(null);
+    const [cgRenderError, setCgRenderError] = useState<string | null>(null);
+    const cgPreviewVideoRef = useRef<HTMLVideoElement | null>(null);
+
+    useEffect(() => {
+        setIsLoadingZeroTtsVoices(true);
+        fetch("/api/audio/zerotts-voices", {
+            method: "GET",
+            cache: "no-store",
+        })
+            .then((response) => response.json())
+            .then((payload) => {
+                if (payload.ok && payload.data) {
+                    const presets = (payload.data.presetVoices ??
+                        []) as ZeroTtsVoiceOption[];
+                    const customs = (payload.data.customVoices ??
+                        []) as ZeroTtsVoiceOption[];
+                    setZeroTtsPresetVoices(presets);
+                    setZeroTtsCustomVoices(customs);
+                    if (presets.length > 0) {
+                        setZeroTtsPresetVoice((curr) => curr || presets[0].id);
+                    }
+                    if (customs.length > 0) {
+                        const preferred =
+                            customs.find(
+                                (c) =>
+                                    /1\.zip$/i.test(c.filePath || "") ||
+                                    c.id === "custom_1_zip",
+                            ) ?? customs[0];
+                        setZeroTtsSelectedLocalVoice(
+                            (curr) =>
+                                curr || preferred.filePath || preferred.id,
+                        );
+                    }
+                }
+            })
+            .catch(() => {})
+            .finally(() => setIsLoadingZeroTtsVoices(false));
+    }, []);
+
+    useEffect(() => {
+        fetch("/api/video-processing/background-music", {
+            method: "GET",
+            cache: "no-store",
+        })
+            .then((res) => res.json())
+            .then(
+                (payload: {
+                    ok?: boolean;
+                    data?: Array<{ source: string; label: string }>;
+                }) => {
+                    if (payload.ok && Array.isArray(payload.data)) {
+                        setZeroTtsBgmList(payload.data);
+                    }
+                },
+            )
+            .catch(() => {});
+    }, []);
+
+    useEffect(() => {
+        if (!zeroTtsBgmAudioRef.current) return;
+        zeroTtsBgmAudioRef.current.volume = Math.min(
+            1,
+            Math.max(0, Number(zeroTtsBgmVolume) || 0.25),
+        );
+    }, [zeroTtsBgmVolume]);
+
+    useEffect(() => {
+        if (!zeroTtsBgmAudioRef.current) return;
+        if (!zeroTtsBackgroundMusic) {
+            zeroTtsBgmAudioRef.current.pause();
+            zeroTtsBgmAudioRef.current.currentTime = 0;
+            return;
+        }
+        const speech = zeroTtsSpeechAudioRef.current;
+        if (speech && !speech.paused && !speech.ended) {
+            zeroTtsBgmAudioRef.current.currentTime = speech.currentTime;
+            zeroTtsBgmAudioRef.current.play().catch(() => {});
+        }
+    }, [zeroTtsBackgroundMusic]);
+
+    useEffect(() => {
+        if (!zeroTtsVideoRef.current) return;
+        zeroTtsVideoRef.current.volume = Math.min(
+            1,
+            Math.max(0, Number(zeroTtsVideoVolume) || 0.15),
+        );
+    }, [zeroTtsVideoVolume]);
+
+    useEffect(() => {
+        return () => {
+            if (zeroTtsVideoUrl) {
+                URL.revokeObjectURL(zeroTtsVideoUrl);
+            }
+        };
+    }, [zeroTtsVideoUrl]);
+
     useEffect(() => {
         fetch("/api/storage/assets?limit=50", {
             method: "GET",
@@ -428,6 +749,369 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
         if (!result) return null;
         return `data:${result.mimeType};base64,${result.audioBase64}`;
     }, [result]);
+
+    const zeroTtsAudioUrl = useMemo(() => {
+        if (!zeroTtsResult) return null;
+        return `data:${zeroTtsResult.mimeType};base64,${zeroTtsResult.audioBase64}`;
+    }, [zeroTtsResult]);
+
+    const handleZeroTtsCustomFileChange = (
+        event: React.ChangeEvent<HTMLInputElement>,
+    ) => {
+        const selected = event.target.files?.[0] ?? null;
+        setZeroTtsCustomFile(selected);
+        if (selected && selected.type.startsWith("audio/")) {
+            const url = URL.createObjectURL(selected);
+            setZeroTtsCustomAudioPreviewUrl(url);
+        } else {
+            setZeroTtsCustomAudioPreviewUrl(null);
+        }
+    };
+
+    const handleZeroTtsVideoChange = (
+        event: React.ChangeEvent<HTMLInputElement>,
+    ) => {
+        const file = event.target.files?.[0] ?? null;
+        if (zeroTtsVideoUrl) {
+            URL.revokeObjectURL(zeroTtsVideoUrl);
+        }
+        setZeroTtsVideoFile(file);
+        if (file) {
+            const url = URL.createObjectURL(file);
+            setZeroTtsVideoUrl(url);
+        } else {
+            setZeroTtsVideoUrl(null);
+        }
+    };
+
+    const handleZeroTtsRemoveVideo = () => {
+        if (zeroTtsVideoUrl) {
+            URL.revokeObjectURL(zeroTtsVideoUrl);
+        }
+        setZeroTtsVideoFile(null);
+        setZeroTtsVideoUrl(null);
+    };
+
+    const handleZeroTtsSpeechPlay = () => {
+        if (
+            zeroTtsBackgroundMusic &&
+            zeroTtsBgmAudioRef.current &&
+            zeroTtsSpeechAudioRef.current
+        ) {
+            zeroTtsBgmAudioRef.current.currentTime =
+                zeroTtsSpeechAudioRef.current.currentTime;
+            zeroTtsBgmAudioRef.current.volume = Math.min(
+                1,
+                Math.max(0, Number(zeroTtsBgmVolume) || 0.25),
+            );
+            zeroTtsBgmAudioRef.current.play().catch(() => {});
+        }
+        if (
+            zeroTtsVideoUrl &&
+            zeroTtsVideoRef.current &&
+            zeroTtsSpeechAudioRef.current
+        ) {
+            zeroTtsVideoRef.current.currentTime =
+                zeroTtsSpeechAudioRef.current.currentTime;
+            zeroTtsVideoRef.current.volume = Math.min(
+                1,
+                Math.max(0, Number(zeroTtsVideoVolume) || 0.15),
+            );
+            zeroTtsVideoRef.current.play().catch(() => {});
+        }
+    };
+
+    const handleZeroTtsSpeechPause = () => {
+        if (zeroTtsBgmAudioRef.current) {
+            zeroTtsBgmAudioRef.current.pause();
+        }
+        if (zeroTtsVideoRef.current) {
+            zeroTtsVideoRef.current.pause();
+        }
+    };
+
+    const handleZeroTtsSpeechSeeked = () => {
+        if (zeroTtsSpeechAudioRef.current) {
+            if (zeroTtsBgmAudioRef.current) {
+                zeroTtsBgmAudioRef.current.currentTime =
+                    zeroTtsSpeechAudioRef.current.currentTime;
+            }
+            if (zeroTtsVideoRef.current) {
+                zeroTtsVideoRef.current.currentTime =
+                    zeroTtsSpeechAudioRef.current.currentTime;
+            }
+        }
+    };
+
+    const handleZeroTtsSpeechEnded = () => {
+        if (zeroTtsBgmAudioRef.current) {
+            zeroTtsBgmAudioRef.current.pause();
+            zeroTtsBgmAudioRef.current.currentTime = 0;
+        }
+        if (zeroTtsVideoRef.current) {
+            zeroTtsVideoRef.current.pause();
+            zeroTtsVideoRef.current.currentTime = 0;
+        }
+    };
+
+    const handleZeroTtsVideoPlay = () => {
+        if (
+            zeroTtsSpeechAudioRef.current &&
+            zeroTtsSpeechAudioRef.current.paused &&
+            !zeroTtsSpeechAudioRef.current.ended
+        ) {
+            zeroTtsSpeechAudioRef.current.play().catch(() => {});
+        }
+    };
+
+    const handleZeroTtsVideoPause = () => {
+        if (
+            zeroTtsSpeechAudioRef.current &&
+            !zeroTtsSpeechAudioRef.current.paused &&
+            !zeroTtsSpeechAudioRef.current.ended
+        ) {
+            zeroTtsSpeechAudioRef.current.pause();
+        }
+    };
+
+    const handleZeroTtsVideoSeeked = () => {
+        if (
+            zeroTtsVideoRef.current &&
+            zeroTtsSpeechAudioRef.current &&
+            Math.abs(
+                zeroTtsSpeechAudioRef.current.currentTime -
+                    zeroTtsVideoRef.current.currentTime,
+            ) > 0.3
+        ) {
+            zeroTtsSpeechAudioRef.current.currentTime =
+                zeroTtsVideoRef.current.currentTime;
+        }
+    };
+
+    const spokenWords = useMemo(() => {
+        const text =
+            zeroTtsResult?.normalizedText ||
+            zeroTtsResult?.text ||
+            zeroTtsText ||
+            "";
+        return text
+            .trim()
+            .split(/\s+/)
+            .filter((w) => Boolean(w.trim()));
+    }, [zeroTtsResult, zeroTtsText]);
+
+    const activeWordIndex = useMemo(() => {
+        const durationSec = (zeroTtsResult?.durationMs || 1000) / 1000;
+        if (!durationSec || spokenWords.length === 0) return 0;
+        const progress = Math.min(
+            1,
+            Math.max(0, zeroTtsSpeechCurrentTime / durationSec),
+        );
+        return Math.min(
+            spokenWords.length - 1,
+            Math.floor(progress * spokenWords.length),
+        );
+    }, [zeroTtsSpeechCurrentTime, zeroTtsResult, spokenWords.length]);
+
+    const currentWordsChunk = useMemo(() => {
+        if (spokenWords.length === 0) return [];
+        const windowSize = 6;
+        const chunkIndex = Math.floor(activeWordIndex / windowSize);
+        const chunkStart = chunkIndex * windowSize;
+        return spokenWords
+            .slice(chunkStart, chunkStart + windowSize)
+            .map((word, relIdx) => ({
+                word,
+                absoluteIndex: chunkStart + relIdx,
+                isActive: chunkStart + relIdx === activeWordIndex,
+                isPast: chunkStart + relIdx < activeWordIndex,
+                isUpcoming: chunkStart + relIdx > activeWordIndex,
+            }));
+    }, [spokenWords, activeWordIndex]);
+
+    const applyColorGradePreset = (presetId: string) => {
+        const found = COLOR_GRADE_PRESETS.find((p) => p.id === presetId);
+        if (!found) return;
+        setCgActivePreset(presetId);
+        setCgBrightness(found.brightness);
+        setCgContrast(found.contrast);
+        setCgSaturation(found.saturation);
+        setCgGamma(found.gamma);
+        setCgVignette(found.vignette);
+        setCgTemperature(found.temperature);
+    };
+
+    const handleCgVideoChange = (
+        event: React.ChangeEvent<HTMLInputElement>,
+    ) => {
+        const selected = event.target.files?.[0] ?? null;
+        if (cgVideoUrl) {
+            URL.revokeObjectURL(cgVideoUrl);
+        }
+        setCgVideoFile(selected);
+        if (selected) {
+            setCgVideoUrl(URL.createObjectURL(selected));
+        } else {
+            setCgVideoUrl(null);
+        }
+        setCgRenderResult(null);
+        setCgRenderError(null);
+    };
+
+    const handleUseZeroTtsVideoForColorGrade = () => {
+        if (zeroTtsVideoFile) {
+            if (cgVideoUrl) URL.revokeObjectURL(cgVideoUrl);
+            setCgVideoFile(zeroTtsVideoFile);
+            setCgVideoUrl(URL.createObjectURL(zeroTtsVideoFile));
+            setCgRenderResult(null);
+            setCgRenderError(null);
+        }
+    };
+
+    const handleCgRenderExport = async () => {
+        if (!cgVideoFile) {
+            setCgRenderError("Vui lòng tải lên một video để xử lý và xuất.");
+            return;
+        }
+        setCgIsRendering(true);
+        setCgRenderError(null);
+        try {
+            const formData = new FormData();
+            formData.append("video", cgVideoFile);
+            formData.append("presetName", cgActivePreset);
+            formData.append("brightness", String(cgBrightness));
+            formData.append("contrast", String(cgContrast));
+            formData.append("saturation", String(cgSaturation));
+            formData.append("gamma", String(cgGamma));
+            formData.append("vignette", String(cgVignette));
+            formData.append("temperature", String(cgTemperature));
+
+            const response = await fetch("/api/video-processing/color-grade", {
+                method: "POST",
+                body: formData,
+            });
+            const data = await response.json();
+            if (!response.ok || !data.ok) {
+                throw new Error(data.error || "Không thể xử lý video");
+            }
+            setCgRenderResult(data.data);
+        } catch (err) {
+            setCgRenderError(
+                err instanceof Error
+                    ? err.message
+                    : "Xảy ra lỗi trong quá trình xuất video.",
+            );
+        } finally {
+            setCgIsRendering(false);
+        }
+    };
+
+    useEffect(() => {
+        return () => {
+            if (cgVideoUrl) {
+                URL.revokeObjectURL(cgVideoUrl);
+            }
+        };
+    }, [cgVideoUrl]);
+
+    const cgFilterCss = useMemo(() => {
+        if (cgCompareMode) return "none";
+        const b = 1 + cgBrightness;
+        const c = cgContrast;
+        const s = cgSaturation;
+        let filter = `brightness(${b}) contrast(${c}) saturate(${s})`;
+        if (cgTemperature > 0) {
+            filter += ` sepia(${cgTemperature * 0.4}%) hue-rotate(${-cgTemperature * 0.2}deg)`;
+        } else if (cgTemperature < 0) {
+            filter += ` hue-rotate(${cgTemperature * 0.6}deg)`;
+        }
+        return filter;
+    }, [cgCompareMode, cgBrightness, cgContrast, cgSaturation, cgTemperature]);
+
+    const runZeroTts = async () => {
+        setIsRunningZeroTts(true);
+        setZeroTtsError(null);
+        setZeroTtsResult(null);
+
+        try {
+            if (zeroTtsVoiceMode === "custom_upload" && zeroTtsCustomFile) {
+                if (
+                    /\.(mp3|wav|m4a|aac|ogg|flac)$/i.test(
+                        zeroTtsCustomFile.name,
+                    )
+                ) {
+                    setZeroTtsError(
+                        "ZeroTTS mã nguồn mở chạy suy luận trên CPU cần file gói giọng .zip (chứa voice.npz). Bạn hãy vào zeroweight.ai -> Thư viện giọng -> Bấm 'Tải về' để lấy file .zip và tải file .zip đó lên đây để nhân bản giọng đọc.",
+                    );
+                    setIsRunningZeroTts(false);
+                    return;
+                }
+            }
+
+            let response: Response;
+
+            if (zeroTtsVoiceMode === "custom_upload" && zeroTtsCustomFile) {
+                const formData = new FormData();
+                formData.append("text", zeroTtsText);
+                formData.append("voice", "custom");
+                formData.append("voiceFile", zeroTtsCustomFile);
+                formData.append("modelId", zeroTtsModelId);
+                formData.append("speed", zeroTtsSpeed);
+                formData.append(
+                    "normalizeVi",
+                    zeroTtsNormalizeVi ? "true" : "false",
+                );
+                formData.append("temperature", zeroTtsTemperature);
+                formData.append("topP", zeroTtsTopP);
+                formData.append("cfgScale", zeroTtsCfgScale);
+                formData.append("seed", zeroTtsSeed);
+                formData.append("sentenceSilence", zeroTtsSentenceSilence);
+
+                response = await fetch("/api/audio/zerotts", {
+                    method: "POST",
+                    body: formData,
+                });
+            } else {
+                const voice =
+                    zeroTtsVoiceMode === "custom_local"
+                        ? zeroTtsSelectedLocalVoice
+                        : zeroTtsPresetVoice;
+
+                response = await fetch("/api/audio/zerotts", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        text: zeroTtsText,
+                        voice,
+                        modelId: zeroTtsModelId,
+                        speed: Number(zeroTtsSpeed) || 1.0,
+                        normalizeVi: zeroTtsNormalizeVi,
+                        temperature: Number(zeroTtsTemperature) || 0.8,
+                        topP: Number(zeroTtsTopP) || 0.95,
+                        cfgScale: Number(zeroTtsCfgScale) || 1.0,
+                        seed: zeroTtsSeed !== "" ? Number(zeroTtsSeed) : 42,
+                        sentenceSilence: Number(zeroTtsSentenceSilence) || 0.2,
+                    }),
+                });
+            }
+
+            const payload: ZeroTtsApiPayload = await response.json();
+            if (!payload.ok) {
+                setZeroTtsError(
+                    payload.error || "Failed to generate speech with ZeroTTS.",
+                );
+                return;
+            }
+
+            setZeroTtsResult(payload.data);
+        } catch (err) {
+            setZeroTtsError(
+                err instanceof Error ? err.message : "ZeroTTS request failed.",
+            );
+        } finally {
+            setIsRunningZeroTts(false);
+        }
+    };
     const selectedAsset = useMemo(
         () => assets.find((asset) => asset._id === selectedAssetId) ?? null,
         [assets, selectedAssetId],
@@ -2000,6 +2684,1569 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
                                     </p>
                                 )}
                             </div>
+                        </div>
+                    </div>
+                </section>
+                <div className="border-t border-main" />
+                <section className="space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                            <h2 className="text-[13px] font-semibold text-main">
+                                ZeroTTS Voice Lab
+                            </h2>
+                            <p className="text-[10px] text-muted">
+                                Vietnamese Zero-Shot Voice Cloning & High-Speed
+                                CPU Text-to-Speech (zeroweight-ai/ZeroTTS)
+                            </p>
+                        </div>
+                        <div className="flex flex-wrap gap-1">
+                            <span className="border border-accent/40 bg-accent/10 px-2 py-0.5 text-[10px] font-semibold text-accent">
+                                Zero-Shot Voice Cloning
+                            </span>
+                            <span className="border border-main bg-secondary/50 px-2 py-0.5 text-[10px] font-medium text-muted">
+                                202M CPU-Optimized
+                            </span>
+                            <span className="border border-main bg-secondary/50 px-2 py-0.5 text-[10px] font-medium text-muted">
+                                48kHz Audio
+                            </span>
+                        </div>
+                    </div>
+                    <p className="text-[11px] text-muted leading-relaxed">
+                        Mô hình <strong>ZeroTTS</strong> (phát triển bởi{" "}
+                        <strong>ZeroWeight AI</strong>) tối ưu hóa cho tiếng
+                        Việt, có khả năng nhân bản giọng đọc (Voice Cloning) từ
+                        đoạn audio mẫu 3–30 giây mà không cần fine-tune. Hỗ trợ
+                        xử lý viết tắt, ngày tháng, giờ giấc, số tiền tự động
+                        bằng bộ chuẩn hóa tiếng Việt{" "}
+                        <code>normalize_vi_text</code>.
+                    </p>
+                    <div className="grid gap-4 lg:grid-cols-[380px_minmax(0,1fr)]">
+                        <div className="space-y-3 border border-main bg-secondary/20 p-4">
+                            <p className="text-[12px] font-semibold text-main">
+                                Voice & Synthesis Settings
+                            </p>
+                            <div>
+                                <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                    Voice Mode
+                                </span>
+                                <div className="grid grid-cols-3 gap-1">
+                                    <button
+                                        type="button"
+                                        onClick={() =>
+                                            setZeroTtsVoiceMode("preset")
+                                        }
+                                        className={`border px-2 py-1.5 text-[10px] font-semibold transition-colors ${
+                                            zeroTtsVoiceMode === "preset"
+                                                ? "border-accent bg-accent/15 text-accent"
+                                                : "border-main bg-main text-muted hover:text-main"
+                                        }`}
+                                    >
+                                        Preset Voices
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() =>
+                                            setZeroTtsVoiceMode("custom_upload")
+                                        }
+                                        className={`border px-2 py-1.5 text-[10px] font-semibold transition-colors ${
+                                            zeroTtsVoiceMode === "custom_upload"
+                                                ? "border-accent bg-accent/15 text-accent"
+                                                : "border-main bg-main text-muted hover:text-main"
+                                        }`}
+                                    >
+                                        Clone Voice (Upload)
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() =>
+                                            setZeroTtsVoiceMode("custom_local")
+                                        }
+                                        className={`border px-2 py-1.5 text-[10px] font-semibold transition-colors ${
+                                            zeroTtsVoiceMode === "custom_local"
+                                                ? "border-accent bg-accent/15 text-accent"
+                                                : "border-main bg-main text-muted hover:text-main"
+                                        }`}
+                                    >
+                                        Local Voice Files
+                                    </button>
+                                </div>
+                            </div>
+
+                            {zeroTtsVoiceMode === "preset" ? (
+                                <div className="space-y-2">
+                                    <label className="block">
+                                        <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                            Select Preset Voice
+                                        </span>
+                                        <select
+                                            value={zeroTtsPresetVoice}
+                                            onChange={(e) =>
+                                                setZeroTtsPresetVoice(
+                                                    e.target.value,
+                                                )
+                                            }
+                                            className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main outline-none focus:border-accent"
+                                        >
+                                            {zeroTtsPresetVoices.map((v) => (
+                                                <option key={v.id} value={v.id}>
+                                                    {v.name} (
+                                                    {v.gender === "female"
+                                                        ? "Nữ"
+                                                        : "Nam"}{" "}
+                                                    - Miền {v.region})
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </label>
+                                    {(() => {
+                                        const current =
+                                            zeroTtsPresetVoices.find(
+                                                (v) =>
+                                                    v.id === zeroTtsPresetVoice,
+                                            );
+                                        if (!current) return null;
+                                        return (
+                                            <div className="border border-main bg-main p-2 text-[10px] text-muted">
+                                                <p className="font-semibold text-main">
+                                                    {current.name}
+                                                </p>
+                                                <p className="mt-0.5 leading-relaxed">
+                                                    {current.description}
+                                                </p>
+                                            </div>
+                                        );
+                                    })()}
+                                </div>
+                            ) : null}
+
+                            {zeroTtsVoiceMode === "custom_upload" ? (
+                                <div className="space-y-2">
+                                    <label className="block">
+                                        <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                            Upload 10s Sample Voice or Voice
+                                            Pack (.wav, .mp3, .m4a, .zip, .npz)
+                                        </span>
+                                        <input
+                                            type="file"
+                                            accept="audio/*,.zip,.npz"
+                                            onChange={
+                                                handleZeroTtsCustomFileChange
+                                            }
+                                            className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main file:mr-2 file:border-0 file:bg-secondary file:px-2 file:py-1 file:text-[10px] file:font-semibold"
+                                        />
+                                    </label>
+                                    {zeroTtsCustomAudioPreviewUrl ? (
+                                        <div className="border border-main bg-main p-2 space-y-1">
+                                            <p className="text-[10px] font-semibold text-main">
+                                                Audio Sample Preview (10s Voice)
+                                            </p>
+                                            <audio
+                                                controls
+                                                src={
+                                                    zeroTtsCustomAudioPreviewUrl
+                                                }
+                                                className="w-full h-8"
+                                            />
+                                        </div>
+                                    ) : null}
+                                    {zeroTtsCustomFile &&
+                                    /\.(mp3|wav|m4a|aac|ogg|flac)$/i.test(
+                                        zeroTtsCustomFile.name,
+                                    ) ? (
+                                        <div className="border border-amber-500/30 bg-amber-500/10 p-2.5 text-[10px] text-amber-700 dark:text-amber-300 leading-relaxed">
+                                            <p className="font-semibold">
+                                                ⚠️ Hướng dẫn Clone giọng với
+                                                ZeroTTS
+                                            </p>
+                                            <p className="mt-1">
+                                                ZeroTTS mã nguồn mở chạy suy
+                                                luận trên CPU cần file gói giọng{" "}
+                                                <strong>
+                                                    <code>.zip</code>
+                                                </strong>{" "}
+                                                (chứa <code>voice.npz</code>)
+                                                được tạo từ web. Để nhân bản
+                                                giọng 10s của bạn:
+                                            </p>
+                                            <ol className="mt-1 list-decimal list-inside space-y-1 pl-1 text-[10px]">
+                                                <li>
+                                                    Mở{" "}
+                                                    <a
+                                                        href="https://zeroweight.ai"
+                                                        target="_blank"
+                                                        rel="noreferrer"
+                                                        className="underline font-semibold text-accent"
+                                                    >
+                                                        zeroweight.ai
+                                                    </a>{" "}
+                                                    (nơi bạn vừa test 10s thành
+                                                    công).
+                                                </li>
+                                                <li>
+                                                    Vào mục{" "}
+                                                    <strong>
+                                                        Thư viện giọng
+                                                    </strong>{" "}
+                                                    (Voice Library).
+                                                </li>
+                                                <li>
+                                                    Bấm nút{" "}
+                                                    <strong>Tải về</strong> để
+                                                    lưu file <code>.zip</code>{" "}
+                                                    về máy.
+                                                </li>
+                                                <li>
+                                                    Tải file{" "}
+                                                    <strong>
+                                                        <code>.zip</code>
+                                                    </strong>{" "}
+                                                    đó lên đây để bắt đầu đọc.
+                                                </li>
+                                            </ol>
+                                        </div>
+                                    ) : null}
+
+                                    {zeroTtsCustomFile &&
+                                    /\.(zip|npz)$/i.test(
+                                        zeroTtsCustomFile.name,
+                                    ) ? (
+                                        <div className="border border-emerald-500/30 bg-emerald-500/10 p-2 text-[10px] text-emerald-700 dark:text-emerald-300 leading-relaxed">
+                                            <p className="font-semibold">
+                                                ✅ Gói giọng hợp lệ (
+                                                {zeroTtsCustomFile.name})
+                                            </p>
+                                            <p className="mt-0.5">
+                                                Sẵn sàng nhân bản giọng đọc với
+                                                bộ trọng số ZeroTTS.
+                                            </p>
+                                        </div>
+                                    ) : null}
+
+                                    <p className="text-[10px] text-muted leading-relaxed">
+                                        💡 Bạn có thể dùng 8 giọng mẫu có sẵn ở
+                                        tab <strong>Preset Voices</strong> (như
+                                        Mai Chi, Gia Huy...) hoặc tải gói giọng{" "}
+                                        <code>.zip</code>/<code>.npz</code> từ{" "}
+                                        <a
+                                            href="https://zeroweight.ai"
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="text-accent underline font-semibold"
+                                        >
+                                            zeroweight.ai
+                                        </a>
+                                        .
+                                    </p>
+                                </div>
+                            ) : null}
+
+                            {zeroTtsVoiceMode === "custom_local" ? (
+                                <div className="space-y-2">
+                                    <label className="block">
+                                        <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                            Select Discovered Project Voice
+                                        </span>
+                                        <select
+                                            value={zeroTtsSelectedLocalVoice}
+                                            onChange={(e) =>
+                                                setZeroTtsSelectedLocalVoice(
+                                                    e.target.value,
+                                                )
+                                            }
+                                            className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main outline-none focus:border-accent"
+                                        >
+                                            {zeroTtsCustomVoices.length ===
+                                            0 ? (
+                                                <option value="">
+                                                    No local voice files found
+                                                    in voices/ or public/clone/
+                                                </option>
+                                            ) : (
+                                                zeroTtsCustomVoices.map((v) => (
+                                                    <option
+                                                        key={v.id}
+                                                        value={
+                                                            v.filePath || v.id
+                                                        }
+                                                    >
+                                                        {v.name} - {v.filePath}
+                                                    </option>
+                                                ))
+                                            )}
+                                        </select>
+                                    </label>
+                                    <p className="text-[10px] text-muted leading-relaxed">
+                                        Tự động quét các file .zip, .npz, .wav
+                                        trong thư mục <code>voices/</code> hoặc{" "}
+                                        <code>public/clone/</code>.
+                                    </p>
+                                </div>
+                            ) : null}
+
+                            <div className="grid gap-2 sm:grid-cols-2">
+                                <div className="space-y-1">
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-[10px] font-semibold text-muted">
+                                            Speech Speed ({zeroTtsSpeed}x)
+                                        </span>
+                                        <div className="flex gap-1">
+                                            {["1.0", "1.2", "1.4", "1.6"].map(
+                                                (s) => (
+                                                    <button
+                                                        key={s}
+                                                        type="button"
+                                                        onClick={() =>
+                                                            setZeroTtsSpeed(s)
+                                                        }
+                                                        className={`px-1.5 py-0.5 text-[9px] font-semibold border ${
+                                                            zeroTtsSpeed === s
+                                                                ? "border-accent bg-accent/20 text-accent"
+                                                                : "border-main bg-main text-muted hover:text-main"
+                                                        }`}
+                                                    >
+                                                        {s}x
+                                                    </button>
+                                                ),
+                                            )}
+                                        </div>
+                                    </div>
+                                    <input
+                                        type="range"
+                                        min="0.5"
+                                        max="2.2"
+                                        step="0.05"
+                                        value={zeroTtsSpeed}
+                                        onChange={(e) =>
+                                            setZeroTtsSpeed(e.target.value)
+                                        }
+                                        className="w-full accent-[var(--color-accent)]"
+                                    />
+                                </div>
+                                <label className="flex items-center justify-between border border-main bg-main px-3 py-2 text-[11px]">
+                                    <span className="font-semibold text-main text-[10px]">
+                                        Normalize VI Text
+                                    </span>
+                                    <input
+                                        type="checkbox"
+                                        checked={zeroTtsNormalizeVi}
+                                        onChange={(e) =>
+                                            setZeroTtsNormalizeVi(
+                                                e.target.checked,
+                                            )
+                                        }
+                                        className="h-4 w-4 accent-[var(--color-accent)]"
+                                    />
+                                </label>
+                            </div>
+
+                            <div className="grid gap-2 sm:grid-cols-2">
+                                <label className="block">
+                                    <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                        Model Target
+                                    </span>
+                                    <input
+                                        value={zeroTtsModelId}
+                                        onChange={(e) =>
+                                            setZeroTtsModelId(e.target.value)
+                                        }
+                                        placeholder="zeroweight-ai/ZeroTTS"
+                                        className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main outline-none focus:border-accent"
+                                    />
+                                </label>
+                                <label className="block">
+                                    <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                        Sentence Silence (s)
+                                    </span>
+                                    <input
+                                        value={zeroTtsSentenceSilence}
+                                        onChange={(e) =>
+                                            setZeroTtsSentenceSilence(
+                                                e.target.value,
+                                            )
+                                        }
+                                        placeholder="0.2"
+                                        className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main outline-none focus:border-accent"
+                                    />
+                                </label>
+                            </div>
+
+                            <div className="grid gap-2 sm:grid-cols-2">
+                                <label className="block">
+                                    <div className="flex items-center justify-between mb-1">
+                                        <span className="text-[10px] font-semibold text-muted">
+                                            Voice Match Strength (CFG:{" "}
+                                            {zeroTtsCfgScale}x)
+                                        </span>
+                                        <span className="text-[9px] text-accent font-semibold">
+                                            {Number(zeroTtsCfgScale) === 1.0
+                                                ? "⚡ Tốc độ gấp đôi (Mặc định)"
+                                                : Number(zeroTtsCfgScale) >= 1.2
+                                                  ? "🎯 Bám sát giọng mẫu"
+                                                  : "🌟 Tự nhiên"}
+                                        </span>
+                                    </div>
+                                    <input
+                                        type="range"
+                                        min="1.0"
+                                        max="1.8"
+                                        step="0.05"
+                                        value={zeroTtsCfgScale}
+                                        onChange={(e) =>
+                                            setZeroTtsCfgScale(e.target.value)
+                                        }
+                                        className="w-full accent-[var(--color-accent)]"
+                                    />
+                                    <span className="mt-0.5 block text-[9px] text-muted">
+                                        1.0x (Mặc định - nhanh gấp đôi) · 1.25x
+                                        – 1.4x (Bám sát mẫu hơn)
+                                    </span>
+                                </label>
+                                <div className="block">
+                                    <span className="mb-1 block text-[10px] font-semibold text-muted">
+                                        Random Seed (Cố định giọng)
+                                    </span>
+                                    <div className="flex gap-1">
+                                        <input
+                                            value={zeroTtsSeed}
+                                            onChange={(e) =>
+                                                setZeroTtsSeed(e.target.value)
+                                            }
+                                            placeholder="42 (hoặc -1 ngẫu nhiên)"
+                                            className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main outline-none focus:border-accent"
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() =>
+                                                setZeroTtsSeed(
+                                                    String(
+                                                        Math.floor(
+                                                            Math.random() *
+                                                                100000,
+                                                        ),
+                                                    ),
+                                                )
+                                            }
+                                            title="Sinh Seed ngẫu nhiên mới"
+                                            className="border border-main bg-main px-2 py-1 text-[10px] font-medium text-muted hover:text-main"
+                                        >
+                                            🎲
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="grid gap-2 sm:grid-cols-2">
+                                <label className="block">
+                                    <div className="flex items-center justify-between mb-1">
+                                        <span className="text-[10px] font-semibold text-muted">
+                                            Background Music (Nhạc nền)
+                                        </span>
+                                        {zeroTtsBackgroundMusic ? (
+                                            <span className="text-[9px] text-accent font-semibold flex items-center gap-1">
+                                                <Music className="h-3 w-3" />{" "}
+                                                Đang bật
+                                            </span>
+                                        ) : null}
+                                    </div>
+                                    <select
+                                        value={zeroTtsBackgroundMusic}
+                                        onChange={(e) =>
+                                            setZeroTtsBackgroundMusic(
+                                                e.target.value,
+                                            )
+                                        }
+                                        className="w-full border border-main bg-main px-2 py-1.5 text-[11px] text-main outline-none focus:border-accent"
+                                    >
+                                        <option value="">Không</option>
+                                        {zeroTtsBgmList.map((bgm) => (
+                                            <option
+                                                key={bgm.source}
+                                                value={bgm.source}
+                                            >
+                                                {bgm.label}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    <span className="mt-0.5 block text-[9px] text-muted">
+                                        Tự động quét nhạc từ thư mục{" "}
+                                        <code>public/musics/</code>
+                                    </span>
+                                </label>
+                                <div className="block">
+                                    <div className="flex items-center justify-between mb-1">
+                                        <span className="text-[10px] font-semibold text-muted">
+                                            BGM Volume (
+                                            {Math.round(
+                                                Number(zeroTtsBgmVolume) * 100,
+                                            )}
+                                            %)
+                                        </span>
+                                        <div className="flex gap-1">
+                                            {[
+                                                "0.15",
+                                                "0.25",
+                                                "0.40",
+                                                "0.60",
+                                            ].map((val) => (
+                                                <button
+                                                    key={val}
+                                                    type="button"
+                                                    onClick={() =>
+                                                        setZeroTtsBgmVolume(val)
+                                                    }
+                                                    className={`border border-main px-1.5 py-0.5 text-[9px] ${
+                                                        zeroTtsBgmVolume === val
+                                                            ? "bg-accent text-white font-semibold"
+                                                            : "bg-main text-muted hover:text-main"
+                                                    }`}
+                                                >
+                                                    {Math.round(
+                                                        Number(val) * 100,
+                                                    )}
+                                                    %
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    <input
+                                        type="range"
+                                        min="0.05"
+                                        max="1.0"
+                                        step="0.05"
+                                        value={zeroTtsBgmVolume}
+                                        onChange={(e) =>
+                                            setZeroTtsBgmVolume(e.target.value)
+                                        }
+                                        disabled={!zeroTtsBackgroundMusic}
+                                        className="w-full accent-[var(--color-accent)] disabled:opacity-40"
+                                    />
+                                    <span className="mt-0.5 block text-[9px] text-muted">
+                                        Mặc định 25% giúp giọng đọc luôn rõ ràng
+                                        trên nền nhạc.
+                                    </span>
+                                </div>
+                            </div>
+
+                            <div className="grid gap-2 sm:grid-cols-2">
+                                <div className="block">
+                                    <div className="flex items-center justify-between mb-1">
+                                        <span className="text-[10px] font-semibold text-muted">
+                                            Synchronized Video (Video chạy cùng)
+                                        </span>
+                                        {zeroTtsVideoFile ? (
+                                            <button
+                                                type="button"
+                                                onClick={handleZeroTtsRemoveVideo}
+                                                className="text-[9px] text-rose-500 hover:underline flex items-center gap-0.5"
+                                                title="Hủy video đã tải lên"
+                                            >
+                                                <X className="h-3 w-3" /> Hủy video
+                                            </button>
+                                        ) : null}
+                                    </div>
+                                    <label className="relative flex cursor-pointer flex-col items-center justify-center border border-dashed border-main bg-main/50 p-2 text-center transition-colors hover:border-accent">
+                                        <input
+                                            type="file"
+                                            accept="video/*"
+                                            onChange={handleZeroTtsVideoChange}
+                                            className="hidden"
+                                        />
+                                        <div className="flex items-center gap-1.5 text-[11px] text-main">
+                                            <Video className="h-3.5 w-3.5 text-accent" />
+                                            <span className="truncate max-w-[180px] font-medium">
+                                                {zeroTtsVideoFile
+                                                    ? zeroTtsVideoFile.name
+                                                    : "Tải video lên (.mp4, .webm...)"}
+                                            </span>
+                                        </div>
+                                        <span className="text-[9px] text-muted mt-0.5">
+                                            {zeroTtsVideoFile
+                                                ? `${formatBytes(zeroTtsVideoFile.size)} · Đã gắn video`
+                                                : "Video tự động phát đồng bộ cùng lời speech"}
+                                        </span>
+                                    </label>
+                                </div>
+                                <div className="block">
+                                    <div className="flex items-center justify-between mb-1">
+                                        <span className="text-[10px] font-semibold text-muted">
+                                            Video Volume (
+                                            {Math.round(
+                                                Number(zeroTtsVideoVolume) * 100,
+                                            )}
+                                            %)
+                                        </span>
+                                        <div className="flex gap-1">
+                                            {[
+                                                "0.00",
+                                                "0.10",
+                                                "0.15",
+                                                "0.25",
+                                                "0.50",
+                                            ].map((val) => (
+                                                <button
+                                                    key={val}
+                                                    type="button"
+                                                    onClick={() =>
+                                                        setZeroTtsVideoVolume(val)
+                                                    }
+                                                    className={`border border-main px-1.5 py-0.5 text-[9px] ${
+                                                        zeroTtsVideoVolume === val
+                                                            ? "bg-accent text-white font-semibold"
+                                                            : "bg-main text-muted hover:text-main"
+                                                    }`}
+                                                >
+                                                    {val === "0.00"
+                                                        ? "Tắt"
+                                                        : `${Math.round(
+                                                              Number(val) * 100,
+                                                          )}%`}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    <input
+                                        type="range"
+                                        min="0.0"
+                                        max="1.0"
+                                        step="0.05"
+                                        value={zeroTtsVideoVolume}
+                                        onChange={(e) =>
+                                            setZeroTtsVideoVolume(e.target.value)
+                                        }
+                                        disabled={!zeroTtsVideoFile}
+                                        className="w-full accent-[var(--color-accent)] disabled:opacity-40"
+                                    />
+                                    <span className="mt-0.5 block text-[9px] text-muted">
+                                        Mặc định 15% (0.15) giúp giữ âm thanh video gốc nhỏ nhẹ, không lấn át giọng đọc.
+                                    </span>
+                                </div>
+                            </div>
+
+                            {/* CapCut VIP Subtitles Settings */}
+                            <div className="border border-main bg-main/40 p-2.5 space-y-2">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-1.5">
+                                        <Type className="h-3.5 w-3.5 text-accent" />
+                                        <span className="text-[10px] font-semibold text-main">
+                                            CapCut VIP Captions (Phụ đề Video)
+                                        </span>
+                                    </div>
+                                    <label className="flex items-center gap-1.5 cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            checked={zeroTtsShowCaptions}
+                                            onChange={(e) =>
+                                                setZeroTtsShowCaptions(
+                                                    e.target.checked,
+                                                )
+                                            }
+                                            className="h-3.5 w-3.5 accent-[var(--color-accent)]"
+                                        />
+                                        <span className="text-[10px] font-medium text-main">
+                                            Bật phụ đề
+                                        </span>
+                                    </label>
+                                </div>
+
+                                {zeroTtsShowCaptions ? (
+                                    <div className="grid gap-2 pt-1 border-t border-main/60">
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <label className="block">
+                                                <span className="mb-1 block text-[9px] font-medium text-muted">
+                                                    Style Phụ Đề
+                                                </span>
+                                                <select
+                                                    value={zeroTtsCaptionStyle}
+                                                    onChange={(e) =>
+                                                        setZeroTtsCaptionStyle(
+                                                            e.target
+                                                                .value as CapCutCaptionStyle,
+                                                        )
+                                                    }
+                                                    className="w-full border border-main bg-main px-1.5 py-1 text-[10px] text-main outline-none focus:border-accent"
+                                                >
+                                                    <option value="capcut_yellow">
+                                                        🌟 CapCut Yellow Pop (Hot Trend)
+                                                    </option>
+                                                    <option value="cinematic_white">
+                                                        🎬 Cinematic White (Điện Ảnh)
+                                                    </option>
+                                                    <option value="neon_emerald">
+                                                        ⚡ TikTok Neon Emerald
+                                                    </option>
+                                                    <option value="sunset_orange">
+                                                        🔥 Sunset Amber Vintage
+                                                    </option>
+                                                </select>
+                                            </label>
+
+                                            <label className="block">
+                                                <span className="mb-1 block text-[9px] font-medium text-muted">
+                                                    Vị trí hiển thị
+                                                </span>
+                                                <select
+                                                    value={zeroTtsCaptionPosition}
+                                                    onChange={(e) =>
+                                                        setZeroTtsCaptionPosition(
+                                                            e.target
+                                                                .value as CapCutCaptionPosition,
+                                                        )
+                                                    }
+                                                    className="w-full border border-main bg-main px-1.5 py-1 text-[10px] text-main outline-none focus:border-accent"
+                                                >
+                                                    <option value="bottom">
+                                                        Dưới cùng (Chuẩn TikTok/Reels)
+                                                    </option>
+                                                    <option value="center">
+                                                        Chính giữa (Tâm điểm)
+                                                    </option>
+                                                    <option value="top">
+                                                        Phía trên (Top)
+                                                    </option>
+                                                </select>
+                                            </label>
+                                        </div>
+
+                                        <div className="flex items-center justify-between gap-2 text-[9px]">
+                                            <div className="flex items-center gap-1">
+                                                <span className="text-muted font-medium">
+                                                    Cỡ chữ:
+                                                </span>
+                                                {(["sm", "md", "lg"] as const).map(
+                                                    (sz) => (
+                                                        <button
+                                                            key={sz}
+                                                            type="button"
+                                                            onClick={() =>
+                                                                setZeroTtsCaptionSize(
+                                                                    sz,
+                                                                )
+                                                            }
+                                                            className={`px-1.5 py-0.5 border text-[9px] ${
+                                                                zeroTtsCaptionSize ===
+                                                                sz
+                                                                    ? "border-accent bg-accent/20 text-accent font-semibold"
+                                                                    : "border-main bg-main text-muted"
+                                                            }`}
+                                                        >
+                                                            {sz === "sm"
+                                                                ? "Nhỏ"
+                                                                : sz === "md"
+                                                                  ? "Vừa"
+                                                                  : "Lớn VIP"}
+                                                        </button>
+                                                    ),
+                                                )}
+                                            </div>
+
+                                            <label className="flex items-center gap-1 cursor-pointer">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={
+                                                        zeroTtsCaptionUppercase
+                                                    }
+                                                    onChange={(e) =>
+                                                        setZeroTtsCaptionUppercase(
+                                                            e.target.checked,
+                                                        )
+                                                    }
+                                                    className="h-3 w-3 accent-[var(--color-accent)]"
+                                                />
+                                                <span className="text-muted">
+                                                    VIẾT HOA
+                                                </span>
+                                            </label>
+                                        </div>
+                                    </div>
+                                ) : null}
+                            </div>
+
+                            <button
+                                type="button"
+                                onClick={runZeroTts}
+                                disabled={
+                                    isRunningZeroTts ||
+                                    (zeroTtsVoiceMode === "custom_upload" &&
+                                        !zeroTtsCustomFile)
+                                }
+                                className="inline-flex w-full items-center justify-center gap-2 border border-accent/35 bg-accent/10 px-3 py-2 text-[12px] font-semibold text-accent transition-colors hover:bg-accent/15 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                                <Volume2 className="h-4 w-4" />
+                                {isRunningZeroTts
+                                    ? "Synthesizing with ZeroTTS..."
+                                    : "Synthesize Speech (ZeroTTS)"}
+                            </button>
+                        </div>
+
+                        <div className="space-y-4">
+                            <div className="border border-main bg-secondary/20 p-4">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <p className="text-[12px] font-semibold text-main">
+                                        Vietnamese Text Input
+                                    </p>
+                                    <div className="flex flex-wrap gap-1">
+                                        <button
+                                            type="button"
+                                            onClick={() =>
+                                                setZeroTtsText(
+                                                    "Bản tin hôm nay ngày 29/09/2026 lúc 15h30, thị trường ghi nhận sự bứt phá với các công nghệ AI giọng nói thế hệ mới.",
+                                                )
+                                            }
+                                            className="border border-main bg-main px-2 py-0.5 text-[10px] text-muted hover:text-main"
+                                        >
+                                            🗞️ Tin tức
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() =>
+                                                setZeroTtsText(
+                                                    "Xin chào bạn, hôm nay bạn cảm thấy thế nào? Mình là trợ lý OmniVideo, rất vui được hỗ trợ bạn tạo nội dung video.",
+                                                )
+                                            }
+                                            className="border border-main bg-main px-2 py-0.5 text-[10px] text-muted hover:text-main"
+                                        >
+                                            💬 Trò chuyện
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() =>
+                                                setZeroTtsText(
+                                                    "Chiếc áo này đang có giá ưu đãi chỉ 250.000đ, giảm ngay 30% khi bạn đặt hàng trong livestream lúc 20h00 tối nay nhé!",
+                                                )
+                                            }
+                                            className="border border-main bg-main px-2 py-0.5 text-[10px] text-muted hover:text-main"
+                                        >
+                                            🛍️ Review / Giá
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() =>
+                                                setZeroTtsText(
+                                                    "Đêm hôm đó, thành phố chìm trong cơn mưa rào bất chợt. Từng giọt nước lộp độp rơi trên mái hiên cũ, gợi lại bao ký ức ngày xưa.",
+                                                )
+                                            }
+                                            className="border border-main bg-main px-2 py-0.5 text-[10px] text-muted hover:text-main"
+                                        >
+                                            📖 Kể chuyện
+                                        </button>
+                                    </div>
+                                </div>
+                                <textarea
+                                    rows={6}
+                                    value={zeroTtsText}
+                                    onChange={(e) =>
+                                        setZeroTtsText(e.target.value)
+                                    }
+                                    placeholder="Nhập văn bản tiếng Việt hoặc song ngữ cần đọc..."
+                                    className="mt-2 w-full resize-none border border-main bg-main px-2 py-1.5 text-[11px] leading-5 text-main outline-none focus:border-accent"
+                                />
+                                {zeroTtsError ? (
+                                    <p className="mt-3 border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-[11px] leading-5 text-rose-700">
+                                        {zeroTtsError}
+                                    </p>
+                                ) : null}
+                            </div>
+
+                            {zeroTtsResult && zeroTtsAudioUrl ? (
+                                <div className="border border-main bg-secondary/20 p-4 space-y-3">
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-2">
+                                            <Volume2 className="h-4 w-4 text-accent" />
+                                            <p className="text-[12px] font-semibold text-main">
+                                                ZeroTTS Audio Output (48kHz)
+                                            </p>
+                                        </div>
+                                        <div className="flex items-center gap-2 text-[10px] text-muted font-mono">
+                                            <span>
+                                                Thời gian tạo:{" "}
+                                                <strong className="text-main">
+                                                    {zeroTtsResult.generationDurationMs >=
+                                                    60000
+                                                        ? `${Math.floor(zeroTtsResult.generationDurationMs / 60000)}m ${Math.round((zeroTtsResult.generationDurationMs % 60000) / 1000)}s`
+                                                        : `${(zeroTtsResult.generationDurationMs / 1000).toFixed(1)}s`}
+                                                </strong>
+                                            </span>
+                                            <span>·</span>
+                                            <span className="text-accent font-semibold">
+                                                {(
+                                                    zeroTtsResult.durationMs /
+                                                    Math.max(
+                                                        1,
+                                                        zeroTtsResult.generationDurationMs,
+                                                    )
+                                                ).toFixed(1)}
+                                                x Realtime
+                                            </span>
+                                            <span>·</span>
+                                            <span>
+                                                {formatTime(
+                                                    zeroTtsResult.durationMs /
+                                                        1000,
+                                                )}
+                                            </span>
+                                        </div>
+                                    </div>
+                                    {zeroTtsVideoUrl ? (
+                                        <div className="space-y-2">
+                                            <div className="flex items-center justify-between border border-accent/30 bg-accent/5 px-2.5 py-1.5 text-[10px] text-accent">
+                                                <span className="flex items-center gap-1.5 font-medium">
+                                                    <Video className="h-3.5 w-3.5" />
+                                                    Video đang chạy cùng:{" "}
+                                                    <strong>
+                                                        {zeroTtsVideoFile?.name ||
+                                                            "Video đã tải lên"}
+                                                    </strong>{" "}
+                                                    (
+                                                    {Math.round(
+                                                        Number(zeroTtsVideoVolume) *
+                                                            100,
+                                                    )}
+                                                    % âm lượng gốc)
+                                                </span>
+                                                <span className="text-[9px] text-muted">
+                                                    Tự động đồng bộ theo Play/Pause của giọng đọc
+                                                </span>
+                                            </div>
+                                            <div className="relative overflow-hidden rounded border border-main bg-black aspect-video max-h-[380px] flex items-center justify-center">
+                                                <video
+                                                    ref={zeroTtsVideoRef}
+                                                    src={zeroTtsVideoUrl}
+                                                    loop
+                                                    playsInline
+                                                    controls
+                                                    onTimeUpdate={(e) =>
+                                                        setZeroTtsSpeechCurrentTime(
+                                                            e.currentTarget
+                                                                .currentTime,
+                                                        )
+                                                    }
+                                                    onPlay={handleZeroTtsVideoPlay}
+                                                    onPause={handleZeroTtsVideoPause}
+                                                    onSeeked={handleZeroTtsVideoSeeked}
+                                                    className="h-full w-full object-contain"
+                                                />
+                                                {zeroTtsShowCaptions &&
+                                                currentWordsChunk.length > 0 ? (
+                                                    <div
+                                                        className={`pointer-events-none absolute z-20 max-w-[90%] text-center transition-all duration-150 ${
+                                                            zeroTtsCaptionPosition ===
+                                                            "top"
+                                                                ? "top-6 left-1/2 -translate-x-1/2"
+                                                                : zeroTtsCaptionPosition ===
+                                                                    "center"
+                                                                  ? "top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"
+                                                                  : "bottom-6 left-1/2 -translate-x-1/2"
+                                                        }`}
+                                                    >
+                                                        <div
+                                                            className={`inline-flex flex-wrap items-center justify-center gap-1.5 transition-all ${
+                                                                zeroTtsCaptionSize ===
+                                                                "sm"
+                                                                    ? "text-xs md:text-sm px-3.5 py-1.5"
+                                                                    : zeroTtsCaptionSize ===
+                                                                        "lg"
+                                                                      ? "text-base md:text-xl px-6 py-3.5"
+                                                                      : "text-sm md:text-base px-5 py-2.5"
+                                                            } ${
+                                                                zeroTtsCaptionStyle ===
+                                                                "cinematic_white"
+                                                                    ? "bg-black/75 backdrop-blur-md border border-white/20 shadow-2xl rounded-xl"
+                                                                    : zeroTtsCaptionStyle ===
+                                                                        "neon_emerald"
+                                                                      ? "bg-black/85 backdrop-blur-md border border-emerald-400/40 shadow-[0_8px_30px_rgba(16,185,129,0.3)] rounded-2xl"
+                                                                      : zeroTtsCaptionStyle ===
+                                                                          "sunset_orange"
+                                                                        ? "bg-black/85 backdrop-blur-md border border-orange-500/40 shadow-[0_8px_30px_rgba(249,115,22,0.3)] rounded-2xl"
+                                                                        : "bg-black/80 backdrop-blur-md border border-yellow-500/30 shadow-[0_8px_30px_rgb(0,0,0,0.8)] rounded-2xl"
+                                                            }`}
+                                                        >
+                                                            {currentWordsChunk.map(
+                                                                (item) => (
+                                                                    <span
+                                                                        key={
+                                                                            item.absoluteIndex
+                                                                        }
+                                                                        className={`inline-block transition-transform duration-100 ${
+                                                                            item.isActive
+                                                                                ? zeroTtsCaptionStyle ===
+                                                                                  "cinematic_white"
+                                                                                    ? "text-white scale-110 font-black drop-shadow-[0_2px_14px_rgba(255,255,255,1)] underline decoration-white decoration-2 underline-offset-4"
+                                                                                    : zeroTtsCaptionStyle ===
+                                                                                        "neon_emerald"
+                                                                                      ? "text-[#34D399] scale-110 font-black drop-shadow-[0_2px_14px_rgba(52,211,153,0.9)] underline decoration-[#34D399] decoration-2 underline-offset-4"
+                                                                                      : zeroTtsCaptionStyle ===
+                                                                                          "sunset_orange"
+                                                                                        ? "text-[#FB923C] scale-110 font-black drop-shadow-[0_2px_14px_rgba(251,146,60,0.9)] underline decoration-[#FB923C] decoration-2 underline-offset-4"
+                                                                                        : "text-[#FFE600] scale-110 font-black drop-shadow-[0_2px_12px_rgba(255,230,0,0.9)] underline decoration-[#FFE600] decoration-2 underline-offset-4"
+                                                                                : item.isPast
+                                                                                  ? zeroTtsCaptionStyle ===
+                                                                                    "sunset_orange"
+                                                                                      ? "text-amber-100 font-extrabold"
+                                                                                      : "text-white font-extrabold"
+                                                                                  : "text-white/60 font-medium"
+                                                                        }`}
+                                                                    >
+                                                                        {zeroTtsCaptionUppercase
+                                                                            ? item.word.toUpperCase()
+                                                                            : item.word}
+                                                                    </span>
+                                                                ),
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                ) : null}
+                                            </div>
+                                        </div>
+                                    ) : null}
+                                    <audio
+                                        ref={zeroTtsSpeechAudioRef}
+                                        controls
+                                        className="w-full"
+                                        src={zeroTtsAudioUrl}
+                                        onTimeUpdate={(e) =>
+                                            setZeroTtsSpeechCurrentTime(
+                                                e.currentTarget.currentTime,
+                                            )
+                                        }
+                                        onPlay={handleZeroTtsSpeechPlay}
+                                        onPause={handleZeroTtsSpeechPause}
+                                        onSeeked={handleZeroTtsSpeechSeeked}
+                                        onEnded={handleZeroTtsSpeechEnded}
+                                    />
+                                    {zeroTtsBackgroundMusic ? (
+                                        <audio
+                                            ref={zeroTtsBgmAudioRef}
+                                            src={zeroTtsBackgroundMusic}
+                                            loop
+                                            preload="auto"
+                                            className="hidden"
+                                        />
+                                    ) : null}
+                                    {zeroTtsBackgroundMusic ? (
+                                        <div className="flex items-center justify-between border border-accent/30 bg-accent/5 px-2.5 py-1.5 text-[10px] text-accent">
+                                            <span className="flex items-center gap-1.5 font-medium">
+                                                <Music className="h-3.5 w-3.5" />
+                                                Nhạc nền đang chạy cùng:{" "}
+                                                <strong>
+                                                    {zeroTtsBgmList.find(
+                                                        (b) =>
+                                                            b.source ===
+                                                            zeroTtsBackgroundMusic,
+                                                    )?.label ||
+                                                        zeroTtsBackgroundMusic}
+                                                </strong>{" "}
+                                                (
+                                                {Math.round(
+                                                    Number(zeroTtsBgmVolume) *
+                                                        100,
+                                                )}
+                                                % âm lượng)
+                                            </span>
+                                            <span className="text-[9px] text-muted">
+                                                Tự động đồng bộ theo Play/Pause
+                                                của giọng đọc
+                                            </span>
+                                        </div>
+                                    ) : null}
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 text-[10px]">
+                                        <div className="border border-main bg-main p-2">
+                                            <span className="text-muted block">
+                                                Thời lượng
+                                            </span>
+                                            <span className="font-semibold text-main">
+                                                {(
+                                                    zeroTtsResult.durationMs /
+                                                    1000
+                                                ).toFixed(2)}
+                                                s
+                                            </span>
+                                        </div>
+                                        <div className="border border-main bg-main p-2">
+                                            <span className="text-muted block">
+                                                Thời gian tạo
+                                            </span>
+                                            <span className="font-semibold text-accent">
+                                                {zeroTtsResult.generationDurationMs >=
+                                                60000
+                                                    ? `${Math.floor(zeroTtsResult.generationDurationMs / 60000)}m ${Math.round((zeroTtsResult.generationDurationMs % 60000) / 1000)}s`
+                                                    : `${(zeroTtsResult.generationDurationMs / 1000).toFixed(1)}s`}
+                                            </span>
+                                        </div>
+                                        <div className="border border-main bg-main p-2">
+                                            <span className="text-muted block">
+                                                Tốc độ (RTF)
+                                            </span>
+                                            <span className="font-semibold text-emerald-600 dark:text-emerald-400">
+                                                {(
+                                                    zeroTtsResult.durationMs /
+                                                    Math.max(
+                                                        1,
+                                                        zeroTtsResult.generationDurationMs,
+                                                    )
+                                                ).toFixed(2)}
+                                                x Realtime
+                                            </span>
+                                        </div>
+                                        <div className="border border-main bg-main p-2">
+                                            <span className="text-muted block">
+                                                Dung lượng
+                                            </span>
+                                            <span className="font-semibold text-main">
+                                                {formatBytes(
+                                                    zeroTtsResult.byteLength,
+                                                )}
+                                            </span>
+                                        </div>
+                                        <div className="border border-main bg-main p-2">
+                                            <span className="text-muted block">
+                                                Sample Rate
+                                            </span>
+                                            <span className="font-semibold text-main">
+                                                {zeroTtsResult.sampleRate ||
+                                                    48000}{" "}
+                                                Hz
+                                            </span>
+                                        </div>
+                                        <div className="border border-main bg-main p-2">
+                                            <span className="text-muted block">
+                                                Voice
+                                            </span>
+                                            <span className="font-semibold text-main truncate block">
+                                                {zeroTtsResult.voice}
+                                            </span>
+                                        </div>
+                                    </div>
+                                    {zeroTtsResult.normalizedText &&
+                                    zeroTtsResult.normalizedText !==
+                                        zeroTtsResult.text ? (
+                                        <div className="border border-main bg-main p-2 text-[10px]">
+                                            <span className="text-muted block font-semibold mb-1">
+                                                Normalized Spoken Text:
+                                            </span>
+                                            <p className="text-main leading-relaxed">
+                                                {zeroTtsResult.normalizedText}
+                                            </p>
+                                        </div>
+                                    ) : null}
+                                    <div className="flex justify-end">
+                                        <a
+                                            href={zeroTtsAudioUrl}
+                                            download="zerotts-output.wav"
+                                            className="inline-flex items-center gap-1.5 border border-main bg-main px-3 py-1.5 text-[10px] font-semibold text-main hover:bg-secondary"
+                                        >
+                                            <Download className="h-3 w-3" />
+                                            Download ZeroTTS WAV
+                                        </a>
+                                    </div>
+                                </div>
+                            ) : null}
+                        </div>
+                    </div>
+                </section>
+
+                {/* Video Color Grading & Lighting Studio */}
+                <section className="border border-main bg-card p-4 space-y-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-main pb-3">
+                        <div>
+                            <div className="flex items-center gap-2">
+                                <SunMedium className="h-4 w-4 text-accent" />
+                                <h3 className="text-sm font-semibold text-main">
+                                    Video Color Grading & Lighting Studio
+                                </h3>
+                                <span className="rounded bg-accent/15 px-1.5 py-0.5 text-[10px] font-semibold text-accent">
+                                    Anti-Overexposure & Moody Engine
+                                </span>
+                            </div>
+                            <p className="mt-1 text-[11px] text-muted">
+                                Xử lý video chuyên nghiệp: Khắc phục triệt để video bị chói sáng, lóa trắng do camera cũ (Anti-Overexposure) hoặc biến hóa phong cách tối hơn, đậm màu hơn, trầm buồn (Moody Melancholy / Noir). Live 60fps CSS Preview & Xuất video FFmpeg.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div className="grid gap-4 lg:grid-cols-[400px_minmax(0,1fr)]">
+                        {/* Left column: Presets & Fine-tuning Controls */}
+                        <div className="space-y-3 border border-main bg-secondary/20 p-4">
+                            <div className="flex items-center justify-between">
+                                <p className="text-[12px] font-semibold text-main flex items-center gap-1.5">
+                                    <SlidersHorizontal className="h-3.5 w-3.5 text-accent" />
+                                    1-Click Pro Color Presets
+                                </p>
+                                <span className="text-[10px] text-muted">
+                                    Chọn để áp dụng nhanh
+                                </span>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-1.5">
+                                {COLOR_GRADE_PRESETS.map((preset) => {
+                                    const isSelected = cgActivePreset === preset.id;
+                                    return (
+                                        <button
+                                            key={preset.id}
+                                            type="button"
+                                            onClick={() => applyColorGradePreset(preset.id)}
+                                            className={`flex flex-col text-left p-2 border transition-all text-[10px] ${
+                                                isSelected
+                                                    ? "border-accent bg-accent/15 text-accent shadow-sm"
+                                                    : "border-main bg-main text-muted hover:text-main hover:border-accent/40"
+                                            }`}
+                                        >
+                                            <span className="font-semibold truncate">
+                                                {preset.label}
+                                            </span>
+                                            <span className="text-[9px] text-muted truncate mt-0.5">
+                                                {preset.badge}
+                                            </span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+
+                            {/* Manual Sliders */}
+                            <div className="pt-2 border-t border-main space-y-2.5">
+                                <p className="text-[11px] font-semibold text-main">
+                                    Tinh Chỉnh Thủ Công (Manual Fine-Tuning)
+                                </p>
+
+                                {/* Brightness */}
+                                <div className="space-y-1">
+                                    <div className="flex justify-between text-[10px]">
+                                        <span className="text-muted">Độ sáng (Brightness)</span>
+                                        <span className="font-mono font-medium text-main">
+                                            {cgBrightness > 0 ? `+${cgBrightness.toFixed(2)}` : cgBrightness.toFixed(2)}
+                                        </span>
+                                    </div>
+                                    <input
+                                        type="range"
+                                        min="-0.50"
+                                        max="0.50"
+                                        step="0.01"
+                                        value={cgBrightness}
+                                        onChange={(e) => {
+                                            setCgBrightness(Number(e.target.value));
+                                            setCgActivePreset("custom");
+                                        }}
+                                        className="w-full accent-[var(--color-accent)]"
+                                    />
+                                    <div className="flex justify-between text-[8px] text-muted">
+                                        <span>Tối đi (-0.50)</span>
+                                        <span>Chuẩn (0.00)</span>
+                                        <span>Sáng lên (+0.50)</span>
+                                    </div>
+                                </div>
+
+                                {/* Contrast */}
+                                <div className="space-y-1">
+                                    <div className="flex justify-between text-[10px]">
+                                        <span className="text-muted">Độ tương phản (Contrast)</span>
+                                        <span className="font-mono font-medium text-main">
+                                            {cgContrast.toFixed(2)}x
+                                        </span>
+                                    </div>
+                                    <input
+                                        type="range"
+                                        min="0.5"
+                                        max="2.0"
+                                        step="0.02"
+                                        value={cgContrast}
+                                        onChange={(e) => {
+                                            setCgContrast(Number(e.target.value));
+                                            setCgActivePreset("custom");
+                                        }}
+                                        className="w-full accent-[var(--color-accent)]"
+                                    />
+                                    <div className="flex justify-between text-[8px] text-muted">
+                                        <span>Nhạt nhòa (0.50)</span>
+                                        <span>Gốc (1.00)</span>
+                                        <span>Đậm gắt (2.00)</span>
+                                    </div>
+                                </div>
+
+                                {/* Saturation */}
+                                <div className="space-y-1">
+                                    <div className="flex justify-between text-[10px]">
+                                        <span className="text-muted">Độ bão hòa màu (Saturation)</span>
+                                        <span className="font-mono font-medium text-main">
+                                            {cgSaturation.toFixed(2)}x
+                                        </span>
+                                    </div>
+                                    <input
+                                        type="range"
+                                        min="0.0"
+                                        max="2.5"
+                                        step="0.05"
+                                        value={cgSaturation}
+                                        onChange={(e) => {
+                                            setCgSaturation(Number(e.target.value));
+                                            setCgActivePreset("custom");
+                                        }}
+                                        className="w-full accent-[var(--color-accent)]"
+                                    />
+                                    <div className="flex justify-between text-[8px] text-muted">
+                                        <span>Đen trắng (0.00)</span>
+                                        <span>Gốc (1.00)</span>
+                                        <span>Rực rỡ (2.50)</span>
+                                    </div>
+                                </div>
+
+                                {/* Gamma Curve */}
+                                <div className="space-y-1">
+                                    <div className="flex justify-between text-[10px]">
+                                        <span className="text-muted">Cân bằng Gamma (Highlight & Shadow)</span>
+                                        <span className="font-mono font-medium text-main">
+                                            {cgGamma.toFixed(2)}
+                                        </span>
+                                    </div>
+                                    <input
+                                        type="range"
+                                        min="0.5"
+                                        max="2.0"
+                                        step="0.02"
+                                        value={cgGamma}
+                                        onChange={(e) => {
+                                            setCgGamma(Number(e.target.value));
+                                            setCgActivePreset("custom");
+                                        }}
+                                        className="w-full accent-[var(--color-accent)]"
+                                    />
+                                    <div className="flex justify-between text-[8px] text-muted">
+                                        <span>Hạ chói & dìm sáng (&lt;1.0)</span>
+                                        <span>Gốc (1.0)</span>
+                                        <span>Nâng shadow (&gt;1.0)</span>
+                                    </div>
+                                </div>
+
+                                {/* Vignette */}
+                                <div className="space-y-1">
+                                    <div className="flex justify-between text-[10px]">
+                                        <span className="text-muted">Viền tối góc (Vignette Shadow)</span>
+                                        <span className="font-mono font-medium text-main">
+                                            {Math.round(cgVignette * 100)}%
+                                        </span>
+                                    </div>
+                                    <input
+                                        type="range"
+                                        min="0.0"
+                                        max="1.0"
+                                        step="0.05"
+                                        value={cgVignette}
+                                        onChange={(e) => {
+                                            setCgVignette(Number(e.target.value));
+                                            setCgActivePreset("custom");
+                                        }}
+                                        className="w-full accent-[var(--color-accent)]"
+                                    />
+                                    <div className="flex justify-between text-[8px] text-muted">
+                                        <span>Không có (0%)</span>
+                                        <span>Điện ảnh (40-60%)</span>
+                                        <span>Tối góc sâu (100%)</span>
+                                    </div>
+                                </div>
+
+                                {/* Temperature */}
+                                <div className="space-y-1">
+                                    <div className="flex justify-between text-[10px]">
+                                        <span className="text-muted">Nhiệt độ màu (Color Temp)</span>
+                                        <span className="font-mono font-medium text-main">
+                                            {cgTemperature > 0 ? `+${cgTemperature} (Ấm vàng)` : cgTemperature < 0 ? `${cgTemperature} (Lạnh xanh)` : "0 (Trung tính)"}
+                                        </span>
+                                    </div>
+                                    <input
+                                        type="range"
+                                        min="-50"
+                                        max="50"
+                                        step="1"
+                                        value={cgTemperature}
+                                        onChange={(e) => {
+                                            setCgTemperature(Number(e.target.value));
+                                            setCgActivePreset("custom");
+                                        }}
+                                        className="w-full accent-[var(--color-accent)]"
+                                    />
+                                    <div className="flex justify-between text-[8px] text-muted">
+                                        <span>Lạnh u sầu (-50)</span>
+                                        <span>Chuẩn (0)</span>
+                                        <span>Ấm vintage (+50)</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Right column: Video Preview, Compare Mode & Render Actions */}
+                        <div className="space-y-3">
+                            {/* Video Input selection */}
+                            <div className="border border-main bg-secondary/20 p-3 space-y-2">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <span className="text-[11px] font-semibold text-main flex items-center gap-1.5">
+                                        <Video className="h-3.5 w-3.5 text-accent" />
+                                        Chọn Video Cần Xử Lý
+                                    </span>
+                                    {zeroTtsVideoFile ? (
+                                        <button
+                                            type="button"
+                                            onClick={handleUseZeroTtsVideoForColorGrade}
+                                            className="text-[10px] text-accent hover:underline font-semibold flex items-center gap-1"
+                                        >
+                                            <Sparkles className="h-3 w-3" /> Sử dụng video từ ZeroTTS Voice Lab
+                                        </button>
+                                    ) : null}
+                                </div>
+
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <label className="flex cursor-pointer items-center gap-1.5 border border-dashed border-main bg-main px-3 py-1.5 text-[11px] text-muted hover:border-accent hover:text-main transition-colors">
+                                        <input
+                                            type="file"
+                                            accept="video/*"
+                                            onChange={handleCgVideoChange}
+                                            className="hidden"
+                                        />
+                                        <Video className="h-3.5 w-3.5 text-accent" />
+                                        <span>{cgVideoFile ? cgVideoFile.name : "Tải video lên (.mp4, .mov, .webm...)"}</span>
+                                    </label>
+                                    {cgVideoFile ? (
+                                        <span className="text-[10px] text-muted">
+                                            {formatBytes(cgVideoFile.size)} · Sẵn sàng xử lý
+                                        </span>
+                                    ) : null}
+                                </div>
+                            </div>
+
+                            {/* Live Player & Before/After split */}
+                            {cgVideoUrl ? (
+                                <div className="border border-main bg-secondary/20 p-3 space-y-3">
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-2">
+                                            <Film className="h-4 w-4 text-accent" />
+                                            <span className="text-[11px] font-semibold text-main">
+                                                Live 60fps Realtime Preview
+                                            </span>
+                                            {cgCompareMode ? (
+                                                <span className="bg-rose-500/20 text-rose-600 dark:text-rose-400 text-[9px] px-1.5 py-0.5 rounded font-semibold">
+                                                    Đang hiển thị Video Gốc (Raw)
+                                                </span>
+                                            ) : (
+                                                <span className="bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-[9px] px-1.5 py-0.5 rounded font-semibold">
+                                                    Đang áp dụng bộ lọc màu & ánh sáng
+                                                </span>
+                                            )}
+                                        </div>
+
+                                        <div className="inline-flex rounded border border-main bg-main p-0.5 text-[10px]">
+                                            <button
+                                                type="button"
+                                                onClick={() => setCgCompareMode(false)}
+                                                className={`flex items-center gap-1 px-2.5 py-1 font-semibold transition-all rounded-sm ${
+                                                    !cgCompareMode
+                                                        ? "bg-accent text-white shadow-sm"
+                                                        : "text-muted hover:text-main"
+                                                }`}
+                                            >
+                                                <Sparkles className="h-3 w-3" />
+                                                ✨ Đã chỉnh màu
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setCgCompareMode(true)}
+                                                className={`flex items-center gap-1 px-2.5 py-1 font-semibold transition-all rounded-sm ${
+                                                    cgCompareMode
+                                                        ? "bg-rose-500 text-white shadow-sm"
+                                                        : "text-muted hover:text-main"
+                                                }`}
+                                            >
+                                                <Eye className="h-3 w-3" />
+                                                👁️ Video gốc
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {/* Video Canvas Container with CSS Filter & Vignette */}
+                                    <div className="relative overflow-hidden rounded border border-main bg-black aspect-video max-h-[420px] flex items-center justify-center">
+                                        <video
+                                            ref={cgPreviewVideoRef}
+                                            src={cgVideoUrl}
+                                            loop
+                                            playsInline
+                                            controls
+                                            className="h-full w-full object-contain transition-all duration-75"
+                                            style={{
+                                                filter: cgFilterCss,
+                                            }}
+                                        />
+
+                                        {/* Vignette Overlay */}
+                                        {!cgCompareMode && cgVignette > 0 ? (
+                                            <div
+                                                className="pointer-events-none absolute inset-0 z-10 transition-opacity duration-150"
+                                                style={{
+                                                    background: `radial-gradient(circle, transparent 40%, rgba(0,0,0,${cgVignette}))`,
+                                                }}
+                                            />
+                                        ) : null}
+                                    </div>
+
+                                    {/* Export Action */}
+                                    <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-main">
+                                        <div className="text-[10px] text-muted">
+                                            FFmpeg Engine xuất video chất lượng cao với GPU/CPU tối ưu, giữ nguyên âm thanh.
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={handleCgRenderExport}
+                                            disabled={cgIsRendering || !cgVideoFile}
+                                            className="inline-flex items-center gap-1.5 border border-accent/40 bg-accent/15 px-3 py-1.5 text-[11px] font-semibold text-accent hover:bg-accent/25 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                                        >
+                                            {cgIsRendering ? (
+                                                <>
+                                                    <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                                                    Đang xuất video FFmpeg...
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <Sparkles className="h-3.5 w-3.5" />
+                                                    Xuất Video Hoàn Chỉnh (FFmpeg Render)
+                                                </>
+                                            )}
+                                        </button>
+                                    </div>
+
+                                    {cgRenderError ? (
+                                        <p className="border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-[10px] text-rose-600 dark:text-rose-400">
+                                            {cgRenderError}
+                                        </p>
+                                    ) : null}
+
+                                    {/* Render Result Card */}
+                                    {cgRenderResult ? (
+                                        <div className="border border-emerald-500/30 bg-emerald-500/10 p-3 text-[11px] space-y-2">
+                                            <div className="flex items-center justify-between">
+                                                <span className="font-semibold text-emerald-700 dark:text-emerald-300 flex items-center gap-1.5">
+                                                    ✅ Xuất video thành công!
+                                                </span>
+                                                <span className="text-[10px] text-muted font-mono">
+                                                    Thời gian xử lý: {((cgRenderResult.processingDurationMs || 0) / 1000).toFixed(1)}s
+                                                </span>
+                                            </div>
+                                            <div className="flex items-center justify-between text-[10px] text-muted">
+                                                <span>File: {cgRenderResult.filename}</span>
+                                                <span>Dung lượng: {formatBytes(cgRenderResult.outputSize || 0)}</span>
+                                            </div>
+                                            <div className="flex justify-end pt-1">
+                                                <a
+                                                    href={cgRenderResult.videoUrl}
+                                                    download={cgRenderResult.filename}
+                                                    className="inline-flex items-center gap-1.5 border border-emerald-500/40 bg-emerald-500/20 px-3 py-1 text-[10px] font-semibold text-emerald-800 dark:text-emerald-200 hover:bg-emerald-500/30 transition-colors"
+                                                >
+                                                    <Download className="h-3 w-3" />
+                                                    Tải Video Đã Xử Lý (Download MP4)
+                                                </a>
+                                            </div>
+                                        </div>
+                                    ) : null}
+                                </div>
+                            ) : (
+                                <div className="border border-dashed border-main bg-main/30 p-8 text-center text-muted text-[11px]">
+                                    Vui lòng tải video lên hoặc sử dụng video từ ZeroTTS Voice Lab để bắt đầu căn chỉnh màu sắc và ánh sáng.
+                                </div>
+                            )}
                         </div>
                     </div>
                 </section>

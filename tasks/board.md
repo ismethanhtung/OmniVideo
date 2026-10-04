@@ -178,6 +178,14 @@
 
 ## Done
 
+- `FAST-VIDEO-068` - Switch Video Color Grading Compare Mode to Direct Click Toggle Between Graded and Original
+- `FAST-AUDIO-088` - CapCut-Style VIP Captions in ZeroTTS Voice Lab and Video Color Grading & Lighting Studio
+- `FAST-AUDIO-087` - Add Video Upload and Synchronized Video Playback with Volume Control to ZeroTTS Voice Lab
+- `FAST-OPS-009` - Fix Turbopack Build Symlink Asset Tracing Panic and Typecheck for ZeroTTS
+- `FAST-AUDIO-086` - Default Voice Match Strength to 1.0x and Implement Warm Model In-Memory Reuse with Idle Timeout for ZeroTTS on Mac
+- `FAST-AUDIO-085` - Optimize ZeroTTS Long-Form Synthesis with Intelligent Sentence Chunking and Display Human-Readable Generation Speed
+- `FAST-AUDIO-084` - Add Background Music Selection and Synchronized Audio Playback to ZeroTTS Voice Lab
+- `FAST-AUDIO-083` - Add ZeroTTS Voice Cloning and Synthesis Lab to Feature Sandbox
 - `FAST-INTAKE-016` - Add Fast Media Extractor to Feature Sandbox
 - `FAST-WORKSPACE-096` - Fix Background Progress segment render performance
 - `FAST-VIDEO-067` - Preserve Composer Render Quality and Vietnamese Text Fidelity

@@ -91,4 +91,117 @@ describe("Feature Sandbox panel", () => {
         expect(source).toContain("cobalt.tools");
         expect(source).toContain("GitHub Cobalt");
     });
+
+    it("adds a ZeroTTS Voice Lab section supporting voice cloning and synthesis", () => {
+        expect(source).toContain("ZeroTTS Voice Lab");
+        expect(source).toContain("zeroweight-ai/ZeroTTS");
+        expect(source).toContain("Zero-Shot Voice Cloning");
+        expect(source).toContain("Voice & Synthesis Settings");
+        expect(source).toContain("Voice Mode");
+        expect(source).toContain("Preset Voices");
+        expect(source).toContain("Clone Voice (Upload)");
+        expect(source).toContain("Local Voice Files");
+        expect(source).toContain("Upload 10s Sample Voice");
+        expect(source).toContain("Audio Sample Preview (10s Voice)");
+        expect(source).toContain("Speech Speed");
+        expect(source).toContain("Normalize VI Text");
+        expect(source).toContain("Synthesize Speech (ZeroTTS)");
+        expect(source).toContain("Vietnamese Text Input");
+        expect(source).toContain("ZeroTTS Audio Output (48kHz)");
+        expect(source).toContain("Download ZeroTTS WAV");
+        expect(source).toContain("/api/audio/zerotts");
+        expect(source).toContain("/api/audio/zerotts-voices");
+    });
+
+    it("adds Background Music selection and synchronized playback to ZeroTTS Voice Lab", () => {
+        expect(source).toContain("Background Music (Nhạc nền)");
+        expect(source).toContain('<option value="">Không</option>');
+        expect(source).toContain("/api/video-processing/background-music");
+        expect(source).toContain("zeroTtsBackgroundMusic");
+        expect(source).toContain("zeroTtsBgmVolume");
+        expect(source).toContain("zeroTtsSpeechAudioRef");
+        expect(source).toContain("zeroTtsBgmAudioRef");
+        expect(source).toContain("handleZeroTtsSpeechPlay");
+        expect(source).toContain("handleZeroTtsSpeechPause");
+        expect(source).toContain("handleZeroTtsSpeechSeeked");
+        expect(source).toContain("handleZeroTtsSpeechEnded");
+        expect(source).toContain("Nhạc nền đang chạy cùng:");
+    });
+
+    it("formats ZeroTTS generation duration and displays realtime factor speed metrics", () => {
+        expect(source).toContain("Thời gian tạo:");
+        expect(source).toContain("x Realtime");
+        expect(source).toContain("Thời lượng");
+        expect(source).toContain("Tốc độ (RTF)");
+        expect(source).toContain("Dung lượng");
+    });
+
+    it("defaults ZeroTTS Voice Match Strength (CFG) to 1.0x for 2x faster CPU speed", () => {
+        expect(source).toContain('const [zeroTtsCfgScale, setZeroTtsCfgScale] = useState("1.0");');
+        expect(source).toContain("Tốc độ gấp đôi (Mặc định)");
+        expect(source).toContain("1.0x (Mặc định - nhanh gấp đôi)");
+    });
+
+    it("supports synchronized video upload and playback with default 0.15 volume in ZeroTTS Voice Lab", () => {
+        expect(source).toContain("Synchronized Video (Video chạy cùng)");
+        expect(source).toContain(
+            'const [zeroTtsVideoVolume, setZeroTtsVideoVolume] = useState<string>("0.15");',
+        );
+        expect(source).toContain("Video Volume");
+        expect(source).toContain("zeroTtsVideoFile");
+        expect(source).toContain("zeroTtsVideoUrl");
+        expect(source).toContain("zeroTtsVideoRef");
+        expect(source).toContain("handleZeroTtsVideoChange");
+        expect(source).toContain("handleZeroTtsRemoveVideo");
+        expect(source).toContain("handleZeroTtsVideoPlay");
+        expect(source).toContain("handleZeroTtsVideoPause");
+        expect(source).toContain("handleZeroTtsVideoSeeked");
+        expect(source).toContain("Video đang chạy cùng:");
+        expect(source).toContain("Mặc định 15% (0.15)");
+    });
+
+    it("integrates CapCut-style VIP captions with karaoke word tracking into ZeroTTS Voice Lab video overlay", () => {
+        expect(source).toContain("CapCut VIP Captions (Phụ đề Video)");
+        expect(source).toContain("zeroTtsShowCaptions");
+        expect(source).toContain("zeroTtsCaptionStyle");
+        expect(source).toContain("zeroTtsCaptionPosition");
+        expect(source).toContain("zeroTtsCaptionSize");
+        expect(source).toContain("zeroTtsCaptionUppercase");
+        expect(source).toContain("spokenWords");
+        expect(source).toContain("activeWordIndex");
+        expect(source).toContain("currentWordsChunk");
+        expect(source).toContain("capcut_yellow");
+        expect(source).toContain("cinematic_white");
+        expect(source).toContain("neon_emerald");
+        expect(source).toContain("sunset_orange");
+        expect(source).toContain("setZeroTtsSpeechCurrentTime");
+    });
+
+    it("provides Video Color Grading & Lighting Studio with presets, live 60fps preview, before-after compare and FFmpeg render", () => {
+        expect(source).toContain("Video Color Grading & Lighting Studio");
+        expect(source).toContain("Anti-Overexposure & Moody Engine");
+        expect(source).toContain("COLOR_GRADE_PRESETS");
+        expect(source).toContain("moody_dark");
+        expect(source).toContain("anti_overexposure");
+        expect(source).toContain("cinematic_vintage");
+        expect(source).toContain("film_noir");
+        expect(source).toContain("cold_sad");
+        expect(source).toContain("cgBrightness");
+        expect(source).toContain("cgContrast");
+        expect(source).toContain("cgSaturation");
+        expect(source).toContain("cgGamma");
+        expect(source).toContain("cgVignette");
+        expect(source).toContain("cgTemperature");
+        expect(source).toContain("cgFilterCss");
+        expect(source).toContain("cgCompareMode");
+        expect(source).toContain("handleCgRenderExport");
+        expect(source).toContain("/api/video-processing/color-grade");
+        expect(source).toContain("Xuất Video Hoàn Chỉnh (FFmpeg Render)");
+        expect(source).toContain("handleUseZeroTtsVideoForColorGrade");
+        expect(source).toContain("✨ Đã chỉnh màu");
+        expect(source).toContain("👁️ Video gốc");
+        expect(source).not.toContain("onMouseDown={() => setCgCompareMode(true)}");
+        expect(source).not.toContain("onMouseUp={() => setCgCompareMode(false)}");
+    });
 });
+

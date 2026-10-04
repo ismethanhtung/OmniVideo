@@ -41,6 +41,7 @@ export type DemoFeature =
   | "transcript-translation"
   | "voice-generation"
   | "piper-tts"
+  | "zerotts"
   | "video-dubbing"
   | "video-metadata"
   | "video-vip-processing"

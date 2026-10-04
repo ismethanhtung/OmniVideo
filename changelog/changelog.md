@@ -1,5 +1,108 @@
 # OmniVideo Changelog
 
+## FAST-VIDEO-068 - Switch Video Color Grading Compare Mode to Direct Click Toggle Between Graded and Original
+
+- Bumped app version from `0.11.80` to `0.11.81`.
+- Replaced mouse hold/release compare mode (`onMouseDown`/`onMouseUp`) in Video Color Grading Studio (`src/features/audio/piper-tts-sandbox-panel.tsx`) with a segmented click toggle switch.
+- Added explicit visual buttons: `[✨ Đã chỉnh màu]` and `[👁️ Video gốc]`, allowing deterministic switching back and forth on click without gesture confusion.
+- Updated automated unit tests in `src/features/audio/piper-tts-sandbox-panel.test.ts`.
+- Verification (FAST-VIDEO-068):
+  - `npx vitest run src/features/audio/piper-tts-sandbox-panel.test.ts src/app/api/video-processing/color-grade/route.test.ts` pass (2 files / 17 tests).
+  - `npm run guard:version` pass.
+
+## FAST-AUDIO-088 - CapCut-Style VIP Captions in ZeroTTS Voice Lab and Video Color Grading & Lighting Studio
+
+- Bumped app version from `0.11.79` to `0.11.80`.
+- Added CapCut-style VIP Captions Overlay with real-time karaoke active word tracking in ZeroTTS Voice Lab (`src/features/audio/piper-tts-sandbox-panel.tsx`).
+- Supported 4 trending caption themes: CapCut Yellow Pop (`#FFE600`), Cinematic White, TikTok Neon Emerald, Sunset Amber Vintage.
+- Added caption position controls (Bottom, Center, Top), size options (Small, Medium, Large VIP), and uppercase transformation toggle.
+- Implemented real-time synchronization between speech playback (`currentTime`) and caption pagination chunks (6-word dynamic window with active word scale and bounce).
+- Added Video Color Grading & Lighting Studio workbench section to Feature Sandbox:
+  - 1-Click Pro Presets: Moody Melancholic (Trầm buồn, đậm màu, tối đi), Anti-Overexposure (Cứu camera cũ bị chói sáng / lóa trắng), Cinematic Warm Vintage, Deep Noir, Cold Melancholy, and Original Reset.
+  - Manual Fine-Tuning: Brightness (-0.5 to +0.5), Contrast (0.5 to 2.0x), Saturation (0.0 to 2.5x), Gamma Curve (0.5 to 2.0), Vignette Shadow (0 to 100%), and Color Temperature (-50 to +50).
+  - Live 60fps CSS Preview with radial-gradient vignette overlay (zero server CPU overhead while adjusting).
+  - Before / After compare mode (hold/toggle button to inspect raw original footage).
+  - FFmpeg Color Grade export engine via `POST /api/video-processing/color-grade` applying eq, vignette, and colorbalance filters.
+  - Quick button to reuse video loaded from ZeroTTS Voice Lab directly into Color Grading Studio.
+- Added comprehensive unit test suites in `src/app/api/video-processing/color-grade/route.test.ts` and `src/features/audio/piper-tts-sandbox-panel.test.ts`.
+- Verification (FAST-AUDIO-088):
+  - `npx vitest run src/features/audio/piper-tts-sandbox-panel.test.ts src/app/api/video-processing/color-grade/route.test.ts` pass (2 files / 17 tests).
+  - `npm run guard:version` pass.
+
+## FAST-AUDIO-087 - Add Video Upload and Synchronized Video Playback with Volume Control to ZeroTTS Voice Lab
+
+- Bumped app version from `0.11.78` to `0.11.79` for synchronized video playback in ZeroTTS Voice Lab.
+- Added video file upload input (`accept="video/*"`) in ZeroTTS Voice Lab (`src/features/audio/piper-tts-sandbox-panel.tsx`) with selected filename, size badge, and remove video action.
+- Added Video Volume control (slider 0% to 100%, preset buttons 0%, 10%, 15%, 25%, 50%) defaulting to `0.15` (15%) to keep original video audio soft without overpowering the synthesized ZeroTTS voice.
+- Implemented synchronized dual/triple media playback across ZeroTTS speech audio, background music, and uploaded video (play, pause, seek, loop, reset).
+- Added synchronized video player preview (`aspect-video object-contain`) and active sync status badge in the ZeroTTS output card.
+- Updated automated unit test suite in `piper-tts-sandbox-panel.test.ts`.
+- Verification (FAST-AUDIO-087):
+  - `npx vitest run src/features/audio/piper-tts-sandbox-panel.test.ts src/lib/multilingual-audio/zerotts-voices.test.ts` pass (2 files / 14 tests).
+  - `npm run guard:version` pass.
+
+## FAST-OPS-009 - Fix Turbopack Build Symlink Asset Tracing Panic and Typecheck for ZeroTTS
+
+- Bumped app version from `0.11.77` to `0.11.78` for production Turbopack build stabilization.
+- Resolved TurbopackInternalError panic during `next build --turbopack` (`Symlink .venv/bin/python3 is invalid, it points out of the filesystem root`).
+- Replaced static `path.join(process.cwd(), ".venv", ...)` expressions with dynamic runtime candidate evaluation in `src/lib/multilingual-audio/zerotts.ts`, preventing Turbopack's static AST analyzer from treating local virtual environment symlinks as bundled directory assets.
+- Added `"zerotts"` to `DemoFeature` union in `src/lib/access-control/access-control.ts` to satisfy Next.js production type-checking for `applyDemoRateLimit`.
+- Verification (FAST-OPS-009):
+  - `npm run build` succeeds completely with Turbopack (all 54 static/dynamic routes compiled).
+  - `npm run guard:version` pass.
+
+## FAST-AUDIO-086 - Default Voice Match Strength to 1.0x and Implement Warm Model In-Memory Reuse with Idle Timeout for ZeroTTS on Mac
+
+- Bumped app version from `0.11.76` to `0.11.77` for ZeroTTS speed optimization and Mac safety hardening.
+- Set default Voice Match Strength (CFG Scale) to `1.0x` in `src/features/audio/piper-tts-sandbox-panel.tsx` and removed the forced `1.25` override for custom voice packs in `src/lib/multilingual-audio/zerotts-runner.py`.
+- Skipping the unconditional generation branch at `cfg_scale = 1.0` cuts per-frame CPU operations in half, doubling synthesis speed (~15s vs ~31s) and halving thermal dissipation on fanless MacBook Air M1.
+- Updated UI hint and preset labels to highlight `1.0x (Mặc định - nhanh gấp đôi)` and `1.25x – 1.4x (Bám sát mẫu hơn)`.
+- Hardened in-memory resident daemon server (`run_daemon_server`) with a 15-minute (900s) inactivity auto-shutdown watchdog and graceful `/shutdown` endpoint to protect 8GB Unified Memory and SSD swap wear on Apple Silicon.
+- Updated `generateZeroTtsSpeech` in `src/lib/multilingual-audio/zerotts.ts` to await daemon readiness before falling back, preventing dual concurrent Python model loadings and memory spikes.
+- Expanded automated test suites in `zerotts.test.ts` and `piper-tts-sandbox-panel.test.ts` (all 20 unit tests pass).
+- Verification (FAST-AUDIO-086):
+  - `npx vitest run src/features/audio/piper-tts-sandbox-panel.test.ts src/lib/multilingual-audio/zerotts-voices.test.ts src/lib/multilingual-audio/zerotts.test.ts` pass (3 files / 20 tests).
+  - `npm run guard:version` pass.
+
+## FAST-AUDIO-085 - Optimize ZeroTTS Long-Form Synthesis with Intelligent Sentence Chunking and Display Human-Readable Generation Speed
+
+- Bumped app version from `0.11.75` to `0.11.76` for ZeroTTS long-form synthesis optimization.
+- Optimized ZeroTTS long-form synthesis in `zerotts-runner.py` by integrating sentence-level chunking (`chunk_text(normalize_punctuation(...), max_chunk_sec=12.0)`) and seamless audio concatenation (`concat_with_silence`).
+- Resolved quadratic attention blowup and token runaway on long paragraphs (reduced 40-second speech generation time from ~224s down to ~26s, a 7x-9x speedup on local CPU).
+- Dynamically tuned ONNX Runtime thread allocation (`min(4, os.cpu_count() or 4)`) instead of hardcoding 2 threads.
+- Added human-readable generation time formatting (e.g. `26.4s` or `3m 44s`) and realtime speed factor ratio (`X.Xx Realtime`) in the ZeroTTS output card.
+- Expanded output metrics grid in `piper-tts-sandbox-panel.tsx` to 6 responsive columns displaying `Thời lượng`, `Thời gian tạo`, `Tốc độ (RTF)`, `Dung lượng`, `Sample Rate`, and `Voice`.
+- Verification (FAST-AUDIO-085):
+  - `npm run test -- --run src/lib/multilingual-audio/zerotts.test.ts src/lib/multilingual-audio/zerotts-voices.test.ts src/features/audio/piper-tts-sandbox-panel.test.ts` pass (3 files / 17 tests).
+  - `npm run guard:version` pass.
+
+## FAST-AUDIO-084 - Add Background Music Selection and Synchronized Playback to ZeroTTS Voice Lab
+
+- Bumped app version from `0.11.74` to `0.11.75` for Background Music integration in ZeroTTS Voice Lab.
+- Added Background Music dropdown in ZeroTTS Voice Lab (`src/features/audio/piper-tts-sandbox-panel.tsx`) scanning audio tracks directly from `public/musics/` via `/api/video-processing/background-music`.
+- Set default selection to "Không" (None) followed by list of discovered music tracks.
+- Added BGM volume control slider (5% to 100%, default 25%) with quick preset buttons (15%, 25%, 40%, 60%) to ensure speech clarity over background music.
+- Implemented synchronized dual-audio playback: when speech plays, background music starts in sync; when paused, seeking, or finished, music pauses, seeks, or resets.
+- Displayed active background music indicator and volume badge in the ZeroTTS output card.
+- Updated automated unit test suite in `piper-tts-sandbox-panel.test.ts`.
+- Verification (FAST-AUDIO-084):
+  - `npm run test -- --run src/lib/multilingual-audio/zerotts.test.ts src/lib/multilingual-audio/zerotts-voices.test.ts src/features/audio/piper-tts-sandbox-panel.test.ts` pass (3 files / 16 tests).
+  - `npm run guard:version` pass.
+
+## FAST-AUDIO-083 - Add ZeroTTS Voice Cloning and Synthesis Lab to Feature Sandbox
+
+- Bumped app version from `0.11.73` to `0.11.74` for ZeroTTS Voice Lab in Feature Sandbox.
+- Added a dedicated `ZeroTTS Voice Lab` section to Feature Sandbox (`src/features/audio/piper-tts-sandbox-panel.tsx`) supporting Vietnamese Zero-Shot Voice Cloning and CPU-optimized 48kHz text-to-speech.
+- Integrated preset voice selection (Mai Chi, Duy, Ngọc, Phương, Quang, Tuấn, Lan) with gender, regional accents (Bắc, Trung, Nam), and detailed voice descriptions.
+- Added voice cloning input supporting 10s audio sample uploads (.wav, .mp3, .m4a) and custom voice packs (.zip, .npz) with an inline audio sample player.
+- Supported Vietnamese text normalization (`normalize_vi_text`) to expand numbers, dates, times, and currency into spoken Vietnamese.
+- Implemented backend ZeroTTS service and runner (`src/lib/multilingual-audio/zerotts.ts`, `zerotts-runner.py`) and API routes (`/api/audio/zerotts`, `/api/audio/zerotts-voices`).
+- Added full unit test suites in `zerotts.test.ts`, `zerotts-voices.test.ts`, and updated `piper-tts-sandbox-panel.test.ts`.
+- Verification (FAST-AUDIO-083):
+  - `npm run test -- --run src/lib/multilingual-audio/zerotts.test.ts src/lib/multilingual-audio/zerotts-voices.test.ts src/features/audio/piper-tts-sandbox-panel.test.ts` pass (3 files / 15 tests).
+  - Full test suite: 141 test files / 788 tests pass.
+  - `npm run guard:version` pass.
+
 ## FAST-INTAKE-020 - Support YouTube and Facebook in TaiNhanhVideo resolver
 
 - Bumped app version from `0.11.72` to `0.11.73` to support YouTube/Facebook via TaiNhanhVideo.
