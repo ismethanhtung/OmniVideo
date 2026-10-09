@@ -1,5 +1,19 @@
 # OmniVideo Changelog
 
+## FAST-UX-029 - Fix ZeroTTS Voice Lab Responsive Horizontal Overflow
+
+- Bumped app version from `0.11.83` to `0.11.84`.
+- Fixed horizontal overflow in the ZeroTTS Voice Lab panel (`src/features/audio/piper-tts-sandbox-panel.tsx`):
+  - Made the two-column wrapper responsive and shrinkable (`lg:grid-cols-[340px_minmax(0,1fr)] xl:grid-cols-[380px_minmax(0,1fr)]`) with `min-w-0` on both columns.
+  - Let Speech Speed, Voice Match Strength, BGM Volume, Video Volume, CapCut captions, output, and rendered-video header rows `flex-wrap` instead of overflowing.
+  - Constrained the synchronized-video upload label with `min-w-0` + `max-w-full` truncation.
+  - Deferred the 6-column metrics grid to `xl` so it no longer overflows at `lg`.
+  - Made status banners and rendered metadata rows wrap and `break-all` long filenames.
+- Added a responsive-overflow regression guard in `src/features/audio/piper-tts-sandbox-panel.test.ts`.
+- Verification (FAST-UX-029):
+  - `npx vitest run src/features/audio/piper-tts-sandbox-panel.test.ts` pass (17 tests).
+  - `npm run guard:version` pass.
+
 ## FAST-VIDEO-069 - ZeroTTS Video Studio Full Render Export with Synchronized Audio, BGM, and Borderless / No-Underline Subtitle Styles
 
 - Bumped app version from `0.11.82` to `0.11.83`.

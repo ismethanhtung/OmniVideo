@@ -2977,14 +2977,12 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
                     <p className="text-[11px] text-muted leading-relaxed">
                         Mô hình <strong>ZeroTTS</strong> (phát triển bởi{" "}
                         <strong>ZeroWeight AI</strong>) tối ưu hóa cho tiếng
-                        Việt, có khả năng nhân bản giọng đọc (Voice Cloning) từ
-                        đoạn audio mẫu 3–30 giây mà không cần fine-tune. Hỗ trợ
-                        xử lý viết tắt, ngày tháng, giờ giấc, số tiền tự động
-                        bằng bộ chuẩn hóa tiếng Việt{" "}
+                        Việt. Hỗ trợ xử lý viết tắt, ngày tháng, giờ giấc, số
+                        tiền tự động bằng bộ chuẩn hóa tiếng Việt{" "}
                         <code>normalize_vi_text</code>.
                     </p>
-                    <div className="grid gap-4 lg:grid-cols-[380px_minmax(0,1fr)]">
-                        <div className="space-y-3 border border-main bg-secondary/20 p-4">
+                    <div className="grid gap-4 lg:grid-cols-[340px_minmax(0,1fr)] xl:grid-cols-[380px_minmax(0,1fr)]">
+                        <div className="min-w-0 space-y-3 border border-main bg-secondary/20 p-4">
                             <p className="text-[12px] font-semibold text-main">
                                 Voice & Synthesis Settings
                             </p>
@@ -3247,12 +3245,12 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
                             ) : null}
 
                             <div className="grid gap-2 sm:grid-cols-2">
-                                <div className="space-y-1">
-                                    <div className="flex items-center justify-between">
+                                <div className="min-w-0 space-y-1">
+                                    <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
                                         <span className="text-[10px] font-semibold text-muted">
                                             Speech Speed ({zeroTtsSpeed}x)
                                         </span>
-                                        <div className="flex gap-1">
+                                        <div className="flex flex-wrap gap-1">
                                             {["1.0", "1.2", "1.4", "1.6"].map(
                                                 (s) => (
                                                     <button
@@ -3335,7 +3333,7 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
 
                             <div className="grid gap-2 sm:grid-cols-2">
                                 <label className="block">
-                                    <div className="flex items-center justify-between mb-1">
+                                    <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5 mb-1">
                                         <span className="text-[10px] font-semibold text-muted">
                                             Voice Match Strength (CFG:{" "}
                                             {zeroTtsCfgScale}x)
@@ -3431,12 +3429,12 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
                                         ))}
                                     </select>
                                     <span className="mt-0.5 block text-[9px] text-muted">
-                                        Tự động quét nhạc từ thư mục{" "}
+                                        Tự động quét nhạc từ{" "}
                                         <code>public/musics/</code>
                                     </span>
                                 </label>
-                                <div className="block">
-                                    <div className="flex items-center justify-between mb-1">
+                                <div className="min-w-0 block">
+                                    <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 mb-1">
                                         <span className="text-[10px] font-semibold text-muted">
                                             BGM Volume (
                                             {Math.round(
@@ -3444,7 +3442,7 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
                                             )}
                                             %)
                                         </span>
-                                        <div className="flex gap-1">
+                                        <div className="flex flex-wrap gap-1">
                                             {[
                                                 "0.15",
                                                 "0.25",
@@ -3483,18 +3481,14 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
                                         disabled={!zeroTtsBackgroundMusic}
                                         className="w-full accent-[var(--color-accent)] disabled:opacity-40"
                                     />
-                                    <span className="mt-0.5 block text-[9px] text-muted">
-                                        Mặc định 25% giúp giọng đọc luôn rõ ràng
-                                        trên nền nhạc.
-                                    </span>
                                 </div>
                             </div>
 
                             <div className="grid gap-2 sm:grid-cols-2">
-                                <div className="block">
-                                    <div className="flex items-center justify-between mb-1">
+                                <div className="min-w-0 block">
+                                    <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 mb-1">
                                         <span className="text-[10px] font-semibold text-muted">
-                                            Synchronized Video (Video chạy cùng)
+                                            Synchronized Video (thêm Video?)
                                         </span>
                                         {zeroTtsVideoFile ? (
                                             <button
@@ -3517,23 +3511,23 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
                                             onChange={handleZeroTtsVideoChange}
                                             className="hidden"
                                         />
-                                        <div className="flex items-center gap-1.5 text-[11px] text-main">
-                                            <Video className="h-3.5 w-3.5 text-accent" />
-                                            <span className="truncate max-w-[180px] font-medium">
+                                        <div className="flex w-full min-w-0 items-center justify-center gap-1.5 text-[11px] text-main">
+                                            <Video className="h-3.5 w-3.5 shrink-0 text-accent" />
+                                            <span className="truncate max-w-full font-medium">
                                                 {zeroTtsVideoFile
                                                     ? zeroTtsVideoFile.name
                                                     : "Tải video lên (.mp4, .webm...)"}
                                             </span>
                                         </div>
-                                        <span className="text-[9px] text-muted mt-0.5">
+                                        <span className="mt-0.5 block w-full truncate text-[9px] text-muted">
                                             {zeroTtsVideoFile
                                                 ? `${formatBytes(zeroTtsVideoFile.size)} · Đã gắn video`
                                                 : "Video tự động phát đồng bộ cùng lời speech"}
                                         </span>
                                     </label>
                                 </div>
-                                <div className="block">
-                                    <div className="flex items-center justify-between mb-1">
+                                <div className="min-w-0 block">
+                                    <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 mb-1">
                                         <span className="text-[10px] font-semibold text-muted">
                                             Video Volume (
                                             {Math.round(
@@ -3542,7 +3536,7 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
                                             )}
                                             %)
                                         </span>
-                                        <div className="flex gap-1">
+                                        <div className="flex flex-wrap gap-1">
                                             {[
                                                 "0.00",
                                                 "0.10",
@@ -3589,16 +3583,14 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
                                         className="w-full accent-[var(--color-accent)] disabled:opacity-40"
                                     />
                                     <span className="mt-0.5 block text-[9px] text-muted">
-                                        Mặc định 15% (0.15) giúp giữ âm thanh
-                                        video gốc nhỏ nhẹ, không lấn át giọng
-                                        đọc.
+                                        15% giữ âm thanh video gốc nhỏ nhẹ.
                                     </span>
                                 </div>
                             </div>
 
                             {/* CapCut VIP Subtitles Settings */}
                             <div className="border border-main bg-main/40 p-2.5 space-y-2">
-                                <div className="flex items-center justify-between">
+                                <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
                                     <div className="flex items-center gap-1.5">
                                         <Type className="h-3.5 w-3.5 text-accent" />
                                         <span className="text-[10px] font-semibold text-main">
@@ -3623,7 +3615,7 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
                                 </div>
 
                                 {zeroTtsShowCaptions ? (
-                                    <div className="grid gap-2 pt-1 border-t border-main/60">
+                                    <div className="grid gap-2 pt-1 border-t border-main">
                                         <div className="grid grid-cols-2 gap-2">
                                             <label className="block">
                                                 <span className="mb-1 block text-[9px] font-medium text-muted">
@@ -3640,31 +3632,43 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
                                                     className="w-full border border-main bg-main px-1.5 py-1 text-[10px] text-main outline-none focus:border-accent"
                                                 >
                                                     <option value="capcut_yellow">
-                                                        🌟 CapCut Yellow Pop (Viền hộp & Gạch chân)
+                                                        🌟 CapCut Yellow Pop
+                                                        (Viền hộp & Gạch chân)
                                                     </option>
                                                     <option value="cinematic_white">
-                                                        🎬 Cinematic White (Viền hộp & Gạch chân)
+                                                        🎬 Cinematic White (Viền
+                                                        hộp & Gạch chân)
                                                     </option>
                                                     <option value="neon_emerald">
-                                                        ⚡ TikTok Neon Emerald (Viền hộp & Gạch chân)
+                                                        ⚡ TikTok Neon Emerald
+                                                        (Viền hộp & Gạch chân)
                                                     </option>
                                                     <option value="sunset_orange">
-                                                        🔥 Sunset Amber Vintage (Viền hộp & Gạch chân)
+                                                        🔥 Sunset Amber Vintage
+                                                        (Viền hộp & Gạch chân)
                                                     </option>
                                                     <option value="clean_yellow">
-                                                        ✨ Vàng Hiện Đại (Không viền & Không gạch chân)
+                                                        ✨ Vàng Hiện Đại (Không
+                                                        viền & Không gạch chân)
                                                     </option>
                                                     <option value="clean_white">
-                                                        🎬 Trắng Tối Giản (Không viền & Không gạch chân)
+                                                        🎬 Trắng Tối Giản (Không
+                                                        viền & Không gạch chân)
                                                     </option>
                                                     <option value="clean_emerald">
-                                                        🌿 Xanh Mint TikTok (Không viền & Không gạch chân)
+                                                        🌿 Xanh Mint TikTok
+                                                        (Không viền & Không gạch
+                                                        chân)
                                                     </option>
                                                     <option value="clean_sunset">
-                                                        🔥 Cam Pastel Vintage (Không viền & Không gạch chân)
+                                                        🔥 Cam Pastel Vintage
+                                                        (Không viền & Không gạch
+                                                        chân)
                                                     </option>
                                                     <option value="pure_cinema">
-                                                        🌟 Chữ Nổi Điện Ảnh (Không viền, Không nền, Không gạch chân)
+                                                        🌟 Chữ Nổi Điện Ảnh
+                                                        (Không viền, Không nền,
+                                                        Không gạch chân)
                                                     </option>
                                                 </select>
                                             </label>
@@ -3740,7 +3744,8 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
                                                         }
                                                         onChange={(e) =>
                                                             setZeroTtsCaptionUppercase(
-                                                                e.target.checked,
+                                                                e.target
+                                                                    .checked,
                                                             )
                                                         }
                                                         className="h-3 w-3 accent-[var(--color-accent)]"
@@ -3757,7 +3762,8 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
                                                         }
                                                         onChange={(e) =>
                                                             setZeroTtsCaptionNoBorder(
-                                                                e.target.checked,
+                                                                e.target
+                                                                    .checked,
                                                             )
                                                         }
                                                         className="h-3 w-3 accent-[var(--color-accent)]"
@@ -3774,7 +3780,8 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
                                                         }
                                                         onChange={(e) =>
                                                             setZeroTtsCaptionNoUnderline(
-                                                                e.target.checked,
+                                                                e.target
+                                                                    .checked,
                                                             )
                                                         }
                                                         className="h-3 w-3 accent-[var(--color-accent)]"
@@ -3789,7 +3796,9 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
                                         <div className="space-y-1.5 border-t border-main pt-2">
                                             <div className="flex items-center justify-between text-[9px]">
                                                 <span className="font-medium text-muted">
-                                                    {"Bù trễ đồng bộ (Sync Lead Offset):"}
+                                                    {
+                                                        "Bù trễ đồng bộ (Sync Lead Offset):"
+                                                    }
                                                 </span>
                                                 <span className="font-mono font-semibold text-accent">
                                                     +{zeroTtsSubtitleLeadMs}ms
@@ -3845,7 +3854,9 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
                                                 <span>300ms</span>
                                             </div>
                                             <p className="text-[8px] text-muted">
-                                                {"Tracking 60fps & bù trễ thị giác 120ms giúp chữ highlight khớp chính xác khi bắt đầu phát âm."}
+                                                {
+                                                    "Tracking 60fps & bù trễ thị giác 120ms giúp chữ highlight khớp chính xác khi bắt đầu phát âm."
+                                                }
                                             </p>
                                         </div>
                                     </div>
@@ -3869,7 +3880,7 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
                             </button>
                         </div>
 
-                        <div className="space-y-4">
+                        <div className="min-w-0 space-y-4">
                             <div className="border border-main bg-secondary/20 p-4">
                                 <div className="flex flex-wrap items-center justify-between gap-2">
                                     <p className="text-[12px] font-semibold text-main">
@@ -3940,14 +3951,14 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
 
                             {zeroTtsResult && zeroTtsAudioUrl ? (
                                 <div className="border border-main bg-secondary/20 p-4 space-y-3">
-                                    <div className="flex items-center justify-between">
+                                    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
                                         <div className="flex items-center gap-2">
                                             <Volume2 className="h-4 w-4 text-accent" />
                                             <p className="text-[12px] font-semibold text-main">
                                                 ZeroTTS Audio Output (48kHz)
                                             </p>
                                         </div>
-                                        <div className="flex items-center gap-2 text-[10px] text-muted font-mono">
+                                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-muted font-mono">
                                             <span>
                                                 Thời gian tạo:{" "}
                                                 <strong className="text-main">
@@ -3979,11 +3990,11 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
                                     </div>
                                     {zeroTtsVideoUrl ? (
                                         <div className="space-y-2">
-                                            <div className="flex items-center justify-between border border-accent/30 bg-accent/5 px-2.5 py-1.5 text-[10px] text-accent">
-                                                <span className="flex items-center gap-1.5 font-medium">
+                                            <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 border border-accent/30 bg-accent/5 px-2.5 py-1.5 text-[10px] text-accent">
+                                                <span className="flex min-w-0 flex-wrap items-center gap-1.5 font-medium">
                                                     <Video className="h-3.5 w-3.5" />
                                                     Video đang chạy cùng:{" "}
-                                                    <strong>
+                                                    <strong className="break-all">
                                                         {zeroTtsVideoFile?.name ||
                                                             "Video đã tải lên"}
                                                     </strong>{" "}
@@ -4048,11 +4059,12 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
                                                                       : "text-sm md:text-base px-5 py-2.5"
                                                             } ${
                                                                 isCaptionNoBorder
-                                                                    ? zeroTtsCaptionStyle === "pure_cinema"
+                                                                    ? zeroTtsCaptionStyle ===
+                                                                      "pure_cinema"
                                                                         ? "bg-transparent shadow-none border-none p-0"
                                                                         : "bg-black/65 backdrop-blur-md border-none shadow-xl rounded-2xl"
                                                                     : zeroTtsCaptionStyle ===
-                                                                          "cinematic_white"
+                                                                        "cinematic_white"
                                                                       ? "bg-black/75 backdrop-blur-md border border-white/20 shadow-2xl rounded-xl"
                                                                       : zeroTtsCaptionStyle ===
                                                                           "neon_emerald"
@@ -4072,25 +4084,41 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
                                                                         className={`inline-block transition-transform duration-100 ${
                                                                             item.isActive
                                                                                 ? isCaptionNoUnderline
-                                                                                    ? zeroTtsCaptionStyle === "cinematic_white" || zeroTtsCaptionStyle === "clean_white"
+                                                                                    ? zeroTtsCaptionStyle ===
+                                                                                          "cinematic_white" ||
+                                                                                      zeroTtsCaptionStyle ===
+                                                                                          "clean_white"
                                                                                         ? "text-white scale-110 font-black drop-shadow-[0_2px_14px_rgba(255,255,255,1)]"
-                                                                                        : zeroTtsCaptionStyle === "neon_emerald" || zeroTtsCaptionStyle === "clean_emerald"
+                                                                                        : zeroTtsCaptionStyle ===
+                                                                                                "neon_emerald" ||
+                                                                                            zeroTtsCaptionStyle ===
+                                                                                                "clean_emerald"
                                                                                           ? "text-[#34D399] scale-110 font-black drop-shadow-[0_2px_14px_rgba(52,211,153,0.9)]"
-                                                                                          : zeroTtsCaptionStyle === "sunset_orange" || zeroTtsCaptionStyle === "clean_sunset"
+                                                                                          : zeroTtsCaptionStyle ===
+                                                                                                  "sunset_orange" ||
+                                                                                              zeroTtsCaptionStyle ===
+                                                                                                  "clean_sunset"
                                                                                             ? "text-[#FB923C] scale-110 font-black drop-shadow-[0_2px_14px_rgba(251,146,60,0.9)]"
                                                                                             : "text-[#FFE600] scale-110 font-black drop-shadow-[0_2px_12px_rgba(255,230,0,0.9)]"
-                                                                                    : zeroTtsCaptionStyle === "cinematic_white"
+                                                                                    : zeroTtsCaptionStyle ===
+                                                                                        "cinematic_white"
                                                                                       ? "text-white scale-110 font-black drop-shadow-[0_2px_14px_rgba(255,255,255,1)] underline decoration-white decoration-2 underline-offset-4"
-                                                                                      : zeroTtsCaptionStyle === "neon_emerald"
+                                                                                      : zeroTtsCaptionStyle ===
+                                                                                          "neon_emerald"
                                                                                         ? "text-[#34D399] scale-110 font-black drop-shadow-[0_2px_14px_rgba(52,211,153,0.9)] underline decoration-[#34D399] decoration-2 underline-offset-4"
-                                                                                        : zeroTtsCaptionStyle === "sunset_orange"
+                                                                                        : zeroTtsCaptionStyle ===
+                                                                                            "sunset_orange"
                                                                                           ? "text-[#FB923C] scale-110 font-black drop-shadow-[0_2px_14px_rgba(251,146,60,0.9)] underline decoration-[#FB923C] decoration-2 underline-offset-4"
                                                                                           : "text-[#FFE600] scale-110 font-black drop-shadow-[0_2px_12px_rgba(255,230,0,0.9)] underline decoration-[#FFE600] decoration-2 underline-offset-4"
                                                                                 : item.isPast
-                                                                                  ? zeroTtsCaptionStyle === "sunset_orange" || zeroTtsCaptionStyle === "clean_sunset"
+                                                                                  ? zeroTtsCaptionStyle ===
+                                                                                        "sunset_orange" ||
+                                                                                    zeroTtsCaptionStyle ===
+                                                                                        "clean_sunset"
                                                                                       ? "text-amber-100 font-extrabold"
                                                                                       : "text-white font-extrabold"
-                                                                                  : zeroTtsCaptionStyle === "pure_cinema"
+                                                                                  : zeroTtsCaptionStyle ===
+                                                                                      "pure_cinema"
                                                                                     ? "text-white/70 font-bold drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]"
                                                                                     : "text-white/60 font-medium"
                                                                         }`}
@@ -4132,11 +4160,11 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
                                         />
                                     ) : null}
                                     {zeroTtsBackgroundMusic ? (
-                                        <div className="flex items-center justify-between border border-accent/30 bg-accent/5 px-2.5 py-1.5 text-[10px] text-accent">
-                                            <span className="flex items-center gap-1.5 font-medium">
+                                        <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 border border-accent/30 bg-accent/5 px-2.5 py-1.5 text-[10px] text-accent">
+                                            <span className="flex min-w-0 flex-wrap items-center gap-1.5 font-medium">
                                                 <Music className="h-3.5 w-3.5" />
                                                 Nhạc nền đang chạy cùng:{" "}
-                                                <strong>
+                                                <strong className="break-all">
                                                     {zeroTtsBgmList.find(
                                                         (b) =>
                                                             b.source ===
@@ -4157,7 +4185,7 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
                                             </span>
                                         </div>
                                     ) : null}
-                                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 text-[10px]">
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2 text-[10px]">
                                         <div className="border border-main bg-main p-2">
                                             <span className="text-muted block">
                                                 Thời lượng
@@ -4289,7 +4317,7 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
                                     {zeroTtsRenderedVideoUrl &&
                                     zeroTtsRenderedResult ? (
                                         <div className="border border-accent/40 bg-accent/5 p-3 space-y-2 rounded">
-                                            <div className="flex items-center justify-between">
+                                            <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
                                                 <div className="flex items-center gap-2">
                                                     <Sparkles className="h-4 w-4 text-accent" />
                                                     <span className="text-[11px] font-semibold text-accent">
@@ -4314,7 +4342,7 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
                                                     )
                                                 </a>
                                             </div>
-                                            <div className="flex items-center gap-3 text-[10px] text-muted">
+                                            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-muted">
                                                 <span>
                                                     File:{" "}
                                                     <strong className="text-main">
@@ -4775,7 +4803,9 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
                                             ) : (
                                                 <>
                                                     <Sparkles className="h-3.5 w-3.5" />
-                                                    {"Xuất Video Hoàn Chỉnh (FFmpeg Render)"}
+                                                    {
+                                                        "Xuất Video Hoàn Chỉnh (FFmpeg Render)"
+                                                    }
                                                 </>
                                             )}
                                         </button>

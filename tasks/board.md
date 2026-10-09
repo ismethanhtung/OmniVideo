@@ -178,6 +178,7 @@
 
 ## Done
 
+- `FAST-UX-029` - Fix ZeroTTS Voice Lab responsive horizontal overflow
 - `FAST-VIDEO-069` - ZeroTTS Video Studio Full Render Export with Synchronized Audio, BGM, and Borderless / No-Underline Subtitle Styles
 - `FAST-AUDIO-089` - Precision Subtitle Word-Level Synchronization & 60fps Playback Tracking for ZeroTTS Video Overlays
 - `FAST-VIDEO-068` - Switch Video Color Grading Compare Mode to Direct Click Toggle Between Graded and Original

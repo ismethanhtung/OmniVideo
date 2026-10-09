@@ -238,5 +238,25 @@ describe("Feature Sandbox panel", () => {
         expect(source).toContain("Xuất Video Hoàn Chỉnh (ZeroTTS Video Render)");
         expect(source).toContain("Video đã xuất hoàn chỉnh");
     });
+
+    it("guards ZeroTTS Voice Lab layout against responsive horizontal overflow", () => {
+        expect(source).toContain(
+            "lg:grid-cols-[340px_minmax(0,1fr)] xl:grid-cols-[380px_minmax(0,1fr)]",
+        );
+        expect(source).toContain(
+            "min-w-0 space-y-3 border border-main bg-secondary/20 p-4",
+        );
+        expect(source).toContain("min-w-0 space-y-4");
+        expect(source).toContain(
+            "flex flex-wrap items-center justify-between gap-x-2 gap-y-1 mb-1",
+        );
+        expect(source).toContain("flex flex-wrap gap-1");
+        expect(source).toContain("sm:grid-cols-3 xl:grid-cols-6");
+        expect(source).toContain(
+            "flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5",
+        );
+        expect(source).toContain("flex min-w-0 flex-wrap items-center gap-1.5 font-medium");
+        expect(source).toContain("break-all");
+    });
 });
 
