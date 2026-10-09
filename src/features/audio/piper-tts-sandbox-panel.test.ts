@@ -144,9 +144,8 @@ describe("Feature Sandbox panel", () => {
 
     it("supports synchronized video upload and playback with default 0.15 volume in ZeroTTS Voice Lab", () => {
         expect(source).toContain("Synchronized Video (Video chạy cùng)");
-        expect(source).toContain(
-            'const [zeroTtsVideoVolume, setZeroTtsVideoVolume] = useState<string>("0.15");',
-        );
+        expect(source).toContain("setZeroTtsVideoVolume");
+        expect(source).toContain('"0.15"');
         expect(source).toContain("Video Volume");
         expect(source).toContain("zeroTtsVideoFile");
         expect(source).toContain("zeroTtsVideoUrl");
@@ -177,6 +176,18 @@ describe("Feature Sandbox panel", () => {
         expect(source).toContain("setZeroTtsSpeechCurrentTime");
     });
 
+    it("provides precision 60fps subtitle synchronization with RAF tracking, punctuation pause weighting and lead offset", () => {
+        expect(source).toContain("buildPunctuationAwareWordTimeline");
+        expect(source).toContain("startPlaybackRaf");
+        expect(source).toContain("stopPlaybackRaf");
+        expect(source).toContain("speechRafRef");
+        expect(source).toContain("lastReportedTimeRef");
+        expect(source).toContain("zeroTtsSubtitleLeadMs");
+        expect(source).toContain("setZeroTtsSubtitleLeadMs");
+        expect(source).toContain("Bù trễ đồng bộ (Sync Lead Offset)");
+        expect(source).toContain("Tracking 60fps & bù trễ thị giác 120ms");
+    });
+
     it("provides Video Color Grading & Lighting Studio with presets, live 60fps preview, before-after compare and FFmpeg render", () => {
         expect(source).toContain("Video Color Grading & Lighting Studio");
         expect(source).toContain("Anti-Overexposure & Moody Engine");
@@ -202,6 +213,30 @@ describe("Feature Sandbox panel", () => {
         expect(source).toContain("👁️ Video gốc");
         expect(source).not.toContain("onMouseDown={() => setCgCompareMode(true)}");
         expect(source).not.toContain("onMouseUp={() => setCgCompareMode(false)}");
+    });
+
+    it("adds borderless and no-underline subtitle styles, checkboxes and live preview support", () => {
+        expect(source).toContain("clean_yellow");
+        expect(source).toContain("clean_white");
+        expect(source).toContain("clean_emerald");
+        expect(source).toContain("clean_sunset");
+        expect(source).toContain("pure_cinema");
+        expect(source).toContain("BỎ VIỀN HỘP");
+        expect(source).toContain("BỎ GẠCH CHÂN");
+        expect(source).toContain("zeroTtsCaptionNoBorder");
+        expect(source).toContain("zeroTtsCaptionNoUnderline");
+        expect(source).toContain("isCaptionNoBorder");
+        expect(source).toContain("isCaptionNoUnderline");
+    });
+
+    it("provides Full Video Render export in ZeroTTS Voice Lab combining video, speech, BGM and subtitles", () => {
+        expect(source).toContain("handleZeroTtsRenderVideo");
+        expect(source).toContain("isRenderingZeroTtsVideo");
+        expect(source).toContain("zeroTtsRenderedVideoUrl");
+        expect(source).toContain("zeroTtsRenderedResult");
+        expect(source).toContain("/api/video-processing/zerotts-render");
+        expect(source).toContain("Xuất Video Hoàn Chỉnh (ZeroTTS Video Render)");
+        expect(source).toContain("Video đã xuất hoàn chỉnh");
     });
 });
 

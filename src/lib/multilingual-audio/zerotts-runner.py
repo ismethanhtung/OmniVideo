@@ -275,6 +275,65 @@ def get_or_create_tts(model_id="zeroweight-ai/ZeroTTS"):
     return _GLOBAL_TTS_INSTANCE
 
 
+def calculate_word_timestamps(segments, chunk_samples, sample_rate=48000, speed=1.0, gap=0.2):
+    """
+    Calculate precise per-word start and end timestamps based on:
+    1. Exact synthesized audio lengths for each chunk.
+    2. Speed scaling factor.
+    3. Inter-chunk sentence silence gaps.
+    4. Syllable/character length weighting and punctuation pauses within each chunk.
+    """
+    if not segments or not chunk_samples or sample_rate <= 0:
+        return []
+
+    word_timestamps = []
+    effective_speed = max(0.2, float(speed))
+    current_time = 0.0
+
+    for i, seg in enumerate(segments):
+        samples = chunk_samples[i] if i < len(chunk_samples) else 0
+        raw_duration = float(samples) / float(sample_rate)
+        seg_duration = max(0.05, raw_duration / effective_speed)
+        seg_start = current_time
+        seg_end = current_time + seg_duration
+
+        words = [w for w in seg.split() if w.strip()]
+        if words:
+            # Calculate weights for words based on length and punctuation
+            weights = []
+            for w in words:
+                clean_w = re.sub(r"[^\w\s]", "", w)
+                w_len = max(1, len(clean_w))
+                weight = w_len ** 0.85
+                if re.search(r"[,;:\-—]", w):
+                    weight += 2.2  # comma pause
+                elif re.search(r"[.!?…]$", w):
+                    weight += 3.0  # clause/sentence pause
+                weights.append(weight)
+
+            total_weight = sum(weights) or 1.0
+            word_time_cursor = seg_start
+
+            for j, w in enumerate(words):
+                w_weight = weights[j]
+                w_duration = (w_weight / total_weight) * seg_duration
+                w_start = word_time_cursor
+                w_end = word_time_cursor + w_duration
+
+                word_timestamps.append({
+                    "word": w,
+                    "start": round(w_start, 3),
+                    "end": round(w_end, 3),
+                })
+                word_time_cursor += w_duration
+
+        current_time = seg_end
+        if i < len(segments) - 1:
+            current_time += (gap / effective_speed)
+
+    return word_timestamps
+
+
 def synthesize_speech(
     text,
     voice="maichi",
@@ -375,15 +434,28 @@ def synthesize_speech(
         "audio_repetition_penalty": float(audio_repetition_penalty),
     }
 
+    sample_rate = getattr(tts, "sample_rate", 48000)
+    gap = max(0.05, float(sentence_silence) if sentence_silence is not None else 0.2)
+
     if len(segments) <= 1:
         audio = tts.synthesize(segments[0], **sampling_kwargs)
+        chunk_samples = [audio.shape[-1] if hasattr(audio, "shape") else len(audio)]
     else:
         chunks = []
+        chunk_samples = []
         for seg in segments:
             c_audio = tts.synthesize(seg, **sampling_kwargs)
             chunks.append(c_audio)
-        gap = max(0.05, float(sentence_silence) if sentence_silence is not None else 0.2)
-        audio = concat_with_silence(chunks, gap, getattr(tts, "sample_rate", 48000))
+            chunk_samples.append(c_audio.shape[-1] if hasattr(c_audio, "shape") else len(c_audio))
+        audio = concat_with_silence(chunks, gap, sample_rate)
+
+    word_timestamps = calculate_word_timestamps(
+        segments=segments,
+        chunk_samples=chunk_samples,
+        sample_rate=sample_rate,
+        speed=speed,
+        gap=gap,
+    )
 
     tts.save_audio(audio, raw_output_path)
 
@@ -429,6 +501,7 @@ def synthesize_speech(
             "cfgScale": effective_cfg,
             "modelId": model_id,
             "segmentCount": len(segments),
+            "wordTimestamps": word_timestamps,
             "isRealInference": True,
         },
     }

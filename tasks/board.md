@@ -178,6 +178,8 @@
 
 ## Done
 
+- `FAST-VIDEO-069` - ZeroTTS Video Studio Full Render Export with Synchronized Audio, BGM, and Borderless / No-Underline Subtitle Styles
+- `FAST-AUDIO-089` - Precision Subtitle Word-Level Synchronization & 60fps Playback Tracking for ZeroTTS Video Overlays
 - `FAST-VIDEO-068` - Switch Video Color Grading Compare Mode to Direct Click Toggle Between Graded and Original
 - `FAST-AUDIO-088` - CapCut-Style VIP Captions in ZeroTTS Voice Lab and Video Color Grading & Lighting Studio
 - `FAST-AUDIO-087` - Add Video Upload and Synchronized Video Playback with Volume Control to ZeroTTS Voice Lab

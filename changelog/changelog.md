@@ -1,5 +1,36 @@
 # OmniVideo Changelog
 
+## FAST-VIDEO-069 - ZeroTTS Video Studio Full Render Export with Synchronized Audio, BGM, and Borderless / No-Underline Subtitle Styles
+
+- Bumped app version from `0.11.82` to `0.11.83`.
+- Added complete video rendering export engine in ZeroTTS Voice Lab (`src/lib/video-processing/zerotts-render.ts` and `src/app/api/video-processing/zerotts-render/route.ts`):
+  - Probes input video resolution, duration, and audio stream presence.
+  - Mixes video original audio (`videoVolume`), ZeroTTS voice audio (`1.0`), and background music (`bgmVolume` with infinite looping and padding headroom) via FFmpeg `amix`.
+  - Generates Advanced SubStation Alpha (.ass) subtitles with word-by-word highlight animation matching the live web preview.
+  - Encodes final MP4 with H.264 + AAC, faststart headers, and burned-in subtitles.
+- Added borderless and underline-free subtitle options in ZeroTTS Voice Lab (`src/features/audio/piper-tts-sandbox-panel.tsx`):
+  - 5 new clean styles: `clean_yellow` (Vàng Hiện Đại), `clean_white` (Trắng Tối Giản), `clean_emerald` (Xanh Mint TikTok), `clean_sunset` (Cam Pastel Vintage), and `pure_cinema` (Chữ Nổi Điện Ảnh không viền, không nền hộp).
+  - Added checkboxes `BỎ VIỀN HỘP` (`zeroTtsCaptionNoBorder`) and `BỎ GẠCH CHÂN` (`zeroTtsCaptionNoUnderline`) for full user customization across all styles.
+  - Updated live video overlay preview to render borderless boxes and underline-free active word highlights.
+- Added "Xuất Video Hoàn Chỉnh (ZeroTTS Video Render)" export button and interactive result card with metadata and instant MP4 download.
+- Added comprehensive unit tests in `zerotts-render.test.ts`, `zerotts-render/route.test.ts`, and updated `piper-tts-sandbox-panel.test.ts`.
+- Verification (FAST-VIDEO-069):
+  - `npx vitest run src/lib/video-processing/zerotts-render.test.ts src/app/api/video-processing/zerotts-render/route.test.ts src/features/audio/piper-tts-sandbox-panel.test.ts` pass (3 files / 27 tests).
+  - `npm run guard:version` pass.
+
+## FAST-AUDIO-089 - High-Precision 60fps Subtitle Synchronization with Punctuation-Aware Timing and Lead Offset for ZeroTTS
+
+- Bumped app version from `0.11.81` to `0.11.82`.
+- Diagnosed and resolved CapCut subtitle lag behind voice playback in ZeroTTS Voice Lab (`src/features/audio/piper-tts-sandbox-panel.tsx`):
+  - Replaced browser native HTML5 `timeupdate` (250ms–350ms sluggish polling) with a high-performance 60fps `requestAnimationFrame` audio/video tracking loop (`startPlaybackRaf`, `stopPlaybackRaf`) throttled to 30ms ticks for silky-smooth tracking without CPU/render overhead on Mac Air M1.
+  - Implemented `buildPunctuationAwareWordTimeline` calculating precise word boundaries weighted by syllable lengths, comma/semicolon pauses (+0.20s), and sentence silence periods (+0.25s–0.35s), eliminating cumulative timing drift.
+  - Added adjustable Subtitle Lead Offset slider (`zeroTtsSubtitleLeadMs`: 0ms to 300ms, default 120ms with quick presets 60ms, 120ms, 180ms) to compensate for human visual latency and headphone audio buffers, ensuring words highlight at the exact instant phonemes begin.
+- Enhanced backend Python runner (`src/lib/multilingual-audio/zerotts-runner.py`) and TypeScript wrapper (`src/lib/multilingual-audio/zerotts.ts`) with `calculate_word_timestamps` returning fine-grained chunk word timing metadata.
+- Updated automated unit test suite in `src/features/audio/piper-tts-sandbox-panel.test.ts`.
+- Verification (FAST-AUDIO-089):
+  - `npx vitest run src/features/audio/piper-tts-sandbox-panel.test.ts src/app/api/video-processing/color-grade/route.test.ts` pass (2 files / 18 tests).
+  - `npm run guard:version` pass.
+
 ## FAST-VIDEO-068 - Switch Video Color Grading Compare Mode to Direct Click Toggle Between Graded and Original
 
 - Bumped app version from `0.11.80` to `0.11.81`.

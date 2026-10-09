@@ -64,6 +64,7 @@ export type ZeroTtsGenerateResult = {
   cfgScale?: number;
   modelId: string;
   segmentCount?: number;
+  wordTimestamps?: Array<{ word: string; start: number; end: number }>;
   isRealInference?: boolean;
 };
 
