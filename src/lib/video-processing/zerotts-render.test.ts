@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+    buildZeroTtsVideoFilter,
     escapeFilterPath,
     formatAssTimestamp,
     generateAssSubtitleContent,
@@ -28,6 +29,44 @@ describe("ZeroTTS Video Render Engine", () => {
         expect(escapeFilterPath("/path/to:file'name,test.ass")).toBe(
             "/path/to\\:file\\'name\\,test.ass",
         );
+    });
+
+    it("builds a passthrough video filter when no grade or subtitles exist", () => {
+        expect(buildZeroTtsVideoFilter({})).toBe("[0:v]null[vout]");
+    });
+
+    it("burns subtitles without a color grade when none is provided", () => {
+        const filter = buildZeroTtsVideoFilter({ assPath: "/tmp/subs.ass" });
+        expect(filter).toBe("[0:v]subtitles='/tmp/subs.ass'[vout]");
+    });
+
+    it("applies the color grade before burning subtitles", () => {
+        const filter = buildZeroTtsVideoFilter({
+            assPath: "/tmp/subs.ass",
+            colorGrade: {
+                brightness: -0.18,
+                contrast: 1.25,
+                saturation: 0.85,
+                gamma: 0.9,
+                vignette: 0.45,
+                temperature: -12,
+            },
+        });
+        expect(filter).toContain("eq=brightness=-0.180");
+        expect(filter).toContain("vignette=");
+        expect(filter).toContain(",subtitles='/tmp/subs.ass'[vout]");
+        expect(filter.indexOf("eq=")).toBeLessThan(
+            filter.indexOf("subtitles="),
+        );
+    });
+
+    it("applies the color grade even without subtitles", () => {
+        const filter = buildZeroTtsVideoFilter({
+            colorGrade: { saturation: 1.35, vibrance: 0.25 },
+        });
+        expect(filter).toContain("eq=");
+        expect(filter).toContain("vibrance=intensity=0.250");
+        expect(filter.endsWith("[vout]")).toBe(true);
     });
 
     it("generates borderless and underline-free ASS subtitles for clean styles", () => {

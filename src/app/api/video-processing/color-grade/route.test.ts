@@ -42,4 +42,51 @@ describe("Video Color Grade API Route", () => {
         });
         expect(filter).toContain("colorbalance=rs=");
     });
+
+    it("applies hue rotation, vibrance, sepia and tint filters", () => {
+        const filter = buildColorGradeFfmpegFilter({
+            hue: 40,
+            vibrance: 0.5,
+            sepia: 60,
+            tint: 20,
+        });
+        expect(filter).toContain("hue=h=40.0");
+        expect(filter).toContain("vibrance=intensity=0.500");
+        expect(filter).toContain("colorchannelmixer=rr=");
+        expect(filter).toContain("gm=");
+    });
+
+    it("omits optional filters when values are neutral", () => {
+        const filter = buildColorGradeFfmpegFilter({
+            hue: 0,
+            vibrance: 0,
+            sepia: 0,
+            tint: 0,
+        });
+        expect(filter).not.toContain("hue=");
+        expect(filter).not.toContain("vibrance=");
+        expect(filter).not.toContain("colorchannelmixer=");
+        expect(filter).not.toContain("colorbalance=");
+    });
+
+    it("blends sepia amount between identity and full sepia matrix", () => {
+        const none = buildColorGradeFfmpegFilter({ sepia: 0 });
+        const full = buildColorGradeFfmpegFilter({ sepia: 100 });
+        expect(none).not.toContain("colorchannelmixer=");
+        expect(full).toContain("rr=0.393");
+        expect(full).toContain("gg=0.686");
+    });
+
+    it("clamps out-of-range creative parameters", () => {
+        const filter = buildColorGradeFfmpegFilter({
+            hue: 999,
+            vibrance: 9,
+            sepia: 999,
+            tint: -999,
+        });
+        expect(filter).toContain("hue=h=180.0");
+        expect(filter).toContain("vibrance=intensity=1.000");
+        expect(filter).toContain("rr=0.393");
+        expect(filter).toContain("gm=");
+    });
 });

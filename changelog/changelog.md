@@ -1,5 +1,37 @@
 # OmniVideo Changelog
 
+## FAST-VIDEO-071 - Frame ZeroTTS Voice/BGM/Video Sections and Add Video Color Presets
+
+- Bumped app version from `0.11.85` to `0.11.86`.
+- Restructured the ZeroTTS Voice Lab left column (`src/features/audio/piper-tts-sandbox-panel.tsx`):
+  - Voice & Synthesis Settings, Background Music and Synchronized Video are now each wrapped in their own bordered card, matching the CapCut VIP Captions frame.
+- Fixed the last section ("Video Color Grading & Lighting Studio") to match the other panel sections: added the `border-t` separator above it and removed the redundant section `border`/`p-4`/`bg-card` (it now uses `<section className="space-y-3">` inside the panel padding).
+- Added a 12-preset color-grade selector to the Synchronized Video card (`Video Color Grade (Màu sắc video)`):
+  - Selecting a preset updates the synchronized-video live preview (CSS filter).
+  - The selected preset is sent to the render as `settingsJson.colorGrade` (the "Original" preset sends nothing).
+- Extracted shared color-grade helpers to `src/lib/video-processing/color-grade.ts` (`ColorGradeFilterOptions`, `buildColorGradeFfmpegFilter`, `buildColorGradeCssFilter`); the color-grade route now re-exports the FFmpeg builder and the panel reuses the CSS builder.
+- ZeroTTS render (`src/lib/video-processing/zerotts-render.ts`): `ZeroTtsRenderSettings` accepts `colorGrade`; new `buildZeroTtsVideoFilter` applies the grade before burning in subtitles.
+- Added tests in `src/lib/video-processing/color-grade.test.ts`, `src/lib/video-processing/zerotts-render.test.ts` and updated `src/features/audio/piper-tts-sandbox-panel.test.ts`.
+- Verification (FAST-VIDEO-071):
+  - `npx vitest run src/lib/video-processing/color-grade.test.ts src/lib/video-processing/zerotts-render.test.ts src/app/api/video-processing/color-grade/route.test.ts src/features/audio/piper-tts-sandbox-panel.test.ts` pass (4 files / 43 tests).
+  - `npm run guard:version` pass.
+
+## FAST-VIDEO-070 - Expand Color Grading Studio with More Presets and Professional Parameters
+
+- Bumped app version from `0.11.84` to `0.11.85`.
+- Expanded the Video Color Grading & Lighting Studio (`src/features/audio/piper-tts-sandbox-panel.tsx`):
+  - Added 6 new 1-click presets (12 total): Golden Hour, Teal & Orange, Clean Bright Commercial, Cyberpunk Neon, Sepia Nostalgia and Vivid Pop.
+  - Added 4 professional manual parameters: Hue Shift (`cgHue`), Tint green/magenta (`cgTint`), Vibrance (`cgVibrance`) and Sepia Tone (`cgSepia`).
+  - Extended the live CSS preview (`cgFilterCss`) to reflect the new parameters.
+- Extended the FFmpeg color-grade engine (`src/app/api/video-processing/color-grade/route.ts`):
+  - `hue` → `hue=h=`, `vibrance` → `vibrance=intensity=`, `sepia` → blended `colorchannelmixer`, `tint` → merged `colorbalance` midtones.
+  - Route parses `hue`, `vibrance`, `sepia`, `tint` from multipart and JSON requests.
+- Updated tests in `src/app/api/video-processing/color-grade/route.test.ts` and `src/features/audio/piper-tts-sandbox-panel.test.ts`.
+- Synced the stale ZeroTTS "Synchronized Video" test assertions with the current UI labels from commit `6aea21f`.
+- Verification (FAST-VIDEO-070):
+  - `npx vitest run src/features/audio/piper-tts-sandbox-panel.test.ts src/app/api/video-processing/color-grade/route.test.ts` pass (2 files / 25 tests).
+  - `npm run guard:version` pass.
+
 ## FAST-UX-029 - Fix ZeroTTS Voice Lab Responsive Horizontal Overflow
 
 - Bumped app version from `0.11.83` to `0.11.84`.

@@ -6,55 +6,16 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { applyDemoRateLimit } from "@/lib/access-control/route-guards";
+import {
+    buildColorGradeFfmpegFilter,
+    type ColorGradeFilterOptions,
+} from "@/lib/video-processing/color-grade";
 import { resolveFfmpegPath } from "@/lib/multilingual-audio/audio-extraction";
 
 export const runtime = "nodejs";
 
-export type ColorGradeFilterOptions = {
-    brightness?: number; // -1.0 to 1.0 (default 0.0)
-    contrast?: number; // 0.1 to 3.0 (default 1.0)
-    saturation?: number; // 0.0 to 3.0 (default 1.0)
-    gamma?: number; // 0.1 to 3.0 (default 1.0)
-    vignette?: number; // 0.0 to 1.0 (default 0.0)
-    temperature?: number; // -50 to 50 (default 0)
-    presetName?: string;
-};
-
-export function buildColorGradeFfmpegFilter(options: ColorGradeFilterOptions = {}): string {
-    const filters: string[] = [];
-
-    const brightness = Math.max(-1.0, Math.min(1.0, options.brightness ?? 0.0));
-    const contrast = Math.max(0.1, Math.min(3.0, options.contrast ?? 1.0));
-    const saturation = Math.max(0.0, Math.min(3.0, options.saturation ?? 1.0));
-    const gamma = Math.max(0.1, Math.min(3.0, options.gamma ?? 1.0));
-
-    filters.push(
-        `eq=brightness=${brightness.toFixed(3)}:contrast=${contrast.toFixed(3)}:saturation=${saturation.toFixed(3)}:gamma=${gamma.toFixed(3)}`,
-    );
-
-    const vignette = Math.max(0.0, Math.min(1.0, options.vignette ?? 0.0));
-    if (vignette > 0.01) {
-        const angle = (vignette * (Math.PI / 4)).toFixed(3);
-        filters.push(`vignette=angle=${angle}`);
-    }
-
-    const temp = Math.max(-50, Math.min(50, options.temperature ?? 0));
-    if (Math.abs(temp) > 1) {
-        if (temp > 0) {
-            const rs = (temp / 200).toFixed(3);
-            const gs = (temp / 400).toFixed(3);
-            const bs = (-temp / 300).toFixed(3);
-            filters.push(`colorbalance=rs=${rs}:gs=${gs}:bs=${bs}`);
-        } else {
-            const abs = Math.abs(temp);
-            const bs = (abs / 200).toFixed(3);
-            const rs = (-abs / 300).toFixed(3);
-            filters.push(`colorbalance=rs=${rs}:bs=${bs}`);
-        }
-    }
-
-    return filters.join(",");
-}
+export { buildColorGradeFfmpegFilter };
+export type { ColorGradeFilterOptions };
 
 export async function POST(request: Request) {
     try {
@@ -86,6 +47,10 @@ export async function POST(request: Request) {
                 gamma: formData.get("gamma") ? Number(formData.get("gamma")) : 1.0,
                 vignette: formData.get("vignette") ? Number(formData.get("vignette")) : 0.0,
                 temperature: formData.get("temperature") ? Number(formData.get("temperature")) : 0.0,
+                hue: formData.get("hue") ? Number(formData.get("hue")) : 0.0,
+                vibrance: formData.get("vibrance") ? Number(formData.get("vibrance")) : 0.0,
+                sepia: formData.get("sepia") ? Number(formData.get("sepia")) : 0.0,
+                tint: formData.get("tint") ? Number(formData.get("tint")) : 0.0,
                 presetName: (formData.get("presetName") as string) || "custom",
             };
             responseMode = (formData.get("responseMode") as string) || "json";
@@ -107,6 +72,10 @@ export async function POST(request: Request) {
                 gamma: typeof body.gamma === "number" ? body.gamma : 1.0,
                 vignette: typeof body.vignette === "number" ? body.vignette : 0.0,
                 temperature: typeof body.temperature === "number" ? body.temperature : 0.0,
+                hue: typeof body.hue === "number" ? body.hue : 0.0,
+                vibrance: typeof body.vibrance === "number" ? body.vibrance : 0.0,
+                sepia: typeof body.sepia === "number" ? body.sepia : 0.0,
+                tint: typeof body.tint === "number" ? body.tint : 0.0,
                 presetName: body.presetName || "custom",
             };
             responseMode = body.responseMode || "json";

@@ -5,6 +5,10 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
+import {
+    buildColorGradeFfmpegFilter,
+    type ColorGradeFilterOptions,
+} from "@/lib/video-processing/color-grade";
 import { resolveFfmpegPath } from "@/lib/multilingual-audio/audio-extraction";
 
 export type ZeroTtsSubtitleWord = {
@@ -24,9 +28,30 @@ export type ZeroTtsRenderSettings = {
     captionUppercase?: boolean; // default false
     captionNoBorder?: boolean; // default false (or true for clean styles)
     captionNoUnderline?: boolean; // default false (or true for clean styles)
+    colorGrade?: ColorGradeFilterOptions; // optional color grading applied before captions
     wordTimeline?: ZeroTtsSubtitleWord[];
     durationSec?: number; // duration of speech audio in seconds
 };
+
+/**
+ * Build the `[0:v]...` FFmpeg filter chain for the ZeroTTS render. Color
+ * grading (if provided) is applied before the subtitles are burned in so the
+ * caption styling is never altered by the grade.
+ */
+export function buildZeroTtsVideoFilter(options: {
+    assPath?: string | null;
+    colorGrade?: ColorGradeFilterOptions | null;
+}): string {
+    const grade = options.colorGrade
+        ? buildColorGradeFfmpegFilter(options.colorGrade)
+        : "";
+    const chain: string[] = [];
+    if (grade) chain.push(grade);
+    if (options.assPath) {
+        chain.push(`subtitles='${escapeFilterPath(options.assPath)}'`);
+    }
+    return `[0:v]${chain.length > 0 ? chain.join(",") : "null"}[vout]`;
+}
 
 export type ZeroTtsRenderInput = {
     video: {
@@ -397,14 +422,13 @@ export async function renderZeroTtsVideo(
         // Construct filter_complex
         const filterComplexParts: string[] = [];
 
-        // 1. Video filter
-        if (assPath) {
-            filterComplexParts.push(
-                `[0:v]subtitles='${escapeFilterPath(assPath)}'[vout]`,
-            );
-        } else {
-            filterComplexParts.push("[0:v]null[vout]");
-        }
+        // 1. Video filter (optional color grade, then burned-in subtitles)
+        filterComplexParts.push(
+            buildZeroTtsVideoFilter({
+                assPath,
+                colorGrade: input.settings?.colorGrade,
+            }),
+        );
 
         // 2. Audio filters
         const videoVol = Math.max(

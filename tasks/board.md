@@ -178,6 +178,8 @@
 
 ## Done
 
+- `FAST-VIDEO-071` - Frame ZeroTTS Voice/BGM/Video sections and add 12 video color-grade presets
+- `FAST-VIDEO-070` - Expand Color Grading Studio with more presets and professional parameters
 - `FAST-UX-029` - Fix ZeroTTS Voice Lab responsive horizontal overflow
 - `FAST-VIDEO-069` - ZeroTTS Video Studio Full Render Export with Synchronized Audio, BGM, and Borderless / No-Underline Subtitle Styles
 - `FAST-AUDIO-089` - Precision Subtitle Word-Level Synchronization & 60fps Playback Tracking for ZeroTTS Video Overlays

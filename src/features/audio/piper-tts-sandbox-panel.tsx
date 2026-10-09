@@ -21,6 +21,10 @@ import {
 } from "lucide-react";
 
 import type { LeftbarNavItem } from "@/components/layout/types";
+import {
+    buildColorGradeCssFilter,
+    type ColorGradeFilterOptions,
+} from "@/lib/video-processing/color-grade";
 import type {
     AudioTranscriptionStep,
     ChineseTranscriptionResult,
@@ -391,6 +395,10 @@ export interface ColorGradePreset {
     gamma: number;
     vignette: number;
     temperature: number;
+    hue: number;
+    vibrance: number;
+    sepia: number;
+    tint: number;
 }
 
 export const COLOR_GRADE_PRESETS: ColorGradePreset[] = [
@@ -405,6 +413,10 @@ export const COLOR_GRADE_PRESETS: ColorGradePreset[] = [
         gamma: 0.9,
         vignette: 0.45,
         temperature: -12,
+        hue: 0,
+        vibrance: -0.1,
+        sepia: 0,
+        tint: 0,
     },
     {
         id: "anti_overexposure",
@@ -417,11 +429,15 @@ export const COLOR_GRADE_PRESETS: ColorGradePreset[] = [
         gamma: 0.82,
         vignette: 0.0,
         temperature: 0,
+        hue: 0,
+        vibrance: 0.05,
+        sepia: 0,
+        tint: 0,
     },
     {
         id: "cinematic_vintage",
         label: "Cinematic Warm Vintage (Phim Cổ Điển Ấm)",
-        desc: "Tone màu vàng hổ phách dịu mắt, tương phản phim điện ảnh và viền tối hoài cổ.",
+        desc: "Tone màu vàng hổ phách dịu mắt, tương phản phim điện ảnh, chút sepia hoài cổ và viền tối.",
         badge: "Hoài niệm / Kể chuyện",
         brightness: -0.06,
         contrast: 1.12,
@@ -429,6 +445,10 @@ export const COLOR_GRADE_PRESETS: ColorGradePreset[] = [
         gamma: 0.95,
         vignette: 0.25,
         temperature: 18,
+        hue: 0,
+        vibrance: 0.05,
+        sepia: 12,
+        tint: 2,
     },
     {
         id: "film_noir",
@@ -441,6 +461,10 @@ export const COLOR_GRADE_PRESETS: ColorGradePreset[] = [
         gamma: 0.85,
         vignette: 0.55,
         temperature: 0,
+        hue: 0,
+        vibrance: 0,
+        sepia: 0,
+        tint: 0,
     },
     {
         id: "cold_sad",
@@ -453,6 +477,106 @@ export const COLOR_GRADE_PRESETS: ColorGradePreset[] = [
         gamma: 0.92,
         vignette: 0.35,
         temperature: -28,
+        hue: 0,
+        vibrance: -0.05,
+        sepia: 0,
+        tint: -6,
+    },
+    {
+        id: "golden_hour",
+        label: "Golden Hour (Giờ Vàng Điện Ảnh)",
+        desc: "Ánh nắng hoàng hôn ấm áp, nâng nhẹ tông vàng cam, tăng rực màu tự nhiên cho khung hình lung linh.",
+        badge: "Ấm áp / Hoàng hôn",
+        brightness: 0.02,
+        contrast: 1.08,
+        saturation: 1.15,
+        gamma: 1.0,
+        vignette: 0.22,
+        temperature: 26,
+        hue: 0,
+        vibrance: 0.15,
+        sepia: 10,
+        tint: 6,
+    },
+    {
+        id: "teal_orange",
+        label: "Teal & Orange (Hollywood Blockbuster)",
+        desc: "Công thức kinh điển Hollywood: da ấm cam, vùng tối ngả xanh teal, tương phản điện ảnh đậm đà.",
+        badge: "Blockbuster / Điện ảnh",
+        brightness: -0.05,
+        contrast: 1.22,
+        saturation: 1.15,
+        gamma: 0.98,
+        vignette: 0.3,
+        temperature: 12,
+        hue: 0,
+        vibrance: 0.1,
+        sepia: 0,
+        tint: 6,
+    },
+    {
+        id: "clean_commercial",
+        label: "Clean Bright Commercial (Thương Mại Sáng Sạch)",
+        desc: "Tăng sáng nhẹ, giữ tương phản vừa phải, màu tươi sạch và trong trẻo cho video quảng cáo, bán hàng.",
+        badge: "Sáng sạch / Bán hàng",
+        brightness: 0.06,
+        contrast: 1.05,
+        saturation: 1.08,
+        gamma: 1.05,
+        vignette: 0.05,
+        temperature: 4,
+        hue: 0,
+        vibrance: 0.1,
+        sepia: 0,
+        tint: 0,
+    },
+    {
+        id: "cyberpunk_neon",
+        label: "Cyberpunk Neon (Tân Tương Lai Neon)",
+        desc: "Đẩy tương phản và bão hòa mạnh, ám tím hồng neon kết hợp vùng lạnh xanh, phong cách gaming/tương lai.",
+        badge: "Neon / Tương lai",
+        brightness: -0.08,
+        contrast: 1.3,
+        saturation: 1.35,
+        gamma: 0.95,
+        vignette: 0.4,
+        temperature: -18,
+        hue: 0,
+        vibrance: 0.2,
+        sepia: 0,
+        tint: 14,
+    },
+    {
+        id: "sepia_nostalgia",
+        label: "Sepia Nostalgia (Hoài Niệm Sepia)",
+        desc: "Nhuộm tone nâu sepia cổ điển, giảm bão hòa nhẹ và thêm viền tối để tái hiện ký ức xưa cũ.",
+        badge: "Sepia / Xưa cũ",
+        brightness: -0.02,
+        contrast: 1.08,
+        saturation: 0.9,
+        gamma: 0.98,
+        vignette: 0.32,
+        temperature: 14,
+        hue: 0,
+        vibrance: -0.05,
+        sepia: 55,
+        tint: 0,
+    },
+    {
+        id: "vivid_pop",
+        label: "Vivid Pop (Rực Rỡ TikTok / Quảng Cáo)",
+        desc: "Ép màu cực rực, tăng vibrance và tương phản để video bắt mắt, nổi bật trên feed mạng xã hội.",
+        badge: "Rực rỡ / Viral",
+        brightness: 0.04,
+        contrast: 1.18,
+        saturation: 1.35,
+        gamma: 1.02,
+        vignette: 0.12,
+        temperature: 6,
+        hue: 0,
+        vibrance: 0.25,
+        sepia: 0,
+        tint: 0,
     },
     {
         id: "natural_reset",
@@ -465,6 +589,10 @@ export const COLOR_GRADE_PRESETS: ColorGradePreset[] = [
         gamma: 1.0,
         vignette: 0.0,
         temperature: 0,
+        hue: 0,
+        vibrance: 0,
+        sepia: 0,
+        tint: 0,
     },
 ];
 
@@ -612,6 +740,8 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
     const [zeroTtsVideoUrl, setZeroTtsVideoUrl] = useState<string | null>(null);
     const [zeroTtsVideoVolume, setZeroTtsVideoVolume] =
         useState<string>("0.15");
+    const [zeroTtsColorPreset, setZeroTtsColorPreset] =
+        useState<string>("natural_reset");
     const zeroTtsSpeechAudioRef = useRef<HTMLAudioElement | null>(null);
     const zeroTtsBgmAudioRef = useRef<HTMLAudioElement | null>(null);
     const zeroTtsVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -674,6 +804,10 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
     const [cgGamma, setCgGamma] = useState<number>(0.9);
     const [cgVignette, setCgVignette] = useState<number>(0.45);
     const [cgTemperature, setCgTemperature] = useState<number>(-12);
+    const [cgHue, setCgHue] = useState<number>(0);
+    const [cgVibrance, setCgVibrance] = useState<number>(0);
+    const [cgSepia, setCgSepia] = useState<number>(0);
+    const [cgTint, setCgTint] = useState<number>(0);
     const [cgCompareMode, setCgCompareMode] = useState<boolean>(false);
     const [cgIsRendering, setCgIsRendering] = useState<boolean>(false);
     const [cgRenderResult, setCgRenderResult] = useState<{
@@ -1108,6 +1242,36 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
             }));
     }, [wordTimeline, activeWordIndex]);
 
+    const zeroTtsColorPresetData = useMemo(
+        () => COLOR_GRADE_PRESETS.find((p) => p.id === zeroTtsColorPreset) ?? null,
+        [zeroTtsColorPreset],
+    );
+
+    const zeroTtsColorGrade = useMemo<ColorGradeFilterOptions | null>(() => {
+        if (!zeroTtsColorPresetData || zeroTtsColorPreset === "natural_reset") {
+            return null;
+        }
+        const p = zeroTtsColorPresetData;
+        return {
+            brightness: p.brightness,
+            contrast: p.contrast,
+            saturation: p.saturation,
+            gamma: p.gamma,
+            vignette: p.vignette,
+            temperature: p.temperature,
+            hue: p.hue,
+            vibrance: p.vibrance,
+            sepia: p.sepia,
+            tint: p.tint,
+            presetName: p.id,
+        };
+    }, [zeroTtsColorPresetData, zeroTtsColorPreset]);
+
+    const zeroTtsVideoFilterCss = useMemo(
+        () => (zeroTtsColorGrade ? buildColorGradeCssFilter(zeroTtsColorGrade) : "none"),
+        [zeroTtsColorGrade],
+    );
+
     const handleZeroTtsRenderVideo = async () => {
         if (!zeroTtsVideoFile && !zeroTtsVideoUrl) {
             setZeroTtsRenderError(
@@ -1159,6 +1323,7 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
                 captionNoUnderline: isCaptionNoUnderline,
                 wordTimeline,
                 durationSec: (zeroTtsResult?.durationMs || 1000) / 1000,
+                ...(zeroTtsColorGrade ? { colorGrade: zeroTtsColorGrade } : {}),
             };
             formData.append("settingsJson", JSON.stringify(settings));
             formData.append("responseMode", "json");
@@ -1202,6 +1367,10 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
         setCgGamma(found.gamma);
         setCgVignette(found.vignette);
         setCgTemperature(found.temperature);
+        setCgHue(found.hue);
+        setCgVibrance(found.vibrance);
+        setCgSepia(found.sepia);
+        setCgTint(found.tint);
     };
 
     const handleCgVideoChange = (
@@ -1248,6 +1417,10 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
             formData.append("gamma", String(cgGamma));
             formData.append("vignette", String(cgVignette));
             formData.append("temperature", String(cgTemperature));
+            formData.append("hue", String(cgHue));
+            formData.append("vibrance", String(cgVibrance));
+            formData.append("sepia", String(cgSepia));
+            formData.append("tint", String(cgTint));
 
             const response = await fetch("/api/video-processing/color-grade", {
                 method: "POST",
@@ -1277,19 +1450,37 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
         };
     }, [cgVideoUrl]);
 
-    const cgFilterCss = useMemo(() => {
-        if (cgCompareMode) return "none";
-        const b = 1 + cgBrightness;
-        const c = cgContrast;
-        const s = cgSaturation;
-        let filter = `brightness(${b}) contrast(${c}) saturate(${s})`;
-        if (cgTemperature > 0) {
-            filter += ` sepia(${cgTemperature * 0.4}%) hue-rotate(${-cgTemperature * 0.2}deg)`;
-        } else if (cgTemperature < 0) {
-            filter += ` hue-rotate(${cgTemperature * 0.6}deg)`;
-        }
-        return filter;
-    }, [cgCompareMode, cgBrightness, cgContrast, cgSaturation, cgTemperature]);
+    const cgFilterCss = useMemo(
+        () =>
+            buildColorGradeCssFilter(
+                {
+                    brightness: cgBrightness,
+                    contrast: cgContrast,
+                    saturation: cgSaturation,
+                    gamma: cgGamma,
+                    vignette: cgVignette,
+                    temperature: cgTemperature,
+                    hue: cgHue,
+                    vibrance: cgVibrance,
+                    sepia: cgSepia,
+                    tint: cgTint,
+                },
+                cgCompareMode,
+            ),
+        [
+            cgCompareMode,
+            cgBrightness,
+            cgContrast,
+            cgSaturation,
+            cgGamma,
+            cgVignette,
+            cgTemperature,
+            cgHue,
+            cgVibrance,
+            cgSepia,
+            cgTint,
+        ],
+    );
 
     const runZeroTts = async () => {
         setIsRunningZeroTts(true);
@@ -2982,10 +3173,14 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
                         <code>normalize_vi_text</code>.
                     </p>
                     <div className="grid gap-4 lg:grid-cols-[340px_minmax(0,1fr)] xl:grid-cols-[380px_minmax(0,1fr)]">
-                        <div className="min-w-0 space-y-3 border border-main bg-secondary/20 p-4">
-                            <p className="text-[12px] font-semibold text-main">
-                                Voice & Synthesis Settings
-                            </p>
+                        <div className="min-w-0 space-y-3">
+                            <div className="border border-main bg-secondary/20 p-4 space-y-3">
+                                <div className="flex items-center gap-1.5 border-b border-main pb-2">
+                                    <SlidersHorizontal className="h-3.5 w-3.5 text-accent" />
+                                    <span className="text-[11px] font-semibold text-main">
+                                        Voice & Synthesis Settings
+                                    </span>
+                                </div>
                             <div>
                                 <span className="mb-1 block text-[10px] font-semibold text-muted">
                                     Voice Mode
@@ -3395,7 +3590,9 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
                                     </div>
                                 </div>
                             </div>
+                            </div>
 
+                            <div className="border border-main bg-secondary/20 p-4">
                             <div className="grid gap-2 sm:grid-cols-2">
                                 <label className="block">
                                     <div className="flex items-center justify-between mb-1">
@@ -3483,7 +3680,9 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
                                     />
                                 </div>
                             </div>
+                            </div>
 
+                            <div className="border border-main bg-secondary/20 p-4">
                             <div className="grid gap-2 sm:grid-cols-2">
                                 <div className="min-w-0 block">
                                     <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 mb-1">
@@ -3586,6 +3785,42 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
                                         15% giữ âm thanh video gốc nhỏ nhẹ.
                                     </span>
                                 </div>
+                            </div>
+
+                            <div className="pt-2 border-t border-main">
+                                <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 mb-1">
+                                    <span className="text-[10px] font-semibold text-muted">
+                                        Video Color Grade (Màu sắc video)
+                                    </span>
+                                    <span className="text-[9px] font-semibold text-accent">
+                                        {zeroTtsColorPresetData?.label ??
+                                            "Original (Gốc)"}
+                                    </span>
+                                </div>
+                                <div className="grid grid-cols-2 gap-1">
+                                    {COLOR_GRADE_PRESETS.map((preset) => (
+                                        <button
+                                            key={preset.id}
+                                            type="button"
+                                            onClick={() =>
+                                                setZeroTtsColorPreset(preset.id)
+                                            }
+                                            title={`${preset.label} — ${preset.desc}`}
+                                            className={`min-w-0 truncate border px-1.5 py-1 text-left text-[9px] transition-colors ${
+                                                zeroTtsColorPreset === preset.id
+                                                    ? "border-accent bg-accent/15 text-accent font-semibold"
+                                                    : "border-main bg-main text-muted hover:text-main"
+                                            }`}
+                                        >
+                                            {preset.label.split(" (")[0]}
+                                        </button>
+                                    ))}
+                                </div>
+                                <span className="mt-1 block text-[9px] text-muted">
+                                    {zeroTtsColorPresetData?.desc ??
+                                        "Giữ nguyên màu gốc của video."}
+                                </span>
+                            </div>
                             </div>
 
                             {/* CapCut VIP Subtitles Settings */}
@@ -4033,6 +4268,9 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
                                                     onSeeked={
                                                         handleZeroTtsVideoSeeked
                                                     }
+                                                    style={{
+                                                        filter: zeroTtsVideoFilterCss,
+                                                    }}
                                                     className="h-full w-full object-contain"
                                                 />
                                                 {zeroTtsShowCaptions &&
@@ -4390,7 +4628,8 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
                 </section>
 
                 {/* Video Color Grading & Lighting Studio */}
-                <section className="border border-main bg-card p-4 space-y-4">
+                <div className="border-t border-main" />
+                <section className="space-y-3">
                     <div className="flex flex-wrap items-center justify-between gap-2 border-b border-main pb-3">
                         <div>
                             <div className="flex items-center gap-2">
@@ -4649,6 +4888,129 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
                                         <span>Lạnh u sầu (-50)</span>
                                         <span>Chuẩn (0)</span>
                                         <span>Ấm vintage (+50)</span>
+                                    </div>
+                                </div>
+
+                                {/* Tint (Green / Magenta) */}
+                                <div className="space-y-1">
+                                    <div className="flex justify-between text-[10px]">
+                                        <span className="text-muted">
+                                            Ám màu Xanh–Hồng (Tint)
+                                        </span>
+                                        <span className="font-mono font-medium text-main">
+                                            {cgTint > 0
+                                                ? `+${cgTint} (Hồng tím)`
+                                                : cgTint < 0
+                                                  ? `${cgTint} (Xanh lá)`
+                                                  : "0 (Trung tính)"}
+                                        </span>
+                                    </div>
+                                    <input
+                                        type="range"
+                                        min="-50"
+                                        max="50"
+                                        step="1"
+                                        value={cgTint}
+                                        onChange={(e) => {
+                                            setCgTint(Number(e.target.value));
+                                            setCgActivePreset("custom");
+                                        }}
+                                        className="w-full accent-[var(--color-accent)]"
+                                    />
+                                    <div className="flex justify-between text-[8px] text-muted">
+                                        <span>Xanh lá (-50)</span>
+                                        <span>Chuẩn (0)</span>
+                                        <span>Hồng tím (+50)</span>
+                                    </div>
+                                </div>
+
+                                {/* Hue */}
+                                <div className="space-y-1">
+                                    <div className="flex justify-between text-[10px]">
+                                        <span className="text-muted">
+                                            Sắc thái màu (Hue Shift)
+                                        </span>
+                                        <span className="font-mono font-medium text-main">
+                                            {cgHue}°
+                                        </span>
+                                    </div>
+                                    <input
+                                        type="range"
+                                        min="-180"
+                                        max="180"
+                                        step="1"
+                                        value={cgHue}
+                                        onChange={(e) => {
+                                            setCgHue(Number(e.target.value));
+                                            setCgActivePreset("custom");
+                                        }}
+                                        className="w-full accent-[var(--color-accent)]"
+                                    />
+                                    <div className="flex justify-between text-[8px] text-muted">
+                                        <span>Xoay ngược (-180°)</span>
+                                        <span>Gốc (0°)</span>
+                                        <span>Xoay thuận (+180°)</span>
+                                    </div>
+                                </div>
+
+                                {/* Vibrance */}
+                                <div className="space-y-1">
+                                    <div className="flex justify-between text-[10px]">
+                                        <span className="text-muted">
+                                            Rực màu tự nhiên (Vibrance)
+                                        </span>
+                                        <span className="font-mono font-medium text-main">
+                                            {cgVibrance > 0 ? "+" : ""}
+                                            {cgVibrance.toFixed(2)}
+                                        </span>
+                                    </div>
+                                    <input
+                                        type="range"
+                                        min="-1"
+                                        max="1"
+                                        step="0.05"
+                                        value={cgVibrance}
+                                        onChange={(e) => {
+                                            setCgVibrance(
+                                                Number(e.target.value),
+                                            );
+                                            setCgActivePreset("custom");
+                                        }}
+                                        className="w-full accent-[var(--color-accent)]"
+                                    />
+                                    <div className="flex justify-between text-[8px] text-muted">
+                                        <span>Dịu màu (-1.00)</span>
+                                        <span>Gốc (0.00)</span>
+                                        <span>Rực tự nhiên (+1.00)</span>
+                                    </div>
+                                </div>
+
+                                {/* Sepia */}
+                                <div className="space-y-1">
+                                    <div className="flex justify-between text-[10px]">
+                                        <span className="text-muted">
+                                            Phim cổ Sepia (Sepia Tone)
+                                        </span>
+                                        <span className="font-mono font-medium text-main">
+                                            {Math.round(cgSepia)}%
+                                        </span>
+                                    </div>
+                                    <input
+                                        type="range"
+                                        min="0"
+                                        max="100"
+                                        step="1"
+                                        value={cgSepia}
+                                        onChange={(e) => {
+                                            setCgSepia(Number(e.target.value));
+                                            setCgActivePreset("custom");
+                                        }}
+                                        className="w-full accent-[var(--color-accent)]"
+                                    />
+                                    <div className="flex justify-between text-[8px] text-muted">
+                                        <span>Không (0%)</span>
+                                        <span>Hoài niệm (50%)</span>
+                                        <span>Cổ điển (100%)</span>
                                     </div>
                                 </div>
                             </div>

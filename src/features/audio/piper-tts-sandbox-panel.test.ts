@@ -143,7 +143,7 @@ describe("Feature Sandbox panel", () => {
     });
 
     it("supports synchronized video upload and playback with default 0.15 volume in ZeroTTS Voice Lab", () => {
-        expect(source).toContain("Synchronized Video (Video chạy cùng)");
+        expect(source).toContain("Synchronized Video (thêm Video?)");
         expect(source).toContain("setZeroTtsVideoVolume");
         expect(source).toContain('"0.15"');
         expect(source).toContain("Video Volume");
@@ -156,7 +156,7 @@ describe("Feature Sandbox panel", () => {
         expect(source).toContain("handleZeroTtsVideoPause");
         expect(source).toContain("handleZeroTtsVideoSeeked");
         expect(source).toContain("Video đang chạy cùng:");
-        expect(source).toContain("Mặc định 15% (0.15)");
+        expect(source).toContain("15% giữ âm thanh video gốc nhỏ nhẹ.");
     });
 
     it("integrates CapCut-style VIP captions with karaoke word tracking into ZeroTTS Voice Lab video overlay", () => {
@@ -197,12 +197,26 @@ describe("Feature Sandbox panel", () => {
         expect(source).toContain("cinematic_vintage");
         expect(source).toContain("film_noir");
         expect(source).toContain("cold_sad");
+        expect(source).toContain("golden_hour");
+        expect(source).toContain("teal_orange");
+        expect(source).toContain("clean_commercial");
+        expect(source).toContain("cyberpunk_neon");
+        expect(source).toContain("sepia_nostalgia");
+        expect(source).toContain("vivid_pop");
         expect(source).toContain("cgBrightness");
         expect(source).toContain("cgContrast");
         expect(source).toContain("cgSaturation");
         expect(source).toContain("cgGamma");
         expect(source).toContain("cgVignette");
         expect(source).toContain("cgTemperature");
+        expect(source).toContain("cgHue");
+        expect(source).toContain("cgVibrance");
+        expect(source).toContain("cgSepia");
+        expect(source).toContain("cgTint");
+        expect(source).toContain("Sắc thái màu (Hue Shift)");
+        expect(source).toContain("Rực màu tự nhiên (Vibrance)");
+        expect(source).toContain("Phim cổ Sepia (Sepia Tone)");
+        expect(source).toContain("Ám màu Xanh–Hồng (Tint)");
         expect(source).toContain("cgFilterCss");
         expect(source).toContain("cgCompareMode");
         expect(source).toContain("handleCgRenderExport");
@@ -243,9 +257,7 @@ describe("Feature Sandbox panel", () => {
         expect(source).toContain(
             "lg:grid-cols-[340px_minmax(0,1fr)] xl:grid-cols-[380px_minmax(0,1fr)]",
         );
-        expect(source).toContain(
-            "min-w-0 space-y-3 border border-main bg-secondary/20 p-4",
-        );
+        expect(source).toContain("min-w-0 space-y-3");
         expect(source).toContain("min-w-0 space-y-4");
         expect(source).toContain(
             "flex flex-wrap items-center justify-between gap-x-2 gap-y-1 mb-1",
@@ -257,6 +269,27 @@ describe("Feature Sandbox panel", () => {
         );
         expect(source).toContain("flex min-w-0 flex-wrap items-center gap-1.5 font-medium");
         expect(source).toContain("break-all");
+    });
+
+    it("frames Voice, Background Music and Synchronized Video into separate cards and adds color presets to the video", () => {
+        expect(source).toContain(
+            "border border-main bg-secondary/20 p-4 space-y-3",
+        );
+        expect(source).toContain(
+            '<div className="border border-main bg-secondary/20 p-4">',
+        );
+        expect(source).toContain(
+            "flex items-center gap-1.5 border-b border-main pb-2",
+        );
+        expect(source).toContain("Video Color Grade (Màu sắc video)");
+        expect(source).toContain("zeroTtsColorPreset");
+        expect(source).toContain("setZeroTtsColorPreset");
+        expect(source).toContain("zeroTtsColorPresetData");
+        expect(source).toContain("zeroTtsColorGrade");
+        expect(source).toContain("zeroTtsVideoFilterCss");
+        expect(source).toContain("buildColorGradeCssFilter");
+        expect(source).toContain("colorGrade: zeroTtsColorGrade");
+        expect(source).toContain("filter: zeroTtsVideoFilterCss");
     });
 });
 
