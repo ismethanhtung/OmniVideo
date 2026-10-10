@@ -4634,14 +4634,14 @@ export function PiperTtsSandboxPanel({ section }: PiperTtsSandboxPanelProps) {
                         <div>
                             <div className="flex items-center gap-2">
                                 <SunMedium className="h-4 w-4 text-accent" />
-                                <h3 className="text-sm font-semibold text-main">
+                                <h3 className="text-[13px] font-semibold text-main">
                                     Video Color Grading & Lighting Studio
                                 </h3>
                                 <span className="rounded bg-accent/15 px-1.5 py-0.5 text-[10px] font-semibold text-accent">
                                     Anti-Overexposure & Moody Engine
                                 </span>
                             </div>
-                            <p className="mt-1 text-[11px] text-muted">
+                            <p className="text-[10px] text-muted leading-relaxed">
                                 Xử lý video chuyên nghiệp: Khắc phục triệt để
                                 video bị chói sáng, lóa trắng do camera cũ
                                 (Anti-Overexposure) hoặc biến hóa phong cách tối

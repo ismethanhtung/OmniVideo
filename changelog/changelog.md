@@ -5,7 +5,7 @@
 - Bumped app version from `0.11.85` to `0.11.86`.
 - Restructured the ZeroTTS Voice Lab left column (`src/features/audio/piper-tts-sandbox-panel.tsx`):
   - Voice & Synthesis Settings, Background Music and Synchronized Video are now each wrapped in their own bordered card, matching the CapCut VIP Captions frame.
-- Fixed the last section ("Video Color Grading & Lighting Studio") to match the other panel sections: added the `border-t` separator above it and removed the redundant section `border`/`p-4`/`bg-card` (it now uses `<section className="space-y-3">` inside the panel padding).
+- Fixed the last section ("Video Color Grading & Lighting Studio") to match the other panel sections: added the `border-t` separator above it and removed the redundant section `border`/`p-4`/`bg-card` (it now uses `<section className="space-y-3">` inside the panel padding), and aligned the header typography with the other sections (`text-[13px]` heading + `text-[10px]` description).
 - Added a 12-preset color-grade selector to the Synchronized Video card (`Video Color Grade (Màu sắc video)`):
   - Selecting a preset updates the synchronized-video live preview (CSS filter).
   - The selected preset is sent to the render as `settingsJson.colorGrade` (the "Original" preset sends nothing).
