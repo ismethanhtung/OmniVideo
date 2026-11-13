@@ -1,5 +1,21 @@
 # OmniVideo Changelog
 
+## FAST-AUDIO-090 - Fix ZeroTTS ONNX External-Data Validation Failure on Hugging Face Cache
+
+- Bumped app version from `0.11.86` to `0.11.87`.
+- Fixed every ZeroTTS synthesis failing with `[ONNXRuntimeError] : 1 : FAIL : External data path validation failed for initializer: model.quantizer.output_proj.bias ... External data path escapes model directory` (`src/lib/multilingual-audio/zerotts-runner.py`):
+  - Cause: the `huggingface_hub` cache stores snapshot files as symlinks into `blobs/`; ONNX Runtime 1.22+ (installed 1.30.0) canonicalizes the graph path and rejects external-data files that resolve into a different blob folder (the codec `.onnx` and its `.data` land in different `blobs/<xx>/` dirs).
+  - Fix: new `resolve_local_model_dir` / `materialize_model_dir` helpers resolve the model into a symlink-free local directory before calling `ZeroTTS.from_pretrained`.
+  - Materialization hardlinks the cached blobs (no extra disk usage) and falls back to a copy across filesystems; a `.omnivideo-model.json` marker makes it idempotent and reuses the directory on later runs.
+  - Cache location: `~/.cache/omnivideo/zerotts-models/<name>-<hash>/`, overridable via `ZEROTTS_MODEL_CACHE_DIR` (or `OMNIVIDEO_MODEL_CACHE_DIR`).
+  - Local model directories that contain no symlinks are used untouched.
+- Added `src/lib/multilingual-audio/zerotts-runner.test.ts` (drives the Python helpers against a synthetic Hugging-Face-style symlink cache: no-symlink output, hardlink inode sharing, idempotent reuse, local-dir passthrough).
+- Verification (FAST-AUDIO-090):
+  - `zerotts-runner.py --action synthesize` reproduces the error before the fix and returns a valid WAV after it; daemon `/health` + `/synthesize` OK.
+  - `npx vitest run src/lib/multilingual-audio/zerotts-runner.test.ts` pass (4 tests).
+  - `npx vitest run src/lib/multilingual-audio/zerotts.test.ts` pass (7 tests).
+  - `npm run guard:version` pass.
+
 ## FAST-VIDEO-071 - Frame ZeroTTS Voice/BGM/Video Sections and Add Video Color Presets
 
 - Bumped app version from `0.11.85` to `0.11.86`.

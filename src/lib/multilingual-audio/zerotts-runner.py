@@ -9,15 +9,18 @@ and custom voice packs (.zip, .npz downloaded from zeroweight.ai).
 
 import argparse
 import base64
+import hashlib
 import json
 import math
 import os
 import re
+import shutil
 import struct
 import sys
 import threading
 import time
 import wave
+from pathlib import Path
 
 # Predefined preset voices in official ZeroTTS model
 PRESET_VOICES = [
@@ -255,23 +258,199 @@ def apply_audio_speed(input_path, output_path, speed):
     subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
 
 
+# ── Local model directory materialization ────────────────────────────────────
+#
+# ONNX Runtime 1.22+ validates external-data tensors and refuses graphs whose
+# data file resolves outside the model file's own directory:
+#
+#   External data path escapes model directory.
+#   External data path: "moss_audio_tokenizer_decode_shared.data"
+#   resolved path: ".../hub/blobs/02/021d..." allowed directory: ".../hub/blobs/6a"
+#
+# The Hugging Face cache stores every file as a symlink into `blobs/`:
+#
+#   snapshots/<rev>/onnx/codec/moss_audio_tokenizer_decode_full.onnx -> ../../../blobs/0f/...
+#   snapshots/<rev>/onnx/codec/moss_audio_tokenizer_decode_shared.data -> ../../../blobs/e6/...
+#   blobs/0f/... -> ../../blobs/6a/6a10...        (blobs are symlinked once more)
+#   blobs/e6/... -> ../../blobs/02/021d...
+#
+# Once both symlinks are canonicalized they live in *different* blob folders, so
+# the codec graph is rejected even though it was published correctly. Feeding
+# ORT a real directory (files hardlinked, so no extra disk usage) removes the
+# symlink indirection and the published layout validates again.
+
+
+def get_model_cache_root() -> Path:
+    """Directory that stores materialized (symlink-free) model copies."""
+    override = os.environ.get("ZEROTTS_MODEL_CACHE_DIR") or os.environ.get("OMNIVIDEO_MODEL_CACHE_DIR")
+    if override:
+        return Path(override).expanduser().resolve()
+    xdg_cache = os.environ.get("XDG_CACHE_HOME")
+    base = Path(xdg_cache).expanduser() if xdg_cache else Path.home() / ".cache"
+    return (base / "omnivideo" / "zerotts-models").resolve()
+
+
+def find_symlinked_entries(directory, limit=1):
+    """Return up to `limit` paths inside `directory` that are symlinks (files or dirs)."""
+    directory = Path(directory)
+    found = []
+    for root, dirnames, filenames in os.walk(directory):
+        for name in filenames:
+            candidate = os.path.join(root, name)
+            if os.path.islink(candidate):
+                found.append(candidate)
+                if len(found) >= limit:
+                    return found
+        for name in list(dirnames):
+            candidate = os.path.join(root, name)
+            if os.path.islink(candidate):
+                found.append(candidate)
+                if len(found) >= limit:
+                    return found
+                dirnames.remove(name)
+    return found
+
+
+def _iter_model_files(source: Path):
+    """Yield (relative_path, absolute_path) for every file in `source`.
+
+    Symlinked directories are followed (cycle-guarded) so a hand-made model dir
+    that links e.g. ``voices/`` elsewhere is materialized in full instead of
+    silently losing that subtree.
+    """
+    source = Path(source)
+    visited_dirs = set()
+    stack = [(str(source), "")]
+    while stack:
+        current, rel_current = stack.pop()
+        real_current = os.path.realpath(current)
+        if real_current in visited_dirs:
+            continue
+        visited_dirs.add(real_current)
+        try:
+            entries = list(os.scandir(current))
+        except OSError:
+            continue
+        for entry in entries:
+            rel_path = os.path.normpath(os.path.join(rel_current, entry.name))
+            try:
+                if entry.is_dir(follow_symlinks=True):
+                    stack.append((entry.path, rel_path))
+                elif entry.is_file(follow_symlinks=True):
+                    yield rel_path, entry.path
+            except OSError:
+                continue  # broken symlink
+
+
+def _link_or_copy(src: str, dst: str) -> None:
+    """Hardlink `src` to `dst` (same inode, no extra disk); copy when that fails."""
+    real_src = os.path.realpath(src)
+    tmp = f"{dst}.tmp{os.getpid()}"
+    if os.path.exists(tmp):
+        os.remove(tmp)
+    try:
+        os.link(real_src, tmp)
+    except OSError:
+        shutil.copy2(real_src, tmp)
+    os.replace(tmp, dst)
+
+
+def materialize_model_dir(source, target=None):
+    """Copy `source` into a symlink-free directory and return that directory.
+
+    Existing symlinks are replaced by hardlinks to the file they point at, so a
+    Hugging Face cache snapshot costs no extra disk space. The operation is
+    idempotent: a `.omnivideo-model.json` marker records which snapshot was
+    materialized and reuses the target while it is complete.
+    """
+    source = Path(source).expanduser().resolve()
+    if not source.is_dir():
+        raise FileNotFoundError(f"Model directory not found: {source}")
+
+    if target is None:
+        safe_name = re.sub(r"[^A-Za-z0-9._-]+", "_", source.name or "model")
+        digest = hashlib.sha256(str(source).encode("utf-8")).hexdigest()[:12]
+        target = get_model_cache_root() / f"{safe_name}-{digest}"
+    target = Path(target).expanduser()
+    target.mkdir(parents=True, exist_ok=True)
+
+    files = list(_iter_model_files(source))
+    rel_files = [rel for rel, _ in files]
+    marker = target / ".omnivideo-model.json"
+
+    if marker.is_file():
+        try:
+            marker_data = json.loads(marker.read_text(encoding="utf-8"))
+            complete = (
+                marker_data.get("source") == str(source)
+                and marker_data.get("files") == rel_files
+                and all((target / rel).is_file() for rel in rel_files)
+            )
+            if complete:
+                return target
+        except (OSError, ValueError):
+            pass  # corrupt/stale marker → rebuild below
+
+    for rel_path, src_path in files:
+        dst_path = target / rel_path
+        dst_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            up_to_date = (
+                dst_path.is_file()
+                and dst_path.stat().st_size == os.path.getsize(os.path.realpath(src_path))
+            )
+        except OSError:
+            up_to_date = False
+        if not up_to_date:
+            _link_or_copy(src_path, dst_path)
+
+    marker.write_text(
+        json.dumps({"source": str(source), "files": rel_files}, indent=2),
+        encoding="utf-8",
+    )
+    return target
+
+
+def resolve_local_model_dir(model_id="zeroweight-ai/ZeroTTS", revision=None):
+    """Resolve `model_id` (HF repo id or local dir) to a directory safe for ONNX Runtime.
+
+    A directory without symlinks is returned untouched. A Hugging Face snapshot
+    (or any symlinked model dir) is materialized into the local model cache.
+    """
+    candidate = Path(str(model_id)).expanduser()
+    if candidate.is_dir():
+        source = candidate.resolve()
+    else:
+        import zerotts.hub as zerotts_hub
+        source = Path(zerotts_hub.resolve_model_dir(str(model_id), revision=revision)).resolve()
+
+    if not find_symlinked_entries(source):
+        return source
+    return materialize_model_dir(source)
+
+
 _GLOBAL_TTS_INSTANCE = None
+_GLOBAL_TTS_MODEL_DIR = None
 
 
 def get_or_create_tts(model_id="zeroweight-ai/ZeroTTS"):
-    global _GLOBAL_TTS_INSTANCE
+    global _GLOBAL_TTS_INSTANCE, _GLOBAL_TTS_MODEL_DIR
     if _GLOBAL_TTS_INSTANCE is not None:
         return _GLOBAL_TTS_INSTANCE
 
     import tempfile
-    from pathlib import Path
     import zerotts.voices
     zerotts.voices.USER_VOICES_DIR = Path(tempfile.gettempdir()) / "zerotts_voices"
     os.makedirs(zerotts.voices.USER_VOICES_DIR, exist_ok=True)
 
     from zerotts import ZeroTTS
     threads = min(4, max(1, os.cpu_count() or 4))
-    _GLOBAL_TTS_INSTANCE = ZeroTTS.from_pretrained(model_id, intra_op_num_threads=threads, warmup=False)
+    _GLOBAL_TTS_MODEL_DIR = resolve_local_model_dir(model_id)
+    _GLOBAL_TTS_INSTANCE = ZeroTTS.from_pretrained(
+        str(_GLOBAL_TTS_MODEL_DIR),
+        intra_op_num_threads=threads,
+        warmup=False,
+    )
     return _GLOBAL_TTS_INSTANCE
 
 

@@ -44,3 +44,6 @@ next-env.d.ts
 
 # piper
 piper/.venv/
+# python bytecode (src/lib/multilingual-audio/zerotts-runner.py is imported by tests)
+__pycache__/
+*.py[cod]

@@ -178,6 +178,7 @@
 
 ## Done
 
+- `FAST-AUDIO-090` - Fix ZeroTTS ONNX external-data validation failure on Hugging Face cache
 - `FAST-VIDEO-071` - Frame ZeroTTS Voice/BGM/Video sections and add 12 video color-grade presets
 - `FAST-VIDEO-070` - Expand Color Grading Studio with more presets and professional parameters
 - `FAST-UX-029` - Fix ZeroTTS Voice Lab responsive horizontal overflow
