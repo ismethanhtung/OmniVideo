@@ -1,5 +1,19 @@
 # OmniVideo Changelog
 
+## FAST-AUDIO-091 - Move ZeroTTS Voice Lab to Dedicated Page and Navigation Route
+
+- Bumped app version from `0.11.87` to `0.11.88`.
+- Extracted ZeroTTS Voice Lab from `http://localhost:3000/piper-tts-sandbox` into its own first-class page and route (`/zerotts-voice-lab`):
+  - Created `src/features/audio/zerotts-voice-lab-panel.tsx` with complete studio: Vietnamese zero-shot voice cloning, 48kHz audio generation, BGM synchronization, synchronized video, 12-preset color grading, CapCut VIP captions with 60fps RAF word highlight tracking, and full video rendering.
+  - Added section `zerottsVoiceLab` in `src/components/layout/types.ts`.
+  - Added "ZeroTTS Voice Lab" item to sidebar navigation in `src/components/layout/navigation.ts` under "Create & Extract", with route `/zerotts-voice-lab` and aliases (`/zerotts-lab`, `/zerotts`).
+  - Registered route in `src/components/layout/content-router.tsx`.
+  - Cleaned up `src/features/audio/piper-tts-sandbox-panel.tsx` by replacing the embedded ZeroTTS section with a referral banner linking directly to `/zerotts-voice-lab`.
+- Added unit tests in `src/features/audio/zerotts-voice-lab-panel.test.ts` (12 tests) and updated `src/features/audio/piper-tts-sandbox-panel.test.ts` and `src/components/layout/navigation.test.ts`.
+- Verification (FAST-AUDIO-091):
+  - `npm test -- zerotts-voice-lab-panel.test.ts piper-tts-sandbox-panel.test.ts navigation.test.ts` passed (28 tests).
+  - `npm run guard:version` passed.
+
 ## FAST-AUDIO-090 - Fix ZeroTTS ONNX External-Data Validation Failure on Hugging Face Cache
 
 - Bumped app version from `0.11.86` to `0.11.87`.

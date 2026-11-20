@@ -1,4 +1,5 @@
 import {
+    AudioWaveform,
     Bot,
     Cable,
     DownloadCloud,
@@ -116,6 +117,13 @@ export const LEFTBAR_NAV: LeftbarNavGroup[] = [
                 label: "Video Narrator",
                 description:
                     "Sử dụng AI Video Understanding (Gemini) để thuyết minh tiếng Việt, sinh giọng nói và render video.",
+            },
+            {
+                id: "zerottsVoiceLab",
+                icon: AudioWaveform,
+                label: "ZeroTTS Voice Lab",
+                description:
+                    "Vietnamese zero-shot voice cloning, 48kHz CPU TTS, synced BGM, synchronized video & CapCut VIP captions.",
             },
             {
                 id: "aiImageStudio",
@@ -271,6 +279,7 @@ const SECTION_SLUG_BY_ID: Record<AppSectionId, string> = {
     localUploadIntake: "local-upload-intake",
     chineseTranscription: "audio-transcript",
     videoNarrator: "video-narrator",
+    zerottsVoiceLab: "zerotts-voice-lab",
     aiImageStudio: "ai-image-studio",
     piperTtsSandbox: "piper-tts-sandbox",
     videoToolsLab: "video-tools-lab",
@@ -300,6 +309,7 @@ const LEGACY_SECTION_BY_CAMEL: Record<string, AppSectionId> = {
     localUploadIntake: "localUploadIntake",
     chineseTranscription: "chineseTranscription",
     videoNarrator: "videoNarrator",
+    zerottsVoiceLab: "zerottsVoiceLab",
     aiImageStudio: "aiImageStudio",
     piperTtsSandbox: "piperTtsSandbox",
     videoToolsLab: "videoToolsLab",
@@ -321,7 +331,12 @@ const SECTION_BY_SLUG = Object.entries(SECTION_SLUG_BY_ID).reduce(
         accumulator[slug] = id as AppSectionId;
         return accumulator;
     },
-    {} as Record<string, AppSectionId>,
+    {
+        "zerotts-lab": "zerottsVoiceLab",
+        zerotts: "zerottsVoiceLab",
+        "zero-tts": "zerottsVoiceLab",
+        "zero-tts-lab": "zerottsVoiceLab",
+    } as Record<string, AppSectionId>,
 );
 
 export function resolveSectionFromSegment(

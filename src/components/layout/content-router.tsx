@@ -9,6 +9,7 @@ import { ChineseTranscriptionPanel } from "@/features/audio/chinese-transcriptio
 import { AiImageStudioPanel } from "@/features/ai-image/ai-image-studio-panel";
 import { VideoNarratorPanel } from "@/features/video-narrator/video-narrator-panel";
 import { PiperTtsSandboxPanel } from "@/features/audio/piper-tts-sandbox-panel";
+import { ZeroTtsVoiceLabPanel } from "@/features/audio/zerotts-voice-lab-panel";
 import { StorageLibraryPanel } from "@/features/storage/storage-library-panel";
 import { StorageProvidersPanel } from "@/features/storage/storage-providers-panel";
 import { LocalUploadIntakePanel } from "@/features/video-intake/local-upload-intake-panel";
@@ -41,6 +42,7 @@ const SECTION_COMPONENTS: Partial<
     chineseTranscription: ChineseTranscriptionPanel,
     aiImageStudio: AiImageStudioPanel,
     videoNarrator: VideoNarratorPanel,
+    zerottsVoiceLab: ZeroTtsVoiceLabPanel,
     piperTtsSandbox: PiperTtsSandboxPanel,
     localUploadIntake: LocalUploadIntakePanel,
     storageProviders: StorageProvidersPanel,

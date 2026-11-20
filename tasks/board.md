@@ -25,6 +25,7 @@
 
 ## Review
 
+- `FAST-AUDIO-091` - Move ZeroTTS Voice Lab to dedicated page and navigation route.
 - `FAST-INTAKE-015` - Extract URL from sharing texts in Video Intake
 - `FAST-AUDIO-069` - Implement HTTP 429 rate limit retries with backoff for Groq Whisper transcription.
 - `FAST-WORKSPACE-082` - Intermediate step-aware progress details for Workspace VIP flow.

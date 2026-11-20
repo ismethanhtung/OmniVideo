@@ -70,6 +70,18 @@ describe("navigation registry", () => {
     expect(navIds).not.toContain("groqTtsSandbox");
   });
 
+  it("registers ZeroTTS Voice Lab page and resolves its canonical and alias routes", () => {
+    const navItem = getNavItem("zerottsVoiceLab");
+    expect(navItem).toBeDefined();
+    expect(navItem?.label).toBe("ZeroTTS Voice Lab");
+    expect(toSectionPath("zerottsVoiceLab")).toBe("/zerotts-voice-lab");
+    expect(isAppSectionId("zerottsVoiceLab")).toBe(true);
+    expect(resolveSectionFromSegment("zerotts-voice-lab")).toBe("zerottsVoiceLab");
+    expect(resolveSectionFromSegment("zerotts-lab")).toBe("zerottsVoiceLab");
+    expect(resolveSectionFromSegment("zerotts")).toBe("zerottsVoiceLab");
+    expect(resolveSectionFromSegment("zerottsVoiceLab")).toBe("zerottsVoiceLab");
+  });
+
   it("maps sections to stable route paths", () => {
     expect(toSectionPath("workspace")).toBe("/workspace");
     expect(toSectionPath("inspirationVault")).toBe("/inspiration-vault");
